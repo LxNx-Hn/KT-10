@@ -37,13 +37,14 @@ export default defineConfig({
           },
         ],
       },
-      devOptions: { enabled: true },
+      // 개발 중에는 서비스워커 비활성화(stale 모듈 캐싱 방지). 빌드 시에는 PWA 정상 생성.
+      devOptions: { enabled: false },
     }),
   ],
   server: { port: 5173, host: true },
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 });
