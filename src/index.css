@@ -40,7 +40,7 @@ button { font-family: inherit; cursor: pointer; }
 .app {
   max-width: 720px;
   margin: 0 auto;
-  padding-bottom: 140px; /* 음성바 공간 */
+  padding-bottom: 240px; /* 하단 고정 음성 챗봇 Dock 공간 */
 }
 
 .app__header {
@@ -202,23 +202,111 @@ button { font-family: inherit; cursor: pointer; }
 .notice { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; color: var(--ink-soft); }
 .notice--error { color: var(--bad); border-color: var(--bad); background: var(--bad-bg); }
 
-/* 음성 바(하단 고정) */
-.voicebar {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
-  max-width: 720px; margin: 0 auto;
-  background: rgba(255,255,255,0.97); border-top: 1px solid var(--line);
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
-  backdrop-filter: blur(6px);
+/* 검색 홈 */
+.home { display: flex; flex-direction: column; gap: 18px; }
+.home__headline { margin: 4px 0 0; font-size: 1.6rem; }
+
+/* 홈 음성 진입 버튼(큰 마이크) */
+.voice-entry {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 20px; border-radius: var(--radius);
+  border: 2px solid var(--brand); background: #eef4ff; color: var(--brand);
 }
-.voicebar__transcript { margin: 0 0 8px; font-weight: 600; }
-.voicebar__buttons { display: flex; gap: 10px; }
+.voice-entry:disabled { border-color: var(--line); background: #f1f5f9; color: var(--ink-soft); }
+.voice-entry__mic { font-size: 2.2rem; }
+.voice-entry__label { font-size: 1.2rem; font-weight: 800; }
+.voice-entry__hint { font-size: 0.85rem; color: var(--ink-soft); }
+
+/* 추천 음성 명령 */
+.suggest__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.suggest__chip {
+  text-align: left; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--surface); font-size: 0.92rem;
+}
+.suggest__chip:hover { background: #eef4ff; border-color: var(--brand); }
+
+/* 데모 목적지 */
+.demodest__row { display: flex; flex-wrap: wrap; gap: 8px; }
+.demodest__btn {
+  min-height: var(--tap); padding: 0 16px; border-radius: 999px;
+  border: 2px solid var(--line); background: var(--surface); font-weight: 700; font-size: 1rem;
+}
+.demodest__btn:hover { border-color: var(--brand); }
+
+/* 결과 섹션 */
+.results { display: flex; flex-direction: column; gap: 18px; }
+
+/* 날씨 경고 배너 */
+.weather__banner { padding: 12px 14px; border-radius: 12px; margin-bottom: 12px; font-size: 0.95rem; }
+.weather__banner--good { background: var(--good-bg); color: var(--good); }
+.weather__banner--warn { background: var(--warn-bg); color: var(--warn); }
+.weather__banner--bad { background: var(--bad-bg); color: var(--bad); }
+
+/* 점수 검증 요약 */
+.scoreval { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.scoreval__meta { margin: 0 0 10px; font-size: 0.92rem; color: var(--ink-soft); }
+.scoreval__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+.scoreval__note { margin: 12px 0 0; font-size: 0.8rem; color: var(--ink-soft); }
+.scoreval__note code { background: #eef2f7; padding: 1px 5px; border-radius: 6px; }
+
+/* 지도 보조 섹션 */
+.mappreview { display: flex; flex-direction: column; gap: 10px; }
+.mappreview__toggle {
+  align-self: flex-start; min-height: 44px; padding: 0 16px; border-radius: 12px;
+  border: 2px solid var(--line); background: var(--surface); font-weight: 700; font-size: 1rem;
+}
+.mappreview__hint { margin: 0; color: var(--ink-soft); font-size: 0.9rem; }
+
+/* 공통 음성 버튼 */
 .voice-fab { flex: 1; min-height: var(--tap); border-radius: 14px; border: 2px solid var(--brand); background: var(--brand); color: #fff; font-size: 1.05rem; font-weight: 800; }
 .voice-fab--on { background: var(--bad); border-color: var(--bad); animation: pulse 1.2s infinite; }
 .voice-fab:disabled { background: #94a3b8; border-color: #94a3b8; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
 
+/* 음성 챗봇 Dock(하단 고정) */
+.voicedock {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  max-width: 720px; margin: 0 auto;
+  background: rgba(255,255,255,0.98); border-top: 1px solid var(--line);
+  box-shadow: 0 -6px 20px rgba(0,0,0,0.08);
+  padding: 8px 14px calc(8px + env(safe-area-inset-bottom));
+  backdrop-filter: blur(6px);
+}
+.voicedock__handle {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  border: 0; background: transparent; font-weight: 800; font-size: 1rem; padding: 4px 0;
+}
+.voicedock__dot { width: 12px; height: 12px; border-radius: 50%; background: #94a3b8; flex: none; }
+.voicedock__dot--listening { background: var(--bad); animation: pulse 1.2s infinite; }
+.voicedock__dot--thinking { background: #f59e0b; }
+.voicedock__dot--speaking { background: var(--good); }
+.voicedock__dot--error { background: var(--bad); }
+.voicedock__body { display: flex; flex-direction: column; gap: 8px; }
+.voicedock__log { max-height: 32vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+.chatmsg { display: flex; flex-direction: column; gap: 2px; }
+.chatmsg__who { font-size: 0.72rem; color: var(--ink-soft); }
+.chatmsg__text { margin: 0; padding: 8px 12px; border-radius: 12px; font-size: 0.95rem; max-width: 88%; }
+.chatmsg--user { align-items: flex-end; }
+.chatmsg--user .chatmsg__text { background: var(--brand); color: #fff; border-bottom-right-radius: 4px; }
+.chatmsg--assistant .chatmsg__text { background: #eef2f7; color: var(--ink); border-bottom-left-radius: 4px; }
+.chatmsg--system .chatmsg__text { background: #fff7ed; color: #7c2d12; border: 1px dashed #fdba74; }
+.chatmsg--interim .chatmsg__text { opacity: 0.6; font-style: italic; }
+.voicedock__quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip--small { min-height: 40px; padding: 0 12px; }
+.voicedock__controls { display: flex; gap: 8px; }
+.btn--repeat, .btn--stop { background: #fff; border-color: var(--line); }
+.btn--stop { min-width: 56px; flex: none; }
+.voicedock__textentry { display: flex; gap: 8px; }
+.voicedock__textentry input {
+  flex: 1; min-height: 46px; padding: 0 12px; border-radius: 12px;
+  border: 2px solid var(--line); font-size: 0.95rem;
+}
+.voicedock__textentry input:focus { outline: 2px solid var(--brand); border-color: var(--brand); }
+.voicedock__textentry .btn--primary { flex: none; }
+
 @media (max-width: 480px) {
   .profiles__grid { grid-template-columns: 1fr; }
   .searchbar { grid-template-columns: 1fr; }
   .searchbar__swap { justify-self: center; }
+  .suggest__grid, .scoreval__grid { grid-template-columns: 1fr; }
 }
