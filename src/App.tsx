@@ -1,25 +1,33 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { DISTRICT } from '@/config/district';
-import MapView from '@/components/MapView';
-import SearchBar from '@/components/SearchBar';
-import ProfileSelector from '@/components/ProfileSelector';
-import WeatherPanel from '@/components/WeatherPanel';
-import RouteList from '@/components/RouteList';
-import BusArrivalCard from '@/components/BusArrivalCard';
-import VoiceButton from '@/components/VoiceButton';
+import SearchHome from '@/components/SearchHome';
+import RouteResultSection from '@/components/RouteResultSection';
+import MapPreviewSection from '@/components/MapPreviewSection';
+import VoiceChatDock from '@/components/VoiceChatDock';
 
+/**
+ * 정보 구조(요구사항 §1·§3):
+ *   SearchHome(검색 중심) → RouteResultSection(경로 카드 우선) → MapPreviewSection(지도 보조)
+ *   + VoiceChatDock(하단 고정 실시간 음성 챗봇)
+ * 지도는 첫 화면의 중심이 아니라 검색 결과 확인용 보조 화면이다.
+ */
 export default function App() {
   const largeUi = useAppStore((s) => s.largeUi);
   const toggleLargeUi = useAppStore((s) => s.toggleLargeUi);
   const profile = useAppStore((s) => s.profile);
+  const hasResults = useAppStore((s) => s.recommendations.length > 0);
 
-  // 데모: 부산진구청 → 서면역 기본 경로를 채우고 즉시 탐색
+  // 결과가 처음 생기면 결과 영역으로 부드럽게 스크롤
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const scrolled = useRef(false);
   useEffect(() => {
-    const store = useAppStore.getState();
-    store.loadDemoOd();
-    void store.search();
-  }, []);
+    if (hasResults && !scrolled.current && resultsRef.current) {
+      scrolled.current = true;
+      resultsRef.current.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    }
+    if (!hasResults) scrolled.current = false;
+  }, [hasResults]);
 
   return (
     <div className={`app ${largeUi ? 'app--large' : ''}`} data-profile={profile}>
@@ -39,15 +47,14 @@ export default function App() {
       </header>
 
       <main className="app__main">
-        <MapView />
-        <SearchBar />
-        <ProfileSelector />
-        <WeatherPanel />
-        <RouteList />
-        <BusArrivalCard />
+        <SearchHome />
+        <div ref={resultsRef}>
+          <RouteResultSection />
+        </div>
+        <MapPreviewSection />
       </main>
 
-      <VoiceButton />
+      <VoiceChatDock />
     </div>
   );
 }
