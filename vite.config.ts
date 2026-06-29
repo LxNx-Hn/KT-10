@@ -1,0 +1,49 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
+import { fileURLToPath } from 'node:url';
+
+// PWA 웹앱 설정. 큰 UI·접근성 중심 서비스이므로 standalone 표시 모드를 사용한다.
+export default defineConfig({
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.svg', 'robots.txt'],
+      manifest: {
+        name: '같이가요 - 접근성 경로 추천',
+        short_name: '같이가요',
+        description:
+          '보행자·대중교통·교통약자를 위한 접근성 중심 경로 추천 PWA (부산진구 데모)',
+        theme_color: '#1f6feb',
+        background_color: '#ffffff',
+        display: 'standalone',
+        orientation: 'portrait',
+        lang: 'ko',
+        start_url: '/',
+        icons: [
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          {
+            src: 'icons/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+      },
+      devOptions: { enabled: true },
+    }),
+  ],
+  server: { port: 5173, host: true },
+  test: {
+    globals: true,
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+  },
+});
