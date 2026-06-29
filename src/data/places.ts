@@ -8,6 +8,7 @@ export const PLACES: Place[] = [
   { id: 'seomyeon-stn', name: '서면역', category: '지하철역', lat: 35.1578, lng: 129.0594, address: '부산진구 중앙대로 지하' },
   { id: 'bujeon-stn', name: '부전역', category: '지하철역', lat: 35.1631, lng: 129.0608, address: '부산진구 동천로' },
   { id: 'yangjeong-stn', name: '양정역', category: '지하철역', lat: 35.1733, lng: 129.0686, address: '부산진구 중앙대로' },
+  { id: 'jeonpo-stn', name: '전포역', category: '지하철역', lat: 35.1571, lng: 129.0686, address: '부산진구 서전로' },
   { id: 'gaya-stn', name: '가야역', category: '지하철역', lat: 35.149, lng: 129.036, address: '부산진구 가야대로' },
   { id: 'gu-office', name: '부산진구청', category: '관공서', lat: 35.1626, lng: 129.053, address: '부산진구 시민공원로' },
   { id: 'citizens-park', name: '부산시민공원', category: '공원', lat: 35.169, lng: 129.056, address: '부산진구 시민공원로' },
