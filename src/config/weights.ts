@@ -58,7 +58,7 @@ export const PROFILE_WEIGHTS: ProfileWeights = {
  */
 export function applyOptionWeights(
   base: ScoreComponents,
-  opts: { lowFloorPriority?: boolean; weatherAvoid?: boolean },
+  opts: { lowFloorPriority?: boolean; weatherAvoid?: boolean; avoidStairs?: boolean },
 ): ScoreComponents {
   const w: ScoreComponents = { ...base };
   if (opts.lowFloorPriority) {
@@ -67,6 +67,11 @@ export function applyOptionWeights(
   }
   if (opts.weatherAvoid) {
     w.weatherSafety += 0.15;
+  }
+  if (opts.avoidStairs) {
+    // 계단 회피·승강기 우선: 승강기/접근성 비중 강화
+    w.elevator += 0.12;
+    w.accessibility += 0.08;
   }
   return normalizeWeights(w);
 }
