@@ -13,6 +13,17 @@ import { PROFILES } from '@/config/profiles';
 import { DEFAULT_WEATHER, type WeatherScenarioId } from '@/data/weather';
 import { findPlace } from '@/data/places';
 import { DEMO_OD } from '@/data/routes';
+import { DISTRICT } from '@/config/district';
+import type { WeatherAvoidanceMode } from '@/voice/intents';
+
+/** 날씨 회피 모드 → 데모 날씨 시나리오 매핑 */
+const WEATHER_MODE_SCENARIO: Record<WeatherAvoidanceMode, WeatherScenarioId | null> = {
+  heat: 'heatwave',
+  rain: 'rain',
+  cold: 'coldwave',
+  dust: 'dust',
+  general: null,
+};
 
 interface AppState {
   /* 입력 */
@@ -47,6 +58,17 @@ interface AppState {
   loadDemoOd: () => void;
   search: () => Promise<void>;
   rescore: () => void;
+
+  /* 음성 챗봇 연동 액션 (요구사항 §9) */
+  ensureOrigin: () => void;
+  useCurrentLocation: () => void;
+  setDestinationFromVoice: (destination: string) => Promise<Place | null>;
+  setOriginFromVoice: (origin: string) => Promise<Place | null>;
+  setProfileFromVoice: (p: ProfileId) => void;
+  enableLowFloorBusPriority: () => void;
+  enableWeatherAvoidance: (mode: WeatherAvoidanceMode) => Promise<void>;
+  enableStairAvoidance: () => void;
+  recalculateRoutes: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -137,5 +159,63 @@ export const useAppStore = create<AppState>((set, get) => ({
       recommendations,
       selectedRouteId: stillThere ? selectedRouteId : recommendations[0]?.route.id ?? null,
     });
+  },
+
+  /* ── 음성 챗봇 연동 액션 (요구사항 §9) ── */
+
+  /** 출발지가 비어 있으면 현재 위치(데모: 부산진구청)로 채운다 */
+  ensureOrigin: () => {
+    if (get().origin) return;
+    set({ origin: findPlace(DEMO_OD.originId) ?? null });
+  },
+
+  /** "현재 위치 사용": geolocation 미사용 데모 — 부산진구 중심을 현재 위치로 설정 */
+  useCurrentLocation: () => {
+    set({
+      origin: { id: 'current', name: '현재 위치(데모)', category: '현재 위치', ...DISTRICT.center },
+    });
+  },
+
+  setDestinationFromVoice: async (destination) => {
+    const results = await adapters.places.searchPlaces(destination);
+    const place = results[0] ?? null;
+    if (place) {
+      set({ destination: place });
+      get().ensureOrigin();
+    }
+    return place;
+  },
+
+  setOriginFromVoice: async (origin) => {
+    const results = await adapters.places.searchPlaces(origin);
+    const place = results[0] ?? null;
+    if (place) set({ origin: place });
+    return place;
+  },
+
+  setProfileFromVoice: (p) => get().setProfile(p),
+
+  enableLowFloorBusPriority: () => {
+    set((s) => ({ options: { ...s.options, lowFloorPriority: true } }));
+    get().rescore();
+  },
+
+  enableWeatherAvoidance: async (mode) => {
+    set((s) => ({ options: { ...s.options, weatherAvoid: true } }));
+    const scenario = WEATHER_MODE_SCENARIO[mode];
+    if (scenario) {
+      await get().setWeatherScenario(scenario); // 날씨 갱신 + 재채점 포함
+    } else {
+      get().rescore();
+    }
+  },
+
+  enableStairAvoidance: () => {
+    set((s) => ({ options: { ...s.options, avoidStairs: true } }));
+    get().rescore();
+  },
+
+  recalculateRoutes: async () => {
+    await get().search();
   },
 }));
