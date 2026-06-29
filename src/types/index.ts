@@ -164,6 +164,8 @@ export interface ScoringOptions {
   lowFloorPriority?: boolean;
   /** 날씨 회피 모드(날씨 위험 가중 강화) */
   weatherAvoid?: boolean;
+  /** 계단 회피·승강기 우선 모드(접근성/승강기 가중 강화) */
+  avoidStairs?: boolean;
 }
 
 /** 채점된 경로(후보 + 점수 결합) */
