@@ -71,6 +71,7 @@ function PlaceInput({
 export default function SearchBar() {
   const { origin, destination, setOrigin, setDestination, search, loadDemoOd, loading } =
     useAppStore();
+  const useCurrentLocation = useAppStore((s) => s.useCurrentLocation);
 
   return (
     <section className="searchbar" aria-label="출발지 도착지 검색">
@@ -89,6 +90,9 @@ export default function SearchBar() {
       <PlaceInput label="도착지" value={destination} onSelect={setDestination} />
 
       <div className="searchbar__actions">
+        <button type="button" className="btn btn--ghost" onClick={useCurrentLocation}>
+          📍 현재 위치 사용
+        </button>
         <button type="button" className="btn btn--ghost" onClick={loadDemoOd}>
           데모 경로 채우기
         </button>
