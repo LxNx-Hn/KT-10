@@ -1,7 +1,10 @@
 import type { LatLng, Place, RouteCandidate, RouteSegment } from '@/types';
-import { findPlace } from './places';
+import demoJson from '@data/routes.demo.json';
 
-/** 구간 배열로부터 집계값을 채워 RouteCandidate 완성 */
+/** 데모 대표 경로 후보(부산진구청 → 서면역) — 공유 데이터셋(data/routes.demo.json). */
+const DEMO: RouteCandidate[] = demoJson as unknown as RouteCandidate[];
+
+/** 구간 배열로부터 집계값을 채워 RouteCandidate 완성(합성 경로용) */
 function assemble(
   id: string,
   summary: string,
@@ -37,72 +40,9 @@ function assemble(
 
 const c = (p?: Place): LatLng => ({ lat: p?.lat ?? 0, lng: p?.lng ?? 0 });
 
-/**
- * 데모 대표 경로 후보(부산진구청 → 서면역).
- * 수동 검증된 접근성 속성을 부여해 점수 검증의 기준으로 사용한다.
- */
+/** 데모 대표 경로(깊은 복사로 반환 — 역방향 등에서 원본 오염 방지). */
 function demoCandidates(): RouteCandidate[] {
-  const guOffice = c(findPlace('gu-office'));
-  const bujeon = c(findPlace('bujeon-stn'));
-  const seomyeon = c(findPlace('seomyeon-stn'));
-
-  // R1: 최단(육교 계단) — 빠르지만 승강기 없음
-  const r1 = assemble(
-    'r1-overpass',
-    '도보 최단(육교)',
-    '부산진구청',
-    '서면역',
-    [
-      { id: 'r1-w1', mode: 'walk', description: '구청에서 큰길까지 도보', durationMin: 4, distanceM: 250, outdoor: true, crosswalkCount: 1 },
-      { id: 'r1-w2', mode: 'walk', description: '육교(계단) 횡단', durationMin: 3, distanceM: 80, outdoor: true, hasStairs: true, stairsCount: 30, hasElevator: false, needsVerticalMove: true },
-      { id: 'r1-w3', mode: 'walk', description: '서면역까지 도보', durationMin: 3, distanceM: 200, outdoor: true, crosswalkCount: 1 },
-    ],
-    [guOffice, { lat: 35.16, lng: 129.056 }, seomyeon],
-  );
-
-  // R2: 지하철(승강기 확인) — 접근성 우수, 버스 미이용
-  const r2 = assemble(
-    'r2-subway',
-    '지하철 1호선(승강기)',
-    '부산진구청',
-    '서면역',
-    [
-      { id: 'r2-w1', mode: 'walk', description: '부전역까지 도보', durationMin: 4, distanceM: 300, outdoor: true, crosswalkCount: 1 },
-      { id: 'r2-sub', mode: 'subway', description: '1호선 부전→서면 (승강기 이용)', durationMin: 4, waitMin: 3, stationName: '부전역·서면역', hasElevator: true, needsVerticalMove: true },
-      { id: 'r2-w2', mode: 'walk', description: '서면역 출구→목적지 도보', durationMin: 3, distanceM: 150, outdoor: false, crosswalkCount: 0 },
-    ],
-    [guOffice, bujeon, seomyeon],
-  );
-
-  // R3: 저상버스 81번(경사 있음) — 저상버스 확정
-  const r3 = assemble(
-    'r3-lowfloor',
-    '저상버스 81번',
-    '부산진구청',
-    '서면역',
-    [
-      { id: 'r3-w1', mode: 'walk', description: '정류장까지 도보', durationMin: 3, distanceM: 180, outdoor: true, crosswalkCount: 1 },
-      { id: 'r3-bus', mode: 'bus', description: '81번 저상버스 승차', durationMin: 8, waitMin: 5, busRouteName: '81', isLowFloorBus: true },
-      { id: 'r3-w2', mode: 'walk', description: '하차 후 도보(완만한 경사)', durationMin: 3, distanceM: 220, outdoor: true, hasSlope: true, crosswalkCount: 1 },
-    ],
-    [guOffice, { lat: 35.159, lng: 129.0555 }, seomyeon],
-  );
-
-  // R4: 일반버스(횡단보도 다수) — 빠르지만 저상 아님, 사고위험
-  const r4 = assemble(
-    'r4-regularbus',
-    '일반버스 210번',
-    '부산진구청',
-    '서면역',
-    [
-      { id: 'r4-w1', mode: 'walk', description: '정류장까지 도보', durationMin: 2, distanceM: 150, outdoor: true, crosswalkCount: 2 },
-      { id: 'r4-bus', mode: 'bus', description: '210번 일반버스 승차', durationMin: 6, waitMin: 3, busRouteName: '210', isLowFloorBus: false },
-      { id: 'r4-w2', mode: 'walk', description: '하차 후 도보(차량 혼잡 구간)', durationMin: 2, distanceM: 130, outdoor: true, crosswalkCount: 2, accidentRisk: 'medium' },
-    ],
-    [guOffice, { lat: 35.1595, lng: 129.0565 }, seomyeon],
-  );
-
-  return [r1, r2, r3, r4];
+  return DEMO.map((r) => structuredClone(r));
 }
 
 export const DEMO_OD = { originId: 'gu-office', destinationId: 'seomyeon-stn' };
