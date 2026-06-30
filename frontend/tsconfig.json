@@ -18,8 +18,9 @@
     "types": ["vite/client", "vite-plugin-pwa/client", "vitest/globals"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@data/*": ["../data/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "../data"]
 }
