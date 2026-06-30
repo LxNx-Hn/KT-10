@@ -70,12 +70,18 @@ export default function MapView() {
     overlaysRef.current.forEach((o) => o.setMap(null));
     overlaysRef.current = [];
 
+    const escapeHtml = (s: string) =>
+      s.replace(/[&<>"']/g, (ch) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] as string,
+      );
     const addMarker = (p: LatLng, label: string) => {
       const marker = new kakao.maps.Marker({
         position: new kakao.maps.LatLng(p.lat, p.lng),
         map,
       });
-      const info = new kakao.maps.InfoWindow({ content: `<div style="padding:4px 8px">${label}</div>` });
+      const info = new kakao.maps.InfoWindow({
+        content: `<div style="padding:4px 8px">${escapeHtml(label)}</div>`,
+      });
       info.open(map, marker);
       overlaysRef.current.push(marker, info);
     };
