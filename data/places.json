@@ -1,0 +1,90 @@
+[
+  {
+    "id": "seomyeon-stn",
+    "name": "서면역",
+    "lat": 35.1578,
+    "lng": 129.0594,
+    "category": "지하철역",
+    "address": "부산진구 중앙대로 지하"
+  },
+  {
+    "id": "bujeon-stn",
+    "name": "부전역",
+    "lat": 35.1631,
+    "lng": 129.0608,
+    "category": "지하철역",
+    "address": "부산진구 동천로"
+  },
+  {
+    "id": "yangjeong-stn",
+    "name": "양정역",
+    "lat": 35.1733,
+    "lng": 129.0686,
+    "category": "지하철역",
+    "address": "부산진구 중앙대로"
+  },
+  {
+    "id": "jeonpo-stn",
+    "name": "전포역",
+    "lat": 35.1571,
+    "lng": 129.0686,
+    "category": "지하철역",
+    "address": "부산진구 서전로"
+  },
+  {
+    "id": "gaya-stn",
+    "name": "가야역",
+    "lat": 35.149,
+    "lng": 129.036,
+    "category": "지하철역",
+    "address": "부산진구 가야대로"
+  },
+  {
+    "id": "gu-office",
+    "name": "부산진구청",
+    "lat": 35.1626,
+    "lng": 129.053,
+    "category": "관공서",
+    "address": "부산진구 시민공원로"
+  },
+  {
+    "id": "citizens-park",
+    "name": "부산시민공원",
+    "lat": 35.169,
+    "lng": 129.056,
+    "category": "공원",
+    "address": "부산진구 시민공원로"
+  },
+  {
+    "id": "lotte-seomyeon",
+    "name": "롯데백화점 부산본점",
+    "lat": 35.1556,
+    "lng": 129.0596,
+    "category": "쇼핑",
+    "address": "부산진구 가야대로"
+  },
+  {
+    "id": "songsanghyeon",
+    "name": "송상현광장",
+    "lat": 35.166,
+    "lng": 129.057,
+    "category": "광장",
+    "address": "부산진구 중앙대로"
+  },
+  {
+    "id": "seomyeon-mall",
+    "name": "서면지하상가",
+    "lat": 35.1577,
+    "lng": 129.059,
+    "category": "쇼핑",
+    "address": "부산진구 중앙대로 지하"
+  },
+  {
+    "id": "jin-market",
+    "name": "부전시장",
+    "lat": 35.1612,
+    "lng": 129.0605,
+    "category": "시장",
+    "address": "부산진구 중앙대로"
+  }
+]
