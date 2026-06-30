@@ -154,4 +154,4 @@ class RecommendRequest(CamelModel):
     profile: ProfileId = "general"
     weather_scenario: WeatherScenarioId = "normal"
     options: ScoringOptions = Field(default_factory=ScoringOptions)
-    top_n: int = 3
+    top_n: int = Field(default=3, ge=1, le=10)
