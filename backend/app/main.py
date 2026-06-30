@@ -1,20 +1,21 @@
 """
-FastAPI 앱. 프론트엔드가 mock 으로 쓰던 데이터(장소/경로/버스/날씨)를 REST API 로 제공하고,
-서버측 점수화(recommend)도 함께 제공한다.
+FastAPI 앱. 장소/경로/버스/날씨 데이터를 REST 로 제공하고 서버측 점수화(recommend)도 제공한다.
 
-실행: uvicorn app.main:app --reload --port 8000
-문서: http://localhost:8000/docs
+데이터 소스: API 키가 있으면 라이브(Kakao 장소검색 / OpenWeather), 없으면 mock 자동 폴백.
+실행: uvicorn app.main:app --reload --port 8000   ·   문서: /docs
 """
 from __future__ import annotations
+
+import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import ALLOWED_ORIGINS, DISTRICT
+from .config import DISTRICT
 from .data.bus_arrivals import BUS_STOP_LIST, get_arrivals
-from .data.places import search_places_by_name
 from .data.routes import get_route_candidates
-from .data.weather import WEATHER_SCENARIOS, get_weather
+from .data.weather import WEATHER_SCENARIOS
 from .models import (
     BusStopArrivals,
     CandidatesRequest,
@@ -24,38 +25,52 @@ from .models import (
     ScoredRoute,
     WeatherCondition,
 )
+from .providers import get_current_weather, search_places
 from .scoring import recommend_routes
+from .settings import settings
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("app")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    log.info("데이터 소스: %s", settings.active_sources())
+    yield
+
 
 app = FastAPI(
     title="교통약자 접근성 경로 추천 API",
     description="부산진구 데모 · 보행/대중교통/저상버스/날씨 기반 자체 점수화",
-    version="0.1.0",
+    version="0.2.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=settings.origins,
     allow_credentials=False,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "district": DISTRICT["name"]}
+    return {"status": "ok", "district": DISTRICT["name"], "sources": settings.active_sources()}
 
 
 @app.get("/api/places/search", response_model=list[Place])
-def places_search(q: str = Query("", description="장소 이름/주소 부분 검색")) -> list[Place]:
-    return search_places_by_name(q)
+async def places_search(q: str = Query("", description="장소 이름/주소 검색")) -> list[Place]:
+    return await search_places(q)
 
 
 @app.get("/api/weather", response_model=WeatherCondition)
-def weather(scenario: str = Query("normal")) -> WeatherCondition:
-    if scenario not in WEATHER_SCENARIOS:
+async def weather(scenario: str = Query("normal")) -> WeatherCondition:
+    # mock 폴백 시 알 수 없는 시나리오는 400 (라이브에서는 scenario 무시하고 실측 반환)
+    if not settings.live_weather and scenario not in WEATHER_SCENARIOS:
         raise HTTPException(status_code=400, detail=f"unknown scenario: {scenario}")
-    return get_weather(scenario)
+    return await get_current_weather(scenario)
 
 
 @app.get("/api/bus/stops", response_model=list[BusStopArrivals], response_model_exclude_none=True)
@@ -81,7 +96,7 @@ def bus_arrivals(stop_id: str) -> BusStopArrivals:
     response_model_exclude_none=True,
 )
 def routes_candidates(req: CandidatesRequest) -> list[RouteCandidate]:
-    """경로 후보 생성(점수화 전). 프론트엔드가 자체 점수화할 때 사용."""
+    """경로 후보 생성(점수화 전). 대중교통 라우팅 공개 API 부재로 합성/대표 경로 사용."""
     return get_route_candidates(req.origin, req.destination)
 
 
@@ -90,10 +105,8 @@ def routes_candidates(req: CandidatesRequest) -> list[RouteCandidate]:
     response_model=list[ScoredRoute],
     response_model_exclude_none=True,
 )
-def routes_recommend(req: RecommendRequest) -> list[ScoredRoute]:
+async def routes_recommend(req: RecommendRequest) -> list[ScoredRoute]:
     """서버측 점수화 + 상위 N 추천(이유/주의/음성요약 포함)."""
     candidates = get_route_candidates(req.origin, req.destination)
-    weather = get_weather(req.weather_scenario)
-    return recommend_routes(
-        candidates, weather, req.profile, req.options, top_n=req.top_n
-    )
+    weather = await get_current_weather(req.weather_scenario)
+    return recommend_routes(candidates, weather, req.profile, req.options, top_n=req.top_n)
