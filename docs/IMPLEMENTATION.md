@@ -1,23 +1,30 @@
 # 구현 명세 (Implementation Spec)
 
-> README.md = 기획서. 이 문서 = 구현된 코드의 기능·함수·데이터·검증 명세 (기획서 §14 산출물 요구 대응).
-> 스택: **React + Vite + TypeScript (PWA)** · 대상: **부산 부산진구(서면 일대)** · 데이터: **mock 우선 + 어댑터 분리**
+> 기획서 = [docs/PLAN.md](PLAN.md). 이 문서 = 구현된 코드의 기능·함수·데이터·검증 명세 (기획서 §14 대응).
+> 스택: **React + Vite + TS (frontend)** + **FastAPI (backend)** · 공유 **data/** JSON · 대상: **부산진구(서면)**
+> 4-폴더 구조: `frontend/` · `backend/` · `data/` · `docs/` (저장소 루트 [README](../README.md) 참고)
 
 ---
 
 ## 1. 실행 방법
 
 ```bash
-cd KT-10
-npm install
+# 프론트엔드
+cd frontend && npm install
 npm run dev        # http://localhost:5173 (PWA dev)
-npm test           # 점수/음성 단위 검증 (21 tests)
+npm test           # 30 tests (점수 검증 13 · 음성 파서 12 · UI 5)
 npm run validate   # 점수 검증 표 출력 (기획서 §8)
 npm run build      # 타입체크 + 프로덕션 빌드
-npm run preview    # 빌드 결과 미리보기
+
+# 백엔드(선택)
+cd backend && python -m venv .venv && .venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000   # /docs
+pytest             # 30 tests (점수 파리티 · API · 프로바이더 폴백)
 ```
 
-Kakao 실제 지도는 `.env` 에 `VITE_KAKAO_MAP_KEY` 설정 시 표시됩니다. 키가 없으면 약도(스키매틱) 패널로 자동 폴백합니다. (`.env.example` 참고)
+키(선택): `frontend/.env` `VITE_KAKAO_MAP_KEY`(지도)·`VITE_DATA_SOURCE=live`+`VITE_API_BASE`(백엔드),
+`backend/.env` `KAKAO_REST_API_KEY`(장소검색)·`OPENWEATHER_API_KEY`(날씨). 없으면 mock 자동 폴백.
 
 ---
 
@@ -25,29 +32,33 @@ Kakao 실제 지도는 `.env` 에 `VITE_KAKAO_MAP_KEY` 설정 시 표시됩니�
 
 ```
 KT-10/
-├─ index.html, vite.config.ts, tsconfig.json   # PWA/번들 설정 (vite-plugin-pwa)
-├─ public/                                      # favicon, PWA 아이콘
-├─ src/
-│  ├─ types/index.ts          # 도메인 타입(SSOT): Profile/Route/Weather/Score 등
-│  ├─ config/
-│  │  ├─ profiles.ts          # 4개 프로필 메타데이터
-│  │  ├─ weights.ts           # 프로필별 가중치 표(합=1) + 옵션 보정
-│  │  └─ district.ts          # 부산진구 좌표/범위
-│  ├─ scoring/                # ★ 점수화 엔진(순수 함수)
-│  │  ├─ components.ts        # 8개 하위 점수 함수
-│  │  ├─ explain.ts           # 이유/주의/음성요약/저상상태 생성
-│  │  ├─ engine.ts            # 가중합·정렬·상위3 추천 오케스트레이터
-│  │  ├─ utils.ts             # clamp/avg/round
-│  │  └─ validation/validation.test.ts  # 점수 검증 + 표 출력
-│  ├─ data/                   # 부산진구 mock 데이터
-│  │  ├─ places.ts, routes.ts, busArrivals.ts, weather.ts
-│  ├─ adapters/               # 외부 API 어댑터(인터페이스 + mock 구현 + 팩토리)
-│  ├─ map/kakaoLoader.ts      # Kakao SDK 동적 로더
-│  ├─ voice/                  # 음성: synthesis(TTS) / commandParser / useVoiceControl(STT)
-│  ├─ store/appStore.ts       # zustand 전역 상태
-│  ├─ components/             # MapView, SearchBar, ProfileSelector, RouteCard, RouteList,
-│  │                          #  WeatherPanel, BusArrivalCard, VoiceButton, ui(배지/막대)
-│  ├─ App.tsx, main.tsx, index.css
+├─ data/                       # 공유 데이터셋(단일 소스) — docs/DATA.md
+│  └─ places.json, routes.demo.json, bus_arrivals.json, weather.json
+├─ frontend/
+│  ├─ index.html, vite.config.ts(@/@data alias), tsconfig.json
+│  ├─ public/                  # favicon, PWA 아이콘
+│  └─ src/
+│     ├─ types/index.ts        # 도메인 타입(SSOT)
+│     ├─ config/               # profiles · weights(가중치) · district
+│     ├─ scoring/              # ★ 점수화 엔진(순수함수): components/explain/engine/utils
+│     │  └─ validation/validation.test.ts   # 점수 검증 + 표
+│     ├─ data/                 # @data JSON 로더(places/routes/busArrivals/weather)
+│     ├─ adapters/             # mock / live(백엔드) 어댑터 + 팩토리
+│     ├─ map/kakaoLoader.ts    # Kakao SDK 로더
+│     ├─ voice/                # synthesis(TTS) · commandParser · intents
+│     ├─ chat/                 # voiceChatStore(상태머신) · useSpeechRecognition(STT)
+│     ├─ store/appStore.ts     # zustand 전역 상태
+│     ├─ components/           # SearchHome · RouteResultSection · MapPreviewSection · VoiceChatDock …
+│     └─ App.tsx, main.tsx, index.css
+├─ backend/
+│  ├─ app/main.py              # FastAPI 엔드포인트 + CORS + lifespan
+│  ├─ app/settings.py          # env(API 키/CORS/타임아웃)
+│  ├─ app/models.py            # Pydantic(camelCase alias)
+│  ├─ app/scoring/             # 점수화 엔진(프론트 TS 1:1 포팅)
+│  ├─ app/providers/           # places(Kakao)·weather(OpenWeather) live + mock 폴백
+│  ├─ app/data/                # data/ JSON 로더(_loader)
+│  └─ tests/                   # test_scoring_validation · test_api · test_providers
+└─ docs/                       # PLAN · IMPLEMENTATION · BACKEND · DATA
 ```
 
 ---
