@@ -19,3 +19,9 @@ claude-preview/
 .vscode/*
 !.vscode/extensions.json
 Thumbs.db
+
+# pathfinding/ 모듈 캐시 (OSMnx 그래프, 재다운로드 가능)
+pathfinding/graph/cache/*.graphml
+pathfinding/graph/cache/*.gpkg
+pathfinding/.venv/
+path.md
