@@ -3,6 +3,17 @@
 *.log
 *.local
 
+# AI 도구 로컬 파일
+.claude/
+claude/
+claude-preview/
+.claude.json
+.claude.local.json
+
+# 환경 변수
+.env
+.env.local
+
 # 에디터/OS
 .idea/
 .vscode/*
