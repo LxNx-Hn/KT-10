@@ -1,0 +1,62 @@
+{
+  "normal": {
+    "label": "평상 (맑음)",
+    "tempC": 21.0,
+    "feelsLikeC": 21.0,
+    "precipitationMm": 0.0,
+    "isHeatwave": false,
+    "isColdwave": false,
+    "windMs": 2.0,
+    "pm10": 30.0,
+    "sky": "clear",
+    "air": "good"
+  },
+  "heatwave": {
+    "label": "폭염",
+    "tempC": 36.0,
+    "feelsLikeC": 39.0,
+    "precipitationMm": 0.0,
+    "isHeatwave": true,
+    "isColdwave": false,
+    "windMs": 1.0,
+    "pm10": 55.0,
+    "sky": "clear",
+    "air": "moderate"
+  },
+  "coldwave": {
+    "label": "한파",
+    "tempC": -8.0,
+    "feelsLikeC": -14.0,
+    "precipitationMm": 0.0,
+    "isHeatwave": false,
+    "isColdwave": true,
+    "windMs": 7.0,
+    "pm10": 40.0,
+    "sky": "cloudy",
+    "air": "moderate"
+  },
+  "rain": {
+    "label": "비",
+    "tempC": 18.0,
+    "feelsLikeC": 18.0,
+    "precipitationMm": 7.0,
+    "isHeatwave": false,
+    "isColdwave": false,
+    "windMs": 5.0,
+    "pm10": 20.0,
+    "sky": "rain",
+    "air": "good"
+  },
+  "dust": {
+    "label": "미세먼지 나쁨",
+    "tempC": 14.0,
+    "feelsLikeC": 14.0,
+    "precipitationMm": 0.0,
+    "isHeatwave": false,
+    "isColdwave": false,
+    "windMs": 3.0,
+    "pm10": 145.0,
+    "sky": "cloudy",
+    "air": "very_bad"
+  }
+}
