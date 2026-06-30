@@ -1,12 +1,10 @@
-node_modules
-dist
-dist-ssr
-dev-dist
-*.local
-.env
-.env.*
-!.env.example
+# 저장소 루트 — 공통 무시 항목. (frontend/, backend/ 는 각자 .gitignore 보유)
 .DS_Store
 *.log
-coverage
-.vite
+*.local
+
+# 에디터/OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+Thumbs.db
