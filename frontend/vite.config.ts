@@ -8,8 +8,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // 공유 데이터셋(저장소 루트 data/) — 프론트/백엔드 단일 소스
+      '@data': fileURLToPath(new URL('../data', import.meta.url)),
     },
   },
+  // data/ 가 프로젝트 루트(frontend/) 밖에 있으므로 dev 서버 접근 허용
+  server: { port: 5173, host: true, fs: { allow: ['..'] } },
   plugins: [
     react(),
     VitePWA({
@@ -41,7 +45,6 @@ export default defineConfig({
       devOptions: { enabled: false },
     }),
   ],
-  server: { port: 5173, host: true },
   test: {
     globals: true,
     environment: 'node',
