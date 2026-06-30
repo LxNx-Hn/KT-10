@@ -20,8 +20,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'robots.txt'],
       manifest: {
-        name: '같이가요 - 접근성 경로 추천',
-        short_name: '같이가요',
+        name: '교통약자 접근성 경로 추천 PWA',
+        short_name: '접근성경로',
         description:
           '보행자·대중교통·교통약자를 위한 접근성 중심 경로 추천 PWA (부산진구 데모)',
         theme_color: '#1f6feb',
