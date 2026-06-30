@@ -1,0 +1,216 @@
+[
+  {
+    "id": "r1-overpass",
+    "summary": "도보 최단(육교)",
+    "origin": "부산진구청",
+    "destination": "서면역",
+    "segments": [
+      {
+        "id": "r1-w1",
+        "mode": "walk",
+        "description": "구청에서 큰길까지 도보",
+        "durationMin": 4.0,
+        "distanceM": 250.0,
+        "outdoor": true,
+        "crosswalkCount": 1
+      },
+      {
+        "id": "r1-w2",
+        "mode": "walk",
+        "description": "육교(계단) 횡단",
+        "durationMin": 3.0,
+        "distanceM": 80.0,
+        "outdoor": true,
+        "hasStairs": true,
+        "stairsCount": 30,
+        "hasElevator": false,
+        "needsVerticalMove": true
+      },
+      {
+        "id": "r1-w3",
+        "mode": "walk",
+        "description": "서면역까지 도보",
+        "durationMin": 3.0,
+        "distanceM": 200.0,
+        "outdoor": true,
+        "crosswalkCount": 1
+      }
+    ],
+    "totalDurationMin": 10.0,
+    "totalWalkM": 530.0,
+    "transferCount": 0,
+    "path": [
+      {
+        "lat": 35.1626,
+        "lng": 129.053
+      },
+      {
+        "lat": 35.16,
+        "lng": 129.056
+      },
+      {
+        "lat": 35.1578,
+        "lng": 129.0594
+      }
+    ]
+  },
+  {
+    "id": "r2-subway",
+    "summary": "지하철 1호선(승강기)",
+    "origin": "부산진구청",
+    "destination": "서면역",
+    "segments": [
+      {
+        "id": "r2-w1",
+        "mode": "walk",
+        "description": "부전역까지 도보",
+        "durationMin": 4.0,
+        "distanceM": 300.0,
+        "outdoor": true,
+        "crosswalkCount": 1
+      },
+      {
+        "id": "r2-sub",
+        "mode": "subway",
+        "description": "1호선 부전→서면 (승강기 이용)",
+        "durationMin": 4.0,
+        "waitMin": 3.0,
+        "stationName": "부전역·서면역",
+        "hasElevator": true,
+        "needsVerticalMove": true
+      },
+      {
+        "id": "r2-w2",
+        "mode": "walk",
+        "description": "서면역 출구→목적지 도보",
+        "durationMin": 3.0,
+        "distanceM": 150.0,
+        "outdoor": false,
+        "crosswalkCount": 0
+      }
+    ],
+    "totalDurationMin": 14.0,
+    "totalWalkM": 450.0,
+    "transferCount": 0,
+    "path": [
+      {
+        "lat": 35.1626,
+        "lng": 129.053
+      },
+      {
+        "lat": 35.1631,
+        "lng": 129.0608
+      },
+      {
+        "lat": 35.1578,
+        "lng": 129.0594
+      }
+    ]
+  },
+  {
+    "id": "r3-lowfloor",
+    "summary": "저상버스 81번",
+    "origin": "부산진구청",
+    "destination": "서면역",
+    "segments": [
+      {
+        "id": "r3-w1",
+        "mode": "walk",
+        "description": "정류장까지 도보",
+        "durationMin": 3.0,
+        "distanceM": 180.0,
+        "outdoor": true,
+        "crosswalkCount": 1
+      },
+      {
+        "id": "r3-bus",
+        "mode": "bus",
+        "description": "81번 저상버스 승차",
+        "durationMin": 8.0,
+        "busRouteName": "81",
+        "isLowFloorBus": true,
+        "waitMin": 5.0
+      },
+      {
+        "id": "r3-w2",
+        "mode": "walk",
+        "description": "하차 후 도보(완만한 경사)",
+        "durationMin": 3.0,
+        "distanceM": 220.0,
+        "outdoor": true,
+        "hasSlope": true,
+        "crosswalkCount": 1
+      }
+    ],
+    "totalDurationMin": 19.0,
+    "totalWalkM": 400.0,
+    "transferCount": 0,
+    "path": [
+      {
+        "lat": 35.1626,
+        "lng": 129.053
+      },
+      {
+        "lat": 35.159,
+        "lng": 129.0555
+      },
+      {
+        "lat": 35.1578,
+        "lng": 129.0594
+      }
+    ]
+  },
+  {
+    "id": "r4-regularbus",
+    "summary": "일반버스 210번",
+    "origin": "부산진구청",
+    "destination": "서면역",
+    "segments": [
+      {
+        "id": "r4-w1",
+        "mode": "walk",
+        "description": "정류장까지 도보",
+        "durationMin": 2.0,
+        "distanceM": 150.0,
+        "outdoor": true,
+        "crosswalkCount": 2
+      },
+      {
+        "id": "r4-bus",
+        "mode": "bus",
+        "description": "210번 일반버스 승차",
+        "durationMin": 6.0,
+        "busRouteName": "210",
+        "isLowFloorBus": false,
+        "waitMin": 3.0
+      },
+      {
+        "id": "r4-w2",
+        "mode": "walk",
+        "description": "하차 후 도보(차량 혼잡 구간)",
+        "durationMin": 2.0,
+        "distanceM": 130.0,
+        "outdoor": true,
+        "crosswalkCount": 2,
+        "accidentRisk": "medium"
+      }
+    ],
+    "totalDurationMin": 13.0,
+    "totalWalkM": 280.0,
+    "transferCount": 0,
+    "path": [
+      {
+        "lat": 35.1626,
+        "lng": 129.053
+      },
+      {
+        "lat": 35.1595,
+        "lng": 129.0565
+      },
+      {
+        "lat": 35.1578,
+        "lng": 129.0594
+      }
+    ]
+  }
+]
