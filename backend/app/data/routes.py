@@ -1,13 +1,20 @@
-"""경로 후보 데이터. 데모 OD(부산진구청→서면역) 대표 경로 + 임의 OD 합성기.
-프론트 data/routes.py(routes.ts) 와 동일한 속성으로 점수 검증 기준을 맞춘다."""
+"""경로 후보 데이터. 데모 대표 경로는 공유 데이터셋(data/routes.demo.json)에서 로드하고,
+임의 OD 는 코드 합성기로 생성한다. 프론트엔드와 동일한 데이터/로직을 사용한다."""
 from __future__ import annotations
 
 import math
 
 from ..models import LatLng, Place, RouteCandidate, RouteSegment
-from .places import find_place
+from ._loader import load
 
 DEMO_OD = {"origin_id": "gu-office", "destination_id": "seomyeon-stn"}
+
+_DEMO_RAW = load("routes.demo.json")
+
+
+def demo_candidates() -> list[RouteCandidate]:
+    # 깊은 복사본 반환: 역방향 데모에서 origin/path 를 변경해도 원본이 오염되지 않도록.
+    return [RouteCandidate.model_validate(r).model_copy(deep=True) for r in _DEMO_RAW]
 
 
 def _assemble(
@@ -37,54 +44,6 @@ def _assemble(
 
 def _c(place: Place | None) -> LatLng:
     return LatLng(lat=place.lat if place else 0, lng=place.lng if place else 0)
-
-
-def demo_candidates() -> list[RouteCandidate]:
-    gu = _c(find_place("gu-office"))
-    bujeon = _c(find_place("bujeon-stn"))
-    seomyeon = _c(find_place("seomyeon-stn"))
-
-    r1 = _assemble(
-        "r1-overpass", "도보 최단(육교)", "부산진구청", "서면역",
-        [
-            RouteSegment(id="r1-w1", mode="walk", description="구청에서 큰길까지 도보", duration_min=4, distance_m=250, outdoor=True, crosswalk_count=1),
-            RouteSegment(id="r1-w2", mode="walk", description="육교(계단) 횡단", duration_min=3, distance_m=80, outdoor=True, has_stairs=True, stairs_count=30, has_elevator=False, needs_vertical_move=True),
-            RouteSegment(id="r1-w3", mode="walk", description="서면역까지 도보", duration_min=3, distance_m=200, outdoor=True, crosswalk_count=1),
-        ],
-        [gu, LatLng(lat=35.16, lng=129.056), seomyeon],
-    )
-
-    r2 = _assemble(
-        "r2-subway", "지하철 1호선(승강기)", "부산진구청", "서면역",
-        [
-            RouteSegment(id="r2-w1", mode="walk", description="부전역까지 도보", duration_min=4, distance_m=300, outdoor=True, crosswalk_count=1),
-            RouteSegment(id="r2-sub", mode="subway", description="1호선 부전→서면 (승강기 이용)", duration_min=4, wait_min=3, station_name="부전역·서면역", has_elevator=True, needs_vertical_move=True),
-            RouteSegment(id="r2-w2", mode="walk", description="서면역 출구→목적지 도보", duration_min=3, distance_m=150, outdoor=False, crosswalk_count=0),
-        ],
-        [gu, bujeon, seomyeon],
-    )
-
-    r3 = _assemble(
-        "r3-lowfloor", "저상버스 81번", "부산진구청", "서면역",
-        [
-            RouteSegment(id="r3-w1", mode="walk", description="정류장까지 도보", duration_min=3, distance_m=180, outdoor=True, crosswalk_count=1),
-            RouteSegment(id="r3-bus", mode="bus", description="81번 저상버스 승차", duration_min=8, wait_min=5, bus_route_name="81", is_low_floor_bus=True),
-            RouteSegment(id="r3-w2", mode="walk", description="하차 후 도보(완만한 경사)", duration_min=3, distance_m=220, outdoor=True, has_slope=True, crosswalk_count=1),
-        ],
-        [gu, LatLng(lat=35.159, lng=129.0555), seomyeon],
-    )
-
-    r4 = _assemble(
-        "r4-regularbus", "일반버스 210번", "부산진구청", "서면역",
-        [
-            RouteSegment(id="r4-w1", mode="walk", description="정류장까지 도보", duration_min=2, distance_m=150, outdoor=True, crosswalk_count=2),
-            RouteSegment(id="r4-bus", mode="bus", description="210번 일반버스 승차", duration_min=6, wait_min=3, bus_route_name="210", is_low_floor_bus=False),
-            RouteSegment(id="r4-w2", mode="walk", description="하차 후 도보(차량 혼잡 구간)", duration_min=2, distance_m=130, outdoor=True, crosswalk_count=2, accident_risk="medium"),
-        ],
-        [gu, LatLng(lat=35.1595, lng=129.0565), seomyeon],
-    )
-
-    return [r1, r2, r3, r4]
 
 
 # ── 임의 OD 합성기 ──
