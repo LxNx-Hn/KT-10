@@ -1,4 +1,4 @@
-"""날씨 시나리오 — 공유 데이터셋(data/weather.json)에서 로드."""
+"""날씨 시나리오 — 공유 데이터셋(data/ai/weather.json)에서 로드."""
 from __future__ import annotations
 
 from ..models import WeatherCondition

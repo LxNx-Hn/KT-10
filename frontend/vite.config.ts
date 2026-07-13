@@ -8,8 +8,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
-      // 공유 데이터셋(저장소 루트 data/) — 프론트/백엔드 단일 소스
-      '@data': fileURLToPath(new URL('../data', import.meta.url)),
+        // 검증된 공유 앱 데이터셋(data/ai/) — 프론트/백엔드 단일 소스
+        '@data': fileURLToPath(new URL('../data/ai', import.meta.url)),
     },
   },
   // data/ 가 프로젝트 루트(frontend/) 밖에 있으므로 dev 서버 접근 허용

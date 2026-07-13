@@ -1,4 +1,4 @@
-"""경로 후보 데이터. 데모 대표 경로는 공유 데이터셋(data/routes.demo.json)에서 로드하고,
+"""경로 후보 데이터. 데모 대표 경로는 공유 데이터셋(data/ai/routes.demo.json)에서 로드하고,
 임의 OD 는 코드 합성기로 생성한다. 프론트엔드와 동일한 데이터/로직을 사용한다."""
 from __future__ import annotations
 

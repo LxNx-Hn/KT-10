@@ -68,11 +68,15 @@ def normalize_weights(w: Weights) -> Weights:
 def apply_option_weights(
     base: Weights,
     *,
+    carry_luggage: bool = False,
     low_floor_priority: bool = False,
     weather_avoid: bool = False,
     avoid_stairs: bool = False,
 ) -> Weights:
     w: Weights = dict(base)
+    if carry_luggage:
+        w["walk_comfort"] += 0.15
+        w["accessibility"] += 0.05
     if low_floor_priority:
         w["low_floor_bus"] += 0.15
         w["elevator"] += 0.05

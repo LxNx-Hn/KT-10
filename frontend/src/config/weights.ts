@@ -58,9 +58,13 @@ export const PROFILE_WEIGHTS: ProfileWeights = {
  */
 export function applyOptionWeights(
   base: ScoreComponents,
-  opts: { lowFloorPriority?: boolean; weatherAvoid?: boolean; avoidStairs?: boolean },
+  opts: { carryLuggage?: boolean; lowFloorPriority?: boolean; weatherAvoid?: boolean; avoidStairs?: boolean },
 ): ScoreComponents {
   const w: ScoreComponents = { ...base };
+  if (opts.carryLuggage) {
+    w.walkComfort += 0.15;
+    w.accessibility += 0.05;
+  }
   if (opts.lowFloorPriority) {
     w.lowFloorBus += 0.15;
     w.elevator += 0.05;

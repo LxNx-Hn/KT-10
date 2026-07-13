@@ -3,6 +3,8 @@ import RouteList from './RouteList';
 import BusArrivalCard from './BusArrivalCard';
 import WeatherWarning from './WeatherWarning';
 import ScoreValidationSummary from './ScoreValidationSummary';
+import RouteFeedback from './RouteFeedback';
+import FacilityReport from './FacilityReport';
 
 /**
  * 경로 결과 섹션(요구사항 §3). 경로 카드가 지도보다 먼저 보이도록 구성한다.
@@ -24,6 +26,8 @@ export default function RouteResultSection() {
         <>
           <WeatherWarning />
           <BusArrivalCard />
+          <RouteFeedback />
+          <FacilityReport />
           <ScoreValidationSummary />
         </>
       )}

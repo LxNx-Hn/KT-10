@@ -5,6 +5,7 @@ import SearchHome from '@/components/SearchHome';
 import RouteResultSection from '@/components/RouteResultSection';
 import MapPreviewSection from '@/components/MapPreviewSection';
 import VoiceChatDock from '@/components/VoiceChatDock';
+import KakaoLoginButton from '@/components/KakaoLoginButton';
 
 /**
  * 정보 구조(요구사항 §1·§3):
@@ -45,6 +46,7 @@ export default function App() {
         >
           {largeUi ? '큰 글씨 ON' : '큰 글씨 OFF'}
         </button>
+        <KakaoLoginButton />
       </header>
 
       <main className="app__main">
