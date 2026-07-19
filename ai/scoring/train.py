@@ -13,7 +13,7 @@ from sklearn.model_selection import GroupKFold
 from xgboost import XGBRanker
 
 PROFILES   = ["general", "elderly", "child", "disabled"]
-MODEL_DIR  = Path("ai_pipeline/data")
+MODEL_DIR  = Path("ai/data")
 
 # 전체 피처 컬럼 (API 경로 응답 기반 피처 + 공간 데이터 기반 피처)
 FEATURE_COLS = [

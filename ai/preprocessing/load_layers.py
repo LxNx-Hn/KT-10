@@ -14,8 +14,8 @@ from shapely.geometry import Point
 
 warnings.filterwarnings("ignore")
 
-RAW_DIR   = Path("ai_pipeline/data/raw")
-CACHE_DIR = Path("ai_pipeline/data/cache")
+RAW_DIR   = Path("ai/data/raw")
+CACHE_DIR = Path("ai/data/cache")
 
 # 부산 좌표 유효 범위
 BUSAN_LAT = (34.8, 35.5)
