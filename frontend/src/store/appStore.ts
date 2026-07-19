@@ -8,7 +8,6 @@ import type {
   WeatherCondition,
 } from '@/types';
 import { adapters } from '@/adapters';
-import { recommendRoutes } from '@/scoring/engine';
 import { PROFILES } from '@/config/profiles';
 import { DEFAULT_WEATHER, type WeatherScenarioId } from '@/data/weather';
 import { findPlace } from '@/data/places';
@@ -58,7 +57,7 @@ interface AppState {
   setLastSpoken: (s: string) => void;
   loadDemoOd: () => void;
   search: () => Promise<void>;
-  rescore: () => void;
+  rescore: () => Promise<void>;
 
   /* 음성 챗봇 연동 액션 (요구사항 §9) */
   ensureOrigin: () => void;
@@ -137,13 +136,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ loading: true, error: null });
     try {
-      const [candidates, weather] = await Promise.all([
-        adapters.routes.getCandidates(origin, destination),
+      const [recommendations, weather] = await Promise.all([
+        adapters.routes.recommend(origin, destination, profile, weatherScenario, options),
         adapters.weather.getCurrent(weatherScenario),
       ]);
-      const recommendations = recommendRoutes(candidates, weather, profile, options);
       set({
-        candidates,
+        candidates: recommendations.map((r) => r.route),
         weather,
         recommendations,
         selectedRouteId: recommendations[0]?.route.id ?? null,
@@ -155,13 +153,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  /** 후보는 그대로, 프로필/날씨/옵션 변경 시 재채점만 수행 */
-  rescore: () => {
-    const { candidates, weather, profile, options, selectedRouteId } = get();
-    if (!candidates.length || !weather) return;
-    const recommendations = recommendRoutes(candidates, weather, profile, options);
+  /** 프로필/날씨/옵션 변경 시 서버(live) 또는 로컬(mock)에 재채점을 요청 */
+  rescore: async () => {
+    const { origin, destination, profile, weatherScenario, options, selectedRouteId } = get();
+    if (!origin || !destination || !get().recommendations.length) return;
+    const recommendations = await adapters.routes.recommend(
+      origin, destination, profile, weatherScenario, options,
+    );
     const stillThere = recommendations.some((r) => r.route.id === selectedRouteId);
     set({
+      candidates: recommendations.map((r) => r.route),
       recommendations,
       selectedRouteId: stillThere ? selectedRouteId : recommendations[0]?.route.id ?? null,
     });

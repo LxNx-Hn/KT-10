@@ -131,7 +131,11 @@ def _to_scored_route(r: dict, origin: Place, destination: Place, fastest_min: fl
             walk_burden=round1(100 - components.walk_comfort),
             weather_risk=round1(100 - components.weather_safety),
         ),
-        final_score=round1(clamp(r["final_score"])),
+        # ai 서버의 raw final_score(adjusted_score*100)는 합성 데이터로 학습된
+        # XGBRanker의 비정규화 로짓 값이라 프로필에 따라 크게 음수로 튈 수 있다
+        # (예: general 프로필에서 -133 관측). Softmax로 정규화된 probability(0~1)
+        # 기반으로 0~100 표시 점수를 산출해 항상 안정적으로 구간 내에 들어오게 한다.
+        final_score=round1(clamp(r.get("probability", 0) * 100)),
         low_floor_status=low_floor_status,
         reasons=reasons,
         cautions=cautions,
