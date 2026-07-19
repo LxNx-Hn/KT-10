@@ -39,13 +39,16 @@ class OsmnxRouteCollector(BaseRouteCollector):
             o_node = ox.nearest_nodes(G, X=origin.lng,      Y=origin.lat)
             d_node = ox.nearest_nodes(G, X=destination.lng, Y=destination.lat)
 
+            # shortest_simple_paths는 MultiDiGraph를 지원하지 않으므로
+            # 병렬 간선 중 최단 거리만 남긴 DiGraph로 변환한다.
+            DG = ox.convert.to_digraph(G, weight="length")
             paths = list(islice(
-                nx.shortest_simple_paths(G, o_node, d_node, weight="length"), 3
+                nx.shortest_simple_paths(DG, o_node, d_node, weight="length"), 3
             ))
             candidates = []
             for path_nodes in paths:
                 coords = [Coordinate(lat=G.nodes[n]["y"], lng=G.nodes[n]["x"]) for n in path_nodes]
-                dist   = sum(G[path_nodes[i]][path_nodes[i + 1]][0].get("length", 0)
+                dist   = sum(DG[path_nodes[i]][path_nodes[i + 1]].get("length", 0)
                              for i in range(len(path_nodes) - 1))
                 candidates.append(RouteCandidate(
                     source=self.source_name, path=coords,
