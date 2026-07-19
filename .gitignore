@@ -19,3 +19,11 @@ claude-preview/
 .vscode/*
 !.vscode/extensions.json
 Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+
+# ai/ 파이프라인 캐시 및 모델 산출물 (재생성 가능 — data/raw/ 원본은 git 추적 유지)
+ai/data/cache/
+ai/data/rankers.pkl
