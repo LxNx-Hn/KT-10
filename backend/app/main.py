@@ -28,7 +28,12 @@ from .models import (
     ScoredRoute,
     WeatherCondition,
 )
-from .providers import get_current_weather, get_public_transit_candidates, search_places
+from .providers import (
+    get_ai_pipeline_routes,
+    get_current_weather,
+    get_public_transit_candidates,
+    search_places,
+)
 from .scoring import recommend_routes
 from .settings import settings
 
@@ -119,7 +124,20 @@ async def routes_candidates(req: CandidatesRequest) -> list[RouteCandidate]:
     response_model_exclude_none=True,
 )
 async def routes_recommend(req: RecommendRequest) -> list[ScoredRoute]:
-    """서버측 점수화 + 상위 N 추천(이유/주의/음성요약 포함)."""
+    """
+    상위 N 추천(이유/주의/음성요약 포함) 반환.
+    AI_SERVER_URL 설정 시 ai/ 파이프라인 서버(경로 수집+XGB 스코어링+SHAP)로 위임하고,
+    미설정 시 기존 자체 scoring 엔진(mock/ODsay 후보 기반)을 사용한다.
+    """
+    if settings.live_ai_pipeline:
+        try:
+            return await get_ai_pipeline_routes(
+                req.origin, req.destination, req.profile,
+                req.weather_scenario, req.options, top_n=req.top_n,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     if settings.live_routes:
         try:
             candidates = await get_public_transit_candidates(req.origin, req.destination)

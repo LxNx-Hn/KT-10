@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     bus_service_key: str = ""           # 공공데이터 저상버스 도착(정류장 데이터셋 필요)
     odsay_api_key: str = ""             # 실제 대중교통 후보 생성(서버 전용)
 
+    # ai/ 파이프라인 서버(경로 수집+XGB 스코어링+SHAP). 설정 시 /api/routes/recommend가
+    # 자체 scoring 엔진 대신 이 서버로 위임한다.
+    ai_server_url: str = ""
+
     # PostgreSQL + Kakao 로그인. 실제 값은 배포 환경변수로만 주입한다.
     database_url: str = ""
     session_secret: str = ""
@@ -55,6 +59,10 @@ class Settings(BaseSettings):
         return bool(self.odsay_api_key)
 
     @property
+    def live_ai_pipeline(self) -> bool:
+        return bool(self.ai_server_url)
+
+    @property
     def database_configured(self) -> bool:
         return self.database_url.startswith("postgresql")
 
@@ -74,6 +82,7 @@ class Settings(BaseSettings):
             "weather": "openweather(live)" if self.live_weather else "mock",
             "bus": "live" if self.live_bus else "mock",
             "routes": "odsay(live)" if self.live_routes else "demo/mock",
+            "ai_pipeline": "connected" if self.live_ai_pipeline else "not configured",
             "database": "postgresql(configured)" if self.database_configured else "not configured",
             "auth": "kakao(configured)" if self.kakao_login_configured else "not configured",
         }

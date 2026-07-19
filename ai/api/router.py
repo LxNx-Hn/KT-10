@@ -150,6 +150,8 @@ async def recommend(req: RecommendRequest):
                 "aed_nearby": feat.get("aed_nearby", 0),
                 "crosswalk_count": feat.get("crosswalk_count", 0),
                 "crosswalk_signal_ratio": feat.get("crosswalk_signal_ratio", 1.0),
+                "weather_risk": feat.get("weather_risk", 0),
+                "crowd_level": feat.get("crowd_level", 0),
             },
             "reasons": reasons,
             "tags": tags,
