@@ -160,6 +160,8 @@ export type ProfileWeights = Record<ProfileId, ScoreComponents>;
 
 /** 점수화 옵션(음성/버튼으로 토글되는 사용자 조건) */
 export interface ScoringOptions {
+  /** 짐이 많아 보행거리·계단·환승 부담을 크게 반영 */
+  carryLuggage?: boolean;
   /** 저상버스 우선 모드 */
   lowFloorPriority?: boolean;
   /** 날씨 회피 모드(날씨 위험 가중 강화) */

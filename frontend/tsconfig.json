@@ -19,8 +19,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@data/*": ["../data/*"]
+      "@data/*": ["../data/ai/*"]
     }
   },
-  "include": ["src", "../data"]
+  "include": ["src", "../data/ai"]
 }

@@ -50,6 +50,7 @@ interface AppState {
   setOrigin: (p: Place | null) => void;
   setDestination: (p: Place | null) => void;
   setWeatherScenario: (w: WeatherScenarioId) => Promise<void>;
+  toggleCarryLuggage: () => void;
   toggleLowFloorPriority: () => void;
   toggleWeatherAvoid: () => void;
   toggleLargeUi: () => void;
@@ -99,6 +100,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setWeatherScenario: async (weatherScenario) => {
     const weather = await adapters.weather.getCurrent(weatherScenario);
     set({ weatherScenario, weather });
+    if (get().candidates.length) get().rescore();
+  },
+
+  toggleCarryLuggage: () => {
+    set((s) => ({ options: { ...s.options, carryLuggage: !s.options.carryLuggage } }));
     if (get().candidates.length) get().rescore();
   },
 

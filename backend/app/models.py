@@ -137,6 +137,7 @@ class ScoredRoute(CamelModel):
 
 
 class ScoringOptions(CamelModel):
+    carry_luggage: bool = False
     low_floor_priority: bool = False
     weather_avoid: bool = False
     avoid_stairs: bool = False

@@ -3,6 +3,7 @@ import VoiceChatEntryButton from './VoiceChatEntryButton';
 import ProfileSelector from './ProfileSelector';
 import SuggestedVoiceCommands from './SuggestedVoiceCommands';
 import DemoDestinationList from './DemoDestinationList';
+import RouteConditions from './RouteConditions';
 
 /**
  * 검색 중심 홈 화면(요구사항 §2·§3·§10).
@@ -14,6 +15,7 @@ export default function SearchHome() {
       <h2 className="home__headline">어디로 가시나요?</h2>
       <SearchBar />
       <VoiceChatEntryButton />
+      <RouteConditions />
       <ProfileSelector />
       <SuggestedVoiceCommands />
       <DemoDestinationList />

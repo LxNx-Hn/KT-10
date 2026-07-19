@@ -1,4 +1,4 @@
-"""부산진구 장소 — 공유 데이터셋(data/places.json)에서 로드."""
+"""부산진구 장소 — 공유 데이터셋(data/ai/places.json)에서 로드."""
 from __future__ import annotations
 
 from ..models import Place

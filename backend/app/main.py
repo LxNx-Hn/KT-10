@@ -12,7 +12,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+from .api.auth import router as auth_router
+from .api.feedback import router as feedback_router
 from .config import DISTRICT
+from .database import init_database
 from .data.bus_arrivals import BUS_STOP_LIST, get_arrivals
 from .data.routes import get_route_candidates
 from .data.weather import WEATHER_SCENARIOS
@@ -25,7 +28,7 @@ from .models import (
     ScoredRoute,
     WeatherCondition,
 )
-from .providers import get_current_weather, search_places
+from .providers import get_current_weather, get_public_transit_candidates, search_places
 from .scoring import recommend_routes
 from .settings import settings
 
@@ -35,6 +38,8 @@ log = logging.getLogger("app")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if settings.database_configured:
+        init_database()
     log.info("데이터 소스: %s", settings.active_sources())
     yield
 
@@ -49,10 +54,13 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.origins,
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
+app.include_router(feedback_router)
 
 
 @app.get("/api/health")
@@ -95,8 +103,13 @@ def bus_arrivals(stop_id: str) -> BusStopArrivals:
     response_model=list[RouteCandidate],
     response_model_exclude_none=True,
 )
-def routes_candidates(req: CandidatesRequest) -> list[RouteCandidate]:
-    """경로 후보 생성(점수화 전). 대중교통 라우팅 공개 API 부재로 합성/대표 경로 사용."""
+async def routes_candidates(req: CandidatesRequest) -> list[RouteCandidate]:
+    """ODsay 키가 있으면 실제 대중교통 후보, 없으면 명시적인 데모 후보를 제공한다."""
+    if settings.live_routes:
+        try:
+            return await get_public_transit_candidates(req.origin, req.destination)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
     return get_route_candidates(req.origin, req.destination)
 
 
@@ -107,7 +120,13 @@ def routes_candidates(req: CandidatesRequest) -> list[RouteCandidate]:
 )
 async def routes_recommend(req: RecommendRequest) -> list[ScoredRoute]:
     """서버측 점수화 + 상위 N 추천(이유/주의/음성요약 포함)."""
-    candidates = get_route_candidates(req.origin, req.destination)
+    if settings.live_routes:
+        try:
+            candidates = await get_public_transit_candidates(req.origin, req.destination)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+    else:
+        candidates = get_route_candidates(req.origin, req.destination)
     weather = await get_current_weather(req.weather_scenario)
     return recommend_routes(candidates, weather, req.profile, req.options, top_n=req.top_n)
 

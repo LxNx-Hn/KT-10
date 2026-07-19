@@ -56,6 +56,7 @@ def score_route(
     )
     weights = apply_option_weights(
         PROFILE_WEIGHTS[profile],
+        carry_luggage=opts.carry_luggage,
         low_floor_priority=opts.low_floor_priority,
         weather_avoid=opts.weather_avoid,
         avoid_stairs=opts.avoid_stairs,

@@ -16,3 +16,6 @@ shapely==2.0.6
 deap==1.4.1
 # [PATHFINDING-INTEGRATION-END]
 # ============================================================
+SQLAlchemy>=2.0
+psycopg[binary]>=3.2
+itsdangerous>=2.2

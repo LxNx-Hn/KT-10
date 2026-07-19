@@ -304,6 +304,24 @@ button { font-family: inherit; cursor: pointer; }
 .voicedock__textentry input:focus { outline: 2px solid var(--brand); border-color: var(--brand); }
 .voicedock__textentry .btn--primary { flex: none; }
 
+/* 검색마다 달라지는 조건. 장기 프로필과 분리해 첫 화면에서 바로 조정한다. */
+.route-conditions { margin: 1rem 0; }
+.route-conditions__hint { margin: .25rem 0 .65rem; color: var(--ink-soft); font-size: .9rem; }
+.route-conditions__buttons { display: flex; flex-wrap: wrap; gap: .5rem; }
+.condition-chip { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); padding: .65rem .9rem; font: inherit; font-weight: 700; cursor: pointer; }
+.condition-chip--active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.route-feedback { margin-top: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; background: #f8fbff; }
+.route-feedback__actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .75rem; }
+.route-feedback label { display: block; margin-top: .55rem; }
+.route-feedback select { margin-left: .4rem; }
+.route-feedback__consent { font-size: .9rem; color: var(--ink-soft); }
+.route-feedback__message { margin: .55rem 0 0; font-weight: 700; }
+.facility-report { margin-top: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; }
+.facility-report > p { margin: .25rem 0 .7rem; color: var(--ink-soft); }
+.facility-report input, .facility-report select, .facility-report textarea { box-sizing: border-box; width: 100%; margin: .3rem 0; padding: .6rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.facility-report textarea { min-height: 4.5rem; resize: vertical; }
+.facility-report .btn { margin-top: .35rem; }
+
 @media (max-width: 480px) {
   .profiles__grid { grid-template-columns: 1fr; }
   .searchbar { grid-template-columns: 1fr; }

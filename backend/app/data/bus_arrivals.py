@@ -1,4 +1,4 @@
-"""정류장 저상버스 도착 — 공유 데이터셋(data/bus_arrivals.json)에서 로드."""
+"""정류장 저상버스 도착 — 공유 데이터셋(data/ai/bus_arrivals.json)에서 로드."""
 from __future__ import annotations
 
 from ..models import BusStopArrivals

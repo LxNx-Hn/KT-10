@@ -1,0 +1,123 @@
+"""PostgreSQL persistence for Kakao users, preferences, route impressions, and reviews.
+
+No SQLite fallback is provided: review data must never silently become local-only
+when a production PostgreSQL URL was expected.
+"""
+from __future__ import annotations
+
+from collections.abc import Generator
+from datetime import datetime
+from uuid import uuid4
+
+from fastapi import HTTPException, status
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+
+from .settings import settings
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    kakao_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    nickname: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    preference: Mapped["UserPreference | None"] = relationship(back_populates="user", uselist=False)
+
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    profile: Mapped[str] = mapped_column(String(16), default="general")
+    uses_wheelchair: Mapped[bool] = mapped_column(Boolean, default=False)
+    avoid_stairs_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    max_walk_distance_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    training_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    user: Mapped[User] = relationship(back_populates="preference")
+
+
+class RouteImpression(Base):
+    __tablename__ = "route_impressions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    route_id: Mapped[str] = mapped_column(String(120), index=True)
+    model_version: Mapped[str] = mapped_column(String(64), default="rules-v1")
+    rank: Mapped[int] = mapped_column(Integer)
+    feature_snapshot: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class RouteReview(Base):
+    __tablename__ = "route_reviews"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    impression_id: Mapped[str | None] = mapped_column(ForeignKey("route_impressions.id", ondelete="SET NULL"), nullable=True)
+    route_id: Mapped[str] = mapped_column(String(120), index=True)
+    was_usable: Mapped[bool] = mapped_column(Boolean)
+    rating: Mapped[int] = mapped_column(Integer)
+    issue_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    training_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class FacilityReport(Base):
+    """User report for a facility whose recorded location/status is inaccurate.
+
+    Reports are evidence for moderation, never an automatic overwrite of source data.
+    """
+    __tablename__ = "facility_reports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    facility_name: Mapped[str] = mapped_column(String(200))
+    facility_type: Mapped[str] = mapped_column(String(64))
+    issue_type: Mapped[str] = mapped_column(String(64))
+    reported_lat: Mapped[float | None] = mapped_column(nullable=True)
+    reported_lng: Mapped[float | None] = mapped_column(nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+_session_factory: sessionmaker[Session] | None = None
+
+
+def _factory() -> sessionmaker[Session]:
+    global _session_factory
+    if not settings.database_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PostgreSQL is not configured.",
+        )
+    if _session_factory is None:
+        engine = create_engine(settings.database_url, pool_pre_ping=True)
+        _session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    return _session_factory
+
+
+def init_database() -> None:
+    """Create the initial schema only when PostgreSQL was explicitly configured."""
+    factory = _factory()
+    Base.metadata.create_all(factory.kw["bind"])
+
+
+def database_session() -> Generator[Session, None, None]:
+    session = _factory()()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()

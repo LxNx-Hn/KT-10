@@ -5,3 +5,4 @@
 """
 from .places import search_places  # noqa: F401
 from .weather import get_current_weather  # noqa: F401
+from .odsay import get_public_transit_candidates  # noqa: F401

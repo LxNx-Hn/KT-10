@@ -1,5 +1,6 @@
 import { useAppStore } from '@/store/appStore';
 import { PROFILE_LIST } from '@/config/profiles';
+import { persistProfile } from '@/auth/api';
 
 const ICON: Record<string, string> = {
   general: '🧍',
@@ -25,7 +26,10 @@ export default function ProfileSelector() {
               role="radio"
               aria-checked={active}
               className={`profile-chip ${active ? 'profile-chip--active' : ''}`}
-              onClick={() => setProfile(p.id)}
+              onClick={() => {
+                setProfile(p.id);
+                void persistProfile(p.id);
+              }}
             >
               <span className="profile-chip__icon" aria-hidden="true">
                 {ICON[p.id]}
