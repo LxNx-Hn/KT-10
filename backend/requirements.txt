@@ -4,18 +4,6 @@ pydantic>=2.7
 pydantic-settings>=2.3
 httpx>=0.27
 pytest>=8.0
-
-# ============================================================
-# [PATHFINDING-INTEGRATION-START]
-# pathfinding/ 모듈 의존성. 통합 확정 시 pathfinding/requirements.txt 와 통합하거나
-# 모듈 제거 시 이 블록도 함께 제거.
-osmnx==1.9.4
-networkx==3.3
-geopandas==1.0.1
-shapely==2.0.6
-deap==1.4.1
-# [PATHFINDING-INTEGRATION-END]
-# ============================================================
 SQLAlchemy>=2.0
 psycopg[binary]>=3.2
 itsdangerous>=2.2

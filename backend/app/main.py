@@ -129,28 +129,3 @@ async def routes_recommend(req: RecommendRequest) -> list[ScoredRoute]:
         candidates = get_route_candidates(req.origin, req.destination)
     weather = await get_current_weather(req.weather_scenario)
     return recommend_routes(candidates, weather, req.profile, req.options, top_n=req.top_n)
-
-
-# ============================================================
-# [PATHFINDING-INTEGRATION-START]
-# pathfinding/ 모듈 연결 지점. 이 블록은 pathfinding/ 알고리즘이
-# data/routes.demo.json 의 mock 데이터를 완전히 대체하기로 확정되면
-# 통째로 제거 가능하다. (그 시점엔 위 mock 의존 코드도 함께 정리)
-import sys as _sys
-import os as _os
-
-# backend/ 에서 uvicorn 실행 시 저장소 루트가 sys.path 에 없으므로 추가한다.
-_repo_root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-if _repo_root not in _sys.path:
-    _sys.path.insert(0, _repo_root)
-
-try:
-    from pathfinding.api.router import router as pathfinding_router
-    app.include_router(pathfinding_router, prefix="/api/pathfinding", tags=["pathfinding"])
-except ImportError:
-    log.warning(
-        "pathfinding 모듈 로드 실패 — osmnx 등 의존성이 설치되지 않았을 수 있습니다. "
-        "backend/requirements.txt 의 [PATHFINDING-INTEGRATION] 패키지를 설치하세요."
-    )
-# [PATHFINDING-INTEGRATION-END]
-# ============================================================
