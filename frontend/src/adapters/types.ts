@@ -1,7 +1,10 @@
 import type {
   BusStopArrivals,
   Place,
+  ProfileId,
   RouteCandidate,
+  ScoredRoute,
+  ScoringOptions,
   WeatherCondition,
 } from '@/types';
 import type { WeatherScenarioId } from '@/data/weather';
@@ -19,6 +22,19 @@ export interface PlacesAdapter {
 export interface RouteAdapter {
   /** 출발/도착지 기반 경로 후보 생성 */
   getCandidates(origin: Place, dest: Place): Promise<RouteCandidate[]>;
+  /**
+   * 후보 생성 + 채점을 한 번에 수행한 추천 결과.
+   * live: 백엔드 /api/routes/recommend (AI_SERVER_URL 설정 시 ai/ 파이프라인 위임).
+   * mock: 로컬 scoring/engine 으로 즉시 채점(동일 인터페이스 유지용).
+   */
+  recommend(
+    origin: Place,
+    dest: Place,
+    profile: ProfileId,
+    weatherScenario: WeatherScenarioId,
+    options: ScoringOptions,
+    topN?: number,
+  ): Promise<ScoredRoute[]>;
 }
 
 export interface BusAdapter {

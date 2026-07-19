@@ -1,6 +1,7 @@
-# 데이터셋 (`data/`)
+# 데이터셋 (`data/ai/`)
 
-프론트엔드와 백엔드가 **공유하는 단일 소스**. 부산진구 데모 데이터를 camelCase JSON 으로 보관한다.
+프론트엔드와 백엔드가 **공유하는 단일 소스**. 검증된 앱 입력은 `data/ai/`에,
+원시·공간분석 데이터는 `data/da/`에 분리한다. 부산진구 데모 데이터는 camelCase JSON 으로 보관한다.
 - 프론트엔드: `@data` 별칭으로 import (`frontend/src/data/*.ts`)
 - 백엔드: `app/data/_loader.py` 가 저장소 루트 `data/` 에서 로드
 
@@ -42,7 +43,7 @@
 ```
 
 ## 갱신
-`data/*.json` 만 수정하면 프론트·백엔드 양쪽에 즉시 반영된다.
+`data/ai/*.json` 만 수정하면 프론트·백엔드 양쪽에 즉시 반영된다.
 대표 경로를 바꾸면 점수 검증 표(프론트 `validation.test.ts`, 백엔드 `test_scoring_validation.py`)의
 기대값도 함께 갱신해야 한다.
 

@@ -97,6 +97,15 @@ def test_low_floor_priority_raises_rank():
     assert idx(on) < idx(off)
 
 
+def test_carry_luggage_penalizes_walking_heavy_route():
+    from app.models import ScoringOptions
+
+    off = score_all("general", "normal")
+    on = score_all("general", "normal", carry_luggage=True)
+    # 육교 도보 경로는 짐 많음 조건에서 보행 부담 비중이 커져 상대적으로 더 낮아진다.
+    assert on["r1-overpass"].final_score < off["r1-overpass"].final_score
+
+
 def test_weather_changes_score():
     normal = score_all("general", "normal")
     heat = score_all("general", "heatwave")

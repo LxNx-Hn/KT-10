@@ -1,5 +1,5 @@
 import type { Adapters } from './types';
-import type { BusStopArrivals, Place, RouteCandidate, WeatherCondition } from '@/types';
+import type { BusStopArrivals, Place, RouteCandidate, ScoredRoute, WeatherCondition } from '@/types';
 import type { WeatherScenarioId } from '@/data/weather';
 
 /**
@@ -47,6 +47,15 @@ export const liveAdapters: Adapters = {
       postJson<RouteCandidate[]>('/api/routes/candidates', {
         origin,
         destination: dest,
+      }),
+    recommend: (origin, dest, profile, weatherScenario, options, topN = 3) =>
+      postJson<ScoredRoute[]>('/api/routes/recommend', {
+        origin,
+        destination: dest,
+        profile,
+        weatherScenario,
+        options,
+        topN,
       }),
   },
   bus: {
