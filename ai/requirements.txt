@@ -6,3 +6,15 @@ xgboost==2.1.1
 scikit-learn==1.5.1
 shap==0.46.0
 openpyxl==3.1.5
+
+# ODsay/TMAP 수집기 + 설정 로딩
+httpx==0.28.1
+python-dotenv==1.1.1
+pydantic-settings==2.14.2
+
+# OSMnx fallback 수집기
+osmnx==1.9.4
+networkx==3.3
+
+# DQN 에이전트 (ai/rl/)
+torch==2.5.0
