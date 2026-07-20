@@ -17,38 +17,87 @@ from scoring.train import FEATURE_COLS
 # 프로필별 로짓 패널티 테이블 (베이스라인 고정값)
 LOGIT_PENALTIES: dict[str, dict[str, float]] = {
     "general": {
-        "avg_slope_percent": 0.2,
-        "crosswalk_count":   0.1,
-        "crowd_level":       0.3,
-        "weather_risk":      0.3,
+        "stair_count":             1.0,
+        "avg_slope_percent":       0.3,
+        "max_slope_percent":       0.1,
+        "transfer_count":          1.0,
+        "total_duration_min":      0.05,
+        "weather_risk":            0.1,
+        "crowd_level":             0.3,
+        "elevator_ratio":         -0.5,
+        "is_low_floor_bus":       -0.5,
+        "shelter_nearby":         -0.3,
+        "crosswalk_signal_ratio": -0.2,
     },
     "elderly": {
-        "stair_count":         2.0,
-        "avg_slope_percent":   1.5,
-        "max_slope_percent":   1.0,
-        "transfer_count":      1.2,
-        "walk_distance_m":     0.001,
-        "crowd_level":         0.8,
-        "weather_risk":        1.0,
-        "elevator_ratio":     -1.5,   # 엘리베이터 있으면 가산
-        "shelter_nearby":     -0.8,   # 쉼터 근접 시 가산
-        "smart_shelter_has_ac":-0.6,  # 냉난방 쉘터 근접 시 가산
+        "stair_count":             5.0,
+        "avg_slope_percent":       1.5,
+        "max_slope_percent":       1.0,
+        "slope_iqr":               0.5,
+        "transfer_count":          2.0,
+        "total_duration_min":      0.1,
+        "weather_risk":            0.4,
+        "crowd_level":             0.8,
+        "elevator_ratio":         -2.0,
+        "is_low_floor_bus":       -1.5,
+        "shelter_nearby":         -1.5,
+        "smart_shelter_has_ac":   -0.8,
+        "crosswalk_signal_ratio": -0.8,
+        "aed_nearby":             -0.5,
     },
     "child": {
-        "stair_count":              0.5,
-        "crosswalk_count":          0.8,
-        "crowd_level":              0.5,
-        "weather_risk":             0.8,
-        "crosswalk_signal_ratio":  -1.0,  # 신호등 많을수록 가산
+        "stair_count":             1.5,
+        "avg_slope_percent":       0.5,
+        "max_slope_percent":       0.3,
+        "transfer_count":          1.5,
+        "total_duration_min":      0.08,
+        "weather_risk":            0.2,
+        "crowd_level":             0.5,
+        "elevator_ratio":         -0.3,
+        "is_low_floor_bus":       -0.5,
+        "shelter_nearby":         -0.5,
+        "crosswalk_signal_ratio": -2.0,  # 최중요
+        "cctv_density_50m":       -1.0,
+    },
+    "teen": {
+        "stair_count":             1.0,
+        "avg_slope_percent":       0.3,
+        "transfer_count":          1.0,
+        "total_duration_min":      0.1,
+        "weather_risk":            0.1,
+        "crowd_level":             0.2,
+        "crosswalk_signal_ratio": -0.5,
+        "cctv_density_50m":       -0.5,
     },
     "disabled": {
-        "stair_count":                3.0,
-        "avg_slope_percent":          2.0,
-        "max_slope_percent":          1.5,
-        "walk_distance_m":            0.0008,
-        "elevator_ratio":            -2.0,   # 최대 가산
-        "is_low_floor_bus":          -1.5,
-        "wheelchair_charger_nearby": -0.5,
+        "stair_count":                  8.0,  # 최대 패널티
+        "avg_slope_percent":            2.0,
+        "max_slope_percent":            1.5,
+        "slope_iqr":                    0.8,
+        "transfer_count":               1.5,
+        "total_duration_min":           0.08,
+        "weather_risk":                 0.2,
+        "crowd_level":                  0.6,
+        "elevator_ratio":              -4.0,  # 최대 가산
+        "is_low_floor_bus":            -3.0,  # 최대 가산
+        "wheelchair_charger_nearby":   -1.0,
+        "shelter_nearby":              -0.8,
+        "crosswalk_signal_ratio":      -0.5,
+    },
+    "pregnant": {
+        "stair_count":             3.0,
+        "avg_slope_percent":       1.2,
+        "max_slope_percent":       0.8,
+        "transfer_count":          2.0,
+        "total_duration_min":      0.1,
+        "weather_risk":            0.5,  # 민감도 최고
+        "crowd_level":             1.0,  # 혼잡 최대 회피
+        "elevator_ratio":         -1.5,
+        "is_low_floor_bus":       -1.5,
+        "shelter_nearby":         -2.0,  # 최대 가산
+        "smart_shelter_has_ac":   -1.2,
+        "crosswalk_signal_ratio": -1.0,
+        "aed_nearby":             -0.5,
     },
 }
 
@@ -76,7 +125,7 @@ def predict_and_rank(
         경로 후보별 피처 딕셔너리 리스트.
         없는 피처 키는 0으로 자동 처리.
     profile : str
-        사용자 프로필 ("general" / "elderly" / "child" / "disabled").
+        사용자 프로필 ("general" / "elderly" / "child" / "teen" / "disabled" / "pregnant").
     top_k : int
         반환할 상위 경로 수 (기본 3).
 

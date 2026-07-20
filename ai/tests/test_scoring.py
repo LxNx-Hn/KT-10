@@ -10,8 +10,10 @@ def rankers():
 
 
 def test_all_profiles_trained(rankers):
-    """4개 프로필 모두 모델이 학습되어야 한다."""
-    assert set(rankers.keys()) == {"general", "elderly", "child", "disabled"}
+    """6개 프로필 모두 모델이 학습되어야 한다."""
+    assert set(rankers.keys()) == {
+        "general", "elderly", "child", "teen", "disabled", "pregnant",
+    }
 
 
 def test_predict_top_k(rankers):

@@ -1,5 +1,6 @@
 """AI 서버 FastAPI 라우터 — 경로 추천 엔드포인트."""
 import asyncio
+from datetime import datetime
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException
@@ -12,7 +13,7 @@ from collectors.osmnx_collector import OsmnxRouteCollector
 from merger.route_merger import merge_route_candidates
 from preprocessing.load_layers import load_all_layers
 from features.extractor import extract_route_features
-from scoring.train import load_rankers, FEATURE_COLS
+from scoring.train import load_rankers, FEATURE_COLS, PROFILES
 from scoring.predict import predict_and_rank
 from scoring.explain import generate_reasons
 
@@ -57,7 +58,7 @@ async def recommend(req: RecommendRequest):
       경로 수집 → 병합 → 피처 추출 → XGB 스코어링
       → 로짓 패널티 → Softmax → SHAP 추천 이유 → 응답 반환
     """
-    if req.profile not in ("general", "elderly", "child", "disabled"):
+    if req.profile not in PROFILES:
         raise HTTPException(status_code=400, detail=f"지원하지 않는 프로필: {req.profile}")
 
     origin = Coordinate(lat=req.origin_lat, lng=req.origin_lng)
@@ -258,15 +259,61 @@ def _default_api_features(duration_min: float) -> dict:
 
 
 def _calc_weather_risk(weather: str, prioritize: bool) -> float:
-    """날씨 조건 → 위험도 점수 (0~30)."""
-    base = {"normal": 0, "heatwave": 20, "coldwave": 20, "rain": 15, "bad_air": 10}
-    risk = float(base.get(weather, 0))
-    return risk * 1.5 if prioritize else risk
+    """
+    날씨 시나리오 → 위험도 점수 (0~30).
+
+    heatwave : 폭염 (33도 이상) → 20점
+    coldwave : 한파 (0도 이하)  → 18점
+    rain     : 강우             → 15점
+    bad_air  : 미세먼지 나쁨    → 10점
+    normal   : 평상시            → 0점
+
+    prioritize_weather_safety=True 이면 1.5배, 최대 30점 cap.
+    """
+    base = {
+        "normal":   0.0,
+        "heatwave": 20.0,
+        "coldwave": 18.0,
+        "rain":     15.0,
+        "bad_air":  10.0,
+    }
+    risk = base.get(weather, 0.0)
+    return min(risk * 1.5, 30.0) if prioritize else risk
 
 
 def _estimate_crowd_level(weather: str) -> float:
-    """날씨 조건으로 혼잡도 추정 (0~1). 실제 KT 교통카드 데이터 수신 후 교체."""
-    return {"heatwave": 0.3, "coldwave": 0.3, "rain": 0.6}.get(weather, 0.5)
+    """
+    시간대 + 날씨 기반 혼잡도 추정 (0~1).
+
+    ⚠️ KT 교통카드 데이터 수신 후 실데이터 기반으로 교체한다.
+
+    시간대 기준:
+      07~09, 17~20시 : 출퇴근 혼잡 → 0.7
+      11~13시        : 점심 혼잡   → 0.5
+      23~06시        : 심야 한산   → 0.1
+      나머지         : 보통        → 0.4
+
+    날씨 보정:
+      폭염/한파 → 외출 감소 → min(base, 0.3) 으로 하향
+      강우      → 혼잡 증가 → base + 0.1
+    """
+    hour = datetime.now().hour
+
+    if 7 <= hour < 9 or 17 <= hour < 20:
+        base = 0.7
+    elif 11 <= hour < 13:
+        base = 0.5
+    elif hour < 6 or hour >= 23:
+        base = 0.1
+    else:
+        base = 0.4
+
+    if weather in ("heatwave", "coldwave"):
+        base = min(base, 0.3)
+    elif weather == "rain":
+        base = min(base + 0.1, 1.0)
+
+    return round(base, 2)
 
 
 def _generate_tags(feat: dict, weather_risk: float) -> list:

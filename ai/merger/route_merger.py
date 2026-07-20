@@ -4,7 +4,10 @@ from math import radians, cos, sin, asin, sqrt
 
 from collectors.base import Coordinate
 
-MERGE_THRESHOLD_M = 30.0
+# 30m → 50m 상향
+# 이유: TMAP과 OSMnx가 같은 도로를 살짝 다른 좌표로 표현해
+#       30m 이내 기준으로 병합이 안 되는 케이스가 발생.
+MERGE_THRESHOLD_M = 50.0
 
 
 @dataclass

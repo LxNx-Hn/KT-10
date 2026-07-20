@@ -154,6 +154,7 @@ def _approximate_components(feat: dict, r: dict, fastest_min: float) -> ScoreCom
     transfer_count = feat.get("transfer_count", 0)
     crosswalk_count = feat.get("crosswalk_count", 0)
     crosswalk_signal_ratio = feat.get("crosswalk_signal_ratio", 1.0)
+    accident_zone_count = feat.get("accident_zone_count", 0)
     walk_distance_m = feat.get("walk_distance_m", 0) or r["distance_m"]
     weather_risk = feat.get("weather_risk", 0)
     is_low_floor = feat.get("is_low_floor_bus")
@@ -164,7 +165,7 @@ def _approximate_components(feat: dict, r: dict, fastest_min: float) -> ScoreCom
         elevator=clamp(elevator_ratio * 100, 0, 100) if stair_count > 0 or elevator_ratio > 0 else 85.0,
         low_floor_bus=100.0 if is_low_floor else (35.0 if is_low_floor is False else 80.0),
         weather_safety=clamp(100 - weather_risk * 2),
-        safety=clamp(70 + crosswalk_signal_ratio * 30 - crosswalk_count * 3),
+        safety=clamp(70 + crosswalk_signal_ratio * 30 - crosswalk_count * 3 - accident_zone_count * 10),
         data_reliability=70.0,  # ai 파이프라인은 세그먼트 단위 raw 데이터를 주지 않아 고정값 사용
         time_efficiency=score_time_efficiency(r["duration_min"], fastest_min),
     )

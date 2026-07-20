@@ -41,7 +41,7 @@ def test_osmnx_fallback_when_graph_unavailable(monkeypatch):
     def _raise(*args, **kwargs):
         raise RuntimeError("network unavailable in test environment")
 
-    monkeypatch.setattr(osmnx_collector, "_get_graph", _raise)
+    monkeypatch.setattr(osmnx_collector, "_get_graph_for_route", _raise)
 
     result = asyncio.run(OsmnxRouteCollector().collect(ORIGIN, DEST))
     assert len(result) == 1
@@ -67,7 +67,7 @@ def test_osmnx_handles_multidigraph_parallel_edges(monkeypatch):
     G.add_edge(2, 3, length=150.0)
     G.graph["crs"] = "EPSG:4326"
 
-    monkeypatch.setattr(osmnx_collector, "_get_graph", lambda: G)
+    monkeypatch.setattr(osmnx_collector, "_get_graph_for_route", lambda *args, **kwargs: G)
 
     result = asyncio.run(OsmnxRouteCollector().collect(ORIGIN, DEST))
     assert len(result) == 1
