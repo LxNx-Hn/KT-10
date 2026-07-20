@@ -17,7 +17,6 @@ AirQuality = Literal["good", "moderate", "bad", "very_bad"]
 SkyCondition = Literal["clear", "cloudy", "rain", "snow"]
 WeatherScenarioId = Literal["normal", "heatwave", "coldwave", "rain", "dust"]
 LowFloorStatus = Literal["confirmed", "regular", "unknown", "none"]
-AccidentRisk = Literal["low", "medium", "high"]
 
 
 class CamelModel(BaseModel):
@@ -34,8 +33,8 @@ class LatLng(CamelModel):
 class Place(CamelModel):
     id: str
     name: str
-    lat: float
-    lng: float
+    lat: float = Field(ge=34.8, le=35.5)
+    lng: float = Field(ge=128.7, le=129.4)
     category: Optional[str] = None
     address: Optional[str] = None
 
@@ -53,7 +52,6 @@ class RouteSegment(CamelModel):
     stairs_count: Optional[int] = None
     has_slope: Optional[bool] = None
     crosswalk_count: Optional[int] = None
-    accident_risk: Optional[AccidentRisk] = None
 
     # 버스 구간
     bus_route_name: Optional[str] = None
@@ -64,6 +62,21 @@ class RouteSegment(CamelModel):
     station_name: Optional[str] = None
     has_elevator: Optional[bool] = None  # None = 미확인
     needs_vertical_move: Optional[bool] = None
+    path: Optional[list[LatLng]] = None
+    geometry_quality: Optional[Literal["exact", "mixed", "estimated"]] = None
+
+
+class TerrainSummary(CamelModel):
+    avg_slope_percent: Optional[float] = None
+    max_slope_percent: Optional[float] = None
+    min_slope_percent: Optional[float] = None
+    uphill_distance_m: Optional[float] = None
+    downhill_distance_m: Optional[float] = None
+    elevation_gain_m: Optional[float] = None
+    elevation_loss_m: Optional[float] = None
+    source: Optional[str] = None
+    resolution_m: Optional[int] = None
+    status: Literal["estimated_90m", "unavailable", "invalid"] = "unavailable"
 
 
 class RouteCandidate(CamelModel):
@@ -76,6 +89,9 @@ class RouteCandidate(CamelModel):
     total_walk_m: float
     transfer_count: int
     path: Optional[list[LatLng]] = None
+    sources: list[str] = Field(default_factory=list)
+    geometry_quality: Optional[Literal["exact", "mixed", "estimated"]] = None
+    terrain: Optional[TerrainSummary] = None
 
 
 class WeatherCondition(CamelModel):
@@ -83,8 +99,8 @@ class WeatherCondition(CamelModel):
     temp_c: float
     feels_like_c: float
     precipitation_mm: float
-    is_heatwave: bool
-    is_coldwave: bool
+    is_heatwave: Optional[bool] = None
+    is_coldwave: Optional[bool] = None
     wind_ms: float
     pm10: float
     sky: SkyCondition
@@ -93,7 +109,9 @@ class WeatherCondition(CamelModel):
 
 class BusArrival(CamelModel):
     route_name: str
-    arrival_min: int
+    vehicle_no: Optional[str] = None
+    arrival_min: Optional[int] = None
+    arrival_message: Optional[str] = None
     is_low_floor: Optional[bool] = None  # None = 미확인
     remaining_stops: Optional[int] = None
 
@@ -105,19 +123,19 @@ class BusStopArrivals(CamelModel):
 
 
 class ScoreComponents(CamelModel):
-    accessibility: float
-    walk_comfort: float
-    elevator: float
-    low_floor_bus: float
-    weather_safety: float
-    safety: float
-    data_reliability: float
-    time_efficiency: float
+    accessibility: Optional[float] = None
+    walk_comfort: Optional[float] = None
+    elevator: Optional[float] = None
+    low_floor_bus: Optional[float] = None
+    weather_safety: Optional[float] = None
+    safety: Optional[float] = None
+    data_reliability: Optional[float] = None
+    time_efficiency: Optional[float] = None
 
 
 class ScoreDisplay(CamelModel):
-    walk_burden: float
-    weather_risk: float
+    walk_burden: Optional[float] = None
+    weather_risk: Optional[float] = None
 
 
 class RouteScore(CamelModel):
@@ -129,6 +147,7 @@ class RouteScore(CamelModel):
     reasons: list[str]
     cautions: list[str]
     voice_summary: str
+    feedback_token: Optional[str] = None
 
 
 class ScoredRoute(CamelModel):

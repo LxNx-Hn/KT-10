@@ -17,7 +17,7 @@ export const PROFILES: Record<ProfileId, ProfileMeta> = {
   child: {
     id: 'child',
     label: '아동',
-    description: '안전한 횡단·사고위험 회피·복잡한 환승 회피를 우선해요.',
+    description: '안전한 횡단과 단순한 환승을 우선해요.',
     prefersLargeUi: true,
   },
   disabled: {

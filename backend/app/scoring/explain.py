@@ -28,7 +28,7 @@ def build_reasons(r: RouteCandidate, c: ScoreComponents, low_floor: LowFloorStat
     if low_floor == "confirmed":
         out.append("경로의 버스가 저상버스로 확인됐어요.")
     if c.safety >= 85:
-        out.append("횡단·사고위험이 낮은 편이에요.")
+        out.append("횡단과 환승 부담이 낮은 편이에요.")
     if c.weather_safety >= 85:
         out.append("현재 날씨 조건에서 비교적 안전해요.")
     if r.transfer_count == 0:

@@ -1,6 +1,7 @@
 """Kakao OAuth authorization-code flow and signed HttpOnly service session."""
 from __future__ import annotations
 
+import logging
 import secrets
 from urllib.parse import urlencode
 
@@ -11,12 +12,17 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..database import User, UserPreference, database_session
+from ..database import User, UserPreference, database_session, optional_database_session
 from ..settings import settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+log = logging.getLogger("api.auth")
 _STATE_COOKIE = "kakao_oauth_state"
 _SESSION_COOKIE = "mobility_session"
+
+
+def _secure_cookie() -> bool:
+    return settings.kakao_oauth_redirect_uri.startswith("https://")
 
 
 def _configured() -> None:
@@ -45,6 +51,20 @@ def current_user(
     return user
 
 
+def optional_current_user(
+    session_cookie: str | None = Cookie(default=None, alias=_SESSION_COOKIE),
+    db: Session | None = Depends(optional_database_session),
+) -> User | None:
+    """게스트는 None, 유효한 Kakao 로그인 사용자는 User를 반환한다."""
+    if not session_cookie or db is None:
+        return None
+    try:
+        user_id = _serializer().loads(session_cookie, max_age=60 * 60 * 24 * 14)
+    except BadSignature:
+        return None
+    return db.get(User, user_id)
+
+
 @router.get("/kakao/login")
 def kakao_login() -> Response:
     _configured()
@@ -56,7 +76,10 @@ def kakao_login() -> Response:
         "state": state,
     })
     response = RedirectResponse(f"https://kauth.kakao.com/oauth/authorize?{query}")
-    response.set_cookie(_STATE_COOKIE, state, httponly=True, samesite="lax", max_age=600)
+    response.set_cookie(
+        _STATE_COOKIE, state, httponly=True, secure=_secure_cookie(),
+        samesite="lax", max_age=600,
+    )
     return response
 
 
@@ -71,20 +94,27 @@ async def kakao_callback(
     _configured()
     if error or not code or not state or state != request.cookies.get(_STATE_COOKIE):
         raise HTTPException(status_code=400, detail="Kakao authorization was rejected or state validation failed.")
-    async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
-        token_response = await client.post("https://kauth.kakao.com/oauth/token", data={
-            "grant_type": "authorization_code",
-            "client_id": settings.kakao_rest_api_key,
-            "client_secret": settings.kakao_oauth_client_secret,
-            "redirect_uri": settings.kakao_oauth_redirect_uri,
-            "code": code,
-        })
-        token_response.raise_for_status()
-        access_token = token_response.json()["access_token"]
-        user_response = await client.get("https://kapi.kakao.com/v2/user/me", headers={"Authorization": f"Bearer {access_token}"})
-        user_response.raise_for_status()
-    profile = user_response.json()
-    kakao_id = str(profile["id"])
+    try:
+        async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
+            token_response = await client.post("https://kauth.kakao.com/oauth/token", data={
+                "grant_type": "authorization_code",
+                "client_id": settings.kakao_rest_api_key,
+                "client_secret": settings.kakao_oauth_client_secret,
+                "redirect_uri": settings.kakao_oauth_redirect_uri,
+                "code": code,
+            })
+            token_response.raise_for_status()
+            access_token = token_response.json()["access_token"]
+            user_response = await client.get(
+                "https://kapi.kakao.com/v2/user/me",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            user_response.raise_for_status()
+        profile = user_response.json()
+        kakao_id = str(profile["id"])
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+        log.warning("Kakao OAuth provider response failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="Kakao login provider request failed.") from exc
     nickname = ((profile.get("properties") or {}).get("nickname"))
     user = db.scalar(select(User).where(User.kakao_id == kakao_id))
     if user is None:
@@ -97,15 +127,18 @@ async def kakao_callback(
     db.commit()
     service_session = _serializer().dumps(user.id)
     response = RedirectResponse(f"{settings.frontend_url.rstrip('/')}/")
-    response.delete_cookie(_STATE_COOKIE)
-    response.set_cookie(_SESSION_COOKIE, service_session, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 14)
+    response.delete_cookie(_STATE_COOKIE, secure=_secure_cookie(), samesite="lax")
+    response.set_cookie(
+        _SESSION_COOKIE, service_session, httponly=True, secure=_secure_cookie(),
+        samesite="lax", max_age=60 * 60 * 24 * 14,
+    )
     return response
 
 
 @router.post("/logout", status_code=204)
 def logout() -> Response:
     response = Response(status_code=204)
-    response.delete_cookie(_SESSION_COOKIE)
+    response.delete_cookie(_SESSION_COOKIE, secure=_secure_cookie(), samesite="lax")
     return response
 
 
@@ -121,6 +154,9 @@ def _preference_dict(pref: UserPreference | None) -> dict:
     return {
         "profile": pref.profile,
         "usesWheelchair": pref.uses_wheelchair,
+        "usesWalkingAid": pref.uses_walking_aid,
+        "visualSupportRequired": pref.visual_support_required,
+        "hearingSupportRequired": pref.hearing_support_required,
         "avoidStairsRequired": pref.avoid_stairs_required,
         "maxWalkDistanceM": pref.max_walk_distance_m,
         "trainingConsent": pref.training_consent,

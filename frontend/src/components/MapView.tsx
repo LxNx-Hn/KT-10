@@ -33,6 +33,7 @@ export default function MapView() {
   const destination = useAppStore((s) => s.destination);
   const recommendations = useAppStore((s) => s.recommendations);
   const selectedRouteId = useAppStore((s) => s.selectedRouteId);
+  const selectedRoute = recommendations.find((item) => item.route.id === selectedRouteId)?.route;
 
   const selectedPath = useMemo<LatLng[]>(() => {
     const sel = recommendations.find((r) => r.route.id === selectedRouteId);
@@ -89,24 +90,42 @@ export default function MapView() {
     if (destination) addMarker(destination, `도착: ${destination.name}`);
 
     if (selectedPath.length >= 2) {
-      const line = new kakao.maps.Polyline({
-        path: selectedPath.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
-        strokeWeight: 6,
-        strokeColor: '#1f6feb',
-        strokeOpacity: 0.9,
-      });
-      line.setMap(map);
-      overlaysRef.current.push(line);
+      const segmentPaths = (selectedRoute?.segments ?? []).filter((segment) => (segment.path?.length ?? 0) >= 2);
+      if (segmentPaths.length) {
+        const colors = { walk: '#16a34a', bus: '#1f6feb', subway: '#7c3aed', transfer: '#64748b' };
+        for (const segment of segmentPaths) {
+          const line = new kakao.maps.Polyline({
+            path: segment.path!.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
+            strokeWeight: 6,
+            strokeColor: colors[segment.mode],
+            strokeOpacity: 0.9,
+            strokeStyle: segment.geometryQuality === 'estimated' ? 'shortdash' : 'solid',
+          });
+          line.setMap(map);
+          overlaysRef.current.push(line);
+        }
+      } else {
+        const line = new kakao.maps.Polyline({
+          path: selectedPath.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
+          strokeWeight: 6,
+          strokeColor: '#1f6feb',
+          strokeOpacity: 0.9,
+          strokeStyle: selectedRoute?.geometryQuality === 'estimated' ? 'shortdash' : 'solid',
+        });
+        line.setMap(map);
+        overlaysRef.current.push(line);
+      }
       const bounds = new kakao.maps.LatLngBounds();
       selectedPath.forEach((p) => bounds.extend(new kakao.maps.LatLng(p.lat, p.lng)));
       map.setBounds(bounds);
     }
-  }, [origin, destination, selectedPath]);
+  }, [origin, destination, selectedPath, selectedRoute]);
 
   if (!fallback) {
     return (
       <div className="map" role="region" aria-label="지도">
         <div ref={containerRef} className="map__canvas" />
+        <MapDataNotice quality={selectedRoute?.geometryQuality} sources={selectedRoute?.sources} />
       </div>
     );
   }
@@ -147,7 +166,18 @@ export default function MapView() {
         <p className="map__note">
           데모 약도 · 실제 Kakao 지도는 <code>.env</code> 에 <code>VITE_KAKAO_MAP_KEY</code> 설정 시 표시됩니다.
         </p>
+        <MapDataNotice quality={selectedRoute?.geometryQuality} sources={selectedRoute?.sources} />
       </div>
     </div>
+  );
+}
+
+function MapDataNotice({ quality, sources = [] }: { quality?: 'exact' | 'mixed' | 'estimated'; sources?: string[] }) {
+  return (
+    <p className="map__note" role="note">
+      {quality === 'mixed' && '실선은 확인된 geometry, 점선은 상세 보행 geometry 미확인 구간입니다. '}
+      {quality === 'estimated' && '이 경로 geometry는 추정값입니다. '}
+      경로: {sources.length ? sources.join(' · ') : '데모 데이터'} · 지도: Kakao Maps · 지형: Copernicus DEM/Open-Meteo · 보행망: OpenStreetMap contributors
+    </p>
   );
 }

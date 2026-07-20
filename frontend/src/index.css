@@ -135,6 +135,12 @@ button { font-family: inherit; cursor: pointer; }
 .profile-chip__icon { font-size: 1.6rem; }
 .profile-chip__label { font-weight: 800; font-size: 1.05rem; }
 .profile-chip__desc { font-size: 0.8rem; color: var(--ink-soft); }
+.profile-preferences, .profile-preferences__guest { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 0; }
+.profile-preferences summary { cursor: pointer; font-weight: 800; }
+.profile-preferences__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+.profile-preferences > label { display: block; margin: 10px 0; }
+.profile-preferences input[type='number'] { display: block; width: 100%; min-height: 44px; margin-top: 4px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; }
+.profile-preferences__consent { color: var(--ink-soft); font-size: .9rem; }
 
 /* 날씨 */
 .weather, .bus { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
@@ -166,6 +172,7 @@ button { font-family: inherit; cursor: pointer; }
 .route-card__final { text-align: right; }
 .route-card__final-num { font-size: 1.8rem; font-weight: 800; color: var(--brand); }
 .route-card__final-unit { font-size: 0.9rem; color: var(--ink-soft); }
+.route-card__feature { max-width: 150px; text-align: right; color: var(--brand); font-weight: 800; line-height: 1.3; }
 .route-card__stats { display: flex; gap: 16px; list-style: none; padding: 12px 0; margin: 0; border-bottom: 1px dashed var(--line); }
 .route-card__stats b { font-size: 1.2rem; }
 .route-card__badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }

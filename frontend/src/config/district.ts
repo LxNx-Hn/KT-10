@@ -1,26 +1,25 @@
 import type { LatLng } from '@/types';
 
 /**
- * 발표/데모 한정 지역: 부산광역시 부산진구 (서면 일대)
- * 지도 초기 중심/범위와 데모 안내 문구를 정의한다.
+ * 서비스 권역은 부산 전역이며 실제 MVP 검증은 부산역 일대를 우선한다.
  */
 export const DISTRICT = {
-  id: 'busanjin-gu',
-  name: '부산광역시 부산진구',
-  shortName: '부산진구',
-  /** 지도 초기 중심: 서면역 부근 */
-  center: { lat: 35.1577, lng: 129.0594 } as LatLng,
-  defaultZoom: 5, // kakao map level
-  /** 데모 범위 안내(검색 범위를 벗어난 입력 경고용) */
+  id: 'busan',
+  name: '부산광역시 전역',
+  shortName: '부산',
+  /** 지도 초기 중심: 부산시청 부근 */
+  center: { lat: 35.1798, lng: 129.0750 } as LatLng,
+  defaultZoom: 9, // kakao map level
+  mvpArea: '부산역 일대',
   bounds: {
-    minLat: 35.13,
-    maxLat: 35.19,
-    minLng: 129.02,
-    maxLng: 129.09,
+    minLat: 34.8,
+    maxLat: 35.5,
+    minLng: 128.7,
+    maxLng: 129.4,
   },
 } as const;
 
-/** 좌표가 데모 범위 안에 있는지 */
+/** 좌표가 부산 서비스 범위 안에 있는지 */
 export function isInDistrict(p: LatLng): boolean {
   const b = DISTRICT.bounds;
   return (

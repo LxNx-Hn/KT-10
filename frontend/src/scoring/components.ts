@@ -114,15 +114,10 @@ export function scoreWeatherSafety(
   return clamp(100 - risk);
 }
 
-/* ⑥ 안전성 점수 — 횡단보도·사고위험 구간·환승 복잡도 */
+/* ⑥ 안전성 점수 — 횡단보도·환승 복잡도 (사고정보는 서비스 범위에서 제외) */
 export function scoreSafety(r: RouteCandidate): number {
   const crosswalks = r.segments.reduce((a, s) => a + (s.crosswalkCount ?? 0), 0);
   let penalty = clamp(crosswalks * 5, 0, 30);
-  for (const s of r.segments) {
-    if (s.accidentRisk === 'high') penalty += 20;
-    else if (s.accidentRisk === 'medium') penalty += 8;
-  }
-  penalty = Math.min(penalty, 70);
   penalty += clamp(r.transferCount * 2, 0, 10);
   return clamp(100 - penalty);
 }

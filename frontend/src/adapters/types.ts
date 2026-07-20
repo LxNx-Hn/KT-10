@@ -40,8 +40,8 @@ export interface RouteAdapter {
 export interface BusAdapter {
   /** 정류장 도착 정보(저상버스 여부 포함) */
   getArrivals(stopId: string): Promise<BusStopArrivals | undefined>;
-  /** 전체 정류장 목록 */
-  listStops(): Promise<BusStopArrivals[]>;
+  /** 정류소명 또는 5자리 ARS 번호 검색. 데모에서는 전체 픽스처를 반환한다. */
+  listStops(query?: string): Promise<BusStopArrivals[]>;
 }
 
 export interface WeatherAdapter {

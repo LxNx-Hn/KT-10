@@ -1,0 +1,4 @@
+origin_name,origin_lat,origin_lng,dest_name,dest_lat,dest_lng,weather,carry_luggage,avoid_stairs,low_floor_priority
+부산역,35.1151,129.0414,부산시청,35.1798,129.0750,normal,false,false,false
+부산역,35.1151,129.0414,서면역,35.1578,129.0594,normal,false,false,false
+부산역,35.1151,129.0414,부산진구청,35.1626,129.0530,normal,false,false,false

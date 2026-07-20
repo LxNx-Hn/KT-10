@@ -1,9 +1,9 @@
 [project]
 name = "barrier-free-route-backend"
 version = "0.1.0"
-description = "교통약자 접근성 경로 추천 백엔드 (부산진구 데모) — 점수화 엔진 + REST API"
+description = "부산 전역 교통약자 접근성 경로 추천 API"
 requires-python = ">=3.10"
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = [".", ".."]
 testpaths = ["tests"]

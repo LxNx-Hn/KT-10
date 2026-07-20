@@ -10,40 +10,30 @@ const SCENARIO_ICON: Record<WeatherScenarioId, string> = {
 };
 
 /**
- * 날씨 경고 + 점수 반영 컨트롤(요구사항 §3 RouteResultSection).
- * 추천 1순위(또는 선택 경로)의 날씨 위험을 텍스트로 경고하고, 데모 시나리오를 토글한다.
+ * 실시간 날씨와 경로 노출 특성을 안내한다. 내부 위험 점수는 노출하지 않는다.
  */
 export default function WeatherWarning() {
   const weather = useAppStore((s) => s.weather);
   const weatherScenario = useAppStore((s) => s.weatherScenario);
   const setWeatherScenario = useAppStore((s) => s.setWeatherScenario);
-  const weatherAvoid = useAppStore((s) => s.options.weatherAvoid);
-  const toggleWeatherAvoid = useAppStore((s) => s.toggleWeatherAvoid);
-  const recommendations = useAppStore((s) => s.recommendations);
-  const selectedRouteId = useAppStore((s) => s.selectedRouteId);
-
-  const target =
-    recommendations.find((r) => r.route.id === selectedRouteId) ?? recommendations[0];
-  const risk = target?.score.display.weatherRisk ?? 0;
-  const level = risk >= 40 ? 'bad' : risk >= 20 ? 'warn' : 'good';
-  const levelText = risk >= 40 ? '높음' : risk >= 20 ? '보통' : '낮음';
+  const live = import.meta.env.VITE_DATA_SOURCE === 'live';
+  const hasWeatherCaution = Boolean(
+    weather && (weather.precipitationMm > 0 || weather.air === 'bad' || weather.air === 'very_bad'),
+  );
 
   return (
     <section className="weather" aria-label="날씨 안내">
-      <h2 className="section-title">날씨 안내 · 점수 반영</h2>
+      <h2 className="section-title">날씨 안내</h2>
 
-      {target && (
-        <div className={`weather__banner weather__banner--${level}`} role="status">
-          <strong>현재 경로 날씨 위험: {levelText} ({Math.round(risk)}/100)</strong>
-          {target.score.cautions
-            .filter((c) => /폭염|한파|비|미세먼지|미끄/.test(c))
-            .map((c, i) => (
-              <span key={i}> · {c}</span>
-            ))}
+      {weather && (
+        <div className={`weather__banner weather__banner--${hasWeatherCaution ? 'warn' : 'good'}`} role="status">
+          <strong>{hasWeatherCaution ? '현재 기상·대기 관측을 확인하세요.' : '현재 관측에 강수·나쁜 대기질이 없습니다.'}</strong>
+          {weather.precipitationMm > 0 && <span> · 강수 {weather.precipitationMm}mm</span>}
+          {(weather.air === 'bad' || weather.air === 'very_bad') && <span> · 대기질 {weather.air}</span>}
         </div>
       )}
 
-      <div className="weather__scenarios" role="group" aria-label="날씨 시나리오(데모)">
+      {!live && <div className="weather__scenarios" role="group" aria-label="날씨 시나리오(데모)">
         {(Object.keys(WEATHER_SCENARIOS) as WeatherScenarioId[]).map((id) => (
           <button
             key={id}
@@ -54,7 +44,7 @@ export default function WeatherWarning() {
             {SCENARIO_ICON[id]} {WEATHER_SCENARIOS[id].label}
           </button>
         ))}
-      </div>
+      </div>}
 
       {weather && (
         <div className="weather__now">
@@ -64,11 +54,6 @@ export default function WeatherWarning() {
           <span>미세먼지 PM10 {weather.pm10}</span>
         </div>
       )}
-
-      <label className="weather__avoid">
-        <input type="checkbox" checked={!!weatherAvoid} onChange={toggleWeatherAvoid} />
-        날씨 위험 회피 우선 (점수 가중 강화)
-      </label>
     </section>
   );
 }

@@ -116,12 +116,6 @@ def score_weather_safety(r: RouteCandidate, w: WeatherCondition) -> float:
 def score_safety(r: RouteCandidate) -> float:
     crosswalks = sum((s.crosswalk_count or 0) for s in r.segments)
     penalty = clamp(crosswalks * 5, 0, 30)
-    for s in r.segments:
-        if s.accident_risk == "high":
-            penalty += 20
-        elif s.accident_risk == "medium":
-            penalty += 8
-    penalty = min(penalty, 70)
     penalty += clamp(r.transfer_count * 2, 0, 10)
     return clamp(100 - penalty)
 

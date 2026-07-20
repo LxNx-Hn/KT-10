@@ -1,10 +1,11 @@
 FROM node:20-slim
-WORKDIR /app
+WORKDIR /app/frontend
 
-COPY package.json package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
-COPY . .
+COPY frontend/ ./
+COPY data/ /app/data/
 
 EXPOSE 5173
 CMD ["npm", "run", "dev", "--", "--host"]

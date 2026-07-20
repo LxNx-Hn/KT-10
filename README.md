@@ -1,124 +1,82 @@
-# 교통약자 및 이동취약자 맞춤형 경로 추천 PWA
+# 교통약자·이동취약자 맞춤형 경로 추천 PWA
 
-> 서비스명: **미정**  
-> 플랫폼: **PWA 웹앱**  
-> 지도 API: **Kakao Map API 기준 개발**  
-> 발표 범위: **부산 부산진구(서면 일대) 한정 데모**  
-> 핵심 방향: **차량 내비 제외, 보행·대중교통·교통약자 접근성 중심**
+서비스 권역은 부산광역시 전역이고, MVP의 실제 검증은 부산역 일대를 우선합니다. Kakao Maps는 배경지도와 오버레이 렌더링에 사용하고, 대중교통 후보는 ODsay, 보행 후보는 TMAP과 OpenStreetMap/OSMnx에서 수집합니다. 후보 순서는 9명 이상의 실제 라벨로 학습한 XGBoost learning-to-rank 모델이 정합니다.
 
----
+사용자에게 임의의 “접근성 점수”를 보여주지 않습니다. 대신 소요시간, 도보거리, 환승, 계단·승강기·저상버스 확인 상태, 90m DEM 기반 지형 추정과 각 경로의 장점을 표시합니다. 미확인 값은 0이나 “없음”으로 바꾸지 않습니다.
 
-## 프로젝트 개요
+## 현재 구현
 
-- 대상: 보행자·대중교통 이용자·교통약자
-- 프로필: 일반, 고령자, 아동, 장애인
-- 서비스 성격: 접근성 중심 경로 추천 PWA
-- 핵심 차별점: 빠른 길보다 실제 이동 가능성 중심
-- 재평가 기준: 계단, 승강기, 저상버스, 날씨, 보행 부담, 안전성
-- 발표 데모: 부산 부산진구 서면 일대 한정
+- ODsay 대중교통 후보와 공식 `loadLane` geometry, TMAP/OSMnx 보행 geometry의 구간별 지도 오버레이
+- 부산 전역 공간 레이어 결합: 쉼터, CCTV, AED, 휠체어 충전기, 스마트쉘터, 도시철도 접근성, 횡단보도, 정류장 등
+- Open-Meteo Copernicus GLO-90 고도 기반 오르막·내리막·누적 상승량 추정(90m 해상도임을 UI에 명시)
+- 합성 Y 라벨 없는 9인 초기 라벨링 → 프로필별 XGBRanker 학습 게이트
+- 카카오 로그인 사용자만 PostgreSQL 프로필·후기·개인화 저장; 게스트는 개인화하지 않음
+- 후기 기반 개인 온라인 모델과 동의 후기의 팀 승인 비중 제한 전역 후보 재학습(운영 모델 자동 교체 없음)
+- 시설물 위치·운영상태 오류 신고와 관리자 검토 대기열
+- 자주 바뀌는 `짐 많음`, `계단 회피`는 검색 UI에, 장기 이동지원 정보는 로그인 프로필에 분리
 
----
+`data/ai/`는 데모·회귀검증 픽스처이고 임의 OD의 실제 경로가 아닙니다. 실서비스 추천은 `ai/data/rankers.pkl`과 실제 외부 공급자 응답이 모두 준비되어야 하며, 준비되지 않으면 AI API가 503으로 명시적으로 거부합니다.
 
-## 서비스 범위
-
-### 포함
-
-- 검색 중심 홈 화면
-- 실시간 음성 챗봇
-- 경로 카드 3개 추천
-- Kakao Map 기반 지도 보조 화면
-- 저상버스 도착 조회
-- 저상버스 우선 경로 추천
-- 날씨 기반 점수 반영
-- 프로필별 경로 점수화
-- 점수 검증용 테스트 시나리오
-
-### 제외
-
-- 자동차 내비게이션
-- 차량용 실시간 교통 최적화
-- 주차 추천 및 결제
-- EV 충전
-- 대리운전
-- 렌터카
-- 드라이브 경로 추천
-
----
-
-## 폴더 구조
+## 구조
 
 ```text
 KT-10/
-├─ frontend/   React + Vite + TypeScript PWA (검색 중심 UI · 음성 챗봇 · 지도 보조)
-├─ backend/    Python FastAPI (점수화 엔진 · REST API · live/mock provider)
-├─ data/       공유 데이터셋(JSON) — 프론트/백엔드 단일 소스
-└─ docs/       문서(기획서 · 구현명세 · 백엔드 · 데이터 스키마)
+├─ frontend/   React + Vite + TypeScript PWA
+├─ backend/    FastAPI + Kakao OAuth + PostgreSQL/Alembic + 후기 개인화
+├─ ai/         실제 경로 수집 + 공간/지형 피처 + XGBRanker
+├─ data/       앱 픽스처, 공간 원본/가공본, 데이터 카탈로그
+└─ docs/       기획·구현·백엔드·데이터 문서
 ```
 
-| 폴더 | 설명 | 핵심 |
-|---|---|---|
-| [frontend](frontend) | PWA 웹앱 | 검색 홈·음성 챗봇·경로 카드 3개·지도 보조 |
-| [backend](backend) | API 서버 | 8개 하위점수 × 프로필 가중치 · live/mock provider |
-| [data](data) | 공유 데이터셋 | `places` · `routes.demo` · `bus_arrivals` · `weather` |
-| [docs](docs) | 문서 | [기획서](docs/PLAN.md) · [구현명세](docs/IMPLEMENTATION.md) · [백엔드](docs/BACKEND.md) · [데이터](docs/DATA.md) |
+## 로컬 실행
 
----
+저장소 루트에서 Python 환경을 만든 뒤 각 요구사항을 설치합니다.
 
-## 빠른 실행
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt -r ai\requirements.txt
 
-```bash
-# 프론트엔드
+# AI (8001)
+$env:PYTHONPATH='ai'
+.\.venv\Scripts\python.exe -m uvicorn main:app --app-dir ai --port 8001
+
+# 백엔드 (새 터미널, 8002)
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --port 8002
+
+# 프론트 (새 터미널, 5173)
 cd frontend
-npm install
-npm run dev            # http://localhost:5173
-npm test               # 점수 검증 · 음성 파서 · UI
-
-# 백엔드
-cd backend
-python -m venv .venv && .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000   # 문서 /docs
-pytest
+npm ci
+npm run dev
 ```
 
----
+PostgreSQL까지 한 번에 실행하려면 저장소 루트에서 `docker compose up --build`를 사용합니다. 로컬 키 입력 파일 `ai/.env`, `backend/.env`, `frontend/.env`는 이미 생성되며 Git에서 무시됩니다.
 
-## API 키
+## 초기 9인 라벨링
 
-| 위치 | 키 | 효과 |
-|---|---|---|
-| `frontend/.env` | `VITE_KAKAO_MAP_KEY` | 실제 Kakao 지도 사용. 미설정 시 SVG 약도 표시 |
-| `frontend/.env` | `VITE_DATA_SOURCE=live` + `VITE_API_BASE` | 백엔드 연동. 미설정 시 내장 mock 사용 |
-| `backend/.env` | `KAKAO_REST_API_KEY` | 실제 Kakao 장소검색 |
-| `backend/.env` | `OPENWEATHER_API_KEY` | 부산진구 실시간 날씨 |
+키를 설정하고 AI 서버를 실행한 뒤 `ai/data/training/od_template.csv`를 부산역 중심 검증 OD로 확장합니다.
 
-- 환경 변수 예시: 각 폴더의 `.env.example`
-- 키 관리 기준: 서버 전용 키의 클라이언트 노출 방지
+```powershell
+$env:PYTHONPATH='ai'
+.\.venv\Scripts\python.exe -m labeling.generate_batch `
+  --od-file ai\data\training\od_template.csv
+```
 
----
+생성된 `labeling_sheet.csv`를 9명이 0~4 relevance로 평가하고, 확정본을 `ai/data/training/route_labels.csv`, 같은 배치의 스냅샷을 `route_features.jsonl`로 둔 뒤 학습합니다.
 
-## 경로 점수화
-
-| 점수 항목 | 반영 데이터 |
-|---|---|
-| 접근성 | 계단, 승강기, 휠체어 접근 가능성 |
-| 보행 부담 | 도보거리, 실외 보행거리, 환승 도보거리 |
-| 저상버스 | 도착 차량 유형, 저상버스 여부, 대기시간 |
-| 날씨 위험 | 기온, 강수, 폭염, 한파, 풍속, 미세먼지 |
-| 안전성 | 사고위험지역, 횡단보도, 공사구간 |
-| 데이터 신뢰도 | 출처, 갱신일, 검증 여부, mock 여부 |
-
----
+```powershell
+$env:PYTHONPATH='ai'
+.\.venv\Scripts\python.exe -m scoring.train
+```
 
 ## 검증
 
-- 프론트엔드·백엔드 점수화 엔진: 동일 점수 표 기준
-- 검증 항목: 프로필별 추천 순위, 날씨 위험 반영, 저상버스 여부, 승강기 여부
-- 데이터 기준: `data/` 단일 소스
-- 발표 기준: 부산진구 대표 경로 중심 수동 검증
+```powershell
+$env:PYTHONPATH='ai'
+.\.venv\Scripts\python.exe -m pytest ai\tests -q
+.\.venv\Scripts\python.exe -m pytest backend\tests -q
+cd frontend
+npm test -- --run
+npm run build
+```
 
----
-
-## 서비스명
-
-- 미정
+공급자와 출처·라이선스 확인 상태는 [data/catalog.json](data/catalog.json), 상세 운영 경계는 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)를 참고하세요.

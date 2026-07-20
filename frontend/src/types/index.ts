@@ -56,7 +56,6 @@ export interface RouteSegment {
   stairsCount?: number;
   hasSlope?: boolean; // 경사로
   crosswalkCount?: number; // 횡단보도 수
-  accidentRisk?: 'low' | 'medium' | 'high'; // 사고위험 구간
 
   /* 버스 구간 속성 */
   busRouteName?: string;
@@ -70,6 +69,8 @@ export interface RouteSegment {
   hasElevator?: Tristate;
   /** 수직이동(층 이동)이 필요한 구간인지 */
   needsVerticalMove?: boolean;
+  path?: LatLng[];
+  geometryQuality?: 'exact' | 'mixed' | 'estimated';
 }
 
 export interface RouteCandidate {
@@ -85,6 +86,21 @@ export interface RouteCandidate {
   transferCount: number;
   /** 경로 폴리라인(지도 표시용) */
   path?: LatLng[];
+  /** 실제 경로/시설 데이터 공급자와 geometry 정확도 */
+  sources?: string[];
+  geometryQuality?: 'exact' | 'mixed' | 'estimated';
+  terrain?: {
+    avgSlopePercent?: number;
+    maxSlopePercent?: number;
+    minSlopePercent?: number;
+    uphillDistanceM?: number;
+    downhillDistanceM?: number;
+    elevationGainM?: number;
+    elevationLossM?: number;
+    source?: string;
+    resolutionM?: number;
+    status: 'estimated_90m' | 'unavailable' | 'invalid';
+  };
 }
 
 /* ───────────────────────── 날씨 ───────────────────────── */
@@ -97,8 +113,8 @@ export interface WeatherCondition {
   tempC: number;
   feelsLikeC: number; // 체감온도
   precipitationMm: number; // 강수
-  isHeatwave: boolean; // 폭염
-  isColdwave: boolean; // 한파
+  isHeatwave?: boolean; // 공식 경보/시나리오에서 확인된 경우
+  isColdwave?: boolean; // 공식 경보/시나리오에서 확인된 경우
   windMs: number; // 풍속
   pm10: number; // 미세먼지
   sky: SkyCondition;
@@ -109,7 +125,9 @@ export interface WeatherCondition {
 
 export interface BusArrival {
   routeName: string; // 예: "81"
-  arrivalMin: number; // 도착까지 분
+  vehicleNo?: string;
+  arrivalMin?: number; // 도착까지 분
+  arrivalMessage?: string; // 예: "운행대기"
   isLowFloor: Tristate; // 저상버스 여부(미확인 가능)
   remainingStops?: number;
 }
@@ -128,31 +146,33 @@ export interface BusStopArrivals {
  * (보행 부담/날씨 위험은 화면 표시 시 100 - goodness 로 변환)
  */
 export interface ScoreComponents {
-  accessibility: number; // 접근성
-  walkComfort: number; // 보행 편의(↔ 보행 부담)
-  elevator: number; // 승강기 이용 가능성
-  lowFloorBus: number; // 저상버스 이용 가능성
-  weatherSafety: number; // 날씨 안전(↔ 날씨 위험)
-  safety: number; // 안전성(사고/횡단)
-  dataReliability: number; // 데이터 신뢰도
-  timeEfficiency: number; // 시간 효율
+  accessibility: number;
+  walkComfort: number;
+  elevator: number;
+  lowFloorBus: number;
+  weatherSafety: number;
+  safety: number;
+  dataReliability: number;
+  timeEfficiency: number;
 }
 
 export type LowFloorStatus = 'confirmed' | 'regular' | 'unknown' | 'none';
 
 export interface RouteScore {
   routeId: string;
-  components: ScoreComponents;
+  components: Partial<ScoreComponents>;
   /** 화면 표시용 파생값(높을수록 나쁨) */
   display: {
-    walkBurden: number; // 보행 부담
-    weatherRisk: number; // 날씨 위험
+    walkBurden?: number;
+    weatherRisk?: number;
   };
   finalScore: number; // 최종 추천 점수 0~100
   lowFloorStatus: LowFloorStatus;
   reasons: string[]; // 추천 이유
   cautions: string[]; // 주의사항
   voiceSummary: string; // 음성안내용 요약 문장
+  /** 로그인 후기 저장 시 서버가 검증하는 서명된 추천 피처 스냅샷 */
+  feedbackToken?: string;
 }
 
 /** 프로필별 가중치(합 = 1) */

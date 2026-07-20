@@ -1,52 +1,30 @@
-# 데이터셋 (`data/ai/`)
+# 데이터 계약
 
-프론트엔드와 백엔드가 **공유하는 단일 소스**. 검증된 앱 입력은 `data/ai/`에,
-원시·공간분석 데이터는 `data/da/`에 분리한다. 부산진구 데모 데이터는 camelCase JSON 으로 보관한다.
-- 프론트엔드: `@data` 별칭으로 import (`frontend/src/data/*.ts`)
-- 백엔드: `app/data/_loader.py` 가 저장소 루트 `data/` 에서 로드
+`data/catalog.json`이 모델 입력·제외·수령 대기 데이터의 기계 판독 가능한 기준입니다.
 
-> **미확인(tristate)** 값은 `null` 이 아니라 **키 자체를 생략**한다 →
-> 프론트엔드 `undefined`, 백엔드 `None` 으로 동일하게 "정보 없음"을 의미한다.
-> (`isLowFloorBus`, `hasElevator` 등)
+## 디렉터리 역할
 
-## 파일
+- `data/ai/`: 프론트·백엔드 데모와 회귀 테스트용 JSON. 임의 OD 실경로가 아님
+- `data/raw/`: AI 런타임이 읽는 정규화된 공간 입력
+- `data/da/`: 데이터팀 원본·중간 산출물과 출처 확인 자료
+- `ai/data/training/`: 실제 라벨과 해당 경로 피처 스냅샷
+- `ai/data/cache/`: 재생성 가능한 레이어·OSM 캐시(Git 제외)
 
-### `places.json` — 장소
-```jsonc
-[{ "id": "seomyeon-stn", "name": "서면역", "lat": 35.1578, "lng": 129.0594,
-   "category": "지하철역", "address": "부산진구 중앙대로 지하" }]
-```
+공간 원본은 EPSG:4326으로 읽고 거리 버퍼는 EPSG:5179에서 계산합니다. 부산 유효 범위 밖의 좌표는 제거합니다. 레이어 미수신·컬럼 미확인·주변 관측 없음은 상황에 따라 `null`로 남기며, “정보 없음”을 숫자 0으로 만들지 않습니다.
 
-### `weather.json` — 날씨 시나리오 (키: normal/heatwave/coldwave/rain/dust)
-```jsonc
-{ "heatwave": { "label": "폭염", "tempC": 36, "feelsLikeC": 39, "precipitationMm": 0,
-   "isHeatwave": true, "isColdwave": false, "windMs": 1, "pm10": 55,
-   "sky": "clear", "air": "moderate" } }
-```
+## 현재 활성 레이어
 
-### `bus_arrivals.json` — 정류장 도착 (키: stopId)
-```jsonc
-{ "stop-gu-office": { "stopId": "stop-gu-office", "stopName": "부산진구청 정류장",
-   "arrivals": [{ "routeName": "81", "arrivalMin": 5, "isLowFloor": true, "remainingStops": 3 },
-                { "routeName": "54", "arrivalMin": 9, "remainingStops": 6 }] } }
-//                                  ↑ isLowFloor 생략 = 미확인
-```
+쉼터, CCTV, AED, 전동휠체어 충전기, 동백전 생활 인프라, 스마트 버스쉘터, 도시철도 접근성, 횡단보도 신호, 버스정류장을 사용합니다. 각 파일의 공식 URL·라이선스·검증일은 저장소 안에서 확인할 근거가 없는 항목을 `null`로 두었습니다. 데이터팀이 출처를 확인한 뒤 카탈로그를 채워야 배포 출처표시를 확정할 수 있습니다.
 
-### `routes.demo.json` — 대표 경로 후보(부산진구청→서면역, 4개)
-점수 검증의 기준이 되는 수동 검증 경로. `segments[]` 에 접근성 속성(계단/승강기/저상/경사/횡단/사고위험)을 부여.
-```jsonc
-[{ "id": "r2-subway", "summary": "지하철 1호선(승강기)", "origin": "부산진구청", "destination": "서면역",
-   "segments": [ { "id": "r2-sub", "mode": "subway", "description": "1호선 부전→서면 (승강기 이용)",
-     "durationMin": 4, "waitMin": 3, "stationName": "부전역·서면역",
-     "hasElevator": true, "needsVerticalMove": true } ],
-   "totalDurationMin": 14, "totalWalkM": 450, "transferCount": 0, "path": [ ... ] }]
-```
+사고다발지역 파일은 보존하되 2026-07-16 자문 결정에 따라 현재 서비스와 모델에서 제외합니다.
 
-## 갱신
-`data/ai/*.json` 만 수정하면 프론트·백엔드 양쪽에 즉시 반영된다.
-대표 경로를 바꾸면 점수 검증 표(프론트 `validation.test.ts`, 백엔드 `test_scoring_validation.py`)의
-기대값도 함께 갱신해야 한다.
+## 제공 예정 데이터의 경계
 
-## 실데이터 전환
-임의 OD 경로 합성, 실시간 장소검색/날씨는 코드의 프로바이더/어댑터(키 기반)가 담당한다.
-`data/` 는 데모 고정 데이터 + 검증 기준으로 유지한다.
+- 2023~2025 대중교통 만족도: 초기 기준과 외부 타당도 비교용이며 개별 경로 선택 Y가 아님
+- 2025년 4월 부산 교통카드: 첨두·시간대 수요 보조 피처이며 교통약자 개인 선호 Y가 아님
+- DRT 운행지역: 이용 가능 권역·후보 확장용
+- 역사 승강기·에스컬레이터 좌표/운영상태: 출구 기반 위치 가공과 시설 사실 확인용
+
+## 라벨 스키마
+
+`route_labels.csv`의 `group_id`는 OD·날씨·이동조건 조합이고 `route_id`는 좌표·구간·공급자 fingerprint입니다. `route_features.jsonl`은 라벨을 받은 바로 그 후보의 피처를 보존합니다. 이후 실제 사용자 후기는 서명된 서버 스냅샷과 연결되므로 클라이언트가 학습 피처를 임의 수정할 수 없습니다.

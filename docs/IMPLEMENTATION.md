@@ -1,148 +1,55 @@
-# 구현 명세 (Implementation Spec)
+# 구현 명세
 
-> 기획서 = [docs/PLAN.md](PLAN.md). 이 문서 = 구현된 코드의 기능·함수·데이터·검증 명세 (기획서 §14 대응).
-> 스택: **React + Vite + TS (frontend)** + **FastAPI (backend)** · 공유 **data/** JSON · 대상: **부산진구(서면)**
-> 4-폴더 구조: `frontend/` · `backend/` · `data/` · `docs/` (저장소 루트 [README](../README.md) 참고)
+## 런타임 흐름
 
----
+1. 프론트가 Kakao Local 검색으로 부산 내 출발지·도착지를 선택한다.
+2. 백엔드가 요청 프로필, 이번 이동 조건, 로그인 사용자의 장기 설정을 AI 서버에 전달한다.
+3. AI 서버가 ODsay·TMAP·OSMnx를 독립 호출하고 실패 공급자를 메타데이터에 남긴다.
+4. ODsay `mapObj`와 `loadLane` geometry, 보행 geometry를 구간별로 결합한다.
+5. EPSG:5179 버퍼 공간 피처와 Open-Meteo GLO-90 지형 피처를 계산한다.
+6. 검증된 프로필별 XGBRanker가 최대 10개를 순위화한다.
+7. 백엔드가 로그인 사용자의 후기 기반 온라인 상태로 재정렬하고 상위 N개를 반환한다.
+8. 프론트는 Kakao 지도 위에 실제 구간별 폴리라인을 표시하고 추정 geometry는 점선으로 구분한다.
 
-## 1. 실행 방법
+지도 공급자는 경로 생성자가 아닙니다. Kakao/Naver 지도 링크에서 대중교통 geometry를 역추출하지 않습니다.
 
-```bash
-# 프론트엔드
-cd frontend && npm install
-npm run dev        # http://localhost:5173 (PWA dev)
-npm test           # 30 tests (점수 검증 13 · 음성 파서 12 · UI 5)
-npm run validate   # 점수 검증 표 출력 (기획서 §8)
-npm run build      # 타입체크 + 프로덕션 빌드
+## 사실성 규칙
 
-# 백엔드(선택)
-cd backend && python -m venv .venv && .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000   # /docs
-pytest             # 30 tests (점수 파리티 · API · 프로바이더 폴백)
+- 키 미설정·API 오류·빈 응답은 가짜 직선이나 0분 경로로 대체하지 않음
+- 계단·승강기·저상버스·혼잡이 확인되지 않으면 `null`/미확인 유지
+- 혼잡은 교통카드 데이터가 연결되기 전까지 추정하지 않음
+- GLO-90 경사는 90m 지형 추정으로 표시하며 실측 보도 구배라고 주장하지 않음
+- 사고다발지역은 모델 입력에서 제외
+- 숫자 모델 점수는 내부 정렬·진단 전용이며 UI에 표시하지 않음
+- 추천 이유는 관측 사실만 사용하고 SHAP 값을 인과 설명으로 사용하지 않음
+
+## 학습·개인화
+
+운영 모델은 `ai/data/rankers.pkl`이며 실제 라벨 없이는 생성되지 않습니다. `POST /labeling/candidates`는 모델 준비 전 후보·피처를 만들고, `POST /recommend`는 모델이 없거나 요청 프로필 모델이 없으면 503을 반환합니다.
+
+후기 저장 전 서버가 route/model/feature snapshot을 서명합니다. 리뷰는 실제 표시된 impression과 일치해야 하며 만족도·이용 가능·재사용 의향으로 개인 온라인 상태를 갱신합니다. 전역 후보 학습은 후기별 동의가 있는 데이터만 익명화하고, 팀이 명시한 50% 미만의 비중으로만 후보 모델에 섞습니다.
+
+## 데이터베이스
+
+PostgreSQL만 지원하며 SQLite 자동 대체는 없습니다. Alembic `20260720_0001`이 사용자, 프로필, impression, 리뷰, 시설 신고 스키마를 생성합니다. 시설 신고는 관리자 검토 상태만 바꾸고 원본 공간 데이터를 자동 수정하지 않습니다.
+
+## UI
+
+- 검색 전: 장소 검색, 실제 현재 위치, 짐 많음·계단 회피, 프로필, 음성
+- 검색 후: 특성 중심 경로 카드, 구간별 지도, 날씨 실측, 저상버스 도착, 실제 이용 후기, 시설 신고
+- 로그인: 카카오 OAuth authorization-code + state + HttpOnly 서비스 세션
+- 게스트: 경로 검색 가능, 프로필·후기 개인화 저장 불가
+
+## 검증 명령
+
+```powershell
+$env:PYTHONPATH='ai'
+.\.venv\Scripts\python.exe -m pytest ai\tests -q
+.\.venv\Scripts\python.exe -m pytest backend\tests -q
+.\.venv\Scripts\python.exe -m compileall -q ai backend
+cd frontend
+npm test -- --run
+npm run build
 ```
 
-키(선택): `frontend/.env` `VITE_KAKAO_MAP_KEY`(지도)·`VITE_DATA_SOURCE=live`+`VITE_API_BASE`(백엔드),
-`backend/.env` `KAKAO_REST_API_KEY`(장소검색)·`OPENWEATHER_API_KEY`(날씨). 없으면 mock 자동 폴백.
-
----
-
-## 2. 파일 구조
-
-```
-KT-10/
-├─ data/                       # 공유 데이터셋(단일 소스) — docs/DATA.md
-│  └─ places.json, routes.demo.json, bus_arrivals.json, weather.json
-├─ frontend/
-│  ├─ index.html, vite.config.ts(@/@data alias), tsconfig.json
-│  ├─ public/                  # favicon, PWA 아이콘
-│  └─ src/
-│     ├─ types/index.ts        # 도메인 타입(SSOT)
-│     ├─ config/               # profiles · weights(가중치) · district
-│     ├─ scoring/              # ★ 점수화 엔진(순수함수): components/explain/engine/utils
-│     │  └─ validation/validation.test.ts   # 점수 검증 + 표
-│     ├─ data/                 # @data JSON 로더(places/routes/busArrivals/weather)
-│     ├─ adapters/             # mock / live(백엔드) 어댑터 + 팩토리
-│     ├─ map/kakaoLoader.ts    # Kakao SDK 로더
-│     ├─ voice/                # synthesis(TTS) · commandParser · intents
-│     ├─ chat/                 # voiceChatStore(상태머신) · useSpeechRecognition(STT)
-│     ├─ store/appStore.ts     # zustand 전역 상태
-│     ├─ components/           # SearchHome · RouteResultSection · MapPreviewSection · VoiceChatDock …
-│     └─ App.tsx, main.tsx, index.css
-├─ backend/
-│  ├─ app/main.py              # FastAPI 엔드포인트 + CORS + lifespan
-│  ├─ app/settings.py          # env(API 키/CORS/타임아웃)
-│  ├─ app/models.py            # Pydantic(camelCase alias)
-│  ├─ app/scoring/             # 점수화 엔진(프론트 TS 1:1 포팅)
-│  ├─ app/providers/           # places(Kakao)·weather(OpenWeather) live + mock 폴백
-│  ├─ app/data/                # data/ JSON 로더(_loader)
-│  └─ tests/                   # test_scoring_validation · test_api · test_providers
-└─ docs/                       # PLAN · IMPLEMENTATION · BACKEND · DATA
-```
-
----
-
-## 3. 핵심 기능 명세 (§14: 기능/입력/출력/함수/데이터/예외/검증/UI)
-
-### 3.1 점수화 엔진 (기획서 §6·§7 — 서비스의 심장)
-
-- **기능**: 경로 후보를 8개 항목으로 채점하고 프로필 가중치를 적용해 최종 추천 점수와 순위를 산출.
-- **입력**: `RouteCandidate[]`, `WeatherCondition`, `ProfileId`, `ScoringOptions{lowFloorPriority, weatherAvoid}`
-- **출력**: `ScoredRoute[]` (상위 3개) — 각 `RouteScore{components, display, finalScore, lowFloorStatus, reasons[], cautions[], voiceSummary}`
-- **주요 함수**:
-  - `scoreAccessibility / scoreWalkComfort / scoreElevator / scoreLowFloorBus / scoreWeatherSafety / scoreSafety / scoreDataReliability / scoreTimeEfficiency` → 각 0~100 "좋음 점수"
-  - `weightedFinal(components, weights)` → 가중합
-  - `recommendRoutes(candidates, weather, profile, opts, topN=3)` → 채점·정렬·상위 N
-- **데이터 구조**: `ScoreComponents`(8필드), `ProfileWeights`(프로필별 가중치, 합=1)
-- **점수 규약**: 모든 하위 점수는 "높을수록 이상적"으로 통일. 화면 표시용 보행부담/날씨위험은 `100 - 좋음점수`.
-- **예외 처리**: 후보 0개 → `[]`; 수직이동/버스 없는 경로 → 승강기/저상 점수는 감점 대신 중립값; 정보 미확인(`undefined`)은 "없음(false)"과 구분해 중간 점수 + 데이터신뢰도 감점.
-- **검증**: `src/scoring/validation/validation.test.ts` (아래 §4).
-- **UI 반영**: `RouteCard` 의 점수막대/배지/이유/주의, 정렬 순서.
-
-### 3.2 저상버스 (기획서 §9) — 핵심 기능
-- **기능**: 정류장 도착 조회, 저상 여부 3값 표시(확정/일반/미확인), 저상버스 우선 정렬·가중.
-- **입력**: `stopId`, `options.lowFloorPriority` / **출력**: 정렬된 `BusArrival[]`, 음성 안내 문구.
-- **함수**: `adapters.bus.getArrivals/listStops`, `sortLowFloorFirst`, `deriveLowFloorStatus`, 가중치 `applyOptionWeights`.
-- **데이터**: `BusArrival{routeName, arrivalMin, isLowFloor:Tristate}`.
-- **예외**: 도착 정보 없음 → "도착 정보 없음", `isLowFloor===undefined` → "미확인" 배지/안내.
-- **UI**: `BusArrivalCard` — 정류장 선택, 저상 우선 토글(♿), 행별 🔊 음성.
-- **음성 예시**: "5분 뒤 도착하는 81번 버스는 저상버스입니다." / "…저상버스 여부가 확인되지 않았습니다."
-
-### 3.3 날씨 반영 (기획서 §10)
-- **기능**: 기온/체감/강수/폭염/한파/풍속/미세먼지 × 노출(실외보행·대기·계단) → 위험 점수·안내.
-- **함수**: `scoreWeatherSafety(route, weather)`; 시나리오 `WEATHER_SCENARIOS`(평상/폭염/한파/비/미세먼지).
-- **규칙**: 폭염+긴 실외보행 / 한파+긴 대기 / 비+계단·경사 / 미세먼지+긴 실외 → 감점 + 안내.
-- **UI**: `WeatherPanel`(시나리오 토글로 점수 변화 시연), 카드 날씨위험 배지(텍스트+색), 주의사항.
-
-### 3.4 음성 (기획서 §11)
-- **기능**: 음성명령(STT)으로 목적지검색/프로필변경/조건변경/저상우선/날씨회피/경로설명/선택/반복, 음성안내(TTS).
-- **함수**: `parseCommand(text): VoiceAction[]`(규칙기반, 다중의도), `useVoiceControl()`(SpeechRecognition + 실행 + TTS), `speak/stopSpeaking`.
-- **예외**: 미지원 브라우저 → 버튼 비활성("음성 미지원"); 미인식 → "이해하지 못했어요"; 장소 미발견 안내.
-- **검증**: `commandParser.test.ts` — 기획서 예시 명령 8종.
-- **UI**: 하단 고정 `VoiceButton`(🎤 음성명령 / 🔁 다시 듣기 / ⏹ 정지).
-
-### 3.5 지도·검색·프로필·UI
-- `MapView`: Kakao SDK 로드(키 있을 때) / 약도 폴백(SVG). `SearchBar`: 장소 자동완성. `ProfileSelector`: 4개 큰 칩.
-- 큰 UI: 고령자/아동 선택 시 자동 확대 + 상단 "큰 글씨" 토글(`--fs-base`, `--tap` 변수).
-
----
-
-## 4. 점수 검증 결과 (기획서 §8 — 표 형태, `npm run validate`)
-
-### 표1. 프로필 × 경로 최종점수 (평상 날씨)
-
-| 프로필 | 도보 최단(육교) | 지하철(승강기) | 저상버스 81 | 일반버스 210 |
-|---|---|---|---|---|
-| 일반 | 81.5 | **92.0** | 87.0 | 87.1 |
-| 고령자 | 70.2 | **92.1** | 87.6 | 85.1 |
-| 아동 | 81.4 | **93.0** | 88.8 | 84.7 |
-| 장애인 | 69.6 | **91.8** | 90.0 | 78.1 |
-
-### 표2. 날씨 시나리오별 날씨위험 점수 (일반 프로필, 높을수록 위험)
-
-| 날씨 | 도보(육교) | 지하철 | 저상버스 | 일반버스 |
-|---|---|---|---|---|
-| 평상 | 0 | 0 | 0 | 0 |
-| 폭염 | 25 | 16 | 19 | 16 |
-| 한파 | 5 | 2 | 13 | 8 |
-| 비 | 30 | 12 | 28 | 12 |
-| 미세먼지 | 20 | 14 | 16 | 14 |
-
-### 검증 항목 통과 (21 tests)
-- ✅ 계단(육교) 경로가 장애인 프로필에서 감점 → 상위 3개에서 제외 (69.6, 최하위)
-- ✅ 승강기 경로가 고령자·장애인에서 일반버스 대비 가점
-- ✅ 저상버스 경로가 장애인에서 일반버스보다 높음 + 저상 우선 옵션 시 순위 상승
-- ✅ 폭염·비·미세먼지 변경 시 동일 경로 날씨 점수 하락
-- ✅ 횡단·사고위험 많은 일반버스 경로가 아동 프로필에서 추가 감점 (87.1→84.7)
-- ✅ `lowFloorStatus` 판정(확정/일반/버스없음) 정확
-- ✅ 음성명령 예시 8종 파싱 정확
-
----
-
-## 5. 실제 API 전환 가이드
-
-`src/adapters/` 의 인터페이스(`PlacesAdapter/RouteAdapter/BusAdapter/WeatherAdapter`)는 mock 과 동일 시그니처. 실 연동 시:
-1. `src/adapters/live.ts` 작성 — Kakao 키워드/길찾기, 공공데이터 버스도착(저상 차량유형), 기상청/에어코리아.
-2. `getAdapters()` 에서 `VITE_DATA_SOURCE=live` 분기 연결.
-3. `data/*` mock 은 발표 데모/테스트 픽스처로 유지.
+외부 키가 없는 CI는 계약·실패경계·모델 학습·UI를 검증합니다. 실제 공급자 응답 검증은 키 입력 후 별도 smoke 단계로 실행해야 합니다.

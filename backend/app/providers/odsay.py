@@ -12,6 +12,16 @@ log = logging.getLogger("providers.odsay")
 _URL = "https://api.odsay.com/v1/api/searchPubTransPathT"
 
 
+def _required_number(container: dict, key: str, *, minimum: float = 0) -> float:
+    """외부 응답의 필수 수치를 결측 0으로 바꾸지 않고 검증한다."""
+    if key not in container or container[key] is None:
+        raise ValueError(f"ODsay response is missing {key}")
+    value = float(container[key])
+    if value < minimum:
+        raise ValueError(f"ODsay response has invalid {key}")
+    return value
+
+
 def _lane_name(sub: dict) -> str:
     lanes = sub.get("lane") or []
     lane = lanes[0] if lanes else {}
@@ -20,8 +30,8 @@ def _lane_name(sub: dict) -> str:
 
 def _segment(path_index: int, segment_index: int, sub: dict) -> RouteSegment:
     traffic_type = sub.get("trafficType")
-    duration = float(sub.get("sectionTime") or 0)
-    distance = float(sub.get("distance") or 0) or None
+    duration = _required_number(sub, "sectionTime")
+    distance = _required_number(sub, "distance") if sub.get("distance") is not None else None
     if traffic_type == 1:
         station = " → ".join(filter(None, [sub.get("startName"), sub.get("endName")]))
         return RouteSegment(
@@ -47,7 +57,14 @@ def _normalize(payload: dict, origin: Place, destination: Place) -> list[RouteCa
     out: list[RouteCandidate] = []
     for i, item in enumerate(paths):
         info = item.get("info") or {}
-        segments = [_segment(i, j, sub) for j, sub in enumerate(item.get("subPath") or [])]
+        try:
+            total_duration = _required_number(info, "totalTime", minimum=0.000001)
+            total_walk = _required_number(info, "totalWalk")
+            bus_transfers = int(_required_number(info, "busTransitCount"))
+            subway_transfers = int(_required_number(info, "subwayTransitCount"))
+            segments = [_segment(i, j, sub) for j, sub in enumerate(item.get("subPath") or [])]
+        except (TypeError, ValueError):
+            continue
         if not segments:
             continue
         first = info.get("firstStartStation") or origin.name
@@ -55,9 +72,9 @@ def _normalize(payload: dict, origin: Place, destination: Place) -> list[RouteCa
         out.append(RouteCandidate(
             id=f"odsay-{i + 1}", summary=f"{first} → {last}",
             origin=origin.name, destination=destination.name, segments=segments,
-            total_duration_min=float(info.get("totalTime") or sum(s.duration_min for s in segments)),
-            total_walk_m=float(info.get("totalWalk") or 0),
-            transfer_count=int(info.get("busTransitCount") or 0) + int(info.get("subwayTransitCount") or 0),
+            total_duration_min=total_duration,
+            total_walk_m=total_walk,
+            transfer_count=bus_transfers + subway_transfers,
         ))
     return out
 

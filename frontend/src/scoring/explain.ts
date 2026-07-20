@@ -30,7 +30,7 @@ export function buildReasons(
   if (hasVertical && c.elevator >= 90)
     out.push('승강기로 이동할 수 있어 계단을 피할 수 있어요.');
   if (lowFloor === 'confirmed') out.push('경로의 버스가 저상버스로 확인됐어요.');
-  if (c.safety >= 85) out.push('횡단·사고위험이 낮은 편이에요.');
+  if (c.safety >= 85) out.push('횡단과 환승 부담이 낮은 편이에요.');
   if (c.weatherSafety >= 85) out.push('현재 날씨 조건에서 비교적 안전해요.');
   if (r.transferCount === 0) out.push('환승 없이 한 번에 이동해요.');
 

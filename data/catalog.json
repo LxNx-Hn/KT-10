@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "coordinatePolicy": {
+    "sourceCrs": "EPSG:4326",
+    "distanceCrs": "EPSG:5179",
+    "busanBounds": { "lat": [34.8, 35.5], "lng": [128.7, 129.4] },
+    "missingValue": "null_or_omitted_never_zero"
+  },
+  "modelInputs": [
+    { "layer": "shelter", "paths": ["raw/부산광역시_무더위_쉼터_20251119.csv", "raw/부산광역시_한파_쉼터_현황_20251119.csv"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null },
+    { "layer": "cctv", "paths": ["raw/부산광역시_방범용_CCTV_정보_20251229.csv", "raw/CCTV정보_부산광역시.csv"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null },
+    { "layer": "aed", "paths": ["raw/부산_AED_위경도_결과.xlsx"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null },
+    { "layer": "wheelchair_charger", "paths": ["raw/부산전동휠체어급속충전기표준데이터.csv"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null },
+    { "layer": "dongbaekjeon", "paths": ["raw/동백전_가맹점_현황.csv"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null },
+    { "layer": "smart_shelter", "paths": ["raw/부산광역시_스마트_버스쉘터_설치_현황.csv"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null },
+    { "layer": "subway_accessibility", "paths": ["raw/busan_subway_station_accessibility_processed.xlsx"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null },
+    { "layer": "crosswalk_signal", "paths": ["raw/busan_crosswalk_signal_shp_processed.xlsx"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null },
+    { "layer": "bus_stop", "paths": ["raw/bus_stop_national_csv_processed.xlsx"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null }
+  ],
+  "excluded": [
+    {
+      "layer": "traffic_accident_hotspots",
+      "pathGlob": "da/geocoded/부산_KOROAD 사고다발지역/**",
+      "status": "excluded_from_service_and_model",
+      "reason": "2026-07-16 자문 결정에 따라 현재 서비스 목적에서 제외"
+    }
+  ],
+  "pendingExternal": [
+    { "layer": "public_transport_satisfaction_2023_2025", "status": "pending_receipt", "plannedUse": "초기 기준 검토와 외부 타당도 비교; 경로 선택 Y 라벨로 간주하지 않음" },
+    { "layer": "busan_transit_card_2025_04", "status": "pending_receipt", "plannedUse": "시간대별 수요와 첨두시간 보조 피처; 개인 경로 선호 Y 라벨로 간주하지 않음" },
+    { "layer": "drt_service_area", "status": "pending_confirmation", "plannedUse": "DRT 가능 권역 표시와 후보 교통수단 확장" },
+    { "layer": "station_elevator_escalator_coordinates_status", "status": "requested", "plannedUse": "역사 출입구와 수직이동 시설의 위치 및 운영상태 확인" }
+  ]
+}

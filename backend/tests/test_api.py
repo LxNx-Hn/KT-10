@@ -1,10 +1,22 @@
 """REST API 스모크 테스트 (FastAPI TestClient). camelCase JSON 호환성 포함."""
+import pytest
 from fastapi.testclient import TestClient
 
 from app.data.places import find_place
 from app.main import app
+from app.settings import settings
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_demo_sources(monkeypatch):
+    """개발자 로컬 .env 유무와 무관하게 고정 데모 계약만 검증한다."""
+    for field in (
+        "ai_server_url", "odsay_api_key", "kakao_rest_api_key",
+        "openweather_api_key", "bus_service_key",
+    ):
+        monkeypatch.setattr(settings, field, "")
 
 
 def _place_payload(place_id: str) -> dict:
@@ -63,6 +75,14 @@ def test_routes_candidates_demo_od():
     assert r.status_code == 200
     ids = [c["id"] for c in r.json()]
     assert ids == ["r1-overpass", "r2-subway", "r3-lowfloor", "r4-regularbus"]
+
+
+def test_routes_candidates_rejects_outside_busan():
+    body = {
+        "origin": {"id": "seoul", "name": "서울역", "lat": 37.5547, "lng": 126.9707},
+        "destination": _place_payload("seomyeon-stn"),
+    }
+    assert client.post("/api/routes/candidates", json=body).status_code == 422
 
 
 def test_routes_recommend_disabled():

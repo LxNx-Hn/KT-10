@@ -1,20 +1,21 @@
 pandas==2.2.2
-geopandas==1.0.1
-shapely==2.0.6
+geopandas==1.1.4
+shapely==2.1.2
 numpy==1.26.4
 xgboost==2.1.1
 scikit-learn==1.5.1
-shap==0.46.0
 openpyxl==3.1.5
+fastapi==0.139.2
+uvicorn[standard]==0.51.0
 
 # ODsay/TMAP 수집기 + 설정 로딩
 httpx==0.28.1
+httpx2==2.7.0
 python-dotenv==1.1.1
 pydantic-settings==2.14.2
 
 # OSMnx fallback 수집기
-osmnx==1.9.4
-networkx==3.3
+osmnx==2.1.0
+networkx==3.6.1
 
-# DQN 에이전트 (ai/rl/)
-torch==2.5.0
+# RL 코드는 연구 실험으로만 보존한다. 실제 리뷰 보상 설계 전에는 운영 의존성에 포함하지 않는다.

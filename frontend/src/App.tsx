@@ -36,7 +36,7 @@ export default function App() {
         <div>
           <p className="app__eyebrow">서비스명 미정</p>
           <h1 className="app__title">접근성 경로 추천</h1>
-          <p className="app__subtitle">{DISTRICT.name} · 보행·대중교통 중심 데모</p>
+          <p className="app__subtitle">{DISTRICT.name} · {DISTRICT.mvpArea} 중심 MVP 검증</p>
         </div>
         <button
           type="button"

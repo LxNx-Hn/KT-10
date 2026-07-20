@@ -87,4 +87,12 @@ describe('UI 상태 — 검색 중심 구조', () => {
     expect(map).toBeTruthy(); // 결과가 생기면 지도 자동 확장
     expect(precedes(routeCard!, map!)).toBe(true);
   });
+
+  it('경로 카드에는 내부 점수를 노출하지 않고 대표 특성을 표시한다', () => {
+    const { container } = render(<App />);
+    act(() => seedResults());
+    expect(container.querySelector('.route-card__final')).toBeNull();
+    expect(container.querySelector('.route-card__feature')?.textContent).toMatch(/경로|이동시간|환승|도보/);
+    expect(container.querySelector('.scoreval')).toBeNull();
+  });
 });

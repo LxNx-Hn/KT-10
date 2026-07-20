@@ -37,8 +37,8 @@ describe('① 계단 vs 승강기 — 장애인 프로필', () => {
     const s = scoreAll('disabled', 'normal');
     expect(s['r2-subway'].finalScore).toBeGreaterThan(s['r1-overpass'].finalScore);
     // 승강기 하위 점수도 명확히 차이
-    expect(s['r2-subway'].components.elevator).toBeGreaterThan(
-      s['r1-overpass'].components.elevator,
+    expect(s['r2-subway'].components.elevator!).toBeGreaterThan(
+      s['r1-overpass'].components.elevator!,
     );
   });
 
@@ -62,8 +62,8 @@ describe('③ 저상버스 가점 — 장애인', () => {
   it('저상버스 R3가 일반버스 R4보다 높다', () => {
     const s = scoreAll('disabled', 'normal');
     expect(s['r3-lowfloor'].finalScore).toBeGreaterThan(s['r4-regularbus'].finalScore);
-    expect(s['r3-lowfloor'].components.lowFloorBus).toBeGreaterThan(
-      s['r4-regularbus'].components.lowFloorBus,
+    expect(s['r3-lowfloor'].components.lowFloorBus!).toBeGreaterThan(
+      s['r4-regularbus'].components.lowFloorBus!,
     );
   });
 });
@@ -81,8 +81,8 @@ describe('⑤ 날씨 반영', () => {
   it('폭염 시 실외 보행이 긴 R1의 날씨 안전 점수가 낮아진다', () => {
     const normal = scoreAll('general', 'normal');
     const heat = scoreAll('general', 'heatwave');
-    expect(heat['r1-overpass'].components.weatherSafety).toBeLessThan(
-      normal['r1-overpass'].components.weatherSafety,
+    expect(heat['r1-overpass'].components.weatherSafety!).toBeLessThan(
+      normal['r1-overpass'].components.weatherSafety!,
     );
     expect(heat['r1-overpass'].finalScore).toBeLessThan(normal['r1-overpass'].finalScore);
   });
@@ -90,22 +90,22 @@ describe('⑤ 날씨 반영', () => {
   it('비 올 때 경사 구간이 있는 R3의 날씨 위험이 올라간다', () => {
     const normal = scoreAll('general', 'normal');
     const rain = scoreAll('general', 'rain');
-    expect(rain['r3-lowfloor'].display.weatherRisk).toBeGreaterThan(
-      normal['r3-lowfloor'].display.weatherRisk,
+    expect(rain['r3-lowfloor'].display.weatherRisk!).toBeGreaterThan(
+      normal['r3-lowfloor'].display.weatherRisk!,
     );
   });
 
   it('미세먼지 나쁨 시 실외 이동이 긴 경로의 날씨 안전 점수가 낮아진다', () => {
     const normal = scoreAll('general', 'normal');
     const dust = scoreAll('general', 'dust');
-    expect(dust['r1-overpass'].components.weatherSafety).toBeLessThan(
-      normal['r1-overpass'].components.weatherSafety,
+    expect(dust['r1-overpass'].components.weatherSafety!).toBeLessThan(
+      normal['r1-overpass'].components.weatherSafety!,
     );
   });
 });
 
 describe('⑥ 프로필별 추천 차이', () => {
-  it('횡단보도·사고위험이 많은 R4는 아동 프로필에서 더 크게 감점된다', () => {
+  it('횡단보도·환승 구간이 많은 R4는 아동 프로필에서 더 크게 감점된다', () => {
     const general = scoreAll('general', 'normal');
     const child = scoreAll('child', 'normal');
     expect(child['r4-regularbus'].finalScore).toBeLessThan(
@@ -149,7 +149,7 @@ describe('검증 결과 표', () => {
       const s = scoreAll('general', w);
       weatherTable[WEATHER_SCENARIOS[w].label] = {};
       for (const r of ROUTES)
-        weatherTable[WEATHER_SCENARIOS[w].label][r.summary] = s[r.id].display.weatherRisk;
+        weatherTable[WEATHER_SCENARIOS[w].label][r.summary] = s[r.id].display.weatherRisk!;
     }
     // eslint-disable-next-line no-console
     console.log('\n[표2] 날씨 시나리오별 경로 날씨위험 점수 (일반 프로필)');

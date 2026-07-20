@@ -2,6 +2,8 @@
 .DS_Store
 *.log
 *.local
+.venv/
+**/.venv/
 
 # AI 도구 로컬 파일
 .claude/
@@ -13,6 +15,8 @@ claude-preview/
 # 환경 변수
 .env
 .env.local
+**/.env
+!**/.env.example
 
 # 에디터/OS
 .idea/
@@ -27,6 +31,7 @@ __pycache__/
 # ai/ 파이프라인 캐시 및 모델 산출물 (재생성 가능 — data/raw/ 원본은 git 추적 유지)
 ai/data/cache/
 ai/data/rankers.pkl
+ai/data/training/generated/
 
 # OSMnx 기본 HTTP 응답 캐시 (저장소 루트 기준 실행 시 자동 생성)
 /cache/

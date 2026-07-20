@@ -12,7 +12,7 @@ import { PROFILES } from '@/config/profiles';
 import { DEFAULT_WEATHER, type WeatherScenarioId } from '@/data/weather';
 import { findPlace } from '@/data/places';
 import { DEMO_OD } from '@/data/routes';
-import { DISTRICT } from '@/config/district';
+import { isInDistrict } from '@/config/district';
 import type { WeatherAvoidanceMode } from '@/voice/intents';
 
 /** 날씨 회피 모드 → 데모 날씨 시나리오 매핑 */
@@ -170,17 +170,33 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   /* ── 음성 챗봇 연동 액션 (요구사항 §9) ── */
 
-  /** 출발지가 비어 있으면 현재 위치(데모: 부산진구청)로 채운다 */
+  /** 출발지가 비어 있으면 브라우저의 실제 현재 위치 권한을 요청한다. */
   ensureOrigin: () => {
     if (get().origin) return;
-    set({ origin: findPlace(DEMO_OD.originId) ?? null });
+    get().useCurrentLocation();
   },
 
-  /** "현재 위치 사용": geolocation 미사용 데모 — 부산진구 중심을 현재 위치로 설정 */
+  /** 브라우저 Geolocation으로 확인된 부산 좌표만 출발지로 사용한다. */
   useCurrentLocation: () => {
-    set({
-      origin: { id: 'current', name: '현재 위치(데모)', category: '현재 위치', ...DISTRICT.center },
-    });
+    if (!navigator.geolocation) {
+      set({ error: '이 브라우저에서는 현재 위치를 사용할 수 없습니다.' });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const current = { lat: position.coords.latitude, lng: position.coords.longitude };
+        if (!isInDistrict(current)) {
+          set({ error: '현재 위치가 부산 서비스 범위 밖입니다.' });
+          return;
+        }
+        set({
+          origin: { id: 'current', name: '현재 위치', category: '현재 위치', ...current },
+          error: null,
+        });
+      },
+      () => set({ error: '현재 위치를 가져오지 못했습니다. 위치 권한을 확인해 주세요.' }),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
   },
 
   setDestinationFromVoice: async (destination) => {

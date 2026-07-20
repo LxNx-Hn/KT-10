@@ -11,10 +11,12 @@ MERGE_THRESHOLD_M = 30.0
 class MergedRoute:
     sources:      list
     path:         list
-    duration_min: float
+    duration_min: float | None
     distance_m:   float
     raw_response: dict = field(default_factory=dict)
     source:       str = ""
+    segments:     list = field(default_factory=list)
+    geometry_quality: str = "exact"
 
 
 def _haversine(c1: Coordinate, c2: Coordinate) -> float:
@@ -56,7 +58,15 @@ def merge_route_candidates(candidates: list) -> list:
             if _path_similarity(cand.path, m.path) <= MERGE_THRESHOLD_M:
                 if cand.source not in m.sources:
                     m.sources.append(cand.source)
-                if cand.raw_response and not m.raw_response:
+                quality = {"estimated": 0, "mixed": 1, "exact": 2}
+                if quality.get(cand.geometry_quality, 0) > quality.get(m.geometry_quality, 0):
+                    m.path = cand.path
+                    m.duration_min = cand.duration_min
+                    m.distance_m = cand.distance_m
+                    m.raw_response = cand.raw_response
+                    m.segments = cand.segments
+                    m.geometry_quality = cand.geometry_quality
+                elif cand.raw_response and not m.raw_response:
                     m.raw_response = cand.raw_response
                 matched = True
                 break
@@ -69,6 +79,8 @@ def merge_route_candidates(candidates: list) -> list:
                 duration_min=cand.duration_min,
                 distance_m=cand.distance_m,
                 raw_response=cand.raw_response or {},
+                segments=cand.segments,
+                geometry_quality=cand.geometry_quality,
             ))
 
     return merged

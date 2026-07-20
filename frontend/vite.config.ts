@@ -23,7 +23,7 @@ export default defineConfig({
         name: '교통약자 접근성 경로 추천 PWA',
         short_name: '접근성경로',
         description:
-          '보행자·대중교통·교통약자를 위한 접근성 중심 경로 추천 PWA (부산진구 데모)',
+          '부산 전역 보행자·대중교통 이용자를 위한 접근성 중심 경로 추천 PWA',
         theme_color: '#1f6feb',
         background_color: '#ffffff',
         display: 'standalone',
@@ -49,5 +49,6 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],
+    env: { VITE_DATA_SOURCE: 'mock' },
   },
 });

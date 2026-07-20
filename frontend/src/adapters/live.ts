@@ -5,9 +5,9 @@ import type { WeatherScenarioId } from '@/data/weather';
 /**
  * 실 API(Python FastAPI 백엔드) 어댑터.
  * VITE_DATA_SOURCE=live 일 때 사용. 백엔드는 camelCase JSON 으로 응답하여 도메인 타입과 호환.
- * 기본 베이스 URL: http://localhost:8000 (VITE_API_BASE 로 변경 가능)
+ * 기본 베이스 URL: http://localhost:8002 (VITE_API_BASE 로 변경 가능)
  */
-const BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(/\/$/, '');
+const BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8002').replace(/\/$/, '');
 const TIMEOUT_MS = 7000;
 
 /** 타임아웃이 있는 fetch (백엔드 무응답 시 무한 대기 방지) */
@@ -67,7 +67,8 @@ export const liveAdapters: Adapters = {
       if (!res.ok) throw new Error(`bus arrivals → ${res.status}`);
       return (await res.json()) as BusStopArrivals;
     },
-    listStops: () => getJson<BusStopArrivals[]>('/api/bus/stops'),
+    listStops: (query = '') =>
+      getJson<BusStopArrivals[]>(`/api/bus/stops?q=${encodeURIComponent(query)}`),
   },
   weather: {
     getCurrent: (scenario?: WeatherScenarioId) =>

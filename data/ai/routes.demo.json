@@ -191,8 +191,7 @@
         "durationMin": 2.0,
         "distanceM": 130.0,
         "outdoor": true,
-        "crosswalkCount": 2,
-        "accidentRisk": "medium"
+        "crosswalkCount": 2
       }
     ],
     "totalDurationMin": 13.0,

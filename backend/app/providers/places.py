@@ -46,16 +46,17 @@ async def search_places(query: str) -> list[Place]:
                 KAKAO_KEYWORD_URL,
                 params={
                     "query": q,
-                    "size": 10,
-                    "x": DISTRICT["center"]["lng"],
-                    "y": DISTRICT["center"]["lat"],
-                    "radius": 8000,
+                    "size": 15,
+                    "rect": ",".join(map(str, (
+                        DISTRICT["bounds"]["min_lng"], DISTRICT["bounds"]["min_lat"],
+                        DISTRICT["bounds"]["max_lng"], DISTRICT["bounds"]["max_lat"],
+                    ))),
                     "sort": "accuracy",
                 },
                 headers={"Authorization": f"KakaoAK {settings.kakao_rest_api_key}"},
             )
             res.raise_for_status()
             return _map_kakao(res.json().get("documents", []))
-    except Exception as exc:  # 키 누수 방지: 클래스명만 로깅
-        log.warning("Kakao 장소검색 실패(%s) → mock 폴백", type(exc).__name__)
-        return search_places_by_name(q)
+    except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+        log.warning("Kakao 장소검색 실패(%s)", type(exc).__name__)
+        raise RuntimeError("Kakao place search request failed") from exc

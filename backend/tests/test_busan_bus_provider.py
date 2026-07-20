@@ -1,0 +1,37 @@
+from xml.etree import ElementTree
+
+import pytest
+
+from app.providers.busan_bus import _arrival, _parse_root
+
+
+def test_parses_official_low_floor_arrival_contract():
+    item = ElementTree.fromstring("""
+      <item><lineno>81</lineno><carno1>5217</carno1><min1>5</min1>
+      <station1>2</station1><lowplate1>1</lowplate1></item>
+    """)
+    result = _arrival(item, "1")
+    assert result is not None
+    assert result.route_name == "81"
+    assert result.vehicle_no == "5217"
+    assert result.arrival_min == 5
+    assert result.remaining_stops == 2
+    assert result.is_low_floor is True
+
+
+def test_preserves_non_numeric_arrival_status_and_unknown_low_floor():
+    item = ElementTree.fromstring("""
+      <item><lineno>1010</lineno><carno2>5201</carno2><min2>운행대기</min2>
+      <station2></station2><lowplate2>9</lowplate2></item>
+    """)
+    result = _arrival(item, "2")
+    assert result is not None
+    assert result.arrival_min is None
+    assert result.arrival_message == "운행대기"
+    assert result.remaining_stops is None
+    assert result.is_low_floor is None
+
+
+def test_rejects_bims_error_response():
+    with pytest.raises(RuntimeError, match="SERVICE_KEY_IS_NOT_REGISTERED_ERROR"):
+        _parse_root(b"<response><header><resultCode>30</resultCode><resultMsg>SERVICE_KEY_IS_NOT_REGISTERED_ERROR</resultMsg></header></response>")

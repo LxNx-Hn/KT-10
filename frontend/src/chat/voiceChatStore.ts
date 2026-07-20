@@ -29,7 +29,7 @@ function profilePhrase(p: ProfileId): string {
     case 'disabled':
       return '장애인 기준으로 계단을 피하고 승강기·저상버스를 우선하는 경로를 추천하겠습니다.';
     case 'child':
-      return '아동 기준으로 안전한 횡단과 사고위험이 낮은 경로를 추천하겠습니다.';
+      return '아동 기준으로 안전한 횡단과 단순한 환승 경로를 추천하겠습니다.';
     default:
       return '일반 기준으로 시간·보행 부담·날씨를 균형 있게 반영해 추천하겠습니다.';
   }

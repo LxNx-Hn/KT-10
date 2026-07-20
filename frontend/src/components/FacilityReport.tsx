@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(/\/$/, '');
+const BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8002').replace(/\/$/, '');
 
 /** 시설물 위치·운영상태 오류를 검토 대기열로 전달한다. 사용자 신고만으로 데이터는 바뀌지 않는다. */
 export default function FacilityReport() {
