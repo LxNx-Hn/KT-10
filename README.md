@@ -34,7 +34,7 @@ KT-10/
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt -r ai\requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r backend\requirements-dev.txt -r ai\requirements-dev.txt
 
 # AI (8001)
 $env:PYTHONPATH='ai'

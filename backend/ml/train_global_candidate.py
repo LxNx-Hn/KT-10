@@ -11,9 +11,6 @@ from pathlib import Path
 
 import pandas as pd
 
-from ai.scoring.train import load_human_training_data, train_rankers
-
-
 def _rankable_review_groups(frame: pd.DataFrame) -> pd.DataFrame:
     counts = frame.groupby(["profile", "group_id"])["route_id"].nunique()
     valid = set(counts[counts >= 2].index)
@@ -48,6 +45,10 @@ def compose(initial: pd.DataFrame, reviews: pd.DataFrame, review_share: float) -
 
 
 def main() -> None:
+    # 서버 런타임은 학습 패키지를 설치하지 않는다. 이 도구를 실제로 실행할
+    # 때만 ai/requirements.txt의 XGBoost 학습 모듈을 불러온다.
+    from ai.scoring.train import load_human_training_data, train_rankers
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--initial-labels", type=Path, default=Path("ai/data/training/route_labels.csv"))
     parser.add_argument("--initial-features", type=Path, default=Path("ai/data/training/route_features.jsonl"))
