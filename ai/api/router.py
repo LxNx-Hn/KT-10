@@ -176,33 +176,49 @@ async def recommend(req: RecommendRequest):
 def _parse_api_features(candidate) -> dict:
     """
     ODsay / TMAP raw_response에서 접근성 피처를 파싱한다.
+
+    trafficType: 1=지하철, 2=버스, 3=도보
+    저상버스 판단: lane[].type == 11 (ODsay 내부 코드) 또는 busNo에 "저상" 포함
+    엘리베이터: 도보 구간(trafficType=3)에서 stairInfo.elevatorYN == 'Y'
+
     응답이 없거나 파싱 불가 시 기본값(0)으로 채운다.
     """
     raw = candidate.raw_response or {}
+
+    if "note" in raw:
+        return _default_api_features(candidate.duration_min)
 
     stair_count = 0
     is_low_floor = 0
 
     # ODsay 응답 파싱
     info = raw.get("info", {})
-    transfer_count = info.get("transferCount", 0)
-    walk_distance_m = info.get("totalWalk", 0)
+    transfer_count = int(info.get("transferCount", 0))
+    walk_distance_m = float(info.get("totalWalk", 0))
 
     sub_paths = raw.get("subPath", [])
     elevator_segments = 0
-    total_segments = max(len(sub_paths), 1)
+    walk_segments = 0
 
     for sub in sub_paths:
-        if sub.get("trafficType") == 2:
-            lanes = sub.get("lane", [{}])
-            for lane in lanes:
+        traffic_type = sub.get("trafficType", 0)
+
+        if traffic_type == 2:
+            for lane in sub.get("lane", []):
+                if lane.get("type") == 11:
+                    is_low_floor = 1
                 if "저상" in str(lane.get("busNo", "")):
                     is_low_floor = 1
-        if sub.get("trafficType") == 3:
-            if sub.get("stairInfo", {}).get("elevatorYN") == "Y":
+
+        if traffic_type == 3:
+            walk_segments += 1
+            stair_info = sub.get("stairInfo", {})
+            if stair_info.get("stairYN") == "Y":
+                stair_count += 1
+            if stair_info.get("elevatorYN") == "Y":
                 elevator_segments += 1
 
-    elevator_ratio = elevator_segments / total_segments
+    elevator_ratio = elevator_segments / walk_segments if walk_segments > 0 else 0.0
 
     # TMAP 응답 파싱 (facilityType으로 계단 카운트)
     for feat in raw.get("features", []):
@@ -217,11 +233,27 @@ def _parse_api_features(candidate) -> dict:
         "min_slope_percent": 0.0,
         "slope_iqr": 0.0,
         "stair_count": stair_count,
-        "elevator_ratio": elevator_ratio,
+        "elevator_ratio": round(elevator_ratio, 4),
         "transfer_count": transfer_count,
         "walk_distance_m": walk_distance_m,
         "total_duration_min": candidate.duration_min,
         "is_low_floor_bus": is_low_floor,
+    }
+
+
+def _default_api_features(duration_min: float) -> dict:
+    """raw_response가 없을 때(플레이스홀더 등) 반환할 기본값."""
+    return {
+        "avg_slope_percent": 0.0,
+        "max_slope_percent": 0.0,
+        "min_slope_percent": 0.0,
+        "slope_iqr": 0.0,
+        "stair_count": 0,
+        "elevator_ratio": 0.0,
+        "transfer_count": 0,
+        "walk_distance_m": 0.0,
+        "total_duration_min": duration_min,
+        "is_low_floor_bus": 0,
     }
 
 
