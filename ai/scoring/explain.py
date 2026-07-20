@@ -19,9 +19,26 @@ REASON_MAP: dict[str, tuple[str | None, str | None]] = {
     "smart_shelter_has_ac":        ("냉난방 가능한 버스쉘터가 근처에 있어요", None),
     "aed_nearby":                  ("경로 근처에 AED가 설치돼 있어요", None),
     "wheelchair_charger_nearby":   ("경로 근처에 전동휠체어 충전기가 있어요", None),
-    "dongbaekjeon_store_count_200m":("동백전 가맹점이 많은 구역을 지나요", None),
+    "dongbaekjeon_store_count_300m":("동백전 가맹점이 많은 구역을 지나요", None),
     "cctv_density_50m":            ("CCTV가 잘 설치된 안전한 경로예요", "CCTV가 적은 구간이 있어요"),
 }
+
+# 기존 REASON_MAP 에 없는 키만 추가 (crowd_level, smart_shelter_has_ac,
+# wheelchair_charger_nearby, aed_nearby는 이미 위에 존재하므로 제외)
+REASON_MAP.update({
+    "slope_iqr": (
+        "경사 변화가 완만한 편이에요",
+        "경사가 구간마다 들쭉날쭉해요",
+    ),
+    "total_duration_min": (
+        "이동 시간이 짧은 경로예요",
+        "이동 시간이 다소 걸리는 경로예요",
+    ),
+    "accident_zone_count": (
+        "사고 위험 구간을 피한 경로예요",
+        "사고다발구간이 포함돼 있어요",
+    ),
+})
 
 
 def generate_reasons(

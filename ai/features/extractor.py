@@ -10,9 +10,10 @@ import geopandas as gpd
 import pandas as pd
 
 # 버퍼 크기 (위경도 기준 근사값 — 정밀 투영 변환 불필요 수준)
-# 위도 1도 ≈ 111km → 50m ≈ 0.00045도 / 200m ≈ 0.0018도
+# 위도 1도 ≈ 111km → 50m ≈ 0.00045도 / 200m ≈ 0.0018도 / 300m ≈ 0.0027도
 BUF_50M  = 0.00045
 BUF_200M = 0.0018
+BUF_300M = 0.0027   # 동백전 가맹점 전용
 
 
 # ─────────────────────────────────────────────────────────────
@@ -62,8 +63,9 @@ def _zero_features() -> dict:
         "wheelchair_charger_nearby":     0,
         "smart_shelter_nearby":          0,
         "smart_shelter_has_ac":          0,
-        "dongbaekjeon_store_count_200m": 0,
+        "dongbaekjeon_store_count_300m": 0,
         "bus_stop_count_200m":           0,
+        "accident_zone_count":           0,
     }
 
 
@@ -95,7 +97,7 @@ def extract_route_features(
     -----
     - 좌표가 2개 미만이면 전체 피처를 0으로 반환.
     - 레이어가 없거나 비어있으면 해당 피처는 0으로 처리.
-    - 버퍼 크기: CCTV·횡단보도 50m / 쉼터·AED·충전기·동백전 200m.
+    - 버퍼 크기: CCTV·횡단보도 50m / 쉼터·AED·충전기 200m / 동백전 가맹점 300m.
     """
     if len(route_coords) < 2:
         return _zero_features()
@@ -104,7 +106,13 @@ def extract_route_features(
     line         = LineString([(lng, lat) for lat, lng in route_coords])
     buf_50m      = line.buffer(BUF_50M)
     buf_200m     = line.buffer(BUF_200M)
+    buf_300m     = line.buffer(BUF_300M)
     route_len_km = max(line.length * 111.0, 0.1)  # 위경도 → km 근사, 최솟값 0.1
+
+    accident = data_layers.get("accident")
+    accident_count = 0
+    if accident is not None and len(accident) > 0:
+        accident_count = int(accident[accident.geometry.intersects(line)].shape[0])
 
     return {
         # CCTV 밀도: 경로 1km당 CCTV 수 (50m 버퍼)
@@ -114,13 +122,15 @@ def extract_route_features(
         # 횡단보도 (50m 버퍼)
         "crosswalk_count":        _count(data_layers.get("crosswalk"), buf_50m),
         "crosswalk_signal_ratio": _mean_col(data_layers.get("crosswalk"), buf_50m, "has_signal"),
+        # 사고다발구간 통과 수 (경로 자체와의 교차 여부)
+        "accident_zone_count": accident_count,
         # 편의시설 존재 여부 (200m 버퍼)
         "shelter_nearby":           _any(data_layers.get("shelter"),            buf_200m),
         "aed_nearby":               _any(data_layers.get("aed"),                buf_200m),
         "wheelchair_charger_nearby":_any(data_layers.get("wheelchair_charger"), buf_200m),
         "smart_shelter_nearby":     _any(data_layers.get("smart_shelter"),      buf_200m),
         "smart_shelter_has_ac":     _any_col(data_layers.get("smart_shelter"),  buf_200m, "has_ac"),
-        # 카운트 (200m 버퍼)
-        "dongbaekjeon_store_count_200m": _count(data_layers.get("dongbaekjeon"), buf_200m),
+        # 카운트 (동백전 300m / 버스정류장 200m)
+        "dongbaekjeon_store_count_300m": _count(data_layers.get("dongbaekjeon"), buf_300m),
         "bus_stop_count_200m":           _count(data_layers.get("bus_stop"),     buf_200m),
     }
