@@ -1,5 +1,7 @@
 import http from "node:http";
-import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { readFile, rm, mkdir } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 const ROOT=path.dirname(fileURLToPath(import.meta.url)),PUBLIC=path.join(ROOT,"public");
@@ -7,8 +9,20 @@ const PORT=Number(process.env.PORT??8080),ODsayKey=process.env.ODSAY_API_KEY?.tr
 const DEFAULT={sx:129.0594,sy:35.1577,ex:129.0086,ey:35.2105};
 const CSV=[["부산광역시_무더위 쉼터_전처리.csv","무더위쉼터"],["부산광역시_한파쉼터_전처리.csv","한파쉼터"]];
 const FACILITY_CSV=[["부산광역시_스마트_버스쉘터_설치_현황.csv","스마트 버스쉘터"],["부산전동휠체어급속충전기표준데이터.csv","전동휠체어 급속충전기"],["부산_AED_위경도_결과.csv","AED"]];
+const GIS_ROOT=[
+  process.env.GIS_PROJECT_ROOT_PATH?.trim(),
+  path.join(ROOT,"GIS","busan_slope"),
+  path.resolve(ROOT,"..","GIS","busan_slope")
+].filter(Boolean).find(candidate=>existsSync(candidate))||path.join(ROOT,"GIS","busan_slope");
+const QGIS_ROOT=process.env.QGIS_ROOT_PATH?.trim()||"C:\\Program Files\\QGIS 3.44.12";
+const QGIS_PYTHON=path.join(QGIS_ROOT,"apps","Python312","python.exe");
+const QGIS_SCRIPT=path.join(GIS_ROOT,"scripts","odsay_walking_slope_analysis.py");
+const QGIS_DEM=path.join(GIS_ROOT,"02_processed","dem","busan_dem_clipped_90m.tif");
+const QGIS_OUTPUT=path.join(GIS_ROOT,"04_output","current_odsay_analysis.gpkg");
+const QGIS_PROJECT=path.join(GIS_ROOT,"qgis_project","busan_slope.qgz");
 if(!ODsayKey||!KakaoKey||!BusanBusKey){console.error("Required API key is missing in .env");process.exit(1)}
 const arr=v=>Array.isArray(v)?v:v?[v]:[];let routeCache,shelterCache,facilityCache;const walkCache=new Map(),busCache=new Map(),arrivalCache=new Map(),subwayTimetableCache=new Map();
+let qgisAnalysisRunning=false;
 const ARRIVAL_CACHE_MS=30000,BUSAN_ARRIVAL_URL="https://apis.data.go.kr/6260000/BusanBIMS/stopArrByBstopid";
 const SUBWAY_TIMETABLE_CACHE_MS=21600000;
 function csvRows(text){const out=[];let row=[],field="",quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){field+='"';i++}else if(c==='"')quoted=false;else field+=c}else if(c==='"')quoted=true;else if(c===","){row.push(field);field=""}else if(c==="\n"){row.push(field.replace(/\r$/,""));out.push(row);row=[];field=""}else field+=c}if(field||row.length){row.push(field.replace(/\r$/,""));out.push(row)}return out}
@@ -43,7 +57,53 @@ function stops(ss){const map=new Map();for(const s of ss){if(s.trafficType===3)c
 async function busInfo(lane,startID){const id=lane.busID;if(!id)return{name:lane.busNo??lane.name??"",busID:null,direction:null};let detail=busCache.get(id);if(!detail){detail=(await odsay("busLaneDetail",{busID:id})).result;busCache.set(id,detail)}const boarding=arr(detail.station).find(s=>String(s.stationID)===String(startID)),code=Number(boarding?.stationDirection??0),direction=code===1?detail.busEndPoint:code===2?detail.busStartPoint:detail.busEndPoint;return{name:lane.busNo??detail.busNo??"",busID:id,direction:direction??null,routeStart:detail.busStartPoint??null,routeEnd:detail.busEndPoint??null}}
 async function itinerary(ss,walkingLines){const result=[];for(let i=0;i<ss.length;i++){const s=ss[i];if(s.trafficType===3){const walk=walkingLines.find(x=>x.segmentIndex===i);result.push({segmentIndex:i,mode:"walk",distanceM:walk?.distanceM??s.distance??null,durationSec:walk?.durationSec??null,durationMin:s.sectionTime??s.duration??null,geometryQuality:walk?.geometryQuality??(Number(s.distance??0)===0?"indoor_station":"unavailable")});continue}const laneOptions=s.trafficType===2?await Promise.all(arr(s.lane).map(l=>busInfo(l,s.startID))):arr(s.lane).map(l=>({name:l.name??l.busNo??"",id:l.subwayCode??null,direction:s.way??null}));result.push({segmentIndex:i,mode:s.trafficType===1?"subway":"bus",startName:s.startName??null,endName:s.endName??null,startID:s.startID??null,endID:s.endID??null,direction:s.way??null,distanceM:s.distance??null,durationMin:s.sectionTime??s.duration??null,stationCount:s.stationCount??null,startExitNo:s.startExitNo??null,startExitLongitude:Number(s.startExitX),startExitLatitude:Number(s.startExitY),endExitNo:s.endExitNo??null,endExitLongitude:Number(s.endExitX),endExitLatitude:Number(s.endExitY),laneOptions,passStops:arr(s.passStopList?.stations).map(x=>({stationID:x.stationID??null,name:x.stationName??"",longitude:Number(x.x),latitude:Number(x.y)}))})}return result}
 async function geometry(n,c){const r=await rawRoutes(c),p=r.paths[n-1];if(!p)throw new Error("Route number is out of range");if(!p.info?.mapObj)throw new Error("Route has no mapObj");const body=await odsay("loadLane",{mapObject:`0:0@${p.info.mapObj}`});const transitLines=arr(body.result?.lane).flatMap((lane,li)=>arr(lane.section).map((section,si)=>({laneIndex:li,sectionIndex:si,trafficClass:lane.class??null,type:lane.type??null,points:arr(section.graphPos).map(x=>pt(x.x,x.y)).filter(Boolean)})).filter(x=>x.points.length>1));const ss=segs(p),walkingLines=await walks(ss,c),indoorTransferCount=ss.filter(s=>s.trafficType===3&&Number(s.distance??0)===0).length,detailedItinerary=await itinerary(ss,walkingLines);return{route:sumPath(p,n-1),transitLines,walkingLines,indoorTransferCount,itinerary:detailedItinerary,stops:stops(ss)}}
+async function runQgisAnalysis(c){
+  if(qgisAnalysisRunning)throw new Error("다른 QGIS 경사도 분석이 실행 중입니다.");
+  qgisAnalysisRunning=true;
+  try{
+    await mkdir(path.dirname(QGIS_OUTPUT),{recursive:true});
+    for(const suffix of ["","-wal","-shm"])await rm(QGIS_OUTPUT+suffix,{force:true});
+    const args=[QGIS_SCRIPT,
+      "--server-url",`http://127.0.0.1:${PORT}`,
+      "--odsay-project-dir",ROOT,
+      "--origin-longitude",String(c.sx),"--origin-latitude",String(c.sy),
+      "--destination-longitude",String(c.ex),"--destination-latitude",String(c.ey),
+      "--dem",QGIS_DEM,"--interval","10",
+      "--transit",`${QGIS_OUTPUT}|layername=current_transit_lines`,
+      "--segments",`${QGIS_OUTPUT}|layername=current_slope_segments`,
+      "--summary",`${QGIS_OUTPUT}|layername=current_route_summary`,
+      "--project",QGIS_PROJECT
+    ];
+    const output=await new Promise((resolve,reject)=>{
+      const qgisEnv={...process.env,
+        PYTHONUTF8:"1",
+        PYTHONHOME:path.join(QGIS_ROOT,"apps","Python312"),
+        QGIS_PREFIX_PATH:path.join(QGIS_ROOT,"apps","qgis-ltr").replaceAll("\\","/"),
+        GDAL_DATA:path.join(QGIS_ROOT,"apps","gdal","share","gdal"),
+        GDAL_DRIVER_PATH:path.join(QGIS_ROOT,"apps","gdal","lib","gdalplugins"),
+        PROJ_DATA:path.join(QGIS_ROOT,"share","proj"),
+        GDAL_FILENAME_IS_UTF8:"YES",
+        VSI_CACHE:"TRUE",
+        VSI_CACHE_SIZE:"1000000",
+        QT_PLUGIN_PATH:[path.join(QGIS_ROOT,"apps","qgis-ltr","qtplugins"),path.join(QGIS_ROOT,"apps","qt5","plugins")].join(";"),
+        PYTHONPATH:[path.join(QGIS_ROOT,"apps","qgis-ltr","python"),path.join(QGIS_ROOT,"apps","qgis-ltr","python","plugins"),process.env.PYTHONPATH||""].filter(Boolean).join(";"),
+        PATH:[path.join(QGIS_ROOT,"apps","Python312","Scripts"),path.join(QGIS_ROOT,"apps","qt5","bin"),path.join(QGIS_ROOT,"apps","qgis-ltr","bin"),path.join(QGIS_ROOT,"bin"),process.env.PATH||""].join(";")
+      };
+      const child=spawn(QGIS_PYTHON,args,{windowsHide:true,env:qgisEnv});
+      let stdout="",stderr="";
+      child.stdout.on("data",chunk=>stdout+=chunk.toString());
+      child.stderr.on("data",chunk=>stderr+=chunk.toString());
+      child.on("error",reject);
+      child.on("close",code=>code===0?resolve(stdout+"\n"+stderr):reject(new Error((stderr||stdout||`qgis_process 종료 코드 ${code}`).trim().slice(-2000))));
+    });
+    const routeMatch=output.match(/"routeCount"\s*:\s*(\d+)/),segmentMatch=output.match(/"segmentCount"\s*:\s*(\d+)/);
+    return{ok:true,routeCount:routeMatch?Number(routeMatch[1]):null,segmentCount:segmentMatch?Number(segmentMatch[1]):null,outputFile:QGIS_OUTPUT,layers:["current_slope_segments","current_transit_lines","current_route_summary"]};
+  }catch(error){
+    if(error.code==="EPERM"||error.code==="EBUSY")throw new Error("QGIS가 결과 파일을 사용 중입니다. QGIS를 닫고 다시 실행하세요.");
+    throw error;
+  }finally{qgisAnalysisRunning=false}
+}
 function json(res,status,body){res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"});res.end(JSON.stringify(body))}
 async function staticFile(res,p){const file=p==="/"? "index.html":p.slice(1);if(!["index.html","app.js","styles.css"].includes(file))return false;const body=await readFile(path.join(PUBLIC,file)),type=file.endsWith(".html")?"text/html; charset=utf-8":file.endsWith(".js")?"text/javascript; charset=utf-8":"text/css; charset=utf-8";res.writeHead(200,{"Content-Type":type,"Cache-Control":"no-store"});res.end(body);return true}
 if(process.argv.includes("--smoke-test")){try{const r=await routeList(DEFAULT);console.log(JSON.stringify({routeCount:r.routeCount,firstRoute:r.routes[0]},null,2))}catch(e){console.error(`ODsay smoke test failed: ${e.message}`);process.exitCode=1}}
-else{http.createServer(async(req,res)=>{try{const url=new URL(req.url??"/",`http://${req.headers.host}`);if(req.method==="GET"&&url.pathname==="/api/health")json(res,200,{ok:true});else if(req.method==="GET"&&url.pathname==="/api/config")json(res,200,{kakaoJavaScriptKey:KakaoKey});else if(req.method==="GET"&&url.pathname==="/api/shelters"){const s=await shelters();json(res,200,{count:s.length,shelters:s})}else if(req.method==="GET"&&url.pathname==="/api/facilities"){const f=await facilities();json(res,200,{count:f.length,facilities:f})}else if(req.method==="GET"&&url.pathname==="/api/routes")json(res,200,await routeList(coords(url)));else if(req.method==="GET"&&/^\/api\/routes\/\d+\/geometry$/.test(url.pathname))json(res,200,await geometry(Number(url.pathname.split("/")[3]),coords(url)));else if(req.method==="GET"&&/^\/api\/routes\/\d+\/realtime$/.test(url.pathname))json(res,200,await realtimeArrivals(Number(url.pathname.split("/")[3]),coords(url),url.searchParams.get("refresh")==="1"));else if(!(await staticFile(res,url.pathname)))json(res,404,{error:"Not found"})}catch(e){json(res,502,{error:e.message})}}).listen(PORT,"127.0.0.1",()=>console.log(`ODsay shelter map: http://localhost:${PORT}`))}
+else{http.createServer(async(req,res)=>{try{const url=new URL(req.url??"/",`http://${req.headers.host}`);if(req.method==="GET"&&url.pathname==="/api/health")json(res,200,{ok:true});else if(req.method==="GET"&&url.pathname==="/api/config")json(res,200,{kakaoJavaScriptKey:KakaoKey});else if(req.method==="GET"&&url.pathname==="/api/shelters"){const s=await shelters();json(res,200,{count:s.length,shelters:s})}else if(req.method==="GET"&&url.pathname==="/api/facilities"){const f=await facilities();json(res,200,{count:f.length,facilities:f})}else if(req.method==="GET"&&url.pathname==="/api/routes")json(res,200,await routeList(coords(url)));else if(req.method==="GET"&&url.pathname==="/api/qgis-analysis")json(res,200,await runQgisAnalysis(coords(url)));else if(req.method==="GET"&&/^\/api\/routes\/\d+\/geometry$/.test(url.pathname))json(res,200,await geometry(Number(url.pathname.split("/")[3]),coords(url)));else if(req.method==="GET"&&/^\/api\/routes\/\d+\/realtime$/.test(url.pathname))json(res,200,await realtimeArrivals(Number(url.pathname.split("/")[3]),coords(url),url.searchParams.get("refresh")==="1"));else if(!(await staticFile(res,url.pathname)))json(res,404,{error:"Not found"})}catch(e){json(res,502,{error:e.message})}}).listen(PORT,"127.0.0.1",()=>console.log(`ODsay shelter map: http://localhost:${PORT}`))}
