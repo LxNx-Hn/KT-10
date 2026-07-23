@@ -12,6 +12,7 @@
         "durationMin": 4.0,
         "distanceM": 250.0,
         "outdoor": true,
+        "hasSlope": false,
         "crosswalkCount": 1
       },
       {
@@ -23,6 +24,7 @@
         "outdoor": true,
         "hasStairs": true,
         "stairsCount": 30,
+        "hasSlope": true,
         "hasElevator": false,
         "needsVerticalMove": true
       },
@@ -33,12 +35,27 @@
         "durationMin": 3.0,
         "distanceM": 200.0,
         "outdoor": true,
+        "hasSlope": false,
         "crosswalkCount": 1
       }
     ],
     "totalDurationMin": 10.0,
     "totalWalkM": 530.0,
     "transferCount": 0,
+    "sources": ["검증용 데모 경로", "Copernicus DEM GLO-90 via Open-Meteo"],
+    "geometryQuality": "estimated",
+    "terrain": {
+      "avgSlopePercent": 2.143,
+      "maxSlopePercent": -1.015,
+      "minSlopePercent": -3.271,
+      "uphillDistanceM": 0.0,
+      "downhillDistanceM": 791.6,
+      "elevationGainM": 0.0,
+      "elevationLossM": 17.0,
+      "source": "Copernicus DEM GLO-90 via Open-Meteo",
+      "resolutionM": 90,
+      "status": "estimated_90m"
+    },
     "path": [
       {
         "lat": 35.1626,
@@ -67,6 +84,7 @@
         "durationMin": 4.0,
         "distanceM": 300.0,
         "outdoor": true,
+        "hasSlope": false,
         "crosswalkCount": 1
       },
       {
@@ -86,12 +104,27 @@
         "durationMin": 3.0,
         "distanceM": 150.0,
         "outdoor": false,
+        "hasSlope": false,
         "crosswalkCount": 0
       }
     ],
     "totalDurationMin": 14.0,
     "totalWalkM": 450.0,
     "transferCount": 0,
+    "sources": ["검증용 데모 경로", "Copernicus DEM GLO-90 via Open-Meteo"],
+    "geometryQuality": "estimated",
+    "terrain": {
+      "avgSlopePercent": 1.284,
+      "maxSlopePercent": -1.161,
+      "minSlopePercent": -1.406,
+      "uphillDistanceM": 0.0,
+      "downhillDistanceM": 1314.1,
+      "elevationGainM": 0.0,
+      "elevationLossM": 17.0,
+      "source": "Copernicus DEM GLO-90 via Open-Meteo",
+      "resolutionM": 90,
+      "status": "estimated_90m"
+    },
     "path": [
       {
         "lat": 35.1626,
@@ -120,6 +153,7 @@
         "durationMin": 3.0,
         "distanceM": 180.0,
         "outdoor": true,
+        "hasSlope": false,
         "crosswalkCount": 1
       },
       {
@@ -145,6 +179,20 @@
     "totalDurationMin": 19.0,
     "totalWalkM": 400.0,
     "transferCount": 0,
+    "sources": ["검증용 데모 경로", "Copernicus DEM GLO-90 via Open-Meteo"],
+    "geometryQuality": "estimated",
+    "terrain": {
+      "avgSlopePercent": 1.893,
+      "maxSlopePercent": -0.528,
+      "minSlopePercent": -3.259,
+      "uphillDistanceM": 0.0,
+      "downhillDistanceM": 839.1,
+      "elevationGainM": 0.0,
+      "elevationLossM": 17.0,
+      "source": "Copernicus DEM GLO-90 via Open-Meteo",
+      "resolutionM": 90,
+      "status": "estimated_90m"
+    },
     "path": [
       {
         "lat": 35.1626,
@@ -173,6 +221,7 @@
         "durationMin": 2.0,
         "distanceM": 150.0,
         "outdoor": true,
+        "hasSlope": false,
         "crosswalkCount": 2
       },
       {
@@ -191,12 +240,27 @@
         "durationMin": 2.0,
         "distanceM": 130.0,
         "outdoor": true,
+        "hasSlope": false,
         "crosswalkCount": 2
       }
     ],
     "totalDurationMin": 13.0,
     "totalWalkM": 280.0,
     "transferCount": 0,
+    "sources": ["검증용 데모 경로", "Copernicus DEM GLO-90 via Open-Meteo"],
+    "geometryQuality": "estimated",
+    "terrain": {
+      "avgSlopePercent": 2.002,
+      "maxSlopePercent": -1.233,
+      "minSlopePercent": -2.771,
+      "uphillDistanceM": 0.0,
+      "downhillDistanceM": 793.5,
+      "elevationGainM": 0.0,
+      "elevationLossM": 17.0,
+      "source": "Copernicus DEM GLO-90 via Open-Meteo",
+      "resolutionM": 90,
+      "status": "estimated_90m"
+    },
     "path": [
       {
         "lat": 35.1626,

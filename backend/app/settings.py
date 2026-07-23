@@ -1,10 +1,12 @@
 """
 환경설정. API 키는 .env 또는 환경변수에서만 읽으며 코드/로그에 노출하지 않는다.
-키가 있으면 해당 소스를 라이브로 사용하고, 없으면 mock 으로 자동 폴백한다.
+운영자가 명시한 모드와 키 상태를 함께 검사하며, 선택한 실공급자가 준비되지
+않으면 mock으로 바꾸지 않고 명시적으로 실패한다.
 """
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -17,11 +19,22 @@ class Settings(BaseSettings):
         env_file=_ENV_FILE, env_file_encoding="utf-8", env_ignore_empty=True, extra="ignore"
     )
 
-    # 외부 API 키 (없으면 mock 폴백) — 서버 전용, 클라이언트로 전달되지 않음
+    app_env: Literal["development", "production", "test"] = "development"
+
+    # 외부 API 키 — 서버 전용, 클라이언트로 전달되지 않음
     kakao_rest_api_key: str = ""        # Kakao 장소검색(REST)
     openweather_api_key: str = ""       # 실시간 날씨
     bus_service_key: str = ""           # 공공데이터 저상버스 도착(정류장 데이터셋 필요)
     odsay_api_key: str = ""             # 실제 대중교통 후보 생성(서버 전용)
+
+    # 키 존재 여부가 아니라 운영자가 선택한 모드로 경로 공급자를 결정한다.
+    # demo: 검증된 고정 OD, live: ODsay, ai: 경로 수집+학습 순위화 서버
+    route_mode: Literal["demo", "live", "ai"] = "demo"
+
+    # 건물 footprint + 높이 공급자. vworld는 LT_C_BLDGINFO WFS를 사용한다.
+    building_source: Literal["demo", "vworld"] = "demo"
+    vworld_api_key: str = ""
+    vworld_api_domain: str = "http://localhost:8002"
 
     # ai/ 파이프라인 서버(경로 수집+XGB 순위화). 설정 시 /api/routes/recommend가
     # 자체 scoring 엔진 대신 이 서버로 위임한다.
@@ -69,11 +82,15 @@ class Settings(BaseSettings):
 
     @property
     def live_routes(self) -> bool:
-        return bool(self.odsay_api_key)
+        return self.route_mode == "live" and bool(self.ai_server_url)
 
     @property
     def live_ai_pipeline(self) -> bool:
-        return bool(self.ai_server_url)
+        return self.route_mode == "ai" and bool(self.ai_server_url)
+
+    @property
+    def live_buildings(self) -> bool:
+        return self.building_source == "vworld" and bool(self.vworld_api_key)
 
     @property
     def database_configured(self) -> bool:
@@ -105,14 +122,44 @@ class Settings(BaseSettings):
             self.personalization_reuse_weight or 0,
         )) > 0
 
+    def deployment_readiness(self) -> dict[str, bool]:
+        """키 값은 노출하지 않고 운영에 필요한 연결 설정의 충족 여부만 반환한다."""
+        return {
+            "live_route_candidates": self.route_mode == "live" and self.live_routes,
+            "live_building_shade": self.building_source == "vworld" and self.live_buildings,
+            "kakao_place_search": self.live_places,
+            "live_weather": self.live_weather,
+            "live_bus_arrivals": self.live_bus,
+            "postgresql": self.database_configured,
+            "kakao_login": self.kakao_login_configured,
+            "personalization_policy": self.personalization_configured,
+        }
+
     def active_sources(self) -> dict[str, str]:
         """기동 로그용. 키 값은 절대 포함하지 않고 live/mock 여부만 표시."""
         return {
             "places": "kakao(live)" if self.live_places else "mock",
             "weather": "openweather(live)" if self.live_weather else "mock",
             "bus": "live" if self.live_bus else "mock",
-            "routes": "odsay(live)" if self.live_routes else "demo/mock",
-            "ai_pipeline": "connected" if self.live_ai_pipeline else "not configured",
+            "routes": {
+                "demo": "verified-demo",
+                "live": (
+                    "ai-candidates(live)"
+                    if self.live_routes
+                    else "ai-candidates(missing-url)"
+                ),
+                "ai": "ai-pipeline(live)" if self.live_ai_pipeline else "ai-pipeline(missing-url)",
+            }[self.route_mode],
+            "ai_pipeline": "connected" if self.live_ai_pipeline else "inactive",
+            "buildings": (
+                "vworld(live)"
+                if self.live_buildings
+                else "vworld(missing-key)"
+                if self.building_source == "vworld"
+                else "synthetic-demo(inactive-outside-demo)"
+                if self.route_mode != "demo"
+                else "synthetic-demo"
+            ),
             "database": "postgresql(configured)" if self.database_configured else "not configured",
             "auth": "kakao(configured)" if self.kakao_login_configured else "not configured",
         }

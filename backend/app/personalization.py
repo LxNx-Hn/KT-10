@@ -13,6 +13,7 @@ FEATURES = (
     "luggage_walk_burden", "luggage_stair_burden", "low_floor_priority_mismatch",
     "wheelchair_stair_burden", "wheelchair_elevator_gap", "walking_aid_walk_burden",
     "max_walk_excess_m", "weather_priority_walk_burden",
+    "shade_ratio", "shaded_walk_m", "solar_elevation_deg",
 )
 
 

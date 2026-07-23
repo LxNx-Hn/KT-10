@@ -29,10 +29,10 @@ def _opts(**kw):
 
 # ── 표1: 프로필 × 경로 최종점수 (평상 날씨) — 프론트와 동일해야 함 ──
 EXPECTED_FINAL = {
-    "general": {"r1-overpass": 81.5, "r2-subway": 92.0, "r3-lowfloor": 87.0, "r4-regularbus": 88.1},
-    "elderly": {"r1-overpass": 70.2, "r2-subway": 92.1, "r3-lowfloor": 87.6, "r4-regularbus": 85.7},
-    "child": {"r1-overpass": 81.4, "r2-subway": 93.0, "r3-lowfloor": 88.8, "r4-regularbus": 86.9},
-    "disabled": {"r1-overpass": 69.6, "r2-subway": 91.8, "r3-lowfloor": 90.0, "r4-regularbus": 78.6},
+    "general": {"r1-overpass": 79.6, "r2-subway": 92.0, "r3-lowfloor": 87.0, "r4-regularbus": 88.1},
+    "elderly": {"r1-overpass": 67.9, "r2-subway": 92.1, "r3-lowfloor": 87.6, "r4-regularbus": 85.7},
+    "child": {"r1-overpass": 79.8, "r2-subway": 93.0, "r3-lowfloor": 88.8, "r4-regularbus": 86.9},
+    "disabled": {"r1-overpass": 67.1, "r2-subway": 91.8, "r3-lowfloor": 90.0, "r4-regularbus": 78.6},
 }
 
 
@@ -111,6 +111,31 @@ def test_weather_changes_score():
     heat = score_all("general", "heatwave")
     assert heat["r1-overpass"].components.weather_safety < normal["r1-overpass"].components.weather_safety
     assert heat["r1-overpass"].final_score < normal["r1-overpass"].final_score
+
+
+def test_verified_demo_shade_reduces_heat_exposure_only_when_known():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.shade import add_demo_shade
+
+    route_without_shade = demo_candidates()[0]
+    route_with_shade = add_demo_shade(
+        demo_candidates()[:1],
+        datetime(2026, 7, 23, 14, 0, tzinfo=ZoneInfo("Asia/Seoul")),
+    )[0]
+    fastest = route_with_shade.total_duration_min
+    without = score_route(
+        route_without_shade, WEATHER_SCENARIOS["heatwave"], "general", fastest, 1
+    )
+    with_shade = score_route(
+        route_with_shade, WEATHER_SCENARIOS["heatwave"], "general", fastest, 1
+    )
+    assert route_with_shade.shade is not None
+    if route_with_shade.shade.shade_ratio:
+        assert with_shade.components.weather_safety > without.components.weather_safety
+    else:
+        assert with_shade.components.weather_safety == without.components.weather_safety
 
 
 def test_child_penalizes_crosswalk_route_more():

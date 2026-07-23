@@ -94,12 +94,20 @@ def score_low_floor_bus(r: RouteCandidate) -> float:
 def score_weather_safety(r: RouteCandidate, w: WeatherCondition) -> float:
     outdoor_walk = [s for s in _walk_segs(r) if s.outdoor]
     outdoor_walk_min = sum(s.duration_min for s in outdoor_walk)
+    # 검증된 그늘만 노출시간을 감면한다. 미확인 그늘을 0으로 대입하지 않는다.
+    heat_exposed_walk_min = outdoor_walk_min
+    if (
+        r.shade
+        and r.shade.status in ("estimated_demo", "estimated_public")
+        and r.shade.shade_ratio is not None
+    ):
+        heat_exposed_walk_min *= 1 - r.shade.shade_ratio
     wait_min = sum((s.wait_min or 0) for s in _bus_segs(r))
     has_stairs_or_slope = any(s.has_stairs or s.has_slope for s in r.segments)
 
     risk = 0.0
     if w.is_heatwave or w.feels_like_c >= 33:
-        risk += clamp(outdoor_walk_min * 1.5, 0, 35) + (10 if w.is_heatwave else 0)
+        risk += clamp(heat_exposed_walk_min * 1.5, 0, 35) + (10 if w.is_heatwave else 0)
     if w.is_coldwave or w.feels_like_c <= -5:
         risk += clamp(wait_min * 2, 0, 25) + clamp(outdoor_walk_min * 0.5, 0, 10)
     if w.precipitation_mm > 0 or w.sky in ("rain", "snow"):

@@ -23,12 +23,28 @@
       "pathGlob": "da/geocoded/부산_KOROAD 사고다발지역/**",
       "status": "excluded_from_service_and_model",
       "reason": "2026-07-16 자문 결정에 따라 현재 서비스 목적에서 제외"
+    },
+    {
+      "layer": "busan_building_attribute_csv_20250724",
+      "sourceFileName": "부산광역시_도시공간정보시스템_도로(건축물)정보_20250724.csv",
+      "retainedInRepository": false,
+      "status": "audit_only_not_model_input",
+      "sourceUrl": "https://www.data.go.kr/data/15084593/fileData.do",
+      "sha256": "EA2C5A8AF75DA0BC8693F8CB63AE95C99D491030A36C40EFBB18ECA34E1E472B",
+      "verifiedAt": "2026-07-23",
+      "reason": "실파일 292,069행에는 좌표·도형·건물 식별자가 없고 높이 0이 136,897행이며 비현실적 극단값이 있어 footprint와 안전하게 결합할 수 없음"
     }
   ],
   "pendingExternal": [
     { "layer": "public_transport_satisfaction_2023_2025", "status": "pending_receipt", "plannedUse": "초기 기준 검토와 외부 타당도 비교; 경로 선택 Y 라벨로 간주하지 않음" },
     { "layer": "busan_transit_card_2025_04", "status": "pending_receipt", "plannedUse": "시간대별 수요와 첨두시간 보조 피처; 개인 경로 선호 Y 라벨로 간주하지 않음" },
     { "layer": "drt_service_area", "status": "pending_confirmation", "plannedUse": "DRT 가능 권역 표시와 후보 교통수단 확장" },
-    { "layer": "station_elevator_escalator_coordinates_status", "status": "requested", "plannedUse": "역사 출입구와 수직이동 시설의 위치 및 운영상태 확인" }
+    { "layer": "station_elevator_escalator_coordinates_status", "status": "requested", "plannedUse": "역사 출입구와 수직이동 시설의 위치 및 운영상태 확인" },
+    {
+      "layer": "vworld_lt_c_bldginfo_wfs",
+      "status": "implemented_pending_api_key_and_field_validation",
+      "sourceUrl": "https://www.vworld.kr/dev/v4dv_2ddataguide2_s002.do?svcIde=bldginfo",
+      "plannedUse": "건물 footprint와 height를 동일 피처에서 조회해 경로 그늘을 계산; 결측 높이는 0으로 대체하지 않음"
+    }
   ]
 }

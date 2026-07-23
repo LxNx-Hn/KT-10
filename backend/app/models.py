@@ -6,6 +6,7 @@ JSON 직렬화는 camelCase(alias)로 이루어져 프론트엔드와 그대로 
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -79,6 +80,37 @@ class TerrainSummary(CamelModel):
     status: Literal["estimated_90m", "unavailable", "invalid"] = "unavailable"
 
 
+class ShadePathSegment(CamelModel):
+    start: LatLng
+    end: LatLng
+    shaded: bool
+
+
+class ShadeSummary(CamelModel):
+    status: Literal["estimated_demo", "estimated_public", "not_daylight", "unavailable"]
+    evaluated_at: datetime
+    shade_ratio: Optional[float] = Field(default=None, ge=0, le=1)
+    shaded_walk_m: Optional[float] = Field(default=None, ge=0)
+    total_walk_m: Optional[float] = Field(default=None, ge=0)
+    solar_azimuth_deg: Optional[float] = Field(default=None, ge=0, lt=360)
+    solar_elevation_deg: Optional[float] = None
+    building_height_coverage: Optional[float] = Field(default=None, ge=0, le=1)
+    building_count: Optional[int] = Field(default=None, ge=0)
+    known_height_building_count: Optional[int] = Field(default=None, ge=0)
+    estimate_kind: Optional[Literal["estimate", "lower_bound"]] = None
+    overlay_resolution_m: Optional[float] = Field(default=None, gt=0)
+    walking_geometry_quality: Optional[
+        Literal["exact", "mixed", "estimated"]
+    ] = None
+    includes_tree_shade: bool = False
+    includes_terrain_shadow: bool = False
+    source: str
+    data_quality: Literal["demo", "public", "measured"]
+    shadow_polygons: list[list[LatLng]] = Field(default_factory=list)
+    path_segments: list[ShadePathSegment] = Field(default_factory=list)
+    calculation_note: str
+
+
 class RouteCandidate(CamelModel):
     id: str
     summary: str
@@ -92,6 +124,10 @@ class RouteCandidate(CamelModel):
     sources: list[str] = Field(default_factory=list)
     geometry_quality: Optional[Literal["exact", "mixed", "estimated"]] = None
     terrain: Optional[TerrainSummary] = None
+    shade: Optional[ShadeSummary] = None
+    characteristics: list[Literal["fastest", "lowest_slope", "most_shade"]] = Field(
+        default_factory=list
+    )
 
 
 class WeatherCondition(CamelModel):
@@ -160,6 +196,7 @@ class ScoringOptions(CamelModel):
     low_floor_priority: bool = False
     weather_avoid: bool = False
     avoid_stairs: bool = False
+    departure_at: Optional[datetime] = None
 
 
 # ── 요청 모델 ──

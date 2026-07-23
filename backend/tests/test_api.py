@@ -1,9 +1,12 @@
 """REST API 스모크 테스트 (FastAPI TestClient). camelCase JSON 호환성 포함."""
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.data.places import find_place
-from app.main import app
+from app.data.routes import demo_candidates
+from app.main import _add_configured_shade, app
 from app.settings import settings
 
 client = TestClient(app)
@@ -14,9 +17,11 @@ def _isolated_demo_sources(monkeypatch):
     """개발자 로컬 .env 유무와 무관하게 고정 데모 계약만 검증한다."""
     for field in (
         "ai_server_url", "odsay_api_key", "kakao_rest_api_key",
-        "openweather_api_key", "bus_service_key",
+        "openweather_api_key", "bus_service_key", "vworld_api_key",
     ):
         monkeypatch.setattr(settings, field, "")
+    monkeypatch.setattr(settings, "route_mode", "demo")
+    monkeypatch.setattr(settings, "building_source", "demo")
 
 
 def _place_payload(place_id: str) -> dict:
@@ -29,6 +34,31 @@ def test_health():
     r = client.get("/api/health")
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
+
+
+def test_readiness_reports_missing_configuration_without_secret_values():
+    response = client.get("/api/readiness")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ready"] is False
+    assert body["checks"]["live_route_candidates"] is False
+    assert "live_route_candidates" in body["missing"]
+    serialized = response.text
+    assert "SESSION_SECRET" not in serialized
+    assert "ODSAY_API_KEY" not in serialized
+
+
+def test_cors_preflight_allows_profile_update_from_frontend():
+    response = client.options(
+        "/api/me/preferences",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "PUT",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "PUT" in response.headers["access-control-allow-methods"]
 
 
 def test_places_search():
@@ -85,21 +115,68 @@ def test_routes_candidates_rejects_outside_busan():
     assert client.post("/api/routes/candidates", json=body).status_code == 422
 
 
-def test_routes_recommend_disabled():
+def test_live_mode_missing_pipeline_does_not_silently_fall_back(monkeypatch):
+    monkeypatch.setattr(settings, "route_mode", "live")
+    monkeypatch.setattr(settings, "ai_server_url", "")
+    body = {
+        "origin": _place_payload("gu-office"),
+        "destination": _place_payload("seomyeon-stn"),
+    }
+    response = client.post("/api/routes/candidates", json=body)
+    assert response.status_code == 503
+    assert "AI_SERVER_URL" in response.json()["detail"]
+
+
+def test_vworld_mode_missing_key_does_not_silently_fall_back(monkeypatch):
+    monkeypatch.setattr(settings, "building_source", "vworld")
+    body = {
+        "origin": _place_payload("gu-office"),
+        "destination": _place_payload("seomyeon-stn"),
+    }
+    response = client.post("/api/routes/candidates", json=body)
+    assert response.status_code == 503
+    assert "VWORLD_API_KEY" in response.json()["detail"]
+
+
+def test_synthetic_buildings_are_not_applied_to_live_routes(monkeypatch):
+    monkeypatch.setattr(settings, "route_mode", "live")
+    monkeypatch.setattr(settings, "building_source", "demo")
+    routes = asyncio.run(_add_configured_shade(demo_candidates()))
+    assert all(route.shade is None for route in routes)
+    assert settings.active_sources()["buildings"] == "synthetic-demo(inactive-outside-demo)"
+
+
+def test_routes_recommend_returns_rule_characteristics_and_shade():
     body = {
         "origin": _place_payload("gu-office"),
         "destination": _place_payload("seomyeon-stn"),
         "profile": "disabled",
         "weatherScenario": "normal",
-        "options": {"lowFloorPriority": False},
+        "options": {
+            "lowFloorPriority": False,
+            "departureAt": "2026-07-23T14:00:00+09:00",
+        },
         "topN": 3,
     }
     r = client.post("/api/routes/recommend", json=body)
     assert r.status_code == 200
     results = r.json()
     assert len(results) == 3
-    # 장애인: 계단 육교 경로는 상위 3개에서 제외
-    assert "r1-overpass" not in [x["route"]["id"] for x in results]
+    characteristics = {
+        characteristic
+        for result in results
+        for characteristic in result["route"]["characteristics"]
+    }
+    assert characteristics == {"fastest", "lowest_slope", "most_shade"}
+    assert all(result["route"]["shade"]["status"] == "estimated_demo" for result in results)
+    assert all(
+        0 <= result["route"]["shade"]["shadeRatio"] <= 1
+        for result in results
+    )
+    assert all(
+        result["route"]["shade"]["dataQuality"] == "demo"
+        for result in results
+    )
     # camelCase 점수 필드
     assert "finalScore" in results[0]["score"]
     assert "lowFloorStatus" in results[0]["score"]
