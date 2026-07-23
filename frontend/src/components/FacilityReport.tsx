@@ -1,6 +1,5 @@
 import { useState } from 'react';
-
-const BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8002').replace(/\/$/, '');
+import { API_BASE, toUserMessage } from '@/api/http';
 
 /** 시설물 위치·운영상태 오류를 검토 대기열로 전달한다. 사용자 신고만으로 데이터는 바뀌지 않는다. */
 export default function FacilityReport() {
@@ -13,14 +12,18 @@ export default function FacilityReport() {
 
   async function submit() {
     if (facilityName.trim().length < 2) { setMessage('시설물 이름을 2자 이상 입력해 주세요.'); return; }
-    const response = await fetch(`${BASE}/api/facility-reports`, {
-      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ facilityName, facilityType, issueType, reportedLat: coordinates?.lat, reportedLng: coordinates?.lng, description: description || undefined }),
-    });
-    if (response.status === 401 || response.status === 503) { setMessage('신고하려면 카카오 로그인이 필요합니다.'); return; }
-    if (!response.ok) { setMessage('신고를 저장하지 못했습니다.'); return; }
-    setMessage('신고가 검토 대기열에 등록되었습니다.');
-    setFacilityName(''); setDescription('');
+    try {
+      const response = await fetch(`${API_BASE}/api/facility-reports`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ facilityName, facilityType, issueType, reportedLat: coordinates?.lat, reportedLng: coordinates?.lng, description: description || undefined }),
+      });
+      if (response.status === 401 || response.status === 503) { setMessage('신고하려면 카카오 로그인이 필요합니다.'); return; }
+      if (!response.ok) { setMessage('신고를 저장하지 못했습니다.'); return; }
+      setMessage('신고가 검토 대기열에 등록되었습니다.');
+      setFacilityName(''); setDescription('');
+    } catch (error) {
+      setMessage(toUserMessage(error, '신고를 저장하지 못했습니다.'));
+    }
   }
 
   function useCurrentLocation() {
@@ -45,7 +48,7 @@ export default function FacilityReport() {
       <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="확인한 내용(선택)" aria-label="신고 설명" />
       <button type="button" className="btn btn--ghost" onClick={useCurrentLocation}>{coordinates ? '신고 위치 첨부됨' : '현재 위치 첨부(선택)'}</button>
       <button type="button" className="btn btn--ghost" onClick={() => void submit()}>시설물 오류 신고</button>
-      {message && <p>{message}</p>}
+      {message && <p role="status">{message}</p>}
     </section>
   );
 }

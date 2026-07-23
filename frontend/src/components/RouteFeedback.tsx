@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useAppStore } from '@/store/appStore';
-
-const BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8002').replace(/\/$/, '');
+import { API_BASE } from '@/api/http';
 
 /** 로그인 사용자의 실제 이용 결과를 수집한다. 동의한 데이터만 다음 전역 학습에 쓴다. */
 export default function RouteFeedback() {
@@ -31,7 +30,7 @@ export default function RouteFeedback() {
     }
     try {
       const credentials: RequestInit = { credentials: 'include', headers: { 'Content-Type': 'application/json' } };
-      const impression = await fetch(`${BASE}/api/route-impressions`, {
+      const impression = await fetch(`${API_BASE}/api/route-impressions`, {
         ...credentials,
         method: 'POST',
         body: JSON.stringify({
@@ -46,7 +45,7 @@ export default function RouteFeedback() {
       }
       if (!impression.ok) { setMessage('후기 저장 정책 또는 서버 상태를 확인해 주세요.'); return; }
       const { id } = await impression.json() as { id: string };
-      const review = await fetch(`${BASE}/api/route-reviews`, {
+      const review = await fetch(`${API_BASE}/api/route-reviews`, {
         ...credentials,
         method: 'POST',
         body: JSON.stringify({
