@@ -38,9 +38,18 @@ python scripts\prepare_deployment_env.py --import-existing
 - Kakao Developers 웹 플랫폼 사이트 도메인에 `PUBLIC_ORIGIN`을 등록합니다.
 - Kakao 로그인 Redirect URI에 `${PUBLIC_ORIGIN}/api/auth/kakao/callback`을 정확히 등록하고 Client secret을 활성화합니다.
 - VWorld 키의 사용 도메인에 `PUBLIC_ORIGIN`을 등록합니다.
-- ODsay, OpenWeather, 공공데이터포털 키가 활성 상태인지 확인합니다.
+- ODsay Server Key 애플리케이션에는 **실제 API 요청이 나가는 서버/NAT의
+  고정 egress 공인 IPv4**를 등록합니다.
+- OpenWeather, 공공데이터포털 키가 활성 상태인지 확인합니다.
 
 도메인 등록이 누락되면 키 문자열이 있어도 카카오 지도 401 또는 공급자 인증 오류가 발생합니다.
+
+2026-07-24 현재 로컬 개발 요청 출발지 공인 IPv4는
+`119.202.222.84`입니다. 로컬 smoke test에는 이 값을 ODsay Server 허용
+IP로 등록합니다. `localhost`, `127.0.0.1`, `192.168.x.x`, Docker
+`172.x.x.x` 또는 프론트 도메인은 백엔드 Server Key의 허용 IP가
+아닙니다. 이 개발 IP는 바뀔 수 있으므로 운영 배포에서는 고정 egress IP를
+확보해 별도 등록해야 합니다.
 
 ## 4. 정적 설정과 이미지 빌드 검증
 
@@ -81,6 +90,11 @@ python scripts\verify_deployment.py --base https://route.example.kr
 
 모든 항목이 통과하기 전에는 실제 서비스 완료로 간주하지 않습니다. 공급자 오류 때 데모나 0값으로 자동 대체하지 않습니다.
 
+추가로 6개 프로필과 짐 많음·유아차·계단 회피·그늘 우선·저상버스 우선·
+환승 최소 조건이 동일 API 계약으로 처리되는지, 지도와 수평 경로 카드의
+선택 상태가 동기화되는지 확인합니다. 점수는 `베이스라인 적합 점수`로
+표시하고 안전도·성공확률이 아니라는 설명을 포함해야 합니다.
+
 ## 7. 운영 점검
 
 ```powershell
@@ -89,3 +103,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec backen
 ```
 
 PostgreSQL `postgres-data` 볼륨은 별도 주기로 백업합니다. 전역 학습은 자동 갱신하지 않으며, 관리자가 동의 후기 데이터를 검토·가공한 뒤 승인된 절차로만 모델을 교체합니다.
+
+LLM/Codex judge 모델은 `rankers.judge-baseline.pkl`로 배포물과 메타데이터를
+분리하고, 관리자가 승인하지 않은 파일을 `rankers.pkl`로 이름만 바꿔
+운영하지 않습니다.
