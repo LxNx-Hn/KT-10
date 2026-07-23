@@ -11,7 +11,7 @@ import ConnectionStatus from '@/components/ConnectionStatus';
 
 /**
  * 정보 구조(요구사항 §1·§3):
- *   SearchHome(검색 중심) → RouteResultSection(경로 카드 우선) → MapPreviewSection(지도 보조)
+ *   SearchHome(검색 중심) → RouteResultSection(활성 지도 + 점수순 스와이프 카드)
  *   + VoiceChatDock(하단 고정 실시간 음성 챗봇)
  * 지도는 첫 화면의 중심이 아니라 검색 결과 확인용 보조 화면이다.
  */
@@ -63,7 +63,7 @@ export default function App() {
         <div ref={resultsRef}>
           <RouteResultSection />
         </div>
-        <MapPreviewSection />
+        {!hasResults && <MapPreviewSection />}
       </main>
 
       <InstallPrompt />

@@ -40,12 +40,14 @@ export default function MapView() {
   const overlaysRef = useRef<any[]>([]);
   const [fallback, setFallback] = useState(!hasKakaoKey());
   const [mapLoadFailed, setMapLoadFailed] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   const [showShade, setShowShade] = useState(true);
 
   const origin = useAppStore((s) => s.origin);
   const destination = useAppStore((s) => s.destination);
   const recommendations = useAppStore((s) => s.recommendations);
   const selectedRouteId = useAppStore((s) => s.selectedRouteId);
+  const selectRoute = useAppStore((s) => s.selectRoute);
   const selectedRoute = recommendations.find((item) => item.route.id === selectedRouteId)?.route;
 
   const selectedPath = useMemo<LatLng[]>(() => {
@@ -69,8 +71,10 @@ export default function MapView() {
           center: new kakao.maps.LatLng(DISTRICT.center.lat, DISTRICT.center.lng),
           level: DISTRICT.defaultZoom,
         });
+        setMapReady(true);
       })
       .catch(() => {
+        setMapReady(false);
         setMapLoadFailed(true);
         setFallback(true);
       });
@@ -106,6 +110,35 @@ export default function MapView() {
     };
     if (origin) addMarker(origin, `출발: ${origin.name}`);
     if (destination) addMarker(destination, `도착: ${destination.name}`);
+
+    // 다른 후보도 흐리게 표시하고, 선을 누르면 활성 카드와 지도를 함께 전환한다.
+    for (const recommendation of recommendations) {
+      if (
+        recommendation.route.id === selectedRouteId
+        || !recommendation.route.path
+        || recommendation.route.path.length < 2
+      ) {
+        continue;
+      }
+      const alternative = new kakao.maps.Polyline({
+        path: recommendation.route.path.map(
+          (point) => new kakao.maps.LatLng(point.lat, point.lng),
+        ),
+        strokeWeight: 5,
+        strokeColor: '#64748b',
+        strokeOpacity: 0.35,
+        strokeStyle: 'solid',
+        clickable: true,
+      });
+      alternative.setZIndex?.(2);
+      alternative.setMap(map);
+      kakao.maps.event.addListener(
+        alternative,
+        'click',
+        () => selectRoute(recommendation.route.id),
+      );
+      overlaysRef.current.push(alternative);
+    }
 
     const shade = selectedRoute?.shade;
     if (
@@ -179,12 +212,27 @@ export default function MapView() {
       selectedPath.forEach((p) => bounds.extend(new kakao.maps.LatLng(p.lat, p.lng)));
       map.setBounds(bounds);
     }
-  }, [origin, destination, selectedPath, selectedRoute, showShade]);
+  }, [
+    destination,
+    origin,
+    recommendations,
+    mapReady,
+    selectRoute,
+    selectedPath,
+    selectedRoute,
+    selectedRouteId,
+    showShade,
+  ]);
 
   if (!fallback) {
     return (
       <div className="map" role="region" aria-label="지도">
         <div ref={containerRef} className="map__canvas" />
+        <MapRoutePicker
+          recommendations={recommendations}
+          selectedRouteId={selectedRouteId}
+          onSelect={selectRoute}
+        />
         <ShadeControls
           shade={selectedRoute?.shade}
           showShade={showShade}
@@ -214,6 +262,7 @@ export default function MapView() {
     ? selectedRoute.shade.pathSegments
     : [];
   const mapBounds = [
+    ...recommendations.flatMap((recommendation) => recommendation.route.path ?? []),
     ...selectedPath,
     ...shadowPolygons.flat(),
     ...shadeSegments.flatMap((segment) => [segment.start, segment.end]),
@@ -229,6 +278,12 @@ export default function MapView() {
   const projectedShadows = shadowPolygons.map(
     (polygon) => project(polygon, W, H, 24, mapBounds),
   );
+  const projectedAlternatives = recommendations
+    .filter(({ route }) => route.id !== selectedRouteId && (route.path?.length ?? 0) >= 2)
+    .map(({ route }) => ({
+      routeId: route.id,
+      points: project(route.path!, W, H, 24, mapBounds),
+    }));
   return (
     <div className="map" role="region" aria-label="경로 약도(데모)">
       <div className="map__fallback">
@@ -243,6 +298,20 @@ export default function MapView() {
               stroke={SHADOW_STROKE}
               strokeOpacity="0.35"
               strokeWidth="1"
+            />
+          ))}
+          {projectedAlternatives.map(({ routeId, points }) => (
+            <polyline
+              key={`alternative-${routeId}`}
+              points={points.map((point) => `${point.x},${point.y}`).join(' ')}
+              fill="none"
+              stroke="#64748b"
+              strokeOpacity="0.35"
+              strokeWidth="5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              onClick={() => selectRoute(routeId)}
+              style={{ cursor: 'pointer' }}
             />
           ))}
           {pts.length >= 2 && (
@@ -291,6 +360,11 @@ export default function MapView() {
             ? 'Kakao 지도 키 인증 또는 허용 도메인을 확인해 주세요.'
             : <><code>.env</code>에 <code>VITE_KAKAO_MAP_KEY</code>를 설정하면 실제 지도가 표시됩니다.</>}
         </p>
+        <MapRoutePicker
+          recommendations={recommendations}
+          selectedRouteId={selectedRouteId}
+          onSelect={selectRoute}
+        />
         <ShadeControls
           shade={selectedRoute?.shade}
           showShade={showShade}
@@ -298,6 +372,36 @@ export default function MapView() {
         />
         <MapDataNotice quality={selectedRoute?.geometryQuality} sources={selectedRoute?.sources} />
       </div>
+    </div>
+  );
+}
+
+function MapRoutePicker({
+  recommendations,
+  selectedRouteId,
+  onSelect,
+}: {
+  recommendations: import('@/types').ScoredRoute[];
+  selectedRouteId: string | null;
+  onSelect: (routeId: string) => void;
+}) {
+  if (recommendations.length < 2) return null;
+  const ranked = [...recommendations].sort(
+    (a, b) => b.score.finalScore - a.score.finalScore
+      || a.route.totalDurationMin - b.route.totalDurationMin,
+  );
+  return (
+    <div className="map__route-picker" role="group" aria-label="지도에 표시할 경로">
+      {ranked.map(({ route }, index) => (
+        <button
+          key={route.id}
+          type="button"
+          aria-pressed={route.id === selectedRouteId}
+          onClick={() => onSelect(route.id)}
+        >
+          {index + 1}순위
+        </button>
+      ))}
     </div>
   );
 }
@@ -317,11 +421,12 @@ function ShadeControls({
       <button type="button" className="map__shade-toggle" aria-pressed={showShade} onClick={onToggle}>
         {showShade ? '그늘 오버레이 숨기기' : '그늘 오버레이 보기'}
       </button>
-      {shade.status === 'estimated_demo' || shade.status === 'estimated_public' ? (
+      {(shade.status === 'estimated_demo' || shade.status === 'estimated_public')
+        && shade.shadeRatio !== undefined ? (
         <>
           <span className="map__shade-ratio">
             {shade.estimateKind === 'lower_bound' ? '확인된 건물 그늘 최소 ' : '건물 그늘 '}
-            {Math.round((shade.shadeRatio ?? 0) * 100)}%
+            {Math.round(shade.shadeRatio * 100)}%
           </span>
           <span><i className="map__legend map__legend--shade" />그늘</span>
           <span><i className="map__legend map__legend--sun" />햇빛 노출</span>
@@ -336,8 +441,10 @@ function ShadeControls({
               : '합성 건물 높이를 사용한 검증용 데모입니다. 나무 그늘과 지형 그림자는 포함하지 않습니다.'}
           </small>
         </>
-      ) : (
+      ) : shade.status === 'not_daylight' ? (
         <small>선택 시각은 야간이어서 주간 건물 그늘을 계산하지 않았습니다.</small>
+      ) : (
+        <small>건물 그늘 비율이 확인되지 않아 점수와 비율 표시에 사용하지 않았습니다.</small>
       )}
     </div>
   );

@@ -20,10 +20,22 @@ export const PROFILES: Record<ProfileId, ProfileMeta> = {
     description: '안전한 횡단과 단순한 환승을 우선해요.',
     prefersLargeUi: true,
   },
+  youth: {
+    id: 'youth',
+    label: '청소년',
+    description: '빠른 이동과 단순한 환승을 중심으로 안전성을 함께 봐요.',
+    prefersLargeUi: false,
+  },
   disabled: {
     id: 'disabled',
     label: '장애인',
     description: '계단 회피·승강기·저상버스·접근성 정보를 강하게 반영해요.',
+    prefersLargeUi: false,
+  },
+  pregnant: {
+    id: 'pregnant',
+    label: '임산부',
+    description: '긴 도보·급경사·계단·복잡한 환승의 부담을 줄여요.',
     prefersLargeUi: false,
   },
 };

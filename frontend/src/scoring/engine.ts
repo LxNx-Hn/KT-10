@@ -3,7 +3,7 @@
  * 경로 후보 + 날씨 + 프로필 + 옵션 → 채점·정렬된 추천 경로.
  *
  * 흐름(기획서 §6):
- *  1) 후보별 8개 하위 점수 계산
+ *  1) 후보별 11개 하위 점수 계산(경사·그늘 미확인은 제외)
  *  2) 프로필 가중치(+옵션 보정) 적용 → 최종 점수
  *  3) 정렬 후 상위 3개 + 이유/주의/음성요약
  */
@@ -12,18 +12,26 @@ import type {
   RouteCandidate,
   RouteScore,
   ScoreComponents,
+  ScoreWeights,
   ScoredRoute,
   ScoringOptions,
   WeatherCondition,
 } from '@/types';
-import { PROFILE_WEIGHTS, applyOptionWeights } from '@/config/weights';
+import {
+  PROFILE_WEIGHTS,
+  SCORE_COMPONENT_KEYS,
+  applyOptionWeights,
+} from '@/config/weights';
 import {
   scoreAccessibility,
   scoreDataReliability,
   scoreElevator,
   scoreLowFloorBus,
   scoreSafety,
+  scoreShadeComfort,
+  scoreSlopeComfort,
   scoreTimeEfficiency,
+  scoreTransferSimplicity,
   scoreWalkComfort,
   scoreWeatherSafety,
 } from './components';
@@ -38,11 +46,15 @@ import { clamp, round1 } from './utils';
 /** 가중합으로 최종 점수 계산 */
 export function weightedFinal(
   c: ScoreComponents,
-  w: ScoreComponents,
+  w: ScoreWeights,
 ): number {
-  const keys = Object.keys(w) as (keyof ScoreComponents)[];
-  const sum = keys.reduce((acc, k) => acc + c[k] * w[k], 0);
-  return clamp(sum);
+  const available = SCORE_COMPONENT_KEYS.filter((key) => c[key] !== undefined);
+  const availableWeight = available.reduce((sum, key) => sum + w[key], 0);
+  if (availableWeight <= 0) {
+    throw new Error('점수화할 수 있는 확인된 경로 특성이 없습니다.');
+  }
+  const sum = available.reduce((acc, key) => acc + c[key]! * w[key], 0);
+  return clamp(sum / availableWeight);
 }
 
 /** 단일 경로 채점(시간효율은 후보군 최단값 fastestMin 주입 필요) */
@@ -57,6 +69,9 @@ export function scoreRoute(
   const components: ScoreComponents = {
     accessibility: scoreAccessibility(route),
     walkComfort: scoreWalkComfort(route),
+    slopeComfort: scoreSlopeComfort(route),
+    shadeComfort: scoreShadeComfort(route),
+    transferSimplicity: scoreTransferSimplicity(route),
     elevator: scoreElevator(route),
     lowFloorBus: scoreLowFloorBus(route),
     weatherSafety: scoreWeatherSafety(route, weather),
@@ -77,10 +92,15 @@ export function scoreRoute(
     routeId: route.id,
     components: roundComponents(components),
     display: {
-      walkBurden: round1(100 - components.walkComfort),
-      weatherRisk: round1(100 - components.weatherSafety),
+      walkBurden: components.walkComfort === undefined
+        ? undefined
+        : round1(100 - components.walkComfort),
+      weatherRisk: components.weatherSafety === undefined
+        ? undefined
+        : round1(100 - components.weatherSafety),
     },
     finalScore,
+    scoreKind: 'rule_baseline',
     lowFloorStatus,
     reasons,
     cautions,
@@ -136,9 +156,10 @@ export function recommendRoutes(
 }
 
 function roundComponents(c: ScoreComponents): ScoreComponents {
-  const out = {} as ScoreComponents;
-  (Object.keys(c) as (keyof ScoreComponents)[]).forEach((k) => {
-    out[k] = round1(c[k]);
+  const out = {} as Record<keyof ScoreComponents, number | undefined>;
+  SCORE_COMPONENT_KEYS.forEach((key) => {
+    const value = c[key];
+    out[key] = value === undefined ? undefined : round1(value);
   });
-  return out;
+  return out as ScoreComponents;
 }

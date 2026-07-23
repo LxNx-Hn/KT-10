@@ -25,13 +25,35 @@ const WEATHER_MODE_SCENARIO: Record<WeatherAvoidanceMode, WeatherScenarioId | nu
   general: null,
 };
 
-function defaultDemoDepartureAt(): string {
+function defaultDepartureAt(): string {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}T14:00`;
+  const hour = String(now.getHours()).padStart(2, '0');
+  const minute = String(now.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hour}:${minute}`;
 }
+
+let recommendationRequestGeneration = 0;
+
+function beginRecommendationRequest(): number {
+  recommendationRequestGeneration += 1;
+  return recommendationRequestGeneration;
+}
+
+function isLatestRecommendationRequest(generation: number): boolean {
+  return generation === recommendationRequestGeneration;
+}
+
+export type ToggleableScoringOption =
+  | 'carryLuggage'
+  | 'stroller'
+  | 'lowFloorPriority'
+  | 'weatherAvoid'
+  | 'avoidStairs'
+  | 'shadePriority'
+  | 'minimizeTransfers';
 
 interface AppState {
   /* 입력 */
@@ -58,9 +80,14 @@ interface AppState {
   setOrigin: (p: Place | null) => void;
   setDestination: (p: Place | null) => void;
   setWeatherScenario: (w: WeatherScenarioId) => Promise<void>;
+  setScoringOption: (key: ToggleableScoringOption, enabled: boolean) => void;
   toggleCarryLuggage: () => void;
+  toggleStroller: () => void;
   toggleLowFloorPriority: () => void;
   toggleWeatherAvoid: () => void;
+  toggleAvoidStairs: () => void;
+  toggleShadePriority: () => void;
+  toggleMinimizeTransfers: () => void;
   setDepartureAt: (value: string) => void;
   toggleLargeUi: () => void;
   selectRoute: (id: string | null) => void;
@@ -87,7 +114,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   destination: null,
   weatherScenario: DEFAULT_WEATHER,
   weather: null,
-  options: { departureAt: defaultDemoDepartureAt() },
+  options: { departureAt: defaultDepartureAt() },
 
   candidates: [],
   recommendations: [],
@@ -117,17 +144,35 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   toggleCarryLuggage: () => {
-    set((s) => ({ options: { ...s.options, carryLuggage: !s.options.carryLuggage } }));
-    if (get().candidates.length) get().rescore();
+    get().setScoringOption('carryLuggage', !get().options.carryLuggage);
+  },
+
+  toggleStroller: () => {
+    get().setScoringOption('stroller', !get().options.stroller);
   },
 
   toggleLowFloorPriority: () => {
-    set((s) => ({ options: { ...s.options, lowFloorPriority: !s.options.lowFloorPriority } }));
-    if (get().candidates.length) get().rescore();
+    get().setScoringOption('lowFloorPriority', !get().options.lowFloorPriority);
   },
 
   toggleWeatherAvoid: () => {
-    set((s) => ({ options: { ...s.options, weatherAvoid: !s.options.weatherAvoid } }));
+    get().setScoringOption('weatherAvoid', !get().options.weatherAvoid);
+  },
+
+  toggleAvoidStairs: () => {
+    get().setScoringOption('avoidStairs', !get().options.avoidStairs);
+  },
+
+  toggleShadePriority: () => {
+    get().setScoringOption('shadePriority', !get().options.shadePriority);
+  },
+
+  toggleMinimizeTransfers: () => {
+    get().setScoringOption('minimizeTransfers', !get().options.minimizeTransfers);
+  },
+
+  setScoringOption: (key, enabled) => {
+    set((state) => ({ options: { ...state.options, [key]: enabled } }));
     if (get().candidates.length) get().rescore();
   },
 
@@ -143,9 +188,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   search: async () => {
+    const requestGeneration = beginRecommendationRequest();
     const { origin, destination, profile, weatherScenario, options } = get();
     if (!origin || !destination) {
-      set({ error: '출발지와 도착지를 모두 선택해 주세요.' });
+      set({ loading: false, error: '출발지와 도착지를 모두 선택해 주세요.' });
       return;
     }
     set({ loading: true, error: null });
@@ -154,6 +200,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         adapters.routes.recommend(origin, destination, profile, weatherScenario, options),
         adapters.weather.getCurrent(weatherScenario),
       ]);
+      if (!isLatestRecommendationRequest(requestGeneration)) return;
       set({
         candidates: recommendations.map((r) => r.route),
         weather,
@@ -162,6 +209,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         loading: false,
       });
     } catch (error) {
+      if (!isLatestRecommendationRequest(requestGeneration)) return;
       set({
         loading: false,
         error: toUserMessage(error, '경로를 불러오지 못했습니다. 다시 시도해 주세요.'),
@@ -174,11 +222,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   rescore: async () => {
     const { origin, destination, profile, weatherScenario, options, selectedRouteId } = get();
     if (!origin || !destination || !get().recommendations.length) return;
+    const requestGeneration = beginRecommendationRequest();
     set({ loading: true, error: null });
     try {
       const recommendations = await adapters.routes.recommend(
         origin, destination, profile, weatherScenario, options,
       );
+      if (!isLatestRecommendationRequest(requestGeneration)) return;
       const stillThere = recommendations.some((r) => r.route.id === selectedRouteId);
       set({
         candidates: recommendations.map((r) => r.route),
@@ -187,6 +237,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         loading: false,
       });
     } catch (error) {
+      if (!isLatestRecommendationRequest(requestGeneration)) return;
       set({
         loading: false,
         error: toUserMessage(error, '변경한 조건으로 경로를 다시 계산하지 못했습니다.'),
@@ -250,12 +301,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setProfileFromVoice: (p) => get().setProfile(p),
 
   enableLowFloorBusPriority: () => {
-    set((s) => ({ options: { ...s.options, lowFloorPriority: true } }));
-    get().rescore();
+    get().setScoringOption('lowFloorPriority', true);
   },
 
   enableWeatherAvoidance: async (mode) => {
-    set((s) => ({ options: { ...s.options, weatherAvoid: true } }));
+    get().setScoringOption('weatherAvoid', true);
     const scenario = WEATHER_MODE_SCENARIO[mode];
     if (scenario) {
       await get().setWeatherScenario(scenario); // 날씨 갱신 + 재채점 포함
@@ -265,8 +315,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   enableStairAvoidance: () => {
-    set((s) => ({ options: { ...s.options, avoidStairs: true } }));
-    get().rescore();
+    get().setScoringOption('avoidStairs', true);
   },
 
   recalculateRoutes: async () => {

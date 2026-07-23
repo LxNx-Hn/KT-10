@@ -5,7 +5,13 @@
 
 /* ───────────────────────── 프로필 ───────────────────────── */
 
-export type ProfileId = 'general' | 'elderly' | 'child' | 'disabled';
+export type ProfileId =
+  | 'general'
+  | 'elderly'
+  | 'child'
+  | 'youth'
+  | 'disabled'
+  | 'pregnant';
 
 export interface ProfileMeta {
   id: ProfileId;
@@ -123,7 +129,27 @@ export interface RouteCandidate {
     pathSegments: Array<{ start: LatLng; end: LatLng; shaded: boolean }>;
     calculationNote: string;
   };
-  characteristics?: Array<'fastest' | 'lowest_slope' | 'most_shade'>;
+  characteristics?: Array<
+    | 'fastest'
+    | 'shortest_walk'
+    | 'lowest_slope'
+    | 'most_shade'
+    | 'fewest_transfers'
+    | 'stair_free'
+    | 'low_floor_confirmed'
+  >;
+  /** AI/규칙 라벨러가 근거와 함께 만든 경로 특성. unavailable은 장점 배지로 표시하지 않는다. */
+  traitLabels?: Array<{
+    labelId: string;
+    displayLabel: string;
+    evidenceStatus: 'observed' | 'derived' | 'unavailable';
+    evidence: Array<{
+      feature: string;
+      value: string | number | boolean | null;
+      unit?: string;
+      source: string;
+    }>;
+  }>;
 }
 
 /* ───────────────────────── 날씨 ───────────────────────── */
@@ -169,14 +195,19 @@ export interface BusStopArrivals {
  * (보행 부담/날씨 위험은 화면 표시 시 100 - goodness 로 변환)
  */
 export interface ScoreComponents {
-  accessibility: number;
-  walkComfort: number;
-  elevator: number;
-  lowFloorBus: number;
-  weatherSafety: number;
-  safety: number;
-  dataReliability: number;
-  timeEfficiency: number;
+  accessibility?: number;
+  walkComfort?: number;
+  /** 지형 데이터가 확인된 경로에만 존재 */
+  slopeComfort?: number;
+  /** 주간 건물 그늘 비율이 확인된 경로에만 존재 */
+  shadeComfort?: number;
+  transferSimplicity?: number;
+  elevator?: number;
+  lowFloorBus?: number;
+  weatherSafety?: number;
+  safety?: number;
+  dataReliability?: number;
+  timeEfficiency?: number;
 }
 
 export type LowFloorStatus = 'confirmed' | 'regular' | 'unknown' | 'none';
@@ -190,6 +221,8 @@ export interface RouteScore {
     weatherRisk?: number;
   };
   finalScore: number; // 최종 추천 점수 0~100
+  /** 점수 생성 근거. 누락된 구버전 응답은 rule_baseline으로 표시한다. */
+  scoreKind?: 'rule_baseline' | 'judge_baseline' | 'human_model';
   lowFloorStatus: LowFloorStatus;
   reasons: string[]; // 추천 이유
   cautions: string[]; // 주의사항
@@ -198,19 +231,28 @@ export interface RouteScore {
   feedbackToken?: string;
 }
 
+/** 점수값은 미확인 피처를 생략할 수 있지만, 가중치 표에는 모든 키가 있어야 한다. */
+export type ScoreWeights = Required<ScoreComponents>;
+
 /** 프로필별 가중치(합 = 1) */
-export type ProfileWeights = Record<ProfileId, ScoreComponents>;
+export type ProfileWeights = Record<ProfileId, ScoreWeights>;
 
 /** 점수화 옵션(음성/버튼으로 토글되는 사용자 조건) */
 export interface ScoringOptions {
   /** 짐이 많아 보행거리·계단·환승 부담을 크게 반영 */
   carryLuggage?: boolean;
+  /** 유아차 이용: 단차·승강기·보행·저상버스 비중 강화 */
+  stroller?: boolean;
   /** 저상버스 우선 모드 */
   lowFloorPriority?: boolean;
   /** 날씨 회피 모드(날씨 위험 가중 강화) */
   weatherAvoid?: boolean;
   /** 계단 회피·승강기 우선 모드(접근성/승강기 가중 강화) */
   avoidStairs?: boolean;
+  /** 확인된 건물 그늘 비율을 우선 반영 */
+  shadePriority?: boolean;
+  /** 환승 횟수가 적은 경로를 우선 반영 */
+  minimizeTransfers?: boolean;
   /** 태양 위치와 그늘 계산 기준 시각(ISO 8601) */
   departureAt?: string;
 }

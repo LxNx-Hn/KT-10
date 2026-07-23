@@ -36,6 +36,23 @@ describe('음성 챗봇 파서 — 요구사항 §12 명령', () => {
     expect(p.commands.some((c) => c.intent === 'SEARCH_DESTINATION')).toBe(false);
   });
 
+  it('청소년·임산부 발화를 각각의 프로필로 구분한다', () => {
+    expect(find('청소년 기준으로 알려줘', 'SET_PROFILE')?.profile).toBe('youth');
+    expect(find('임산부 기준으로 알려줘', 'SET_PROFILE')?.profile).toBe('pregnant');
+  });
+
+  it('짐·유아차·그늘·환승 최소를 이번 이동 조건으로 추출한다', () => {
+    const conditions = parseVoiceCommand('짐이 많고 유아차로 그늘 많은 환승 최소 길').commands
+      .filter((command) => command.intent === 'SET_TRIP_CONDITION')
+      .map((command) => command.condition);
+    expect(conditions).toEqual([
+      'carryLuggage',
+      'stroller',
+      'shadePriority',
+      'minimizeTransfers',
+    ]);
+  });
+
   it('"저상버스 우선으로 찾아줘" → SET_LOW_FLOOR_BUS_PRIORITY', () => {
     expect(intents('저상버스 우선으로 찾아줘')).toEqual(['SET_LOW_FLOOR_BUS_PRIORITY']);
   });

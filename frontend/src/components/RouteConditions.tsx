@@ -1,4 +1,17 @@
-import { useAppStore } from '@/store/appStore';
+import { useAppStore, type ToggleableScoringOption } from '@/store/appStore';
+
+const CONDITIONS: Array<{
+  key: ToggleableScoringOption;
+  icon: string;
+  label: string;
+}> = [
+  { key: 'carryLuggage', icon: '🧳', label: '짐 많음' },
+  { key: 'stroller', icon: '🛞', label: '유아차 이용' },
+  { key: 'avoidStairs', icon: '🚫', label: '계단 회피' },
+  { key: 'shadePriority', icon: '🏢', label: '건물 그늘 우선' },
+  { key: 'lowFloorPriority', icon: '🚌', label: '저상버스 우선' },
+  { key: 'minimizeTransfers', icon: '↔️', label: '환승 최소' },
+];
 
 function localDateTimeAt(hour: number): string {
   const date = new Date();
@@ -22,8 +35,7 @@ function localDateTimeNow(): string {
 /** 저장 프로필과 달리, 매번 바뀌는 이동 조건은 검색 화면에서 즉시 조정한다. */
 export default function RouteConditions() {
   const options = useAppStore((s) => s.options);
-  const toggleCarryLuggage = useAppStore((s) => s.toggleCarryLuggage);
-  const enableStairAvoidance = useAppStore((s) => s.enableStairAvoidance);
+  const setScoringOption = useAppStore((s) => s.setScoringOption);
   const setDepartureAt = useAppStore((s) => s.setDepartureAt);
 
   return (
@@ -45,15 +57,24 @@ export default function RouteConditions() {
         <button type="button" onClick={() => setDepartureAt(localDateTimeAt(18))}>오후 6시</button>
       </div>
       <p className="route-conditions__shade-note">
-        건물 도형·높이와 태양 위치를 사용하며, 나무 그늘은 포함하지 않아요.
+        그늘은 건물 도형·높이와 태양 위치로 계산합니다. 나무 그늘은 포함하지 않으며,
+        확인되지 않은 특성은 점수에서 제외합니다.
       </p>
       <div className="route-conditions__buttons">
-        <button type="button" className={`condition-chip ${options.carryLuggage ? 'condition-chip--active' : ''}`} aria-pressed={Boolean(options.carryLuggage)} onClick={toggleCarryLuggage}>
-          🧳 짐 많음
-        </button>
-        <button type="button" className={`condition-chip ${options.avoidStairs ? 'condition-chip--active' : ''}`} aria-pressed={Boolean(options.avoidStairs)} onClick={enableStairAvoidance}>
-          🚫 계단 회피
-        </button>
+        {CONDITIONS.map(({ key, icon, label }) => {
+          const active = Boolean(options[key]);
+          return (
+            <button
+              key={key}
+              type="button"
+              className={`condition-chip ${active ? 'condition-chip--active' : ''}`}
+              aria-pressed={active}
+              onClick={() => setScoringOption(key, !active)}
+            >
+              <span aria-hidden="true">{icon}</span> {label}
+            </button>
+          );
+        })}
       </div>
     </section>
   );

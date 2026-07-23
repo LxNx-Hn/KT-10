@@ -2,11 +2,13 @@ import { useAppStore } from '@/store/appStore';
 import { PROFILE_LIST } from '@/config/profiles';
 import { persistProfile } from '@/auth/api';
 
-const ICON: Record<string, string> = {
-  general: '🧍',
+const ICON: Record<(typeof PROFILE_LIST)[number]['id'], string> = {
+  general: '🧭',
   elderly: '🧓',
   child: '🧒',
+  youth: '🎒',
   disabled: '♿',
+  pregnant: '🤰',
 };
 
 export default function ProfileSelector() {

@@ -2,9 +2,9 @@
 /**
  * UI 상태 테스트 (요구사항 §12).
  * - 첫 화면에서 지도보다 검색창이 먼저 렌더링되는가
- * - 프로필 칩 4개가 보이는가
+ * - 프로필 칩 6개가 보이는가
  * - 음성 챗봇이 하단(문서 마지막)에 고정 영역으로 존재하는가
- * - 경로 검색 후 RouteCards 가 MapView 보다 먼저 표시되는가
+ * - 경로 검색 후 활성 MapView와 RouteCards가 인접하게 표시되는가
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
@@ -14,6 +14,18 @@ import { recommendRoutes } from '@/scoring/engine';
 import { demoCandidates } from '@/data/routes';
 import { WEATHER_SCENARIOS } from '@/data/weather';
 import { findPlace } from '@/data/places';
+import { adapters } from '@/adapters';
+import type { ScoredRoute } from '@/types';
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 /** a 가 문서상 b 보다 앞에 있으면 true */
 function precedes(a: Element, b: Element): boolean {
@@ -75,11 +87,14 @@ function seedShadedResults() {
 
 beforeEach(() => {
   useAppStore.setState({
+    profile: 'general',
     origin: null,
     destination: null,
     candidates: [],
     recommendations: [],
     selectedRouteId: null,
+    options: {},
+    largeUi: false,
     loading: false,
     error: null,
   });
@@ -87,6 +102,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 describe('UI 상태 — 검색 중심 구조', () => {
@@ -99,9 +115,11 @@ describe('UI 상태 — 검색 중심 구조', () => {
     expect(precedes(searchInput!, mapSection!)).toBe(true);
   });
 
-  it('프로필 칩 4개가 보인다', () => {
+  it('프로필 칩 6개가 보인다', () => {
     const { container } = render(<App />);
-    expect(container.querySelectorAll('[role="radio"]').length).toBe(4);
+    expect(container.querySelectorAll('[role="radio"]').length).toBe(6);
+    expect(container.textContent).toContain('청소년');
+    expect(container.textContent).toContain('임산부');
   });
 
   it('첫 화면에는 지도(MapView)가 펼쳐져 있지 않다', () => {
@@ -123,22 +141,154 @@ describe('UI 상태 — 검색 중심 구조', () => {
     expect(dock!.querySelector('.voice-fab')).toBeTruthy();
   });
 
-  it('경로 검색 후 RouteCards 가 MapView 보다 먼저 표시된다', () => {
+  it('경로 검색 후 활성 MapView가 RouteCards 바로 앞에 표시된다', () => {
     const { container } = render(<App />);
     act(() => seedResults());
     const routeCard = container.querySelector('.route-card');
     const map = container.querySelector('.map');
     expect(routeCard).toBeTruthy();
     expect(map).toBeTruthy(); // 결과가 생기면 지도 자동 확장
-    expect(precedes(routeCard!, map!)).toBe(true);
+    expect(precedes(map!, routeCard!)).toBe(true);
+    expect(map!.closest('.results')).toBe(routeCard!.closest('.results'));
   });
 
-  it('경로 카드에는 내부 점수를 노출하지 않고 대표 특성을 표시한다', () => {
+  it('경로 카드에는 점수 종류를 명시한 비교 적합 점수와 사실 특성을 표시한다', () => {
     const { container } = render(<App />);
     act(() => seedResults());
-    expect(container.querySelector('.route-card__final')).toBeNull();
-    expect(container.querySelector('.route-card__feature')?.textContent).toMatch(/경로|이동시간|환승|도보/);
-    expect(container.querySelector('.scoreval')).toBeNull();
+    expect(container.querySelector('.route-card__score')?.textContent)
+      .toContain('규칙 베이스라인 적합 점수');
+    expect(container.textContent).toContain('안전도나 성공 확률이 아닙니다');
+    expect(container.querySelector('.route-card__stats')?.textContent).toMatch(/분.*도보.*환승/);
+  });
+
+  it('일부 구간만 계단 없음이면 전체 경로를 계단 없음으로 단정하지 않는다', () => {
+    const { container } = render(<App />);
+    act(() => {
+      seedResults();
+      const [first, ...rest] = useAppStore.getState().recommendations;
+      const knownWalk = {
+        ...first.route.segments.find((segment) => segment.mode === 'walk')!,
+        hasStairs: false,
+        stairsCount: 0,
+        needsVerticalMove: undefined,
+      };
+      const unknownWalk = {
+        ...knownWalk,
+        id: 'unknown-walk-evidence',
+        hasStairs: undefined,
+        stairsCount: undefined,
+      };
+      const updated = {
+        ...first,
+        route: {
+          ...first.route,
+          characteristics: (first.route.characteristics ?? []).filter(
+            (value) => value !== 'stair_free',
+          ),
+          segments: [knownWalk, unknownWalk],
+        },
+      };
+      useAppStore.setState({
+        recommendations: [updated, ...rest],
+        candidates: [updated.route, ...rest.map((item) => item.route)],
+      });
+    });
+    const routeId = useAppStore.getState().recommendations[0].route.id;
+    const card = container.querySelector(`[data-route-id="${routeId}"]`)!;
+    expect(card.textContent).toContain('계단 정보 미확인');
+    expect(card.textContent).toContain('수직이동 정보 미확인');
+    expect(card.textContent).not.toContain('계단 없음 확인');
+  });
+
+  it('hasStairs가 없어도 양수 stairsCount는 계단 있음으로 표시한다', () => {
+    const { container } = render(<App />);
+    act(() => {
+      seedResults();
+      const [first, ...rest] = useAppStore.getState().recommendations;
+      const segment = {
+        ...first.route.segments.find((item) => item.mode === 'walk')!,
+        hasStairs: undefined,
+        stairsCount: 3,
+      };
+      const updated = {
+        ...first,
+        route: {
+          ...first.route,
+          characteristics: (first.route.characteristics ?? []).filter(
+            (value) => value !== 'stair_free',
+          ),
+          segments: [segment],
+        },
+      };
+      useAppStore.setState({
+        recommendations: [updated, ...rest],
+        candidates: [updated.route, ...rest.map((item) => item.route)],
+      });
+    });
+    const routeId = useAppStore.getState().recommendations[0].route.id;
+    const card = container.querySelector(`[data-route-id="${routeId}"]`)!;
+    expect(card.textContent).toContain('계단 3개');
+  });
+
+  it('경로 카드는 점수순 스와이프 목록이며 다음 버튼과 키보드로 지도 선택 경로를 바꾼다', () => {
+    const { container, getByLabelText } = render(<App />);
+    act(() => seedResults());
+    const ranked = [...useAppStore.getState().recommendations].sort(
+      (a, b) => b.score.finalScore - a.score.finalScore
+        || a.route.totalDurationMin - b.route.totalDurationMin,
+    );
+    const cards = Array.from(container.querySelectorAll<HTMLElement>('.route-card'));
+    expect(cards.map((card) => card.dataset.routeId)).toEqual(
+      ranked.map(({ route }) => route.id),
+    );
+    expect(container.querySelector('.route-carousel__viewport')).toBeTruthy();
+
+    fireEvent.click(getByLabelText('다음 경로 보기'));
+    expect(useAppStore.getState().selectedRouteId).toBe(ranked[1].route.id);
+    expect(container.querySelector('.route-carousel__position')?.textContent).toContain('2');
+
+    fireEvent.keyDown(container.querySelector('.route-carousel__viewport')!, { key: 'End' });
+    expect(useAppStore.getState().selectedRouteId).toBe(ranked[ranked.length - 1].route.id);
+
+    const mapRouteButtons = container.querySelectorAll<HTMLButtonElement>('.map__route-picker button');
+    fireEvent.click(mapRouteButtons[0]);
+    expect(useAppStore.getState().selectedRouteId).toBe(ranked[0].route.id);
+    expect(
+      container.querySelector(`[data-route-id="${ranked[0].route.id}"]`)
+        ?.classList.contains('route-card--selected'),
+    ).toBe(true);
+  });
+
+  it('AI 평가 베이스라인 점수 종류를 구분해서 표시한다', () => {
+    const { container } = render(<App />);
+    act(() => {
+      seedResults();
+      const recommendations = useAppStore.getState().recommendations.map((item, index) => (
+        index === 0
+          ? { ...item, score: { ...item.score, scoreKind: 'judge_baseline' as const } }
+          : item
+      ));
+      useAppStore.setState({ recommendations });
+    });
+    expect(container.textContent).toContain('AI 평가 베이스라인 적합 점수');
+  });
+
+  it('이번 이동 조건 6개를 켜고 끌 수 있다', () => {
+    const { container, getByRole } = render(<App />);
+    expect(container.querySelectorAll('.condition-chip')).toHaveLength(6);
+    const stroller = getByRole('button', { name: /유아차 이용/ });
+    const shade = getByRole('button', { name: /건물 그늘 우선/ });
+    const transfer = getByRole('button', { name: /환승 최소/ });
+    fireEvent.click(stroller);
+    fireEvent.click(shade);
+    fireEvent.click(transfer);
+    expect(useAppStore.getState().options).toMatchObject({
+      stroller: true,
+      shadePriority: true,
+      minimizeTransfers: true,
+    });
+    fireEvent.click(stroller);
+    expect(useAppStore.getState().options.stroller).toBe(false);
   });
 
   it('건물 그림자는 경로 아래에 그리고 그늘·햇빛 구간 색을 구분한다', () => {
@@ -154,5 +304,69 @@ describe('UI 상태 — 검색 중심 구조', () => {
       children.findIndex((child) => child.tagName === 'polyline'),
     );
     expect(container.textContent).toContain('나무 그늘 미포함');
+  });
+
+  it('느린 이전 검색 성공 응답이 빠른 최신 재채점 결과를 덮어쓰지 않는다', async () => {
+    seedResults();
+    const baseline = useAppStore.getState().recommendations;
+    const previous = deferred<ScoredRoute[]>();
+    const latest = deferred<ScoredRoute[]>();
+    const previousRecommendations = baseline.map((item) => ({
+      ...item,
+      score: { ...item.score, finalScore: 0.11 },
+    }));
+    const latestRecommendations = baseline.map((item) => ({
+      ...item,
+      score: { ...item.score, finalScore: 0.91 },
+    }));
+    vi.spyOn(adapters.routes, 'recommend')
+      .mockImplementationOnce(() => previous.promise)
+      .mockImplementationOnce(() => latest.promise);
+
+    const previousRequest = useAppStore.getState().search();
+    const latestRequest = useAppStore.getState().rescore();
+    latest.resolve(latestRecommendations);
+    await latestRequest;
+
+    expect(useAppStore.getState()).toMatchObject({
+      recommendations: latestRecommendations,
+      loading: false,
+      error: null,
+    });
+
+    previous.resolve(previousRecommendations);
+    await previousRequest;
+    expect(useAppStore.getState()).toMatchObject({
+      recommendations: latestRecommendations,
+      loading: false,
+      error: null,
+    });
+  });
+
+  it('느린 이전 재채점 실패가 최신 성공 뒤의 오류·로딩 상태를 바꾸지 않는다', async () => {
+    seedResults();
+    const baseline = useAppStore.getState().recommendations;
+    const previous = deferred<ScoredRoute[]>();
+    const latest = deferred<ScoredRoute[]>();
+    const latestRecommendations = baseline.map((item) => ({
+      ...item,
+      score: { ...item.score, finalScore: 0.87 },
+    }));
+    vi.spyOn(adapters.routes, 'recommend')
+      .mockImplementationOnce(() => previous.promise)
+      .mockImplementationOnce(() => latest.promise);
+
+    const previousRequest = useAppStore.getState().rescore();
+    const latestRequest = useAppStore.getState().rescore();
+    latest.resolve(latestRecommendations);
+    await latestRequest;
+    previous.reject(new Error('느린 이전 요청 실패'));
+    await previousRequest;
+
+    expect(useAppStore.getState()).toMatchObject({
+      recommendations: latestRecommendations,
+      loading: false,
+      error: null,
+    });
   });
 });

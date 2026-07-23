@@ -25,16 +25,16 @@ export function buildReasons(
   const out: string[] = [];
   const hasVertical = r.segments.some((s) => s.needsVerticalMove);
 
-  if (c.timeEfficiency >= 90) out.push('후보 중 소요시간이 가장 짧은 편이에요.');
-  if (c.walkComfort >= 80) out.push(`도보가 ${r.totalWalkM}m로 보행 부담이 적어요.`);
-  if (hasVertical && c.elevator >= 90)
+  if (c.timeEfficiency !== undefined && c.timeEfficiency >= 90) out.push('후보 중 소요시간이 가장 짧은 편이에요.');
+  if (c.walkComfort !== undefined && c.walkComfort >= 80) out.push(`도보가 ${r.totalWalkM}m로 보행 부담이 적어요.`);
+  if (hasVertical && c.elevator !== undefined && c.elevator >= 90)
     out.push('승강기로 이동할 수 있어 계단을 피할 수 있어요.');
   if (lowFloor === 'confirmed') out.push('경로의 버스가 저상버스로 확인됐어요.');
-  if (c.safety >= 85) out.push('횡단과 환승 부담이 낮은 편이에요.');
-  if (c.weatherSafety >= 85) out.push('현재 날씨 조건에서 비교적 안전해요.');
+  if (c.safety !== undefined && c.safety >= 85) out.push('횡단과 환승 부담이 낮은 편이에요.');
+  if (c.weatherSafety !== undefined && c.weatherSafety >= 85) out.push('현재 날씨 조건에서 비교적 안전해요.');
   if (r.transferCount === 0) out.push('환승 없이 한 번에 이동해요.');
 
-  if (out.length === 0) out.push('균형 잡힌 일반 경로예요.');
+  if (out.length === 0) out.push('확인된 정보 범위에서 경로를 비교했어요.');
   return out.slice(0, 4);
 }
 
@@ -49,7 +49,7 @@ export function buildCautions(
   const stairNoElev = r.segments.some(
     (s) => (s.hasStairs || s.needsVerticalMove) && s.hasElevator !== true,
   );
-  if (stairNoElev && c.elevator < 70)
+  if (stairNoElev && c.elevator !== undefined && c.elevator < 70)
     out.push('계단 구간이 있고 승강기가 확인되지 않았어요.');
 
   if (lowFloor === 'regular')
@@ -58,8 +58,8 @@ export function buildCautions(
     out.push('도착 버스의 저상버스 여부가 확인되지 않았어요.');
 
   // 날씨 위험 안내(기획서 §10)
-  const weatherRisk = 100 - c.weatherSafety;
-  if (weatherRisk >= 35) {
+  const weatherRisk = c.weatherSafety === undefined ? undefined : 100 - c.weatherSafety;
+  if (weatherRisk !== undefined && weatherRisk >= 35) {
     if (w.isHeatwave) out.push('폭염 중 실외 보행이 길어요. 온열질환에 주의하세요.');
     else if (w.isColdwave) out.push('한파 중 대기시간이 길어요. 보온에 주의하세요.');
     if (w.sky === 'rain' || w.precipitationMm > 0)
@@ -68,10 +68,14 @@ export function buildCautions(
       out.push('미세먼지가 나쁨 단계예요. 마스크 착용을 권장해요.');
   }
 
-  const crosswalks = r.segments.reduce((a, s) => a + (s.crosswalkCount ?? 0), 0);
-  if (crosswalks >= 4) out.push(`횡단보도가 ${crosswalks}곳 있어요. 횡단에 주의하세요.`);
+  const walks = r.segments.filter((segment) => segment.mode === 'walk');
+  const crosswalks = walks.length > 0
+    && walks.every((segment) => segment.crosswalkCount !== undefined)
+    ? walks.reduce((total, segment) => total + segment.crosswalkCount!, 0)
+    : undefined;
+  if (crosswalks !== undefined && crosswalks >= 4) out.push(`횡단보도가 ${crosswalks}곳 있어요. 횡단에 주의하세요.`);
 
-  if (c.dataReliability < 70)
+  if (c.dataReliability !== undefined && c.dataReliability < 70)
     out.push('일부 접근성 정보가 미확인 상태로 실제와 다를 수 있어요.');
 
   return out.slice(0, 4);

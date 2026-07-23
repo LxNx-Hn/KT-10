@@ -16,7 +16,12 @@ import { describe, expect, it } from 'vitest';
 import { demoCandidates } from '@/data/routes';
 import { WEATHER_SCENARIOS } from '@/data/weather';
 import { recommendRoutes, scoreRoute } from '@/scoring/engine';
-import type { ProfileId, ScoredRoute } from '@/types';
+import {
+  PROFILE_WEIGHTS,
+  SCORE_COMPONENT_KEYS,
+  applyOptionWeights,
+} from '@/config/weights';
+import type { ProfileId, RouteCandidate, ScoredRoute } from '@/types';
 
 const ROUTES = demoCandidates();
 const NORMAL = WEATHER_SCENARIOS.normal;
@@ -87,12 +92,25 @@ describe('⑤ 날씨 반영', () => {
     expect(heat['r1-overpass'].finalScore).toBeLessThan(normal['r1-overpass'].finalScore);
   });
 
-  it('비 올 때 경사 구간이 있는 R3의 날씨 위험이 올라간다', () => {
+  it('계단 정보가 미확인이면 비 미끄럼 위험을 임의 계산하지 않는다', () => {
     const normal = scoreAll('general', 'normal');
     const rain = scoreAll('general', 'rain');
-    expect(rain['r3-lowfloor'].display.weatherRisk!).toBeGreaterThan(
-      normal['r3-lowfloor'].display.weatherRisk!,
-    );
+    expect(normal['r3-lowfloor'].display.weatherRisk).toBe(0);
+    expect(rain['r3-lowfloor'].display.weatherRisk).toBeUndefined();
+  });
+
+  it('계단 증거가 완전하면 비와 경사에 따른 위험 증가를 계산한다', () => {
+    const route = structuredClone(ROUTES[2]);
+    route.segments = route.segments.map((segment) => (
+      (segment.mode === 'walk' || segment.mode === 'transfer')
+        && segment.hasStairs === undefined
+        && segment.stairsCount === undefined
+        ? { ...segment, hasStairs: false }
+        : segment
+    ));
+    const normal = scoreRoute(route, WEATHER_SCENARIOS.normal, 'general', 10, 1);
+    const rain = scoreRoute(route, WEATHER_SCENARIOS.rain, 'general', 10, 1);
+    expect(rain.display.weatherRisk).toBeGreaterThan(normal.display.weatherRisk!);
   });
 
   it('미세먼지 나쁨 시 실외 이동이 긴 경로의 날씨 안전 점수가 낮아진다', () => {
@@ -128,9 +146,92 @@ describe('⑦ lowFloorStatus 판정', () => {
   });
 });
 
+describe('⑧ 6개 프로필과 이번 이동 조건', () => {
+  it('6개 프로필 가중치 합이 각각 1이다', () => {
+    const profiles: ProfileId[] = [
+      'general',
+      'elderly',
+      'child',
+      'youth',
+      'disabled',
+      'pregnant',
+    ];
+    expect(Object.keys(PROFILE_WEIGHTS)).toEqual(profiles);
+    profiles.forEach((profile) => {
+      const sum = SCORE_COMPONENT_KEYS.reduce(
+        (total, key) => total + PROFILE_WEIGHTS[profile][key],
+        0,
+      );
+      expect(sum).toBeCloseTo(1, 8);
+    });
+  });
+
+  it('유아차·그늘 우선·환승 최소 조건이 대응 피처 가중치를 높인다', () => {
+    const base = PROFILE_WEIGHTS.general;
+    expect(applyOptionWeights(base, { stroller: true }).accessibility)
+      .toBeGreaterThan(base.accessibility);
+    expect(applyOptionWeights(base, { shadePriority: true }).shadeComfort)
+      .toBeGreaterThan(base.shadeComfort);
+    expect(applyOptionWeights(base, { minimizeTransfers: true }).transferSimplicity)
+      .toBeGreaterThan(base.transferSimplicity);
+  });
+
+  it('그늘 미확인은 0점으로 바꾸지 않고 가중합에서 제외한다', () => {
+    const score = scoreAll('general', 'normal')['r1-overpass'];
+    expect(score.components.shadeComfort).toBeUndefined();
+    expect(Number.isFinite(score.finalScore)).toBe(true);
+  });
+
+  it('그늘 우선 조건은 확인된 그늘 비율의 점수 차이를 확대한다', () => {
+    const makeShadeRoute = (id: string, ratio: number): RouteCandidate => ({
+      ...structuredClone(ROUTES[0]),
+      id,
+      shade: {
+        status: 'estimated_public',
+        evaluatedAt: '2026-07-24T14:00:00+09:00',
+        shadeRatio: ratio,
+        includesTreeShade: false,
+        includesTerrainShadow: false,
+        source: '검증용 공공 건물',
+        dataQuality: 'public',
+        shadowPolygons: [],
+        pathSegments: [],
+        calculationNote: '테스트',
+      },
+    });
+    const sunny = makeShadeRoute('shade-low', 0.2);
+    const shaded = makeShadeRoute('shade-high', 0.8);
+    const offGap = scoreRoute(shaded, NORMAL, 'general', 10, 1).finalScore
+      - scoreRoute(sunny, NORMAL, 'general', 10, 2).finalScore;
+    const onGap = scoreRoute(
+      shaded,
+      NORMAL,
+      'general',
+      10,
+      1,
+      { shadePriority: true },
+    ).finalScore - scoreRoute(
+      sunny,
+      NORMAL,
+      'general',
+      10,
+      2,
+      { shadePriority: true },
+    ).finalScore;
+    expect(onGap).toBeGreaterThan(offGap);
+  });
+});
+
 /* ───────── 검증 결과 표 출력 (기획서 §8: 표 형태) ───────── */
 describe('검증 결과 표', () => {
-  const profiles: ProfileId[] = ['general', 'elderly', 'child', 'disabled'];
+  const profiles: ProfileId[] = [
+    'general',
+    'elderly',
+    'child',
+    'youth',
+    'disabled',
+    'pregnant',
+  ];
 
   it('프로필 × 경로 최종점수 표', () => {
     const table: Record<string, Record<string, number>> = {};
@@ -143,18 +244,18 @@ describe('검증 결과 표', () => {
     console.log('\n[표1] 프로필별 경로 최종점수 (평상 날씨)');
     console.table(table);
 
-    const weatherTable: Record<string, Record<string, number>> = {};
+    const weatherTable: Record<string, Record<string, number | undefined>> = {};
     const scenarios = ['normal', 'heatwave', 'coldwave', 'rain', 'dust'] as const;
     for (const w of scenarios) {
       const s = scoreAll('general', w);
       weatherTable[WEATHER_SCENARIOS[w].label] = {};
       for (const r of ROUTES)
-        weatherTable[WEATHER_SCENARIOS[w].label][r.summary] = s[r.id].display.weatherRisk!;
+        weatherTable[WEATHER_SCENARIOS[w].label][r.summary] = s[r.id].display.weatherRisk;
     }
     // eslint-disable-next-line no-console
     console.log('\n[표2] 날씨 시나리오별 경로 날씨위험 점수 (일반 프로필)');
     console.table(weatherTable);
 
-    expect(Object.keys(table)).toHaveLength(4);
+    expect(Object.keys(table)).toHaveLength(6);
   });
 });

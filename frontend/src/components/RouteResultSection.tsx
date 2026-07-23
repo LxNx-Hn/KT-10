@@ -4,10 +4,11 @@ import BusArrivalCard from './BusArrivalCard';
 import WeatherWarning from './WeatherWarning';
 import RouteFeedback from './RouteFeedback';
 import FacilityReport from './FacilityReport';
+import MapPreviewSection from './MapPreviewSection';
 
 /**
- * 경로 결과 섹션(요구사항 §3). 경로 카드가 지도보다 먼저 보이도록 구성한다.
- * 내부 모델 점수는 정렬에만 사용하고 사용자에게는 경로 특성과 사실을 보여준다.
+ * 결과가 생기면 활성 경로 지도와 스와이프 카드를 붙여서 보여준다.
+ * 지도는 카드 선택과 동기화되고, 부가 정보/후기 폼은 그 아래에 둔다.
  */
 export default function RouteResultSection() {
   const recommendations = useAppStore((s) => s.recommendations);
@@ -20,6 +21,7 @@ export default function RouteResultSection() {
 
   return (
     <section className="results" aria-label="경로 결과">
+      {hasResults && <MapPreviewSection />}
       <RouteList />
       {hasResults && (
         <>

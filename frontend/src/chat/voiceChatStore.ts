@@ -6,7 +6,7 @@
  */
 import { create } from 'zustand';
 import { useAppStore } from '@/store/appStore';
-import { PROFILES } from '@/config/profiles';
+import { PROFILE_LIST } from '@/config/profiles';
 import { parseVoiceCommand } from '@/voice/commandParser';
 import type {
   ProfileId,
@@ -16,6 +16,7 @@ import type {
   VoiceChatStatus,
   VoiceIntent,
   WeatherAvoidanceMode,
+  TripCondition,
 } from '@/voice/intents';
 import { speak, stopSpeaking } from '@/voice/synthesis';
 
@@ -30,10 +31,21 @@ function profilePhrase(p: ProfileId): string {
       return '장애인 기준으로 계단을 피하고 승강기·저상버스를 우선하는 경로를 추천하겠습니다.';
     case 'child':
       return '아동 기준으로 안전한 횡단과 단순한 환승 경로를 추천하겠습니다.';
+    case 'youth':
+      return '청소년 기준으로 빠른 이동과 단순한 환승을 중심으로 추천하겠습니다.';
+    case 'pregnant':
+      return '임산부 기준으로 긴 도보와 급경사, 계단 부담이 적은 경로를 추천하겠습니다.';
     default:
       return '일반 기준으로 시간·보행 부담·날씨를 균형 있게 반영해 추천하겠습니다.';
   }
 }
+
+const TRIP_CONDITION_PHRASE: Record<TripCondition, string> = {
+  carryLuggage: '짐이 많은 상황을 반영했습니다.',
+  stroller: '유아차 이동에 필요한 단차·승강기·저상버스 정보를 더 크게 반영했습니다.',
+  shadePriority: '확인된 건물 그늘 비율을 우선 반영했습니다.',
+  minimizeTransfers: '환승 횟수가 적은 경로를 우선 반영했습니다.',
+};
 
 function weatherPhrase(mode: WeatherAvoidanceMode): string {
   switch (mode) {
@@ -150,6 +162,7 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
     let profileApplied: ProfileId | null = null;
     let lowFloorApplied = false;
     let weatherApplied: WeatherAvoidanceMode | null = null;
+    const tripConditionsApplied: TripCondition[] = [];
 
     for (const cmd of parse.commands) {
       switch (cmd.intent) {
@@ -174,6 +187,11 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
           await app.enableWeatherAvoidance(cmd.weatherMode);
           didOption = true;
           weatherApplied = cmd.weatherMode;
+          break;
+        case 'SET_TRIP_CONDITION':
+          app.setScoringOption(cmd.condition, true);
+          didOption = true;
+          tripConditionsApplied.push(cmd.condition);
           break;
         case 'EXPLAIN_ROUTE':
           explainIdx = cmd.routeIndex;
@@ -238,7 +256,7 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
       const destName = useAppStore.getState().destination?.name ?? '목적지';
       set({ awaiting: 'profile' });
       respond(
-        `${destName}까지 가는 경로를 찾겠습니다. ${PROFILES.general.label}, ${PROFILES.elderly.label}, ${PROFILES.child.label}, ${PROFILES.disabled.label} 중 어떤 기준으로 안내할까요?`,
+        `${destName}까지 가는 경로를 찾겠습니다. ${PROFILE_LIST.map((profile) => profile.label).join(', ')} 중 어떤 기준으로 안내할까요?`,
         'SEARCH_DESTINATION',
       );
       return;
@@ -246,7 +264,7 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
 
     // 7) 프로필 질문 중인데 답이 안 옴 → 재질문
     if (get().awaiting === 'profile' && !didProfile && !didDestination && !didOption) {
-      respond('일반, 고령자, 아동, 장애인 중 어떤 기준으로 안내할까요?', 'SET_PROFILE');
+      respond(`${PROFILE_LIST.map((profile) => profile.label).join(', ')} 중 어떤 기준으로 안내할까요?`, 'SET_PROFILE');
       return;
     }
 
@@ -258,6 +276,7 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
       if (profileApplied) parts.push(profilePhrase(profileApplied));
       if (lowFloorApplied) parts.push('저상버스 도착 정보를 확인해 경로를 다시 정렬했습니다.');
       if (weatherApplied) parts.push(weatherPhrase(weatherApplied));
+      tripConditionsApplied.forEach((condition) => parts.push(TRIP_CONDITION_PHRASE[condition]));
       if (parts.length === 0 && didDestination) parts.push('경로를 찾았습니다.');
       const summary = top
         ? `추천 1순위는 ${top.score.voiceSummary}`
@@ -268,7 +287,9 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
           ? 'SET_PROFILE'
           : lowFloorApplied
             ? 'SET_LOW_FLOOR_BUS_PRIORITY'
-            : 'SET_WEATHER_AVOIDANCE';
+            : weatherApplied
+              ? 'SET_WEATHER_AVOIDANCE'
+              : 'SET_TRIP_CONDITION';
       respond(`${parts.join(' ')} ${summary}`.trim(), intent);
       return;
     }

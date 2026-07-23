@@ -4,10 +4,11 @@ import { useVoiceChatStore } from '@/chat/voiceChatStore';
 const EXAMPLES = [
   '서면역까지 가는 길 찾아줘',
   '고령자 기준으로 알려줘',
+  '임산부 기준으로 알려줘',
   '장애인 기준으로 계단 없는 길',
+  '유아차로 환승 적은 길',
   '저상버스 우선으로 찾아줘',
-  '비 안 맞는 길로 가고 싶어',
-  '첫 번째 경로 설명해줘',
+  '그늘 많은 길로 알려줘',
 ];
 
 export default function SuggestedVoiceCommands() {

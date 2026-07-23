@@ -11,7 +11,9 @@ import type { ParsedCommand, VoiceParse, WeatherAvoidanceMode } from './intents'
 const PROFILE_KEYWORDS: { re: RegExp; profile: ProfileId }[] = [
   { re: /고령자|어르신|노인/, profile: 'elderly' },
   { re: /장애인|휠체어/, profile: 'disabled' },
-  { re: /아이|아동|어린이|유아/, profile: 'child' },
+  { re: /임산부|임신\s*중|산모/, profile: 'pregnant' },
+  { re: /청소년|중학생|고등학생/, profile: 'youth' },
+  { re: /아이|아동|어린이|유아(?!차)/, profile: 'child' },
   { re: /일반\s*(기준|모드|으로)?/, profile: 'general' },
 ];
 
@@ -62,7 +64,21 @@ export function parseVoiceCommand(raw: string): VoiceParse {
     commands.push({ intent: 'SET_WEATHER_AVOIDANCE', weatherMode });
   }
 
-  // 4) 경로 설명/선택 (순서 지정 발화)
+  // 4) 이번 이동에만 적용하는 상황 조건
+  if (/짐(?:이)?\s*(?:많|무거)|캐리어|무거운\s*가방/.test(text)) {
+    commands.push({ intent: 'SET_TRIP_CONDITION', condition: 'carryLuggage' });
+  }
+  if (/유모차|유아차/.test(text)) {
+    commands.push({ intent: 'SET_TRIP_CONDITION', condition: 'stroller' });
+  }
+  if (/그늘\s*(?:많|우선|있는)|햇빛\s*(?:피하|적)/.test(text)) {
+    commands.push({ intent: 'SET_TRIP_CONDITION', condition: 'shadePriority' });
+  }
+  if (/환승\s*(?:최소|적|없|줄)|갈아타(?:는\s*)?(?:횟수\s*)?(?:적|없|않)/.test(text)) {
+    commands.push({ intent: 'SET_TRIP_CONDITION', condition: 'minimizeTransfers' });
+  }
+
+  // 5) 경로 설명/선택 (순서 지정 발화)
   const ord = findOrdinal(text);
   if (ord !== null) {
     if (/안내\s*시작|안내해|로\s*안내|출발|선택|시작/.test(text)) {
@@ -72,12 +88,12 @@ export function parseVoiceCommand(raw: string): VoiceParse {
     }
   }
 
-  // 5) 안내 반복 (순서 지정이 없을 때만)
+  // 6) 안내 반복 (순서 지정이 없을 때만)
   if (ord === null && /다시\s*(말|들려|읽어|설명|안내|얘기)|반복|한\s*번\s*더/.test(text)) {
     commands.push({ intent: 'REPEAT_GUIDE' });
   }
 
-  // 6) 목적지/출발지 검색 — 다른 의도가 하나도 없을 때만 폴백으로 시도
+  // 7) 목적지/출발지 검색 — 다른 의도가 하나도 없을 때만 폴백으로 시도
   //    ("고령자 기준으로 찾아줘", "저상버스 우선으로 찾아줘"의 '찾'을 목적지로 오인 방지)
   if (commands.length === 0) {
     const origin = matchOrigin(text);

@@ -10,12 +10,18 @@ export type VoiceIntent =
   | 'SET_PROFILE'
   | 'SET_LOW_FLOOR_BUS_PRIORITY'
   | 'SET_WEATHER_AVOIDANCE'
+  | 'SET_TRIP_CONDITION'
   | 'EXPLAIN_ROUTE'
   | 'SELECT_ROUTE'
   | 'REPEAT_GUIDE'
   | 'UNKNOWN';
 
 export type WeatherAvoidanceMode = 'heat' | 'rain' | 'cold' | 'dust' | 'general';
+export type TripCondition =
+  | 'carryLuggage'
+  | 'stroller'
+  | 'shadePriority'
+  | 'minimizeTransfers';
 
 export type VoiceChatMessage = {
   id: string;
@@ -31,6 +37,7 @@ export type ParsedCommand =
   | { intent: 'SET_PROFILE'; profile: ProfileId }
   | { intent: 'SET_LOW_FLOOR_BUS_PRIORITY' }
   | { intent: 'SET_WEATHER_AVOIDANCE'; weatherMode: WeatherAvoidanceMode }
+  | { intent: 'SET_TRIP_CONDITION'; condition: TripCondition }
   | { intent: 'EXPLAIN_ROUTE'; routeIndex: number }
   | { intent: 'SELECT_ROUTE'; routeIndex: number }
   | { intent: 'REPEAT_GUIDE' }
