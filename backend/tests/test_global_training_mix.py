@@ -1,7 +1,9 @@
+import json
+
 import pandas as pd
 import pytest
 
-from backend.ml.train_global_candidate import compose
+from backend.ml.train_global_candidate import _load_export_report, compose
 
 
 def _frame(prefix: str, count: int) -> pd.DataFrame:
@@ -36,3 +38,28 @@ def test_sparse_single_route_reviews_are_not_treated_as_ranking_data():
 def test_review_share_cannot_silently_dominate():
     with pytest.raises(ValueError):
         compose(_frame("initial", 10), _frame("review", 10), 0.5)
+
+
+def test_review_export_report_counts_must_match_training_labels(tmp_path):
+    report_path = tmp_path / "export_report.json"
+    report_path.write_text(
+        json.dumps({
+            "eligible_reviews": 9,
+            "ineligible_reviews": 3,
+            "eligible_reviewers": 9,
+        }),
+        encoding="utf-8",
+    )
+    report = _load_export_report(
+        report_path,
+        raw_review_count=9,
+        raw_reviewer_count=9,
+    )
+    assert report["ineligible_reviews"] == 3
+
+    with pytest.raises(ValueError, match="라벨 행 수"):
+        _load_export_report(
+            report_path,
+            raw_review_count=8,
+            raw_reviewer_count=9,
+        )

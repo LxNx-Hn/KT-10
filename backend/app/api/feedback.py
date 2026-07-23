@@ -12,6 +12,7 @@ from datetime import datetime, UTC
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..database import FacilityReport, RouteImpression, RouteReview, User, UserPreference, database_session
@@ -154,6 +155,19 @@ def record_review(
     impression = db.get(RouteImpression, payload.impression_id)
     if impression is None or impression.user_id != user.id or impression.route_id != payload.route_id:
         raise HTTPException(status_code=400, detail="The review must reference this user's displayed route.")
+    existing_review = (
+        db.query(RouteReview)
+        .filter(
+            RouteReview.user_id == user.id,
+            RouteReview.impression_id == payload.impression_id,
+        )
+        .first()
+    )
+    if existing_review is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="This displayed route already has a review.",
+        )
     review = RouteReview(user_id=user.id, **payload.model_dump())
     db.add(review)
     if user.preference is None:
@@ -178,7 +192,13 @@ def record_review(
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="This displayed route already has a review.",
+        ) from exc
     return {"id": review.id, "acceptedForTraining": review.training_consent}
 
 

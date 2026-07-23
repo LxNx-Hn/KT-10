@@ -11,7 +11,16 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 from .settings import settings
@@ -71,6 +80,13 @@ class RouteImpression(Base):
 
 class RouteReview(Base):
     __tablename__ = "route_reviews"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "impression_id",
+            name="uq_route_reviews_user_impression",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)

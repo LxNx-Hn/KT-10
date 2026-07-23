@@ -10,6 +10,7 @@ import csv
 import hashlib
 import json
 import os
+from collections import Counter
 from pathlib import Path
 
 from sqlalchemy import create_engine, select
@@ -17,7 +18,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.database import RouteImpression, RouteReview
 from backend.app.personalization import reward_target
-from ai.scoring.train import FEATURE_COLS, MIN_REVIEWERS
+from ai.scoring.snapshots import (
+    LIVE_SNAPSHOT_KIND,
+    build_live_feature_snapshot,
+    validate_live_feature_snapshot,
+)
+from ai.scoring.schema import FEATURE_COLS, MIN_REVIEWERS
 
 
 def _reviewer_id(user_id: str, salt: str) -> str:
@@ -37,6 +43,74 @@ def _relevance(
     )
 
 
+def _parse_impression_features(impression: RouteImpression) -> dict:
+    try:
+        features = json.loads(impression.feature_snapshot)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"후기 impression 피처 JSON이 손상되었습니다: {impression.id}"
+        ) from exc
+    if not isinstance(features, dict):
+        raise ValueError(
+            f"후기 impression 피처는 JSON 객체여야 합니다: {impression.id}"
+        )
+    return features
+
+
+def _ineligible_reasons(features: dict) -> tuple[str, ...]:
+    reasons = []
+    if features.get("training_eligible") is not True:
+        reasons.append("training_eligible_not_true")
+    if features.get("snapshot_kind") != LIVE_SNAPSHOT_KIND:
+        reasons.append("snapshot_kind_not_live")
+    return tuple(reasons)
+
+
+def _verified_original_snapshot(features: dict) -> dict:
+    required_provenance = {
+        "group_id",
+        "holdout_group_id",
+        "route_id",
+        "snapshot_schema_version",
+        "snapshot_kind",
+        "captured_at",
+        "shade_evaluated_at",
+        "sources",
+        "feature_snapshot_hash",
+    }
+    missing_provenance = sorted(
+        name
+        for name in required_provenance
+        if features.get(name) in (None, "", [])
+    )
+    missing_features = sorted(set(FEATURE_COLS).difference(features))
+    if missing_provenance or missing_features:
+        details = [
+            *(f"provenance:{name}" for name in missing_provenance),
+            *(f"feature:{name}" for name in missing_features),
+        ]
+        raise ValueError(
+            "eligible 후기 피처에 검증 가능한 live 스냅샷 정보가 없습니다: "
+            + ", ".join(details)
+        )
+    snapshot = {
+        "snapshot_schema_version": features["snapshot_schema_version"],
+        "snapshot_kind": features["snapshot_kind"],
+        "captured_at": features["captured_at"],
+        "shade_evaluated_at": features["shade_evaluated_at"],
+        "group_id": features["group_id"],
+        "holdout_group_id": features["holdout_group_id"],
+        "route_id": features["route_id"],
+        "sources": features["sources"],
+        "geometry_quality": features.get("geometry_quality"),
+        "features": {name: features[name] for name in FEATURE_COLS},
+        "feature_snapshot_hash": features["feature_snapshot_hash"],
+    }
+    # 해시, 숫자 범위, 시간대, source 및 live 스냅샷 계약을 원본 그대로 검증한다.
+    validate_live_feature_snapshot(snapshot, FEATURE_COLS)
+    return snapshot
+
+
 def export(
     database_url: str, output_dir: Path, salt: str, *,
     usable_weight: float, rating_weight: float, reuse_weight: float,
@@ -49,33 +123,47 @@ def export(
             .where(RouteReview.training_consent.is_(True))
             .order_by(RouteReview.created_at)
         ).all()
-    reviewers = {review.user_id for review, _ in rows}
-    if len(reviewers) < MIN_REVIEWERS:
-        raise ValueError(f"전역 재학습에는 동의한 사용자 {MIN_REVIEWERS}명이 필요합니다. 현재 {len(reviewers)}명입니다.")
 
     labels = []
     snapshots: dict[tuple[str, str], dict] = {}
+    eligible_reviewers: set[str] = set()
+    excluded_reasons: Counter[str] = Counter()
     for review, impression in rows:
-        features = json.loads(impression.feature_snapshot)
-        group_id = str(features.get("group_id") or "")
-        if not group_id:
+        features = _parse_impression_features(impression)
+        reasons = _ineligible_reasons(features)
+        if reasons:
+            excluded_reasons["+".join(reasons)] += 1
             continue
+
+        original_snapshot = _verified_original_snapshot(features)
+        if original_snapshot["route_id"] != impression.route_id:
+            raise ValueError(
+                "eligible 후기의 스냅샷 route_id와 impression route_id가 다릅니다."
+            )
+        group_id = str(original_snapshot["group_id"])
         versioned_group = f"{group_id}@{impression.model_version}"
         versioned_route = f"{impression.route_id}@{impression.model_version}"
-        snapshot = {
-            "group_id": versioned_group,
-            "route_id": versioned_route,
-            "features": {name: features.get(name) for name in FEATURE_COLS},
-            "model_version": impression.model_version,
-        }
+        snapshot = build_live_feature_snapshot(
+            group_id=versioned_group,
+            route_id=versioned_route,
+            features=original_snapshot["features"],
+            sources=original_snapshot["sources"],
+            geometry_quality=original_snapshot.get("geometry_quality"),
+            captured_at=str(original_snapshot["captured_at"]),
+            holdout_group_id=str(original_snapshot["holdout_group_id"]),
+            shade_evaluated_at=str(original_snapshot["shade_evaluated_at"]),
+        )
+        validate_live_feature_snapshot(snapshot, FEATURE_COLS)
         key = (versioned_group, versioned_route)
-        if key in snapshots and snapshots[key]["features"] != snapshot["features"]:
+        if key in snapshots and snapshots[key] != snapshot:
             raise ValueError(f"동일 모델/경로의 피처 스냅샷이 서로 다릅니다: {versioned_route}")
         snapshots[key] = snapshot
+        eligible_reviewers.add(review.user_id)
         labels.append({
             "reviewer_id": _reviewer_id(review.user_id, salt),
             "group_id": versioned_group,
             "route_id": versioned_route,
+            "feature_snapshot_hash": snapshot["feature_snapshot_hash"],
             "profile": impression.profile,
             "relevance": _relevance(
                 review, usable_weight=usable_weight,
@@ -84,10 +172,28 @@ def export(
             "notes": "consented-route-review",
         })
 
+    ineligible_review_count = sum(excluded_reasons.values())
+    if len(eligible_reviewers) < MIN_REVIEWERS:
+        raise ValueError(
+            "전역 재학습에는 eligible live 후기 사용자 "
+            f"{MIN_REVIEWERS}명이 필요합니다. "
+            f"현재 eligible 후기 {len(labels)}건/"
+            f"사용자 {len(eligible_reviewers)}명, "
+            f"제외 {ineligible_review_count}건입니다."
+        )
+
     output_dir.mkdir(parents=True, exist_ok=True)
     labels_path = output_dir / "route_labels.csv"
     with labels_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["reviewer_id", "group_id", "route_id", "profile", "relevance", "notes"])
+        writer = csv.DictWriter(handle, fieldnames=[
+            "reviewer_id",
+            "group_id",
+            "route_id",
+            "feature_snapshot_hash",
+            "profile",
+            "relevance",
+            "notes",
+        ])
         writer.writeheader()
         writer.writerows(labels)
     features_path = output_dir / "route_features.jsonl"
@@ -95,7 +201,28 @@ def export(
         "\n".join(json.dumps(row, ensure_ascii=False, separators=(",", ":")) for row in snapshots.values()) + "\n",
         encoding="utf-8",
     )
-    return {"reviews": len(labels), "reviewers": len(reviewers), "routes": len(snapshots)}
+    report = {
+        "consented_reviews": len(rows),
+        "eligible_reviews": len(labels),
+        "ineligible_reviews": ineligible_review_count,
+        "eligible_reviewers": len(eligible_reviewers),
+        "routes": len(snapshots),
+        "excluded_reasons": dict(sorted(excluded_reasons.items())),
+        # 기존 자동화가 읽는 키는 eligible 집합 의미로 유지한다.
+        "reviews": len(labels),
+        "reviewers": len(eligible_reviewers),
+    }
+    (output_dir / "export_report.json").write_text(
+        json.dumps(
+            report,
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return report
 
 
 def main() -> None:

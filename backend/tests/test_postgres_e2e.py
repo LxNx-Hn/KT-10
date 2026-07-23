@@ -112,6 +112,18 @@ def test_postgres_review_updates_user_personalization(monkeypatch):
             )
             assert review.status_code == 201
             assert review.json()["acceptedForTraining"] is False
+            duplicate = client.post(
+                "/api/route-reviews",
+                json={
+                    "routeId": route_id,
+                    "impressionId": impression_id,
+                    "wasUsable": False,
+                    "rating": 1,
+                    "wouldReuse": False,
+                    "trainingConsent": True,
+                },
+            )
+            assert duplicate.status_code == 409
 
         with Session(engine) as db:
             saved_review = db.scalar(
