@@ -1,4 +1,7 @@
-origin_name,origin_lat,origin_lng,dest_name,dest_lat,dest_lng,weather,carry_luggage,avoid_stairs,low_floor_priority
-부산역,35.1151,129.0414,부산시청,35.1798,129.0750,normal,false,false,false
-부산역,35.1151,129.0414,서면역,35.1578,129.0594,normal,false,false,false
-부산역,35.1151,129.0414,부산진구청,35.1626,129.0530,normal,false,false,false
+origin_name,origin_lat,origin_lng,dest_name,dest_lat,dest_lng,weather,departure_at,carry_luggage,stroller,shade_priority,minimize_transfers,avoid_stairs,low_floor_priority
+부산역,35.1151,129.0414,부산시청,35.1798,129.0750,normal,2026-08-01T09:00:00+09:00,false,false,true,false,false,false
+부산역,35.1151,129.0414,서면역,35.1578,129.0594,normal,2026-08-01T14:00:00+09:00,false,false,true,false,false,false
+부산역,35.1151,129.0414,부산진구청,35.1626,129.0530,normal,2026-08-01T18:00:00+09:00,false,false,true,false,false,false
+부산시청,35.1798,129.0750,부산역,35.1151,129.0414,normal,2026-08-01T14:00:00+09:00,true,false,false,true,true,true
+서면역,35.1578,129.0594,부산역,35.1151,129.0414,rain,2026-08-01T14:00:00+09:00,false,true,false,true,true,true
+부산진구청,35.1626,129.0530,부산역,35.1151,129.0414,heatwave,2026-08-01T14:00:00+09:00,false,false,true,false,false,false

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "route-feature-snapshot-v2",
+  "title": "Fixed live route feature snapshot",
+  "type": "object",
+  "required": [
+    "snapshot_schema_version",
+    "snapshot_kind",
+    "captured_at",
+    "group_id",
+    "route_id",
+    "sources",
+    "geometry_quality",
+    "features",
+    "feature_snapshot_hash"
+  ],
+  "properties": {
+    "snapshot_schema_version": {"const": "route-feature-snapshot-v2"},
+    "snapshot_kind": {"const": "live_route_candidate"},
+    "captured_at": {"type": "string", "format": "date-time"},
+    "shade_evaluated_at": {"type": "string", "format": "date-time"},
+    "group_id": {"type": "string", "minLength": 1},
+    "holdout_group_id": {"type": "string", "minLength": 1},
+    "route_id": {"type": "string", "minLength": 1},
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "geometry_quality": {
+      "type": ["string", "null"]
+    },
+    "features": {"type": "object"},
+    "feature_snapshot_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

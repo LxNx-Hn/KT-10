@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "route-traits-v1",
+  "title": "Factual route trait labels",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "group_id",
+    "route_id",
+    "feature_snapshot_hash",
+    "labels",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"const": "route-traits-v1"},
+    "group_id": {"type": "string", "minLength": 1},
+    "route_id": {"type": "string", "minLength": 1},
+    "feature_snapshot_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label_id", "display_label", "evidence_status", "evidence"],
+        "properties": {
+          "label_id": {"type": "string", "minLength": 1},
+          "display_label": {"type": "string", "minLength": 1},
+          "evidence_status": {
+            "enum": ["observed", "derived", "unavailable"]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["feature", "value", "unit", "source"],
+              "properties": {
+                "feature": {"type": "string", "minLength": 1},
+                "value": {"type": ["number", "integer", "boolean", "null"]},
+                "unit": {"type": ["string", "null"]},
+                "source": {"type": "string", "minLength": 1}
+              }
+            }
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["labeler_kind", "rubric_version", "generated_at"],
+      "properties": {
+        "labeler_kind": {"const": "deterministic_factual"},
+        "rubric_version": {"type": "string", "minLength": 1},
+        "generated_at": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}

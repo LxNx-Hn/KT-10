@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "judge-label-v1",
+  "title": "LLM judge route relevance label",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "label_kind",
+    "judge_run_id",
+    "judge_source",
+    "rubric_version",
+    "prompt_hash",
+    "evaluated_at",
+    "group_id",
+    "route_id",
+    "feature_snapshot_hash",
+    "profile",
+    "relevance",
+    "rationale"
+  ],
+  "properties": {
+    "schema_version": {"const": "judge-label-v1"},
+    "label_kind": {"const": "llm_judge"},
+    "judge_run_id": {"type": "string", "minLength": 1},
+    "judge_source": {
+      "type": "string",
+      "pattern": "^(?!human:|user:|reviewer:)[^:]+:[^:]+$"
+    },
+    "rubric_version": {"type": "string", "minLength": 1},
+    "prompt_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "evaluated_at": {"type": "string", "format": "date-time"},
+    "group_id": {"type": "string", "minLength": 1},
+    "route_id": {"type": "string", "minLength": 1},
+    "feature_snapshot_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "profile": {
+      "enum": ["general", "elderly", "child", "youth", "disabled", "pregnant"]
+    },
+    "relevance": {"type": "integer", "minimum": 0, "maximum": 4},
+    "rationale": {"type": "string", "minLength": 1}
+  }
+}

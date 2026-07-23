@@ -10,6 +10,21 @@ def _softmax(logits: np.ndarray) -> np.ndarray:
     return e / e.sum()
 
 
+def _relative_fit_scores(scores: np.ndarray) -> np.ndarray:
+    """후보군 내 최소·최대 margin을 0~1 비교 지수로 정규화한다.
+
+    이는 성공 확률이나 안전 확률이 아니다. 후보가 하나뿐이면 유일 후보를
+    1로, 여러 후보의 margin이 모두 같으면 동률 중립값 0.5로 표시한다.
+    """
+    if len(scores) == 1:
+        return np.ones(1, dtype=float)
+    minimum = float(scores.min())
+    maximum = float(scores.max())
+    if abs(maximum - minimum) <= 1e-12:
+        return np.full(len(scores), 0.5, dtype=float)
+    return (scores.astype(float) - minimum) / (maximum - minimum)
+
+
 def predict_and_rank(
     rankers: dict,
     route_features_list: list[dict],
@@ -27,7 +42,8 @@ def predict_and_rank(
         경로 후보별 피처 딕셔너리 리스트.
         없는 피처 키는 NaN(미확인)으로 전달하여 실제 0과 구분한다.
     profile : str
-        사용자 프로필 ("general" / "elderly" / "child" / "disabled").
+        사용자 프로필 ("general" / "elderly" / "child" / "youth" /
+        "disabled" / "pregnant").
     top_k : int
         반환할 상위 경로 수 (기본 3).
 
@@ -35,7 +51,8 @@ def predict_and_rank(
     -------
     list of dict
         순위별 결과 리스트.
-        각 dict: {"rank", "route_index", "xgb_score", "adjusted_score", "probability"}
+        각 dict: {"rank", "route_index", "xgb_score", "adjusted_score",
+        "relative_fit_score", "probability"}
     """
     ranker = rankers.get(profile)
     if ranker is None:
@@ -48,13 +65,14 @@ def predict_and_rank(
     ])
 
     # ① XGBoost 베이스 점수
-    xgb_scores = ranker.predict(X)
+    xgb_scores = np.asarray(ranker.predict(X), dtype=float)
 
     # 별도 규칙 가중치를 덧씌우지 않는다. 프로필별 모델의 출력만 사용한다.
     adjusted = xgb_scores.astype(float).copy()
 
     # 후보 집합 내 상대 선택 확률이며 절대 품질 점수가 아니다.
     probs      = _softmax(adjusted)
+    relative_fit = _relative_fit_scores(adjusted)
     ranked_idx = np.argsort(probs)[::-1][:top_k]
 
     return [
@@ -63,6 +81,7 @@ def predict_and_rank(
             "route_index":    int(idx),
             "xgb_score":      round(float(xgb_scores[idx]), 4),
             "adjusted_score": round(float(adjusted[idx]), 4),
+            "relative_fit_score": round(float(relative_fit[idx]), 4),
             "probability":    round(float(probs[idx]), 4),
         }
         for rank, idx in enumerate(ranked_idx)

@@ -4,7 +4,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from typing import Literal
+import math
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -12,12 +14,19 @@ from pydantic import BaseModel, Field
 from collectors.base import Coordinate
 from collectors.odsay_collector import OdsayRouteCollector
 from collectors.tmap_collector import TmapRouteCollector
+from config import settings
 from features.extractor import extract_route_features
 from features.elevation import extract_elevation_features
+from labeling.route_traits import generate_route_traits
 from merger.route_merger import merge_route_candidates
 from preprocessing.load_layers import load_all_layers
+from scoring.judge_baseline import (
+    load_judge_baseline_metadata,
+    load_judge_baseline_rankers,
+)
 from scoring.predict import predict_and_rank
-from scoring.train import ModelNotReady, load_model_metadata, load_rankers
+from scoring.snapshots import build_live_feature_snapshot
+from scoring.train import FEATURE_COLS, ModelNotReady, load_model_metadata, load_rankers
 
 router = APIRouter()
 
@@ -35,8 +44,20 @@ def _get_layers():
 def _get_rankers():
     global _rankers
     if _rankers is None:
-        _rankers = load_rankers()
+        _rankers = (
+            load_judge_baseline_rankers()
+            if settings.RANKER_TIER == "judge_baseline"
+            else load_rankers()
+        )
     return _rankers
+
+
+def _get_model_metadata() -> dict:
+    return (
+        load_judge_baseline_metadata()
+        if settings.RANKER_TIER == "judge_baseline"
+        else load_model_metadata()
+    )
 
 
 Profile = Literal["general", "elderly", "child", "youth", "disabled", "pregnant"]
@@ -54,6 +75,9 @@ class RecommendRequest(BaseModel):
     weather: Weather = "normal"
     prioritize_weather_safety: bool = False
     carry_luggage: bool = False
+    stroller: bool = False
+    shade_priority: bool = False
+    minimize_transfers: bool = False
     avoid_stairs: bool = False
     low_floor_priority: bool = False
     uses_wheelchair: bool = False
@@ -66,68 +90,254 @@ class RecommendRequest(BaseModel):
     pm10: float | None = Field(default=None, ge=0)
 
 
+class RankCandidate(BaseModel):
+    route_id: str = Field(min_length=1, max_length=200)
+    features: dict[str, Any]
+
+
+class RankCandidatesRequest(BaseModel):
+    profile: Profile
+    candidates: list[RankCandidate] = Field(min_length=1, max_length=50)
+
+
+class EnrichedSnapshotCandidate(BaseModel):
+    route_id: str = Field(min_length=1, max_length=200)
+    base_snapshot_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sources: list[str] = Field(min_length=1)
+    geometry_quality: str | None = None
+    features: dict[str, Any]
+
+
+class EnrichedSnapshotsRequest(BaseModel):
+    base_group_id: str = Field(min_length=1, max_length=200)
+    holdout_group_id: str = Field(min_length=1, max_length=200)
+    captured_at: datetime
+    shade_evaluated_at: datetime
+    candidates: list[EnrichedSnapshotCandidate] = Field(min_length=1, max_length=50)
+
+
+def _validated_feature_row(
+    route_id: str,
+    features: dict[str, Any],
+) -> dict[str, float | int | bool | None]:
+    missing = [name for name in FEATURE_COLS if name not in features]
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "순위화 피처가 누락되었습니다.",
+                "route_id": route_id,
+                "missing": missing,
+            },
+        )
+    row: dict[str, float | int | bool | None] = {}
+    for name in FEATURE_COLS:
+        value = features[name]
+        if value is not None and (
+            isinstance(value, str)
+            or not isinstance(value, (int, float, bool))
+            or (
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and not math.isfinite(float(value))
+            )
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{route_id}: {name}은 유한한 숫자, boolean 또는 null이어야 합니다.",
+            )
+        row[name] = value
+    return row
+
+
+@router.post("/labeling/enriched-snapshots")
+def enriched_snapshots(req: EnrichedSnapshotsRequest) -> dict:
+    """건물 그늘이 결합된 피처의 고정 스냅샷과 사실 라벨을 만든다."""
+    if req.captured_at.tzinfo is None or req.shade_evaluated_at.tzinfo is None:
+        raise HTTPException(
+            status_code=422,
+            detail="captured_at과 shade_evaluated_at에는 UTC 오프셋이 필요합니다.",
+        )
+    route_ids = [candidate.route_id for candidate in req.candidates]
+    if len(set(route_ids)) != len(route_ids):
+        raise HTTPException(status_code=422, detail="route_id는 후보군에서 고유해야 합니다.")
+
+    fixed_captured_at = req.captured_at.astimezone(UTC).isoformat()
+    fixed_shade_at = req.shade_evaluated_at.astimezone(UTC).isoformat()
+    validated: list[
+        tuple[EnrichedSnapshotCandidate, dict[str, float | int | bool | None]]
+    ] = []
+    for candidate in req.candidates:
+        if any(not source.strip() for source in candidate.sources):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{candidate.route_id}: sources에는 빈 문자열을 넣을 수 없습니다.",
+            )
+        validated.append((
+            candidate,
+            _validated_feature_row(candidate.route_id, candidate.features),
+        ))
+
+    context = {
+        "base_group_id": req.base_group_id,
+        "holdout_group_id": req.holdout_group_id,
+        "captured_at": fixed_captured_at,
+        "shade_evaluated_at": fixed_shade_at,
+        "candidates": [
+            {
+                "route_id": candidate.route_id,
+                "base_snapshot_hash": candidate.base_snapshot_hash,
+                "sources": sorted(set(candidate.sources)),
+                "geometry_quality": candidate.geometry_quality,
+                "features": features,
+            }
+            for candidate, features in sorted(
+                validated,
+                key=lambda item: item[0].route_id,
+            )
+        ],
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            context,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    group_id = f"enriched-{digest[:20]}"
+    snapshots = [
+        build_live_feature_snapshot(
+            group_id=group_id,
+            route_id=candidate.route_id,
+            features=features,
+            sources=list(dict.fromkeys(candidate.sources)),
+            geometry_quality=candidate.geometry_quality,
+            captured_at=fixed_captured_at,
+            holdout_group_id=req.holdout_group_id,
+            shade_evaluated_at=fixed_shade_at,
+        )
+        for candidate, features in validated
+    ]
+    traits = generate_route_traits(snapshots)
+    return {
+        "group_id": group_id,
+        "captured_at": fixed_captured_at,
+        "shade_evaluated_at": fixed_shade_at,
+        "candidates": [
+            {
+                "route_id": snapshot["route_id"],
+                "feature_snapshot": snapshot,
+                "trait_labels": traits[str(snapshot["route_id"])],
+            }
+            for snapshot in snapshots
+        ],
+    }
+
+
 @router.get("/model/status")
 def model_status() -> dict:
-    """키나 라벨 내용을 노출하지 않고 운영 모델 준비 상태만 반환한다."""
+    """키나 라벨 내용을 노출하지 않고 명시적으로 선택한 모델 준비 상태만 반환한다."""
     try:
         profiles = sorted(_get_rankers())
-        metadata = load_model_metadata()
+        metadata = _get_model_metadata()
     except ModelNotReady as exc:
-        return {"ready": False, "profiles": [], "detail": str(exc)}
-    return {"ready": True, "profiles": profiles, **metadata}
+        return {
+            "ready": False,
+            "configured_tier": settings.RANKER_TIER,
+            "profiles": [],
+            "detail": str(exc),
+        }
+    return {
+        "ready": True,
+        "configured_tier": settings.RANKER_TIER,
+        "profiles": profiles,
+        **metadata,
+    }
+
+
+@router.post("/rank/candidates")
+def rank_candidates(req: RankCandidatesRequest) -> dict:
+    """백엔드가 건물 그늘까지 결합한 고정 후보 피처만 순위화한다."""
+    try:
+        rankers = _get_rankers()
+        metadata = _get_model_metadata()
+    except ModelNotReady as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if req.profile not in rankers:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{req.profile} 프로필의 선택된 모델이 없습니다.",
+        )
+    route_ids = [candidate.route_id for candidate in req.candidates]
+    if len(set(route_ids)) != len(route_ids):
+        raise HTTPException(status_code=422, detail="route_id는 후보군에서 고유해야 합니다.")
+
+    feature_rows = [
+        _validated_feature_row(candidate.route_id, candidate.features)
+        for candidate in req.candidates
+    ]
+
+    ranked = predict_and_rank(
+        rankers,
+        feature_rows,
+        req.profile,
+        top_k=len(feature_rows),
+    )
+    return {
+        "ranked": [
+            {
+                "route_id": route_ids[item["route_index"]],
+                "rank": item["rank"],
+                "model_score": item["xgb_score"],
+                "relative_fit_score": item["relative_fit_score"],
+                # 운영 진단용이며 UI에는 노출하지 않는다.
+                "selection_probability": item["probability"],
+            }
+            for item in ranked
+        ],
+        "metadata": {
+            "model_tier": metadata.get("model_tier"),
+            "model_version": metadata.get("model_version"),
+            "label_origin": metadata.get("label_origin"),
+        },
+    }
 
 
 @router.post("/recommend")
 async def recommend(req: RecommendRequest):
-    """부산 OD에 대한 실제 후보를 수집하고 검증된 프로필 모델로 순위를 정한다."""
-    try:
-        rankers = _get_rankers()
-    except ModelNotReady as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    if req.profile not in rankers:
-        raise HTTPException(status_code=503, detail=f"{req.profile} 프로필의 검증된 모델이 없습니다.")
-
-    route_features, collection_metadata = await _collect_featured_routes(req)
-    ranked = predict_and_rank(rankers, route_features, req.profile, top_k=min(10, len(route_features)))
-    model_version = load_model_metadata().get("model_version") or "xgboost-human"
-    group_id = _group_id(req)
-    routes = []
-    for rank_info in ranked:
-        feature = route_features[rank_info["route_index"]]
-        route_id = _route_id(feature)
-        routes.append({
-            "rank": rank_info["rank"],
-            "model_version": model_version,
-            "group_id": group_id,
-            "route_id": route_id,
-            "sources": feature["_sources"],
-            "path": feature["_path"],
-            "segments": feature["_segments"],
-            "geometry_quality": feature["_geometry_quality"],
-            "duration_min": feature["_duration_min"],
-            "distance_m": feature["_distance_m"],
-            # 내부 정렬 진단값이다. 사용자 품질 점수로 표시하지 않는다.
-            "model_score": rank_info["xgb_score"],
-            "selection_probability": rank_info["probability"],
-            "features": {key: value for key, value in feature.items() if not key.startswith("_")},
-            "reasons": _factual_reasons(feature),
-            "tags": _generate_tags(feature),
-        })
-    return {
-        "routes": routes,
-        "metadata": {**collection_metadata, "profile": req.profile, "weather": req.weather},
-    }
+    """그늘 보강을 우회하는 이전 직접 추천 경로는 사용하지 않는다."""
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "Direct AI recommendation is disabled. Use backend "
+            "/api/routes/recommend so collection, building shade, enriched "
+            "snapshots, and ranking share one canonical flow."
+        ),
+    )
 
 
 @router.post("/labeling/candidates")
 async def labeling_candidates(req: RecommendRequest):
     """초기 라벨링용 후보와 당시 피처를 생성한다. 모델 준비 전에도 호출할 수 있다."""
     route_features, collection_metadata = await _collect_featured_routes(req)
+    group_id = _group_id(req)
+    snapshots = _route_snapshots(
+        group_id,
+        route_features,
+        collection_metadata.get("captured_at"),
+        _holdout_group_id(req),
+    )
+    snapshot_by_route = {snapshot["route_id"]: snapshot for snapshot in snapshots}
+    if len(snapshot_by_route) != len(snapshots):
+        raise HTTPException(status_code=502, detail="경로 후보 식별자가 중복되었습니다.")
+    traits_by_route = generate_route_traits(snapshots)
     return {
-        "group_id": _group_id(req),
+        "group_id": group_id,
         "candidates": [
             {
-                "route_id": _route_id(feature),
+                "route_id": (route_id := _route_id(feature)),
                 "summary": _summary(feature),
                 "duration_min": feature["_duration_min"],
                 "distance_m": feature["_distance_m"],
@@ -136,6 +346,8 @@ async def labeling_candidates(req: RecommendRequest):
                 "path": feature["_path"],
                 "segments": feature["_segments"],
                 "features": {key: value for key, value in feature.items() if not key.startswith("_")},
+                "feature_snapshot": snapshot_by_route[route_id],
+                "trait_labels": traits_by_route[route_id],
             }
             for feature in route_features
         ],
@@ -194,6 +406,11 @@ async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], d
             **_parse_api_features(candidate),
             **extract_route_features(coordinates, layers),
             **elevation,
+            # 건물 그늘은 현재 백엔드의 검증된 building provider가 계산한다.
+            # AI 후보 단계에서 확인할 수 없는 값은 0으로 추정하지 않는다.
+            "shade_ratio": None,
+            "shaded_walk_m": None,
+            "shade_building_height_coverage": None,
             # 교통카드 시간대 데이터가 연결되기 전에는 혼잡을 추정하지 않는다.
             "crowd_level": None,
             **_weather_features(req),
@@ -208,6 +425,7 @@ async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], d
         route_features.append(feature)
 
     return route_features, {
+        "captured_at": datetime.now(UTC).isoformat(),
         "sources_attempted": source_names,
         "sources_succeeded": succeeded,
         "sources_failed": failed,
@@ -215,11 +433,39 @@ async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], d
     }
 
 
+def _route_snapshots(
+    group_id: str,
+    route_features: list[dict],
+    captured_at: str | None,
+    holdout_group_id: str,
+) -> list[dict]:
+    """API 응답·평가 라벨이 같은 고정 피처 해시를 공유하도록 스냅샷을 만든다."""
+    fixed_at = captured_at or datetime.now(UTC).isoformat()
+    return [
+        build_live_feature_snapshot(
+            group_id=group_id,
+            route_id=_route_id(feature),
+            features={
+                key: value
+                for key, value in feature.items()
+                if not key.startswith("_")
+            },
+            sources=[str(source) for source in feature["_sources"]],
+            geometry_quality=feature["_geometry_quality"],
+            captured_at=fixed_at,
+            holdout_group_id=holdout_group_id,
+        )
+        for feature in route_features
+    ]
+
+
 def _group_id(req: RecommendRequest) -> str:
     return hashlib.sha256(
         (
             f"{req.origin_lat:.5f},{req.origin_lng:.5f}->{req.dest_lat:.5f},{req.dest_lng:.5f}"
             f"|{req.weather}|luggage={int(req.carry_luggage)}|stairs={int(req.avoid_stairs)}"
+            f"|stroller={int(req.stroller)}|shade={int(req.shade_priority)}"
+            f"|mintransfers={int(req.minimize_transfers)}"
             f"|lowfloor={int(req.low_floor_priority)}|wheelchair={int(req.uses_wheelchair)}"
             f"|aid={int(req.uses_walking_aid)}|maxwalk={req.max_walk_distance_m}"
             f"|weatherpriority={int(req.prioritize_weather_safety)}"
@@ -229,12 +475,30 @@ def _group_id(req: RecommendRequest) -> str:
     ).hexdigest()[:20]
 
 
+def _holdout_group_id(req: RecommendRequest) -> str:
+    """시간·옵션이 달라도 같은 방향의 OD는 동일 holdout에 둔다."""
+    value = (
+        f"{req.origin_lat:.5f},{req.origin_lng:.5f}"
+        f"->{req.dest_lat:.5f},{req.dest_lng:.5f}"
+    )
+    return "od-" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:20]
+
+
 def _context_features(feature: dict, req: RecommendRequest) -> dict:
     """사용자 조건과 경로 관측값의 상호작용만 만들며 계수는 학습 모델이 결정한다."""
     stairs = feature.get("stair_count")
     walk = feature.get("walk_distance_m")
     elevator = feature.get("elevator_ratio")
     low_floor = feature.get("is_low_floor_bus")
+    transfer_count = feature.get("transfer_count")
+    shade_ratio = feature.get("shade_ratio")
+    shaded_walk_m = feature.get("shaded_walk_m")
+    if walk is None or shade_ratio is None:
+        unshaded_walk_m = None
+    elif shaded_walk_m is not None:
+        unshaded_walk_m = max(0.0, float(walk) - float(shaded_walk_m))
+    else:
+        unshaded_walk_m = max(0.0, float(walk) * (1.0 - float(shade_ratio)))
     return {
         "stair_avoidance_burden": stairs if req.avoid_stairs else 0.0,
         "luggage_walk_burden": walk if req.carry_luggage else 0.0,
@@ -255,6 +519,18 @@ def _context_features(feature: dict, req: RecommendRequest) -> dict:
             if req.max_walk_distance_m is not None else 0.0
         ),
         "weather_priority_walk_burden": walk if req.prioritize_weather_safety else 0.0,
+        "stroller_walk_burden": walk if req.stroller else 0.0,
+        "stroller_stair_burden": stairs if req.stroller else 0.0,
+        "stroller_elevator_gap": (
+            None if req.stroller and elevator is None
+            else (1.0 - float(elevator) if req.stroller else 0.0)
+        ),
+        "shade_priority_unshaded_walk_m": (
+            unshaded_walk_m if req.shade_priority else 0.0
+        ),
+        "minimize_transfers_burden": (
+            transfer_count if req.minimize_transfers else 0.0
+        ),
     }
 
 
@@ -418,45 +694,3 @@ def _weather_features(req: RecommendRequest) -> dict:
         "weather_rain": float(req.weather == "rain"),
         "weather_bad_air": float(req.weather == "bad_air"),
     }
-
-
-def _factual_reasons(feature: dict) -> list[str]:
-    reasons = []
-    if feature.get("stair_count") == 0:
-        reasons.append("확인된 구간에는 계단이 없습니다.")
-    if feature.get("elevator_ratio") is not None and feature["elevator_ratio"] > 0:
-        reasons.append("승강기 이용 가능 구간이 확인되었습니다.")
-    if feature.get("is_low_floor_bus") is True:
-        reasons.append("저상버스 운행 정보가 확인되었습니다.")
-    if feature.get("transfer_count") == 0:
-        reasons.append("환승 없이 이동하는 경로입니다.")
-    if feature.get("shelter_nearby"):
-        reasons.append("경로 200m 이내에 쉼터가 확인되었습니다.")
-    return reasons[:4]
-
-
-def _generate_tags(feature: dict) -> list[dict]:
-    tags = []
-    low_floor = feature.get("is_low_floor_bus")
-    if low_floor is True:
-        tags.append({"label": "저상버스 확인", "tone": "positive"})
-    elif low_floor is False:
-        tags.append({"label": "일반버스(저상 아님) 확인", "tone": "negative"})
-    else:
-        tags.append({"label": "저상버스 여부 미확인", "tone": "neutral"})
-    elevator = feature.get("elevator_ratio")
-    if elevator is not None:
-        tags.append({
-            "label": "승강기 이용 확인" if elevator > 0 else "승강기 이용 불가 확인",
-            "tone": "positive" if elevator > 0 else "negative",
-        })
-    precipitation = feature.get("precipitation_mm")
-    if feature.get("weather_rain") or (precipitation is not None and precipitation > 0):
-        tags.append({"label": "강수 중 실외 보행 주의", "tone": "negative"})
-    if feature.get("weather_bad_air"):
-        tags.append({"label": "대기질 주의 시나리오", "tone": "negative"})
-    if feature.get("shelter_nearby"):
-        tags.append({"label": "쉼터 근접", "tone": "positive"})
-    if feature.get("aed_nearby"):
-        tags.append({"label": "AED 근접", "tone": "positive"})
-    return tags

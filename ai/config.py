@@ -4,6 +4,7 @@ ODsay/TMAP 키가 없으면 해당 수집기는 명시적으로 미설정 상태
 OSMnx 보행 네트워크는 별도 키 없이 독립적으로 동작한다.
 """
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,6 +18,9 @@ class Settings(BaseSettings):
 
     ODSAY_API_KEY: str = ""
     TMAP_API_KEY: str = ""
+    # Judge baseline은 명시적으로 선택한 환경에서만 제공한다.
+    # 기본값은 실제 사용자 라벨로 검증된 운영 모델이다.
+    RANKER_TIER: Literal["human_validated", "judge_baseline"] = "human_validated"
 
 
 settings = Settings()
