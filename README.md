@@ -1,5 +1,7 @@
 # 교통약자·이동취약자 맞춤형 경로 추천 PWA
 
+[![CI](https://github.com/LxNx-Hn/KT-10/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/LxNx-Hn/KT-10/actions/workflows/ci.yml)
+
 부산광역시의 보행·대중교통 후보를 `경로 사실·특성 생성`과
 `프로필·상황 적합도 산정`의 두 단계로 비교하는 PWA입니다. 결과는 적합
 점수순으로 정렬하고, `빠른 길`, `경사가 완만한 길`, `그늘 많은 길`,
@@ -23,33 +25,57 @@
 
 ## 현재 구현
 
-- ODsay 대중교통 후보와 공식 `loadLane` geometry, TMAP/OSMnx 보행 geometry의 구간별 지도 오버레이
+- ODsay 대중교통 후보와 공식 `loadLane` geometry, TMAP 보행 후보,
+  OSMnx 보행 geometry 복구 결과의 구간별 지도 오버레이
 - 부산 전역 공간 레이어 결합: 쉼터, CCTV, AED, 휠체어 충전기, 스마트쉘터, 도시철도 접근성, 횡단보도, 정류장 등
 - Open-Meteo Copernicus GLO-90 고도 기반 오르막·내리막·누적 상승량 추정(90m 해상도임을 UI에 명시)
 - 태양 위치와 합성 건물 높이로 계산한 검증용 그늘 비율·지도 오버레이, VWorld 공공 건물 도형·높이 공급자(품질 상태 분리)
 - `ROUTE_MODE=demo|live|ai` 공급자 선택과 실패 시 무단 폴백 금지
-- 프로필별 XGBRanker, 초기 라벨링 후보 생성기와 모델 준비 상태 게이트
+- 프로필별 XGBRanker 학습·검증 파이프라인, 초기 라벨링 후보 생성기와 모델 준비 상태 게이트
 - 카카오 로그인 사용자만 PostgreSQL 프로필·후기·개인화 저장; 게스트는 개인화하지 않음
 - 후기 기반 개인 온라인 모델과 동의 후기의 팀 승인 비중 제한 전역 후보 재학습(운영 모델 자동 교체 없음)
 - 시설물 위치·운영상태 오류 신고와 관리자 검토 대기열
 - 자주 바뀌는 상황 조건은 검색 UI에, 장기 이동지원 정보는 로그인 프로필에 분리
 
-`data/ai/`는 데모·회귀검증 픽스처이고 임의 OD의 실제 경로가 아닙니다. 운영 기본 `live` 모드는 실제 외부 공급자 경로를 규칙으로 비교하므로 학습 모델이 없어도 동작합니다. `ROUTE_MODE=ai`의 학습 순위화는 `ai/data/rankers.pkl`이 준비되지 않으면 503으로 명시적으로 거부합니다.
+`data/ai/`는 데모·회귀검증 픽스처이고 임의 OD의 실제 경로가 아닙니다.
+운영 `live` 모드는 실제 외부 공급자 경로를 규칙으로 비교하므로 학습
+모델이 없어도 동작합니다. `ROUTE_MODE=ai`의 학습 순위화는 명시적으로
+선택한 tier의 안전한 XGBoost JSON ZIP artifact가 준비되지 않으면 503으로
+거부합니다.
+
+모델 파일은 pickle을 사용하지 않습니다. ZIP 내부의 프로필별 XGBoost
+JSON과 manifest checksum을 검증한 뒤 로드하며 역할은 다음과 같이
+분리합니다.
+
+- `ai/data/rankers.human-candidate.zip`: 사람 평가로 학습한 관리자 검토 전 후보
+- `ai/data/rankers.human-validated.zip`: checksum·승인자·승인 근거를 남겨 수동 승격한 운영 모델
+- `ai/data/rankers.judge-baseline.zip`: 외부 LLM 평가로 학습하는 비운영 baseline
+- `ai/data/rankers.review-mixed-candidate.zip`: 동의 후기를 제한적으로 섞은 별도 검토 후보
 
 그늘 데모의 입력·계산식·실데이터 교체 조건은 [docs/SHADE_RULE_DEMO.md](docs/SHADE_RULE_DEMO.md)를 참고하세요.
 
 ## 2026-07-24 상태
 
-- `main`은 `origin/main`보다 로컬 9커밋 앞서며 아직 푸시되지 않았습니다.
-- PostgreSQL·AI·백엔드·프론트 컨테이너는 정상 실행되지만 운영 readiness는
-  `false`입니다.
-- 현재 소스 상태는 장소·날씨 `mock`, 버스 `live`, 경로
+- 로컬 최종 회귀는 AI `59 passed, 1 skipped`, 백엔드
+  `100 passed, 1 skipped`, PostgreSQL opt-in E2E `1 passed`,
+  프론트 `49 passed`입니다. TypeScript/PWA build, Python compileall,
+  Alembic `20260724_0002 (head)`와 schema check, `pip check`,
+  `npm audit`(취약점 0건), production Compose 해석과 AI·백엔드·프론트
+  이미지 빌드도 통과했습니다.
+- 430px 모바일과 1280px 데스크톱 브라우저에서 경로 검색, 지도-카드
+  3번째 경로 동기화, 가로 overflow와 콘솔 경고·오류를 재검증했습니다.
+- 마지막으로 확인한 개발 런타임은 장소·날씨 `mock`, 버스 `live`, 경로
   `verified-demo`, 건물 `synthetic-demo`, AI 모델 `inactive`입니다.
 - `route_features.jsonl`은 0바이트, `route_labels.csv`는 헤더만 있고
-  승인된 `rankers.pkl`이 없어 `/model/status`는 `ready=false`입니다.
+  위 네 종류의 ranker artifact가 아직 없습니다. 따라서 기본
+  `RANKER_TIER=human_validated`의 `/model/status`는 `ready=false`입니다.
 - ODsay 키 값은 있으나 `ApiKeyAuthFailed`가 확인됐습니다. 로컬 백엔드
   Server Key 허용 IP에는 현재 공인 IPv4 `119.202.222.84`를 등록해야
   합니다.
+- 실제 후보 스냅샷과 LLM 평가 결과가 없고 저장소에는 빈 judge 평가표를
+  만드는 도구만 있습니다. 외부 LLM 평가를 실행해 모든 후보·6개
+  프로필의 점수와 근거를 채우기 전에는 judge baseline 모델도 생성되지
+  않습니다.
 - GLO-90 경사는 실제 DEM 조회 기반의 약 90m 지형 추정입니다. 그늘은
   건물만 계산하며 나무·지형 그늘을 포함하지 않습니다.
 
@@ -104,38 +130,73 @@ python scripts\verify_deployment.py --base https://your-domain.example
 
 ## 초기 평가·학습
 
-키를 설정하고 AI 서버를 실행한 뒤 `ai/data/training/od_template.csv`를 부산역 중심 검증 OD로 확장합니다.
+실제 후보 생성에는 AI 서버와 백엔드가 모두 실행 중이어야 합니다.
+AI 서버가 실제 후보를 수집하고, 백엔드가 출발시각의 건물 그늘을 결합한
+뒤 고정 스냅샷을 생성합니다. `LABELING_API_TOKEN`은
+`backend/.env`와 배치 실행 환경에 같은 32자 이상 난수로 설정하고
+로그·채팅·Git에 남기지 않습니다. 백엔드는 `ROUTE_MODE=ai`와
+`AI_SERVER_URL`이 필요합니다.
+
+키를 설정한 뒤 `ai/data/training/od_template.csv`를 검증 OD와
+출발시각·상황 조합으로 확장합니다.
 
 ```powershell
+$env:LABELING_API_TOKEN='<backend/.env와 같은 32자 이상 내부 토큰>'
 $env:PYTHONPATH='ai'
 .\.venv\Scripts\python.exe -m labeling.generate_batch `
-  --od-file ai\data\training\od_template.csv
+  --od-file ai\data\training\od_template.csv `
+  --output-dir ai\data\training\generated\initial_batch
 ```
 
-초기에는 동결된 경로 사실을 블라인드 입력으로 사용하는 LLM/Codex judge
-평가를 베이스라인으로 만들 수 있습니다. 이 모델은
-`rankers.judge-baseline.pkl`로 분리하고 실사용자 검증 모델로 표현하지
-않습니다. 사람 평가 후보와 승인 운영 모델도 각각
-`rankers.human-candidate.pkl`, `rankers.pkl`로 구분합니다.
+배치는 공개 추천과 같은
+`수집 → 건물 그늘 → enriched snapshot → 특성 라벨` 경로를 사용합니다.
+`captured_at`은 실제 후보 수집시각, `shade_evaluated_at`은 태양·건물
+그늘을 계산한 출발시각으로 분리되며 둘 다 스냅샷에 보존됩니다.
+
+초기에는 동결된 경로 사실을 블라인드 입력으로 사용하는 외부 LLM judge
+평가를 별도 baseline으로 만들 수 있습니다. 저장소는 빈 평가표 생성과
+검증·학습을 제공하지만 LLM 평가 실행 자체는 포함하지 않습니다.
+`evaluated_at`, `relevance`, `rationale`를 실제 평가 결과로 채우기 전에는
+학습할 수 없으며, 생성되더라도 `rankers.judge-baseline.zip`을
+실사용자 검증 모델로 표현하거나 자동 승격하지 않습니다.
 
 기존 사람 라벨 절차는 생성된 `labeling_sheet.csv`를 9명이 0~4
 relevance로 평가하고, 확정본을 `route_labels.csv`, 같은 배치의 스냅샷을
-`route_features.jsonl`로 둔 뒤 학습합니다.
+`route_features.jsonl`로 둔 뒤 관리자 검토 전 후보를 학습합니다.
 
 ```powershell
 $env:PYTHONPATH='ai'
-.\.venv\Scripts\python.exe -m scoring.train
+.\.venv\Scripts\python.exe -m scoring.train `
+  --labels ai\data\training\route_labels.csv `
+  --features ai\data\training\route_features.jsonl `
+  --output ai\data\rankers.human-candidate.zip
+```
+
+검증을 마친 후보만 파일 SHA-256을 고정해 관리자가 수동 승격합니다.
+
+```powershell
+$candidateSha = (Get-FileHash ai\data\rankers.human-candidate.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+.\.venv\Scripts\python.exe -m labeling.promote_human_candidate `
+  --source ai\data\rankers.human-candidate.zip `
+  --output ai\data\rankers.human-validated.zip `
+  --expected-source-sha256 $candidateSha `
+  --approved-by '<승인자>' `
+  --approval-note '<검증 결과와 승인 근거>'
 ```
 
 ## 검증
 
 ```powershell
+$env:PYTHONUTF8='1'
 $env:PYTHONPATH='ai'
 .\.venv\Scripts\python.exe -m pytest ai\tests -q
+$env:PYTHONPATH='backend'
 .\.venv\Scripts\python.exe -m pytest backend\tests -q
+.\.venv\Scripts\python.exe -m compileall -q ai backend
 cd frontend
 npm test -- --run
 npm run build
+npm audit --audit-level=moderate
 ```
 
 공급자와 출처·라이선스 확인 상태는 [data/catalog.json](data/catalog.json), 상세 운영 경계는 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)를 참고하세요.

@@ -30,8 +30,14 @@ python scripts\prepare_deployment_env.py --import-existing
 - `OPENWEATHER_API_KEY`: 실시간 날씨·대기
 - `BUS_SERVICE_KEY`: 부산 버스 도착 정보
 - 선택: `TMAP_API_KEY`: 보행 상세 보강
+- `RANKER_TIER`: 기본 `human_validated`, 비운영 비교 데모에서만
+  `judge_baseline`
 
-키 값은 Git에 커밋하지 않습니다. `.env.production`은 `.gitignore`에 포함되어 있습니다.
+`POSTGRES_PASSWORD`, `SESSION_SECRET`, `TRAINING_ANONYMIZATION_SALT`,
+`LABELING_API_TOKEN`은 준비 스크립트가 생성합니다.
+`LABELING_API_TOKEN`은 비용이 큰 라벨링 후보 API에만 쓰는 32자 이상의
+내부 토큰이며 브라우저에 전달하지 않습니다. 키 값과
+`.env.production`은 Git에 커밋하지 않습니다.
 
 ## 3. 공급자 콘솔 설정
 
@@ -104,6 +110,34 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec backen
 
 PostgreSQL `postgres-data` 볼륨은 별도 주기로 백업합니다. 전역 학습은 자동 갱신하지 않으며, 관리자가 동의 후기 데이터를 검토·가공한 뒤 승인된 절차로만 모델을 교체합니다.
 
-LLM/Codex judge 모델은 `rankers.judge-baseline.pkl`로 배포물과 메타데이터를
-분리하고, 관리자가 승인하지 않은 파일을 `rankers.pkl`로 이름만 바꿔
-운영하지 않습니다.
+운영 기본 `ROUTE_MODE=live`는 학습 모델 없이도 실제 후보를 규칙으로
+비교합니다. `ROUTE_MODE=ai`로 배포하려면 선택한 tier의 모델을 이미지
+빌드 전에 `ai/data/`에 준비해야 합니다.
+
+| `RANKER_TIER` | 필요한 파일 | 운영 의미 |
+| --- | --- | --- |
+| `human_validated` | `rankers.human-validated.zip` | 관리자 승인 사람 모델 |
+| `judge_baseline` | `rankers.judge-baseline.zip` | LLM judge 비교 데모, 실사용자 검증 아님 |
+
+아카이브에는 프로필별 XGBoost JSON, 피처 스키마, 라벨 출처, 검증 지표와
+각 모델의 SHA-256이 들어갑니다. 실행 가능한 pickle은 읽지 않습니다.
+`rankers.human-candidate.zip`과
+`rankers.review-mixed-candidate.zip`은 운영 파일이 아니며 파일명을
+바꾸는 방식으로 승격하지 않습니다.
+
+사람 평가 후보의 수동 승격은 검토한 원본 SHA-256을 명시해 실행합니다.
+
+```powershell
+$env:PYTHONPATH='ai'
+$candidate = 'ai/data/rankers.human-candidate.zip'
+$sha = (Get-FileHash $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
+.\.venv\Scripts\python.exe -m labeling.promote_human_candidate `
+  --source $candidate `
+  --output ai/data/rankers.human-validated.zip `
+  --expected-source-sha256 $sha `
+  --approved-by '<관리자 식별자>' `
+  --approval-note '<검토 근거>'
+```
+
+위 명령은 `label_origin=human_reviewers`인 사람 후보만 허용합니다. 동의
+후기가 섞인 후보와 judge 모델은 이 절차로 승격되지 않습니다.

@@ -12,13 +12,28 @@
 - `GET /api/health`, `/api/readiness`, `/api/places/search`, `/api/weather`
 - `GET /api/bus/stops`, `/api/bus/arrivals/{stopId}`
 - `POST /api/routes/recommend`
+- 내부 라벨링: `POST /api/routes/labeling-candidates`
 - `GET /api/auth/kakao/login`, callback, `/api/auth/me`, logout
 - `PUT /api/me/preferences`
 - `POST /api/route-impressions`, `/api/route-reviews`
 - `POST /api/facility-reports`
 - 관리자: 시설 신고 목록·검토 상태 변경
 
-경로 공급자는 `ROUTE_MODE=demo|live|ai`로 명시합니다. `live`는 `AI_SERVER_URL`의 실제 후보 수집 API를 사용하고 백엔드에서 그늘·규칙 특성·개인화를 적용합니다. `ai`는 같은 서버의 학습 모델 순위화를 사용합니다. 필요한 서버 URL이나 키가 없으면 503, 선택한 공급자 호출이 실패하면 502를 반환하며 데모로 바꾸지 않습니다. 장소·날씨·버스는 개발 환경에서 각 키가 없는 경우 상태에 표시된 데모 픽스처를 사용하지만, 운영 Compose는 해당 키를 모두 필수로 검사합니다.
+경로 공급자는 `ROUTE_MODE=demo|live|ai`로 명시합니다. `live`는
+`AI_SERVER_URL`의 실제 후보 수집 API를 사용하고 백엔드에서 건물 그늘,
+동결 피처 스냅샷, 규칙 특성·개인화를 적용합니다. `ai`는 동일한
+수집→그늘→enriched snapshot 흐름 뒤 AI 서버의 `/rank/candidates`로
+명시한 모델 tier를 적용합니다. AI 서버의 직접 `/recommend`는 그늘 결합을
+우회하므로 409로 비활성화되어 있습니다. 필요한 서버 URL이나 키가 없으면
+503, 선택한 공급자 호출이 실패하면 502를 반환하며 데모로 바꾸지
+않습니다. 장소·날씨·버스는 개발 환경에서 각 키가 없는 경우 상태에
+표시된 데모 픽스처를 사용하지만, 운영 Compose는 해당 키를 모두 필수로
+검사합니다.
+
+초기 사람/Judge 배치는 `POST /api/routes/labeling-candidates`로만
+생성합니다. 이 API는 추천과 같은 실제 후보·건물 그늘 피처를 동결하며
+32자 이상의 `LABELING_API_TOKEN`을 `X-Labeling-Token` 헤더로 요구합니다.
+토큰은 내부 작업자만 사용하고 프론트엔드에 노출하지 않습니다.
 
 추천 응답은 경로 사실·특성과 사용자 적합도를 분리해야 합니다.
 
@@ -40,9 +55,17 @@
 같은 피처에서 조회합니다. 높이 결측·0은 0m 건물로 바꾸지 않고 그림자
 계산에서 제외합니다.
 
+피처 계보는 실제 후보 수집시각 `captured_at`과 요청 출발시각의 그늘
+계산시각 `shade_evaluated_at`을 분리합니다. 같은 비교 후보는 하나의
+`group_id`를 공유하고, 시간·조건과 무관한 동일 방향 OD는
+`holdout_group_id`를 공유합니다.
+
 ## PostgreSQL
 
-`DATABASE_URL=postgresql+psycopg://...`만 허용합니다. 앱 시작 시 Alembic head로 마이그레이션합니다. 로컬 Docker Compose는 PostgreSQL 16과 healthcheck를 포함합니다.
+`DATABASE_URL=postgresql+psycopg://...`만 허용합니다. 앱 시작 시 Alembic
+head로 마이그레이션합니다. `20260724_0002` migration은 동일
+사용자·동일 route impression의 중복 후기를 DB에서도 차단합니다. 로컬
+Docker Compose는 PostgreSQL 16과 healthcheck를 포함합니다.
 
 ## 카카오 로그인
 
@@ -56,6 +79,15 @@
 35%입니다. 게스트는 개인화 상태를 저장하지 않습니다. 전역 후보 학습은
 동의 후기만 익명화·검토한 뒤 관리자가 수동으로 수행하고 운영 모델을
 자동 교체하지 않습니다.
+
+합성 데모 경로의 서명에는 `demo_route_candidate`와
+`training_eligible=false`를 기록합니다. 전역 exporter는 검증된
+`live_route_candidate`와 `training_eligible=true`만 허용하고 원본
+스냅샷 해시·출처·두 시간 필드를 다시 검증합니다. 동의 후기를 섞은
+산출물은 `rankers.review-mixed-candidate.zip`으로 분리되며 사람 전용
+운영 승격 절차를 통과할 수 없습니다. exporter는 eligible·제외 후기 수와
+제외 사유를 `export_report.json`에 기록하며, 후보 학습기는 이 보고서와
+라벨 행 수를 대조합니다.
 
 ## ODsay 인증
 

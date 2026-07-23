@@ -4,7 +4,10 @@
 
 2026-07-24 추가: 이 문서는 당시 실행 증거를 보존합니다. 이후 확정된
 6개 프로필, 6개 상황 조건, judge 베이스라인, 점수·스와이프 UI 기준은
-`PRODUCT_DECISIONS.md`를 따릅니다.
+`PRODUCT_DECISIONS.md`를 따릅니다. 아래의 `rankers.pkl`과 테스트 수치는
+2026-07-23 당시 기록이며 현재 모델 계약은 안전한
+`rankers.*.zip`, 최신 검증 상태는
+`CURRENT_STATUS_AND_FOLLOW_UP_REPORT.md`를 기준으로 합니다.
 
 ## 결론
 

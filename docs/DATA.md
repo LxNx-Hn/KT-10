@@ -31,7 +31,25 @@
 
 ## 라벨 스키마
 
-`route_labels.csv`의 `group_id`는 OD·날씨·이동조건 조합이고 `route_id`는 좌표·구간·공급자 fingerprint입니다. `route_features.jsonl`은 라벨을 받은 바로 그 후보의 피처를 보존합니다. 이후 실제 사용자 후기는 서명된 서버 스냅샷과 연결되므로 클라이언트가 학습 피처를 임의 수정할 수 없습니다.
+`route_labels.csv`의 `group_id`는 같은 시점·조건에서 비교한 후보 집합이고
+`holdout_group_id`는 시간·조건과 무관한 동일 방향 OD입니다. 학습/검증
+분리는 `holdout_group_id` 단위로 수행해 같은 OD의 반복 수집본이 양쪽에
+섞이지 않게 합니다. `route_id`는 좌표·구간·공급자 fingerprint입니다.
+`route_features.jsonl`은 라벨을 받은 바로 그 후보의 피처를 보존합니다.
+이후 실제 사용자 후기는 서버가 서명한 스냅샷과 연결되므로 클라이언트가
+학습 피처를 임의 수정할 수 없습니다.
+
+실제 후보 스냅샷은 `route-feature-snapshot-v2`이며 최소한 다음 계보를
+가집니다.
+
+- 실제 경로를 수집한 `captured_at`
+- 그늘을 계산한 출발/평가 시각 `shade_evaluated_at`
+- `group_id`, `holdout_group_id`, `route_id`
+- 경로·건물 공급자와 geometry 품질
+- 전체 모델 피처와 정규화된 `feature_snapshot_hash`
+
+`captured_at`과 `shade_evaluated_at`은 의미가 다릅니다. 미래 출발 시각의
+그늘을 계산해도 스냅샷 수집 시각을 미래로 바꾸지 않습니다.
 
 기본 프로필은 `general`, `elderly`, `child`, `youth`, `disabled`,
 `pregnant` 6개입니다. 짐 많음, 유아차, 계단 회피, 그늘 우선, 저상버스
@@ -66,16 +84,33 @@ geometry 결측, 야간 상태를 임의의 그늘 0%로 바꾸지 않습니다.
 
 ## 평가 라벨 출처
 
-`route_labels.csv`와 모델 메타데이터에는 최소한 다음 provenance를
-보존해야 합니다.
+사람 평가 CSV는 평가자 ID, 그룹·경로 ID, 피처 스냅샷 해시, 6개 프로필,
+0~4 정수 relevance와 메모를 보존합니다. 학습기는 모든 스냅샷과 라벨의
+경로 집합, 해시, 프로필 행렬, 동일 평가자의 중복 라벨, 최소 평가자 수를
+검증합니다.
 
-- `label_source`: `llm_judge`, `human_expert`, `end_user` 등
-- `reviewer_id` 또는 비식별 평가 실행 ID
-- 루브릭·프롬프트·모델 버전
-- 평가 시각과 동결 입력 배치 해시
-- 0~4 relevance와 판단 근거·미확인 항목
+Judge JSONL은 이 계약에 더해 `judge_run_id`, `judge_source`,
+`rubric_version`, `prompt_hash`, 실제 `evaluated_at`, 판단 근거를
+필수로 보존합니다. LLM/Codex judge 라벨은 초기 베이스라인으로 사용할 수
+있지만 사람 라벨과 합쳐 출처를 숨기지 않습니다.
 
-LLM/Codex judge 라벨은 초기 베이스라인으로 사용할 수 있지만 사람 라벨과
-합쳐 출처를 숨기지 않습니다. Judge, 사람 후보, 승인 운영 모델 산출물은
-각각 `rankers.judge-baseline.pkl`, `rankers.human-candidate.pkl`,
-`rankers.pkl`로 분리합니다.
+모델은 실행 가능한 pickle이 아니라 checksum이 포함된 XGBoost JSON ZIP
+아카이브로 저장합니다.
+
+| 파일 | 라벨 출처와 역할 |
+| --- | --- |
+| `rankers.judge-baseline.zip` | 외부 LLM judge 평가 기반 비운영 비교선 |
+| `rankers.human-candidate.zip` | 최소 9명 사람 평가 기반 수동 검토 후보 |
+| `rankers.review-mixed-candidate.zip` | 동의 후기를 제한적으로 섞은 별도 후보, 자동 승격 금지 |
+| `rankers.human-validated.zip` | 사람 후보의 SHA-256과 승인 근거를 확인해 관리자가 승격한 운영 파일 |
+
+동의 후기 export는 `training_eligible=true`인
+`live_route_candidate`만 포함하고 데모·과거 비적격 후기의 수와 사유를
+`export_report.json`에 남깁니다. 실제 후기 relevance는 가중 피드백의
+유한 연속 0~4 값이며 임의 반올림하지 않습니다. 사람 직접 평가 CSV의
+0~4 정수 계약과는 별도 loader로 분리합니다.
+
+초기 배치는 백엔드의 보호된
+`POST /api/routes/labeling-candidates`에서만 생성합니다. 요청에는 32자
+이상의 `LABELING_API_TOKEN`을 `X-Labeling-Token`으로 보내며, 백엔드는
+추천과 같은 실제 후보 수집→건물 그늘→피처 스냅샷 흐름을 사용합니다.

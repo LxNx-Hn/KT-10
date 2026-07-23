@@ -9,17 +9,23 @@
 강제로 보존하는 방식이 아니라 아래 두 단계의 점수순 추천입니다.
 
 1. 프론트가 Kakao Local 검색으로 부산 내 출발지·도착지를 선택한다.
-2. 백엔드가 6개 기본 프로필 중 하나, 6개 이번 이동 조건, 로그인 사용자의
-   장기 설정을 AI 서버에 전달한다.
-3. AI 서버가 ODsay·TMAP·OSMnx를 독립 호출하고 실패 공급자를
-   메타데이터에 남긴다.
-4. ODsay `mapObj`와 `loadLane` geometry, 보행 geometry를 구간별로
-   결합한다.
-5. EPSG:5179 공간 피처, Open-Meteo GLO-90 지형 피처와 요청 시각의
-   건물 그늘 피처를 계산한다.
-6. 1단계가 검증된 사실에서 경로 특성 배지를 생성한다.
-7. 2단계가 프로필·상황·장기 설정에 대한 베이스라인 적합도를 계산하고
-   점수순으로 최대 10개를 순위화한다.
+2. 백엔드가 현재 날씨와 6개 기본 프로필 중 하나, 이번 이동 조건, 로그인
+   사용자의 장기 설정을 모은다.
+3. 백엔드는 AI 서버의 `POST /labeling/candidates`를 호출한다. AI 서버는
+   ODsay와 TMAP 후보를 수집하고, OSMnx는 ODsay 보행 geometry 복구에만
+   사용한다. 실패 공급자는 메타데이터에 남긴다.
+4. AI 서버가 ODsay `mapObj`·`loadLane`과 보행 geometry를 결합하고
+   EPSG:5179 공간 피처, Open-Meteo GLO-90 지형 피처, 실제 수집시각
+   `captured_at`이 담긴 기본 스냅샷을 반환한다.
+5. 백엔드가 요청 출발시각의 VWorld 건물 그늘을 계산한다. 합성 건물은
+   명시적인 데모 모드에서만 사용한다.
+6. 백엔드는 `captured_at`과 별도 `shade_evaluated_at`을 포함해 AI 서버의
+   `POST /labeling/enriched-snapshots`를 호출한다. AI 서버는 checksum이
+   포함된 동결 스냅샷과 `most_shade` 등의 사실 특성 라벨을 만든다.
+7. `live` 모드는 같은 사실을 규칙 점수로 비교하고, `ai` 모드는
+   `POST /rank/candidates`에서 명시적으로 선택한 모델 tier로 순위화한다.
+   AI 서버의 이전 `POST /recommend`는 이 결합 단계를 우회하므로 409로
+   비활성화되어 있다.
 8. 백엔드가 로그인 사용자의 후기 기반 온라인 상태를 최대 35% 범위에서
    혼합하고 상위 N개를 반환한다.
 9. 프론트는 지도와 수평 경로 카드를 같은 선택 상태로 표시하고 추정
@@ -47,20 +53,34 @@
 
 ## 학습·개인화
 
-`POST /labeling/candidates`는 모델 준비 전에도 동결 후보·피처를 만들 수
-있습니다. 승인 운영 모델은 `ai/data/rankers.pkl`이며 모델이 없거나 요청
-프로필 모델이 없을 때 `ROUTE_MODE=ai`의 `POST /recommend`는 503을
-반환합니다.
+사용자에게 노출되는 초기 배치 진입점은 백엔드
+`POST /api/routes/labeling-candidates`입니다. 32자 이상의
+`LABELING_API_TOKEN`을 `X-Labeling-Token` 헤더로 보내야 하며, 추천과
+동일한 후보 수집→건물 그늘→동결 스냅샷 흐름을 실행합니다. AI 내부
+`POST /labeling/candidates`는 건물 그늘 전 기본 후보 수집용입니다.
+
+승인 운영 모델은 `ai/data/rankers.human-validated.zip`입니다. 모델이
+없거나 6개 프로필 또는 피처 스키마가 맞지 않으면 `ROUTE_MODE=ai`의
+백엔드 `POST /api/routes/recommend`는 준비되지 않은 상태를 명시적으로
+반환합니다. `ROUTE_MODE=live`의 규칙 비교는 승인 모델 없이 동작합니다.
 
 초기 데이터 부족 단계에는 LLM/Codex judge를 블라인드 평가자로 사용해
 베이스라인 모델을 만들 수 있습니다. 공급자 이름과 기존 순위는 입력에서
 가리고, 경로 사실·판단 근거·미확인 항목, 루브릭·프롬프트·모델 버전을
 보존합니다.
 
-- `rankers.judge-baseline.pkl`: judge 라벨 기반, 실사용자 검증으로
-  표현하거나 자동 운영 승격하지 않음
-- `rankers.human-candidate.pkl`: 실제 사용자·전문가 라벨 기반 후보
-- `rankers.pkl`: 관리자 검토를 통과한 운영 모델
+- `rankers.judge-baseline.zip`: 외부 LLM judge 라벨 기반 비운영 비교선
+- `rankers.human-candidate.zip`: 실제 사용자·전문가 라벨 기반 후보
+- `rankers.review-mixed-candidate.zip`: 동의 후기를 제한적으로 섞은
+  별도 후보, 사람 후보로 가장하거나 자동 승격하지 않음
+- `rankers.human-validated.zip`: 검토한 후보 SHA-256, 승인자와 근거를
+  기록해 관리자가 수동 승격한 운영 모델
+
+모든 모델은 checksum manifest와 프로필별 XGBoost JSON을 담은 ZIP이며
+pickle을 역직렬화하지 않습니다. 현재 저장소에는 실제 후보·완성 라벨과
+모델 파일이 없으므로 키만 설정한다고 모델이 자동 생성되지는 않습니다.
+Judge 베이스라인도 실제 후보를 동결한 뒤 외부 LLM 평가 결과를
+`judge-label-v1`에 채워야 학습할 수 있습니다.
 
 학습/검증은 동일 OD가 경계를 넘지 않는 그룹 holdout을 사용하고 NDCG@3,
 후보쌍 선호 정확도와 프로필별 오류를 기록합니다.
@@ -69,7 +89,11 @@
 
 ## 데이터베이스
 
-PostgreSQL만 지원하며 SQLite 자동 대체는 없습니다. Alembic `20260720_0001`이 사용자, 프로필, impression, 리뷰, 시설 신고 스키마를 생성합니다. 시설 신고는 관리자 검토 상태만 바꾸고 원본 공간 데이터를 자동 수정하지 않습니다.
+PostgreSQL만 지원하며 SQLite 자동 대체는 없습니다. Alembic
+`20260720_0001`이 사용자, 프로필, impression, 리뷰, 시설 신고 스키마를
+생성하고 `20260724_0002`가 동일 사용자·동일 impression의 중복 후기를
+차단합니다. 시설 신고는 관리자 검토 상태만 바꾸고 원본 공간 데이터를
+자동 수정하지 않습니다.
 
 ## UI
 
@@ -88,8 +112,10 @@ PostgreSQL만 지원하며 SQLite 자동 대체는 없습니다. Alembic `202607
 ## 검증 명령
 
 ```powershell
+$env:PYTHONUTF8='1'
 $env:PYTHONPATH='ai'
 .\.venv\Scripts\python.exe -m pytest ai\tests -q
+$env:PYTHONPATH='backend'
 .\.venv\Scripts\python.exe -m pytest backend\tests -q
 .\.venv\Scripts\python.exe -m compileall -q ai backend
 cd frontend

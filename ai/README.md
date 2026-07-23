@@ -1,34 +1,145 @@
 # AI 경로 수집·순위화 파이프라인
 
-운영 추천은 합성 라벨이나 규칙 점수로 학습하지 않습니다. ODsay/TMAP/OSMnx에서 실제 후보를 만들고, 저장된 공간 레이어와 Open-Meteo GLO-90 지형 피처를 결합한 뒤 9명 이상의 실제 라벨로 학습한 프로필별 `XGBRanker`가 후보 순서를 정합니다.
+운영 추천은 합성 라벨이나 규칙 점수로 학습하지 않습니다. AI 서비스가
+ODsay·TMAP에서 실제 후보를 수집하고, OSMnx는 필요한 보행 geometry
+복구에만 사용합니다. 저장된 공간 레이어와 Open-Meteo GLO-90 지형
+피처를 결합한 뒤 백엔드가 출발시각의 건물 그늘을 계산합니다. 마지막으로
+동결된 enriched snapshot을 프로필별 `XGBRanker`가 비교합니다.
 
-## API
+현재 `ai/data/training/route_features.jsonl`은 비어 있고
+`route_labels.csv`에는 헤더만 있으며 ranker artifact도 없습니다. 따라서
+파이프라인 코드는 구현되어 있지만 실제 학습 모델은 아직 생성되지
+않았습니다. 외부 공급자의 실제 후보와 사람 또는 외부 LLM 평가가
+확보되기 전에는 모델 준비 상태를 주장하지 않습니다.
+
+## 공개 경로와 내부 API
+
+클라이언트가 사용하는 정식 추천 경로는 백엔드
+`POST /api/routes/recommend`입니다. `ROUTE_MODE=ai`에서 백엔드는 다음
+순서를 강제합니다.
+
+1. AI `POST /labeling/candidates`로 실제 후보·기본 스냅샷 수집
+2. 백엔드에서 VWorld 또는 명시한 건물 공급자로 출발시각 그늘 계산
+3. AI `POST /labeling/enriched-snapshots`로 고정 피처 해시와 사실 특성 생성
+4. AI `POST /rank/candidates`로 선택한 모델 tier의 후보 순위화
+
+AI의 직접 `POST /recommend`는 그늘 보강을 우회할 수 있어 비활성화되어
+항상 409를 반환합니다.
+
+AI 내부 API는 다음과 같습니다.
 
 - `GET /health`: 프로세스 상태
-- `GET /model/status`: 검증 모델 준비 여부·버전·프로필
-- `POST /labeling/candidates`: 모델 없이 초기 라벨링 후보와 피처 스냅샷 생성
-- `POST /recommend`: 모델이 준비된 경우에만 실제 후보 순위화
+- `GET /model/status`: 선택한 tier의 준비 여부·버전·프로필
+- `POST /labeling/candidates`: 모델 없이 실제 후보와 기본 피처 스냅샷 생성
+- `POST /labeling/enriched-snapshots`: 건물 그늘을 포함한 최종 스냅샷·사실 특성 생성
+- `POST /rank/candidates`: 준비된 모델로 이미 보강된 후보만 순위화
+- `POST /recommend`: 사용 중지된 이전 직접 경로, 409 반환
 
-ODsay 또는 TMAP 키가 없으면 해당 공급자는 `CollectorNotConfigured`로 기록됩니다. OSMnx만 키 없이 동작합니다. 모든 공급자가 실패하면 가짜 직선이나 0분 경로를 반환하지 않고 503을 반환합니다.
+초기 평가 배치는 백엔드
+`POST /api/routes/labeling-candidates`만 호출합니다. 이 endpoint는 공개
+추천과 같은 수집·그늘·enriched snapshot 경로를 재사용하며
+`LABELING_API_TOKEN`과 `X-Labeling-Token` 헤더가 일치해야 합니다.
+토큰은 32자 이상이어야 하고 로그·채팅·Git에 남기지 않습니다.
 
-## 학습 자료
+ODsay 또는 TMAP 키가 없으면 해당 공급자는 `CollectorNotConfigured`로
+기록됩니다. 모든 실제 경로 공급자가 실패하면 가짜 직선이나 0분 경로로
+대체하지 않고 503을 반환합니다.
 
-- `ai/data/training/route_features.jsonl`: 후보 생성 당시의 피처 스냅샷
-- `ai/data/training/route_labels.csv`: `reviewer_id,group_id,route_id,profile,relevance,notes`
-- relevance: 0(추천 불가)~4(가장 적합)
+## 스냅샷과 학습 자료
+
+- `ai/data/training/route_features.jsonl`: 후보 생성 당시의 고정 피처 스냅샷
+- `ai/data/training/route_labels.csv`: 확정한 사람 평가
+- `captured_at`: 실제 후보와 원천 피처를 수집한 시각
+- `shade_evaluated_at`: 태양 위치와 건물 그늘을 계산한 출발시각
+- `feature_snapshot_hash`: 피처와 provenance를 묶은 변경 감지 해시
+- relevance: 0(확인된 필수조건과 양립 불가)~4(가장 적합)
 - 지원 프로필: `general`, `elderly`, `child`, `youth`, `disabled`, `pregnant`
-- 최소 9명의 서로 다른 reviewer와 프로필별 복수 OD·복수 후보가 필요
+- 실제 사람 모델: 모든 평가 항목에 최소 9명의 서로 다른 reviewer 필요
 
-`짐 많음`, `계단 회피`, `저상버스 우선`, 휠체어·보행보조기·최대 도보거리 조건은 경로 피처와의 상호작용 피처로 들어갑니다. 그 영향 계수는 라벨에서 학습하며 코드에 임의 가중치를 넣지 않습니다.
+`짐 많음`, `유아차`, `그늘 우선`, `환승 최소`, `계단 회피`,
+`저상버스 우선`, 휠체어·보행보조기·최대 도보거리 조건은 경로 피처와의
+상호작용 피처로 들어갑니다. 그 영향 계수는 라벨에서 학습하며 코드에
+임의 가중치를 넣지 않습니다. 원천값이 미확인이면 0으로 바꾸지 않고
+`null`을 유지합니다.
 
-## 실행
+## 안전한 모델 artifact
+
+모델은 실행 가능한 pickle이 아니라 checksum이 포함된 ZIP archive로
+저장합니다. 각 archive에는 manifest와 6개 프로필의 XGBoost JSON만
+허용되며 로드 전에 경로·크기·SHA-256을 검증합니다.
+
+- `ai/data/rankers.human-candidate.zip`: 사람 평가 학습 결과, 관리자 검토 전
+- `ai/data/rankers.human-validated.zip`: checksum을 고정해 수동 승인한 운영 모델
+- `ai/data/rankers.judge-baseline.zip`: 외부 LLM 평가 기반 비운영 baseline
+- `ai/data/rankers.review-mixed-candidate.zip`: 동의 후기를 제한적으로 혼합한 후보
+
+기본 `RANKER_TIER=human_validated`는
+`rankers.human-validated.zip`만 로드합니다. `judge_baseline`은 명시적으로
+설정한 환경에서만 별도 artifact를 로드합니다. 후기 혼합 후보와 judge
+baseline은 운영 모델로 자동 승격되지 않습니다.
+
+## 실행과 초기 사람 평가
+
+테스트와 AI 서버 실행:
 
 ```powershell
 $env:PYTHONPATH='ai'
 .\.venv\Scripts\python.exe -m pytest ai\tests -q
 .\.venv\Scripts\python.exe -m uvicorn main:app --app-dir ai --port 8001
-.\.venv\Scripts\python.exe -m labeling.generate_batch --od-file ai\data\training\od_template.csv
-.\.venv\Scripts\python.exe -m scoring.train
 ```
 
-후기 전역 후보 모델은 `backend/ml/export_consented_reviews.py`와 `backend/ml/train_global_candidate.py`로 생성합니다. 동의 데이터만 익명화하며 후보 모델은 `rankers.candidate.pkl`에 저장되어 운영 모델을 자동 덮어쓰지 않습니다.
+다른 터미널에서 `backend/.env`의 `ROUTE_MODE=ai`,
+`AI_SERVER_URL=http://localhost:8001`, 실제 공급자 설정과
+`LABELING_API_TOKEN`을 확인하고 백엔드를 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --port 8002
+```
+
+세 번째 터미널에서 백엔드와 같은 토큰으로 실제 라벨링 패키지를
+생성합니다.
+
+```powershell
+$env:LABELING_API_TOKEN='<backend/.env와 같은 32자 이상 내부 토큰>'
+$env:PYTHONPATH='ai'
+.\.venv\Scripts\python.exe -m labeling.generate_batch `
+  --od-file ai\data\training\od_template.csv `
+  --output-dir ai\data\training\generated\initial_batch
+```
+
+사람 평가를 확정한 뒤 관리자 검토 전 모델을 학습합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m scoring.train `
+  --labels ai\data\training\route_labels.csv `
+  --features ai\data\training\route_features.jsonl `
+  --output ai\data\rankers.human-candidate.zip
+```
+
+검증한 파일의 SHA-256을 고정하고 승인자·근거를 남겨야만 운영
+artifact로 수동 승격할 수 있습니다.
+
+```powershell
+$candidateSha = (Get-FileHash ai\data\rankers.human-candidate.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+.\.venv\Scripts\python.exe -m labeling.promote_human_candidate `
+  --source ai\data\rankers.human-candidate.zip `
+  --output ai\data\rankers.human-validated.zip `
+  --expected-source-sha256 $candidateSha `
+  --approved-by '<승인자>' `
+  --approval-note '<검증 결과와 승인 근거>'
+```
+
+Judge baseline의 빈 평가표 생성, 외부 평가 입력 계약과 학습 명령은
+[LLM judge baseline](docs/JUDGE_BASELINE.md)에 있습니다. 저장소에는
+실제 LLM 평가 실행기가 없으므로 외부 평가 결과 없이는
+`rankers.judge-baseline.zip`이 만들어지지 않습니다.
+
+동의 후기 기반 전역 후보는
+`backend/ml/export_consented_reviews.py`와
+`backend/ml/train_global_candidate.py`로 생성합니다. 후기 데이터는
+동의·익명화·출처 검증을 통과해야 하며 결과는
+`rankers.review-mixed-candidate.zip`에만 저장됩니다. 이 파일은
+`human_reviewers` 전용 승격 도구의 대상이 아니며 운영 모델을 자동으로
+덮어쓰지 않습니다. exporter는 eligible·제외 후기 수와 제외 사유를
+`export_report.json`에 기록하고, 후보 학습기는 이 보고서와 실제 라벨
+행 수가 일치할 때만 연속 0~4 후기 relevance를 반올림 없이 읽습니다.
