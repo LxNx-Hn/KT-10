@@ -1,6 +1,6 @@
 # 교통약자·이동취약자 맞춤형 경로 추천 PWA
 
-서비스 권역은 부산광역시 전역이고, MVP의 실제 검증은 부산역 일대를 우선합니다. Kakao Maps는 배경지도와 오버레이 렌더링에 사용하고, 대중교통 후보는 ODsay, 보행 후보는 TMAP과 OpenStreetMap/OSMnx에서 수집합니다. 후보 순서는 9명 이상의 실제 라벨로 학습한 XGBoost learning-to-rank 모델이 정합니다.
+서비스 목표 권역은 부산광역시 전역이고, 로컬 기본 실행은 부산진구청→서면역 고정 OD의 검증용 데모입니다. 데모와 운영 `live` 모드는 `제일 빠른 길`, `경사도 적은 길`, `그늘 많은 길`을 사실 기반 규칙으로 먼저 비교하며, 종합 점수는 보조 정렬값으로 사용합니다. XGBoost 개인·전역 순위화는 라벨과 승인된 모델이 준비된 별도 `ai` 모드에서만 활성화됩니다.
 
 사용자에게 임의의 “접근성 점수”를 보여주지 않습니다. 대신 소요시간, 도보거리, 환승, 계단·승강기·저상버스 확인 상태, 90m DEM 기반 지형 추정과 각 경로의 장점을 표시합니다. 미확인 값은 0이나 “없음”으로 바꾸지 않습니다.
 
@@ -9,13 +9,17 @@
 - ODsay 대중교통 후보와 공식 `loadLane` geometry, TMAP/OSMnx 보행 geometry의 구간별 지도 오버레이
 - 부산 전역 공간 레이어 결합: 쉼터, CCTV, AED, 휠체어 충전기, 스마트쉘터, 도시철도 접근성, 횡단보도, 정류장 등
 - Open-Meteo Copernicus GLO-90 고도 기반 오르막·내리막·누적 상승량 추정(90m 해상도임을 UI에 명시)
+- 태양 위치와 합성 건물 높이로 계산한 검증용 그늘 비율·지도 오버레이, VWorld 공공 건물 도형·높이 공급자(품질 상태 분리)
+- `ROUTE_MODE=demo|live|ai` 공급자 선택과 실패 시 무단 폴백 금지
 - 합성 Y 라벨 없는 9인 초기 라벨링 → 프로필별 XGBRanker 학습 게이트
 - 카카오 로그인 사용자만 PostgreSQL 프로필·후기·개인화 저장; 게스트는 개인화하지 않음
 - 후기 기반 개인 온라인 모델과 동의 후기의 팀 승인 비중 제한 전역 후보 재학습(운영 모델 자동 교체 없음)
 - 시설물 위치·운영상태 오류 신고와 관리자 검토 대기열
 - 자주 바뀌는 `짐 많음`, `계단 회피`는 검색 UI에, 장기 이동지원 정보는 로그인 프로필에 분리
 
-`data/ai/`는 데모·회귀검증 픽스처이고 임의 OD의 실제 경로가 아닙니다. 실서비스 추천은 `ai/data/rankers.pkl`과 실제 외부 공급자 응답이 모두 준비되어야 하며, 준비되지 않으면 AI API가 503으로 명시적으로 거부합니다.
+`data/ai/`는 데모·회귀검증 픽스처이고 임의 OD의 실제 경로가 아닙니다. 운영 기본 `live` 모드는 실제 외부 공급자 경로를 규칙으로 비교하므로 학습 모델이 없어도 동작합니다. `ROUTE_MODE=ai`의 학습 순위화는 `ai/data/rankers.pkl`이 준비되지 않으면 503으로 명시적으로 거부합니다.
+
+그늘 데모의 입력·계산식·실데이터 교체 조건은 [docs/SHADE_RULE_DEMO.md](docs/SHADE_RULE_DEMO.md)를 참고하세요.
 
 ## 구조
 
@@ -50,6 +54,21 @@ npm run dev
 ```
 
 PostgreSQL까지 한 번에 실행하려면 저장소 루트에서 `docker compose up --build`를 사용합니다. 로컬 키 입력 파일 `ai/.env`, `backend/.env`, `frontend/.env`는 이미 생성되며 Git에서 무시됩니다.
+
+## 운영 배포
+
+운영용 구성은 개발 서버와 소스 마운트를 사용하지 않고, Nginx가 빌드된 PWA와 같은 origin의 `/api`를 제공합니다.
+
+```powershell
+$env:PYTHONUTF8='1'
+python scripts\prepare_deployment_env.py --import-existing
+# .env.production의 외부 키와 PUBLIC_ORIGIN 입력
+python scripts\prepare_deployment_env.py --check
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+python scripts\verify_deployment.py --base https://your-domain.example
+```
+
+키별 콘솔 등록, HTTPS, 실제 데이터 종단 검증은 [운영 배포 가이드](docs/DEPLOYMENT.md)를 따릅니다.
 
 ## 초기 9인 라벨링
 
