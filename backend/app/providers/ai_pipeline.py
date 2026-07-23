@@ -19,7 +19,7 @@ from ..models import (
 )
 from ..feedback_tokens import create_feedback_token
 from ..personalization import blended_rank_score, parse_state
-from ..scoring.utils import round1
+from ..scoring.utils import clamp, round1
 from ..settings import settings
 
 log = logging.getLogger("providers.ai_pipeline")
@@ -36,6 +36,114 @@ _WEATHER_TO_AI = {
 }
 
 
+def _pipeline_payload(
+    origin: Place,
+    destination: Place,
+    profile: str,
+    weather_scenario: str,
+    options: ScoringOptions,
+    user_preference=None,
+    weather_condition=None,
+) -> dict:
+    return {
+        "origin_lat": origin.lat, "origin_lng": origin.lng, "origin_name": origin.name,
+        "dest_lat": destination.lat, "dest_lng": destination.lng, "dest_name": destination.name,
+        "profile": profile,
+        "weather": _WEATHER_TO_AI.get(weather_scenario, "normal"),
+        "prioritize_weather_safety": options.weather_avoid,
+        "carry_luggage": options.carry_luggage,
+        "avoid_stairs": options.avoid_stairs or bool(
+            user_preference and user_preference.avoid_stairs_required
+        ),
+        "low_floor_priority": options.low_floor_priority,
+        "uses_wheelchair": bool(user_preference and user_preference.uses_wheelchair),
+        "uses_walking_aid": bool(user_preference and user_preference.uses_walking_aid),
+        "max_walk_distance_m": (
+            user_preference.max_walk_distance_m if user_preference else None
+        ),
+        "temp_c": weather_condition.temp_c if weather_condition else None,
+        "feels_like_c": weather_condition.feels_like_c if weather_condition else None,
+        "precipitation_mm": (
+            weather_condition.precipitation_mm if weather_condition else None
+        ),
+        "wind_ms": weather_condition.wind_ms if weather_condition else None,
+        "pm10": weather_condition.pm10 if weather_condition else None,
+    }
+
+
+def _response_detail(response: httpx.Response) -> str:
+    try:
+        detail = response.json().get("detail")
+    except (ValueError, TypeError, AttributeError):
+        detail = None
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, dict) and isinstance(detail.get("message"), str):
+        return detail["message"]
+    return f"AI pipeline server returned HTTP {response.status_code}."
+
+
+async def _post_pipeline(path: str, payload: dict) -> dict:
+    if not settings.ai_server_url:
+        raise AIProviderError(503, "AI_SERVER_URL is not configured.")
+    try:
+        async with httpx.AsyncClient(timeout=settings.request_timeout * 8) as client:
+            response = await client.post(
+                f"{settings.ai_server_url.rstrip('/')}{path}",
+                json=payload,
+            )
+            response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise TypeError("pipeline response must be an object")
+        return data
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        log.warning("AI 경로 서버가 HTTP %s를 반환했습니다.", status)
+        raise AIProviderError(
+            503 if status == 503 else 502,
+            _response_detail(exc.response),
+        ) from exc
+    except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+        log.warning("AI 경로 서버 호출 실패 (%s)", type(exc).__name__)
+        raise AIProviderError(502, "AI pipeline server request failed.") from exc
+
+
+async def get_ai_pipeline_candidates(
+    origin: Place,
+    destination: Place,
+    profile: str = "general",
+    weather_scenario: str = "normal",
+    options: ScoringOptions | None = None,
+    user_preference=None,
+    weather_condition=None,
+) -> list[RouteCandidate]:
+    """학습 모델 없이도 실제 geometry·지형 피처가 있는 후보를 수집한다."""
+    payload = _pipeline_payload(
+        origin,
+        destination,
+        profile,
+        weather_scenario,
+        options or ScoringOptions(),
+        user_preference,
+        weather_condition,
+    )
+    data = await _post_pipeline("/labeling/candidates", payload)
+    candidates = data.get("candidates") or []
+    if not isinstance(candidates, list) or not candidates:
+        raise AIProviderError(502, "AI pipeline server returned no route candidates.")
+    try:
+        return [
+            _to_route_candidate(item, origin, destination, index + 1)
+            for index, item in enumerate(candidates)
+        ]
+    except (KeyError, TypeError, ValueError, RuntimeError) as exc:
+        raise AIProviderError(
+            502,
+            "AI pipeline candidate contract is invalid.",
+        ) from exc
+
+
 async def get_ai_pipeline_routes(
     origin: Place,
     destination: Place,
@@ -47,38 +155,16 @@ async def get_ai_pipeline_routes(
     user_preference=None,
     weather_condition=None,
 ) -> list[ScoredRoute]:
-    payload = {
-        "origin_lat": origin.lat, "origin_lng": origin.lng, "origin_name": origin.name,
-        "dest_lat": destination.lat, "dest_lng": destination.lng, "dest_name": destination.name,
-        "profile": profile,
-        "weather": _WEATHER_TO_AI.get(weather_scenario, "normal"),
-        "prioritize_weather_safety": options.weather_avoid,
-        "carry_luggage": options.carry_luggage,
-        "avoid_stairs": options.avoid_stairs or bool(user_preference and user_preference.avoid_stairs_required),
-        "low_floor_priority": options.low_floor_priority,
-        "uses_wheelchair": bool(user_preference and user_preference.uses_wheelchair),
-        "uses_walking_aid": bool(user_preference and user_preference.uses_walking_aid),
-        "max_walk_distance_m": user_preference.max_walk_distance_m if user_preference else None,
-        "temp_c": weather_condition.temp_c if weather_condition else None,
-        "feels_like_c": weather_condition.feels_like_c if weather_condition else None,
-        "precipitation_mm": weather_condition.precipitation_mm if weather_condition else None,
-        "wind_ms": weather_condition.wind_ms if weather_condition else None,
-        "pm10": weather_condition.pm10 if weather_condition else None,
-    }
-    try:
-        async with httpx.AsyncClient(timeout=settings.request_timeout * 5) as client:
-            response = await client.post(f"{settings.ai_server_url}/recommend", json=payload)
-            response.raise_for_status()
-        data = response.json()
-    except httpx.HTTPStatusError as exc:
-        status = exc.response.status_code
-        log.warning("AI 경로 서버가 HTTP %s를 반환했습니다.", status)
-        response_detail = exc.response.json().get("detail") if exc.response.headers.get("content-type", "").startswith("application/json") else None
-        detail = response_detail if isinstance(response_detail, str) else f"AI pipeline server returned HTTP {status}."
-        raise AIProviderError(503 if status == 503 else 502, detail) from exc
-    except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
-        log.warning("AI 경로 서버 호출 실패 (%s)", type(exc).__name__)
-        raise AIProviderError(502, "AI pipeline server request failed.") from exc
+    payload = _pipeline_payload(
+        origin,
+        destination,
+        profile,
+        weather_scenario,
+        options,
+        user_preference,
+        weather_condition,
+    )
+    data = await _post_pipeline("/recommend", payload)
 
     routes = data.get("routes") or []
     if not routes:
@@ -138,12 +224,17 @@ def _to_segment(item: dict, rank: int, index: int) -> RouteSegment:
     )
 
 
-def _to_scored_route(r: dict, origin: Place, destination: Place, profile: str) -> ScoredRoute:
+def _to_route_candidate(
+    r: dict,
+    origin: Place,
+    destination: Place,
+    rank: int,
+) -> RouteCandidate:
     feature = r.get("features") or {}
-    tags = r.get("tags") or []
-    reasons = r.get("reasons") or []
-    rank = int(r["rank"])
-    segments = [_to_segment(item, rank, index) for index, item in enumerate(r.get("segments") or [])]
+    segments = [
+        _to_segment(item, rank, index)
+        for index, item in enumerate(r.get("segments") or [])
+    ]
     if not segments:
         raise RuntimeError("ai pipeline route has no truthful segments")
 
@@ -156,15 +247,22 @@ def _to_scored_route(r: dict, origin: Place, destination: Place, profile: str) -
         if any(segment.distance_m is None for segment in walking_segments):
             raise RuntimeError("ai pipeline route has no truthful walking distance")
         walk_distance = sum(float(segment.distance_m) for segment in walking_segments)
-    is_low_floor = feature.get("is_low_floor_bus")
-    bus_used = any(segment.mode == "bus" for segment in segments)
     source_names = [str(source) for source in r.get("sources") or []]
     modes = [segment.bus_route_name or {"subway": "도시철도", "walk": "도보"}.get(segment.mode)
              for segment in segments]
-    summary = " + ".join(dict.fromkeys(mode for mode in modes if mode)) or f"{origin.name} → {destination.name}"
+    summary = str(r.get("summary") or "") or (
+        " + ".join(dict.fromkeys(mode for mode in modes if mode))
+        or f"{origin.name} → {destination.name}"
+    )
 
     route_id = str(r.get("route_id") or f"ai-{rank}")
-    route = RouteCandidate(
+    path = [
+        {"lat": point["lat"], "lng": point["lng"]}
+        for point in r.get("path") or []
+    ]
+    if len(path) < 2:
+        raise RuntimeError("ai pipeline route has no truthful geometry")
+    return RouteCandidate(
         id=route_id,
         summary=summary,
         origin=origin.name,
@@ -173,7 +271,7 @@ def _to_scored_route(r: dict, origin: Place, destination: Place, profile: str) -
         total_duration_min=float(r["duration_min"]),
         total_walk_m=float(walk_distance),
         transfer_count=int(transfer_count),
-        path=[{"lat": point["lat"], "lng": point["lng"]} for point in r.get("path") or []] or None,
+        path=path,
         sources=source_names,
         geometry_quality=r.get("geometry_quality"),
         terrain=TerrainSummary(
@@ -189,6 +287,18 @@ def _to_scored_route(r: dict, origin: Place, destination: Place, profile: str) -
             status=feature.get("elevation_status", "unavailable"),
         ),
     )
+
+
+def _to_scored_route(r: dict, origin: Place, destination: Place, profile: str) -> ScoredRoute:
+    feature = r.get("features") or {}
+    tags = r.get("tags") or []
+    reasons = r.get("reasons") or []
+    rank = int(r["rank"])
+    route = _to_route_candidate(r, origin, destination, rank)
+    is_low_floor = feature.get("is_low_floor_bus")
+    bus_used = any(segment.mode == "bus" for segment in route.segments)
+    walk_distance = route.total_walk_m
+    transfer_count = route.transfer_count
 
     cautions = [str(tag["label"]) for tag in tags if tag.get("tone") == "negative"]
     voice_summary = (
