@@ -11,8 +11,8 @@ jobs:
   ai:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -45,8 +45,8 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://kt10:kt10-ci-only@localhost:5432/kt10_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -68,8 +68,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -82,8 +82,8 @@ jobs:
   repository-contracts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Validate UTF-8 and JSON contracts
@@ -129,7 +129,7 @@ jobs:
       OPENWEATHER_API_KEY: ci-openweather-key
       BUS_SERVICE_KEY: ci-bus-service-key
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate production compose
         run: docker compose -f docker-compose.prod.yml config --quiet
       - name: Build production images
