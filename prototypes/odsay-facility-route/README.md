@@ -34,6 +34,8 @@ ODsay 대중교통 경로와 경로 주변의 이동편의시설을 카카오맵
 ```text
 ODsay/
 ├─ data/                  시설 원본·전처리 CSV
+├─ GIS/
+│  └─ busan_slope/        QGIS 프로젝트, DEM, 현재 분석 결과와 Python 분석기
 ├─ public/
 │  ├─ index.html          화면 구조
 │  ├─ styles.css          화면 스타일
@@ -50,6 +52,7 @@ ODsay/
 - ODsay API 키
 - 카카오맵 JavaScript 키
 - 공공데이터포털 부산버스정보시스템 서비스 키
+- QGIS 3.44 LTR 권장: 웹에서 경사 분석을 실행할 때 필요
 - 기본 실행 주소: `http://localhost:8080`
 
 이 프로젝트는 Node.js 기본 모듈만 사용하므로 `npm install`은 필요하지 않습니다.
@@ -78,12 +81,21 @@ cp .env.example .env
 ODSAY_API_KEY=실제_ODsay_API_키
 KAKAO_JAVASCRIPT_KEY=실제_카카오_JavaScript_키
 BUSAN_BUS_API_KEY=공공데이터포털_부산버스_서비스키
+QGIS_ROOT_PATH=C:\Program Files\QGIS 3.44.12
 PORT=8080
 ```
 
 `KAKAO_JAVASCRIPT_KEY`에는 REST API 키가 아니라 **JavaScript 키**를 입력해야 합니다.
 
 `BUSAN_BUS_API_KEY`에는 공공데이터포털에서 발급받은 부산버스정보시스템 서비스 키를 입력합니다. 서버가 `URLSearchParams`로 요청을 구성하므로 포털에 Encoding/Decoding 키가 함께 표시되면 Decoding 키 사용을 권장합니다.
+
+`QGIS_ROOT_PATH`에는 설치된 QGIS 최상위 폴더를 입력합니다. 기본 설치 위치와 버전이 다르면 실제 경로에 맞게 수정합니다.
+
+Git 전달본은 `GIS/busan_slope`를 프로젝트 내부에 포함합니다. 기존처럼 ODsay 폴더와 GIS 폴더를 형제 위치에 두어도 서버가 자동 탐색합니다. 다른 위치를 사용할 때만 다음 값을 추가합니다.
+
+```env
+GIS_PROJECT_ROOT_PATH=C:\path\to\busan_slope
+```
 
 ### 2. 카카오 허용 도메인 확인
 
@@ -159,3 +171,42 @@ AED는 동일한 위도·경도를 가진 행을 하나의 지도 마커로 묶�
 - 시설 마커가 경로 주변에 보인다는 사실만으로 최종 점수가 결정되지는 않습니다.
 - 경로선, 정류장·역, 도보 구간과 시설 사이의 거리 기준은 실제 매칭 결과를 검토한 뒤 별도로 결정해야 합니다.
 - API 응답과 추천 경로는 호출 시점 및 API 제공사의 정책에 따라 달라질 수 있습니다.
+
+## 데이터 및 API 출처
+
+### 경로·지도·실시간 정보
+
+| 구분 | 제공기관/서비스 | 출처 |
+|---|---|---|
+| 대중교통 경로, 정류장·역, 노선, 경로 형상, 도보 경로, 지하철 시간표 | 아로정보기술 ODsay API | [ODsay LAB](https://lab.odsay.com/) · [API 가이드](https://lab.odsay.com/guide/guide) |
+| 장소·주소 검색 및 웹 지도 | 카카오맵 JavaScript SDK | [카카오맵 Web API 가이드](https://apis.map.kakao.com/web/guide/) |
+| 부산 버스 실시간 도착정보 | 부산광역시 부산버스정보시스템 | [공공데이터포털 서비스](https://www.data.go.kr/data/15092750/openapi.do) |
+| 웹 배경지도 | 카카오맵 | [카카오맵 API](https://apis.map.kakao.com/) |
+
+ODsay API 결과와 카카오 장소검색 결과는 호출 시점의 서비스 데이터입니다. API 제공사의 이용약관, 호출 한도, 표시 의무와 허용 도메인·IP 정책을 따라야 합니다.
+
+### 시설 데이터
+
+| 프로젝트 파일 | 원본 데이터/제공기관 | 출처 |
+|---|---|---|
+| `부산광역시_무더위 쉼터_전처리.csv` | 부산광역시 무더위·기후쉼터 자료 | [부산광역시 무더위쉼터](https://www.busan.go.kr/depart/shelter02) · [부산광역시 우리동네 기후쉼터](https://www.data.go.kr/data/15153823/fileData.do) |
+| `부산광역시_한파쉼터_전처리.csv` | 부산광역시 한파쉼터 | [부산광역시 한파쉼터](https://www.busan.go.kr/depart/wintershelter) |
+| `부산광역시_스마트_버스쉘터_설치_현황.csv` | 부산광역시 스마트 버스쉘터 설치 현황 | [공공데이터포털](https://www.data.go.kr/data/15154539/fileData.do) |
+| `부산전동휠체어급속충전기표준데이터.csv` | 전국전동휠체어급속충전기표준데이터 중 부산 자료 | [공공데이터포털 표준데이터](https://www.data.go.kr/data/15034533/standard.do) |
+| `부산_AED_위경도_결과.csv` | 전국자동심장충격기(AED) 정보 중 부산 자료 | [국립중앙의료원·공공데이터포털](https://www.data.go.kr/data/15021103/standard.do) |
+
+### 전처리 및 파생 데이터 주의사항
+
+`data/`의 CSV는 원본 제공 파일을 그대로 재배포한 것이 아니라 프로젝트에서 사용하기 위해 일부 전처리한 파생 파일입니다.
+
+- 부산 지역 필터링
+- 카카오 주소·장소검색을 이용한 위·경도 보완
+- 주소 검색 결과의 수동 검토
+- 중복 시설 검토 및 통합
+- 필요한 열의 이름·인코딩 정리
+- AED의 동일 좌표 행은 웹에서 하나의 위치로 묶어 표시
+- 좌표가 없는 행은 지도 표시 대상에서 제외
+
+따라서 최신 공식 현황과 차이가 있을 수 있습니다. 시설의 실제 운영 여부, 이용 시간과 접근 가능 여부는 원 제공기관 또는 시설에 다시 확인해야 합니다.
+
+공공데이터의 이용허락범위는 각 출처 페이지를 따릅니다. 저장소 배포 시 원본 데이터명, 제공기관, 원본 URL과 전처리 사실을 함께 유지합니다.
