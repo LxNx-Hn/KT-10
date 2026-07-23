@@ -6,6 +6,8 @@ import RouteResultSection from '@/components/RouteResultSection';
 import MapPreviewSection from '@/components/MapPreviewSection';
 import VoiceChatDock from '@/components/VoiceChatDock';
 import KakaoLoginButton from '@/components/KakaoLoginButton';
+import InstallPrompt from '@/components/InstallPrompt';
+import ConnectionStatus from '@/components/ConnectionStatus';
 
 /**
  * 정보 구조(요구사항 §1·§3):
@@ -32,24 +34,31 @@ export default function App() {
 
   return (
     <div className={`app ${largeUi ? 'app--large' : ''}`} data-profile={profile}>
+      <a className="skip-link" href="#main-content">본문으로 바로가기</a>
       <header className="app__header">
-        <div>
-          <p className="app__eyebrow">서비스명 미정</p>
-          <h1 className="app__title">접근성 경로 추천</h1>
-          <p className="app__subtitle">{DISTRICT.name} · {DISTRICT.mvpArea} 중심 MVP 검증</p>
+        <div className="app__brand">
+          <span className="app__brandmark" aria-hidden="true">길</span>
+          <div>
+            <p className="app__eyebrow">{DISTRICT.name}</p>
+            <h1 className="app__title">접근성 길찾기</h1>
+            <p className="app__subtitle">경사·그늘·이동 편의를 함께 비교합니다</p>
+          </div>
         </div>
-        <button
-          type="button"
-          className="btn btn--ghost app__largebtn"
-          aria-pressed={largeUi}
-          onClick={toggleLargeUi}
-        >
-          {largeUi ? '큰 글씨 ON' : '큰 글씨 OFF'}
-        </button>
-        <KakaoLoginButton />
+        <div className="app__header-actions">
+          <ConnectionStatus />
+          <button
+            type="button"
+            className="btn btn--header app__largebtn"
+            aria-pressed={largeUi}
+            onClick={toggleLargeUi}
+          >
+            {largeUi ? '기본 글씨' : '큰 글씨'}
+          </button>
+          <KakaoLoginButton />
+        </div>
       </header>
 
-      <main className="app__main">
+      <main className="app__main" id="main-content">
         <SearchHome />
         <div ref={resultsRef}>
           <RouteResultSection />
@@ -57,6 +66,7 @@ export default function App() {
         <MapPreviewSection />
       </main>
 
+      <InstallPrompt />
       <VoiceChatDock />
     </div>
   );

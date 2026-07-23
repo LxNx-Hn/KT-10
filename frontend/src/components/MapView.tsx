@@ -4,11 +4,22 @@ import { DISTRICT } from '@/config/district';
 import { hasKakaoKey, loadKakaoMaps } from '@/map/kakaoLoader';
 import type { LatLng } from '@/types';
 
+const SHADOW_FILL = '#8290a8';
+const SHADOW_STROKE = '#64748b';
+const SHADED_ROUTE = '#00b84a';
+const SUN_EXPOSED_ROUTE = '#ff5a1f';
+
 /** 좌표 배열 → SVG 좌표로 정규화(폴백 스키매틱용) */
-function project(points: LatLng[], w: number, h: number, pad = 24) {
+function project(
+  points: LatLng[],
+  w: number,
+  h: number,
+  pad = 24,
+  boundsPoints: LatLng[] = points,
+) {
   if (points.length === 0) return [];
-  const lats = points.map((p) => p.lat);
-  const lngs = points.map((p) => p.lng);
+  const lats = boundsPoints.map((p) => p.lat);
+  const lngs = boundsPoints.map((p) => p.lng);
   const minLat = Math.min(...lats);
   const maxLat = Math.max(...lats);
   const minLng = Math.min(...lngs);
@@ -28,6 +39,8 @@ export default function MapView() {
   const kakaoRef = useRef<any>(null);
   const overlaysRef = useRef<any[]>([]);
   const [fallback, setFallback] = useState(!hasKakaoKey());
+  const [mapLoadFailed, setMapLoadFailed] = useState(false);
+  const [showShade, setShowShade] = useState(true);
 
   const origin = useAppStore((s) => s.origin);
   const destination = useAppStore((s) => s.destination);
@@ -57,7 +70,10 @@ export default function MapView() {
           level: DISTRICT.defaultZoom,
         });
       })
-      .catch(() => setFallback(true));
+      .catch(() => {
+        setMapLoadFailed(true);
+        setFallback(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -80,14 +96,36 @@ export default function MapView() {
         position: new kakao.maps.LatLng(p.lat, p.lng),
         map,
       });
+      marker.setZIndex?.(6);
       const info = new kakao.maps.InfoWindow({
         content: `<div style="padding:4px 8px">${escapeHtml(label)}</div>`,
       });
+      info.setZIndex?.(7);
       info.open(map, marker);
       overlaysRef.current.push(marker, info);
     };
     if (origin) addMarker(origin, `출발: ${origin.name}`);
     if (destination) addMarker(destination, `도착: ${destination.name}`);
+
+    const shade = selectedRoute?.shade;
+    if (
+      showShade
+      && (shade?.status === 'estimated_demo' || shade?.status === 'estimated_public')
+    ) {
+      for (const polygon of shade.shadowPolygons) {
+        const overlay = new kakao.maps.Polygon({
+          path: polygon.map((point) => new kakao.maps.LatLng(point.lat, point.lng)),
+          strokeWeight: 1,
+          strokeColor: SHADOW_STROKE,
+          strokeOpacity: 0.35,
+          fillColor: SHADOW_FILL,
+          fillOpacity: 0.3,
+        });
+        overlay.setZIndex?.(1);
+        overlay.setMap(map);
+        overlaysRef.current.push(overlay);
+      }
+    }
 
     if (selectedPath.length >= 2) {
       const segmentPaths = (selectedRoute?.segments ?? []).filter((segment) => (segment.path?.length ?? 0) >= 2);
@@ -101,6 +139,7 @@ export default function MapView() {
             strokeOpacity: 0.9,
             strokeStyle: segment.geometryQuality === 'estimated' ? 'shortdash' : 'solid',
           });
+          line.setZIndex?.(3);
           line.setMap(map);
           overlaysRef.current.push(line);
         }
@@ -112,19 +151,45 @@ export default function MapView() {
           strokeOpacity: 0.9,
           strokeStyle: selectedRoute?.geometryQuality === 'estimated' ? 'shortdash' : 'solid',
         });
+        line.setZIndex?.(3);
         line.setMap(map);
         overlaysRef.current.push(line);
+      }
+      if (
+        showShade
+        && (shade?.status === 'estimated_demo' || shade?.status === 'estimated_public')
+      ) {
+        for (const segment of shade.pathSegments) {
+          const line = new kakao.maps.Polyline({
+            path: [
+              new kakao.maps.LatLng(segment.start.lat, segment.start.lng),
+              new kakao.maps.LatLng(segment.end.lat, segment.end.lng),
+            ],
+            strokeWeight: 8,
+            strokeColor: segment.shaded ? SHADED_ROUTE : SUN_EXPOSED_ROUTE,
+            strokeOpacity: 0.95,
+            strokeStyle: 'solid',
+          });
+          line.setZIndex?.(4);
+          line.setMap(map);
+          overlaysRef.current.push(line);
+        }
       }
       const bounds = new kakao.maps.LatLngBounds();
       selectedPath.forEach((p) => bounds.extend(new kakao.maps.LatLng(p.lat, p.lng)));
       map.setBounds(bounds);
     }
-  }, [origin, destination, selectedPath, selectedRoute]);
+  }, [origin, destination, selectedPath, selectedRoute, showShade]);
 
   if (!fallback) {
     return (
       <div className="map" role="region" aria-label="지도">
         <div ref={containerRef} className="map__canvas" />
+        <ShadeControls
+          shade={selectedRoute?.shade}
+          showShade={showShade}
+          onToggle={() => setShowShade((value) => !value)}
+        />
         <MapDataNotice quality={selectedRoute?.geometryQuality} sources={selectedRoute?.sources} />
       </div>
     );
@@ -133,12 +198,53 @@ export default function MapView() {
   // ── 폴백 스키매틱(Kakao 키 없을 때) ──
   const W = 600;
   const H = 280;
-  const pts = project(selectedPath, W, H);
+  const shadowPolygons = (
+    showShade
+    && (
+      selectedRoute?.shade?.status === 'estimated_demo'
+      || selectedRoute?.shade?.status === 'estimated_public'
+    )
+  )
+    ? selectedRoute.shade.shadowPolygons
+    : [];
+  const shadeSegments = (
+    selectedRoute?.shade?.status === 'estimated_demo'
+    || selectedRoute?.shade?.status === 'estimated_public'
+  )
+    ? selectedRoute.shade.pathSegments
+    : [];
+  const mapBounds = [
+    ...selectedPath,
+    ...shadowPolygons.flat(),
+    ...shadeSegments.flatMap((segment) => [segment.start, segment.end]),
+  ];
+  const pts = project(selectedPath, W, H, 24, mapBounds);
+  const shadePoints = project(
+    shadeSegments.flatMap((segment) => [segment.start, segment.end]),
+    W,
+    H,
+    24,
+    mapBounds,
+  );
+  const projectedShadows = shadowPolygons.map(
+    (polygon) => project(polygon, W, H, 24, mapBounds),
+  );
   return (
     <div className="map" role="region" aria-label="경로 약도(데모)">
       <div className="map__fallback">
         <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="100%" aria-hidden="true">
           <rect x="0" y="0" width={W} height={H} fill="#eef2f7" rx="12" />
+          {projectedShadows.map((polygon, index) => (
+            <polygon
+              key={`building-shadow-${index}`}
+              points={polygon.map((point) => `${point.x},${point.y}`).join(' ')}
+              fill={SHADOW_FILL}
+              fillOpacity="0.3"
+              stroke={SHADOW_STROKE}
+              strokeOpacity="0.35"
+              strokeWidth="1"
+            />
+          ))}
           {pts.length >= 2 && (
             <polyline
               points={pts.map((p) => `${p.x},${p.y}`).join(' ')}
@@ -149,6 +255,23 @@ export default function MapView() {
               strokeLinejoin="round"
             />
           )}
+          {showShade && shadeSegments.map((segment, index) => {
+            const start = shadePoints[index * 2];
+            const end = shadePoints[index * 2 + 1];
+            if (!start || !end) return null;
+            return (
+              <line
+                key={`shade-${index}`}
+                x1={start.x}
+                y1={start.y}
+                x2={end.x}
+                y2={end.y}
+                stroke={segment.shaded ? SHADED_ROUTE : SUN_EXPOSED_ROUTE}
+                strokeWidth="8"
+                strokeLinecap="round"
+              />
+            );
+          })}
           {pts.map((p, i) => {
             const isStart = i === 0;
             const isEnd = i === pts.length - 1;
@@ -164,10 +287,58 @@ export default function MapView() {
           })}
         </svg>
         <p className="map__note">
-          데모 약도 · 실제 Kakao 지도는 <code>.env</code> 에 <code>VITE_KAKAO_MAP_KEY</code> 설정 시 표시됩니다.
+          데모 약도 · {mapLoadFailed
+            ? 'Kakao 지도 키 인증 또는 허용 도메인을 확인해 주세요.'
+            : <><code>.env</code>에 <code>VITE_KAKAO_MAP_KEY</code>를 설정하면 실제 지도가 표시됩니다.</>}
         </p>
+        <ShadeControls
+          shade={selectedRoute?.shade}
+          showShade={showShade}
+          onToggle={() => setShowShade((value) => !value)}
+        />
         <MapDataNotice quality={selectedRoute?.geometryQuality} sources={selectedRoute?.sources} />
       </div>
+    </div>
+  );
+}
+
+function ShadeControls({
+  shade,
+  showShade,
+  onToggle,
+}: {
+  shade?: import('@/types').RouteCandidate['shade'];
+  showShade: boolean;
+  onToggle: () => void;
+}) {
+  if (!shade || shade.status === 'unavailable') return null;
+  return (
+    <div className="map__shade-controls" role="note">
+      <button type="button" className="map__shade-toggle" aria-pressed={showShade} onClick={onToggle}>
+        {showShade ? '그늘 오버레이 숨기기' : '그늘 오버레이 보기'}
+      </button>
+      {shade.status === 'estimated_demo' || shade.status === 'estimated_public' ? (
+        <>
+          <span className="map__shade-ratio">
+            {shade.estimateKind === 'lower_bound' ? '확인된 건물 그늘 최소 ' : '건물 그늘 '}
+            {Math.round((shade.shadeRatio ?? 0) * 100)}%
+          </span>
+          <span><i className="map__legend map__legend--shade" />그늘</span>
+          <span><i className="map__legend map__legend--sun" />햇빛 노출</span>
+          {shade.buildingCount !== undefined && shade.knownHeightBuildingCount !== undefined && (
+            <span>
+              건물 높이 {shade.knownHeightBuildingCount}/{shade.buildingCount}건 확인
+            </span>
+          )}
+          <small>
+            {shade.status === 'estimated_public'
+              ? 'VWorld 공공 건물 도형·확인된 높이로 계산했습니다. 나무 그늘과 지형 그림자는 포함하지 않습니다.'
+              : '합성 건물 높이를 사용한 검증용 데모입니다. 나무 그늘과 지형 그림자는 포함하지 않습니다.'}
+          </small>
+        </>
+      ) : (
+        <small>선택 시각은 야간이어서 주간 건물 그늘을 계산하지 않았습니다.</small>
+      )}
     </div>
   );
 }

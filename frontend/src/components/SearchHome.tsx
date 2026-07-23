@@ -13,7 +13,13 @@ import ProfilePreferences from './ProfilePreferences';
 export default function SearchHome() {
   return (
     <section className="home" aria-label="검색 홈">
-      <h2 className="home__headline">어디로 가시나요?</h2>
+      <div className="home__intro">
+        <p className="home__kicker">오늘의 이동을 더 편안하게</p>
+        <h2 className="home__headline">어디로 가시나요?</h2>
+        <p className="home__description">
+          빠른 길, 완만한 길, 그늘 많은 길을 같은 기준으로 비교해 드립니다.
+        </p>
+      </div>
       <SearchBar />
       <VoiceChatEntryButton />
       <RouteConditions />

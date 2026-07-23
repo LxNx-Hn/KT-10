@@ -20,16 +20,29 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'robots.txt'],
       manifest: {
-        name: '교통약자 접근성 경로 추천 PWA',
-        short_name: '접근성경로',
+        id: '/',
+        name: '부산 접근성 길찾기',
+        short_name: '부산 길찾기',
         description:
           '부산 전역 보행자·대중교통 이용자를 위한 접근성 중심 경로 추천 PWA',
-        theme_color: '#1f6feb',
-        background_color: '#ffffff',
+        theme_color: '#007a43',
+        background_color: '#f3f7f4',
         display: 'standalone',
+        display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
         orientation: 'portrait',
         lang: 'ko',
+        scope: '/',
         start_url: '/',
+        categories: ['navigation', 'travel', 'utilities', 'accessibility'],
+        shortcuts: [
+          {
+            name: '경로 찾기',
+            short_name: '길찾기',
+            description: '출발지와 도착지를 입력해 접근성 경로를 비교합니다.',
+            url: '/#main-content',
+            icons: [{ src: 'icons/icon-192.png', sizes: '192x192' }],
+          },
+        ],
         icons: [
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },

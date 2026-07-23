@@ -23,7 +23,7 @@ export default function VoiceChatDock() {
   const handleUserInput = useVoiceChatStore((s) => s.handleUserInput);
   const repeatLast = useVoiceChatStore((s) => s.repeatLast);
 
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 

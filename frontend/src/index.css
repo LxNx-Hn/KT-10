@@ -1,12 +1,14 @@
 :root {
-  --bg: #f4f6fa;
+  --bg: #f3f7f4;
   --surface: #ffffff;
-  --ink: #14181f;
-  --ink-soft: #4b5563;
-  --line: #d7dde6;
-  --brand: #1f6feb;
+  --ink: #15221b;
+  --ink-soft: #526158;
+  --line: #d5e0d8;
+  --brand: #007a43;
+  --brand-dark: #005d32;
+  --brand-soft: #e8f6ee;
   --brand-ink: #ffffff;
-  --good: #16a34a;
+  --good: #08783e;
   --good-bg: #dcfce7;
   --warn: #b45309;
   --warn-bg: #fef3c7;
@@ -14,7 +16,7 @@
   --bad-bg: #fee2e2;
   --neutral: #475569;
   --neutral-bg: #e2e8f0;
-  --radius: 16px;
+  --radius: 18px;
   --fs-base: 16px;
   --tap: 48px;
 }
@@ -29,18 +31,33 @@ body {
   background: var(--bg);
   color: var(--ink);
   line-height: 1.5;
+  min-width: 320px;
 }
 
 button { font-family: inherit; cursor: pointer; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid #f59e0b;
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: fixed; top: 8px; left: 8px; z-index: 100;
+  transform: translateY(-160%);
+  padding: 10px 14px; border-radius: 10px;
+  background: #fff; color: var(--brand-dark); font-weight: 800;
+}
+.skip-link:focus { transform: translateY(0); }
 
 /* 큰 글씨 모드(고령자/아동) */
 .app--large { --fs-base: 20px; --tap: 60px; }
 .app--large { font-size: 20px; }
 
 .app {
-  max-width: 720px;
+  max-width: 820px;
   margin: 0 auto;
-  padding-bottom: 240px; /* 하단 고정 음성 챗봇 Dock 공간 */
+  min-height: 100vh;
+  padding-bottom: 96px; /* 기본 접힘 상태의 하단 음성 챗봇 Dock 공간 */
+  background: var(--bg);
 }
 
 .app__header {
@@ -49,17 +66,33 @@ button { font-family: inherit; cursor: pointer; }
   z-index: 5;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
+  justify-content: space-between; gap: 14px;
+  padding: 14px clamp(16px, 4vw, 28px);
   background: var(--brand);
   color: var(--brand-ink);
+  box-shadow: 0 4px 18px rgba(0, 74, 39, 0.16);
 }
-.app__title { margin: 0; font-size: 1.5rem; }
-.app__subtitle { margin: 2px 0 0; font-size: 0.85rem; opacity: 0.9; }
+.app__brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.app__brandmark {
+  display: grid; place-items: center; width: 44px; height: 44px; flex: none;
+  border-radius: 14px; background: #fff; color: var(--brand-dark);
+  font-size: 1.15rem; font-weight: 900;
+}
+.app__eyebrow { margin: 0; font-size: .72rem; font-weight: 800; letter-spacing: .08em; opacity: .86; }
+.app__title { margin: 0; font-size: 1.28rem; line-height: 1.2; }
+.app__subtitle { margin: 2px 0 0; font-size: 0.78rem; opacity: 0.9; white-space: nowrap; }
+.app__header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
+.app__header .btn { min-height: 38px; padding: 0 11px; font-size: .82rem; }
+.btn--header, .app__header .btn--ghost {
+  border: 1px solid rgba(255,255,255,.48); background: rgba(255,255,255,.12); color: #fff;
+}
 .app__largebtn { white-space: nowrap; }
+.connection { display: inline-flex; align-items: center; gap: 5px; font-size: .75rem; font-weight: 800; }
+.connection > span { width: 8px; height: 8px; border-radius: 50%; background: #9ca3af; }
+.connection--online > span { background: #8dffc6; box-shadow: 0 0 0 3px rgba(141,255,198,.18); }
+.connection--offline > span { background: #fecaca; }
 
-.app__main { padding: 16px; display: flex; flex-direction: column; gap: 18px; }
+.app__main { padding: clamp(16px, 4vw, 28px); display: flex; flex-direction: column; gap: 20px; }
 
 .section-title { margin: 0 0 10px; font-size: 1.15rem; }
 
@@ -80,7 +113,8 @@ button { font-family: inherit; cursor: pointer; }
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: 16px;
+  box-shadow: 0 12px 34px rgba(36, 72, 50, .08);
 }
 .place-input { position: relative; display: flex; flex-direction: column; gap: 6px; }
 .place-input__label { font-weight: 700; font-size: 0.9rem; }
@@ -92,7 +126,8 @@ button { font-family: inherit; cursor: pointer; }
   border-radius: 12px;
   background: #fff;
 }
-.place-input__field:focus { outline: 3px solid var(--brand); border-color: var(--brand); }
+.place-input__field:focus { border-color: var(--brand); }
+.place-input__status { margin: 1px 2px 0; color: var(--bad); font-size: .78rem; }
 .place-input__list {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 9;
   list-style: none; margin: 0; padding: 6px;
@@ -103,7 +138,7 @@ button { font-family: inherit; cursor: pointer; }
   width: 100%; text-align: left; border: 0; background: transparent;
   padding: 10px; border-radius: 8px; display: flex; flex-direction: column; gap: 2px;
 }
-.place-input__option:hover { background: #eef4ff; }
+.place-input__option:hover { background: var(--brand-soft); }
 .place-input__option span { font-size: 0.8rem; color: var(--ink-soft); }
 .searchbar__swap {
   height: var(--tap); width: var(--tap); border-radius: 50%;
@@ -117,9 +152,10 @@ button { font-family: inherit; cursor: pointer; }
   border: 2px solid transparent; font-size: 1rem; font-weight: 700;
 }
 .btn--primary { background: var(--brand); color: #fff; flex: 1; }
+.btn--primary:hover { background: var(--brand-dark); }
 .btn--primary:disabled { opacity: 0.6; }
 .btn--ghost { background: #fff; border-color: var(--line); color: var(--ink); }
-.btn--listen { width: 100%; margin-top: 12px; background: #eef4ff; border-color: var(--brand); color: var(--brand); }
+.btn--listen { width: 100%; margin-top: 12px; background: var(--brand-soft); border-color: var(--brand); color: var(--brand-dark); }
 .btn--toggle { background: #fff; border-color: var(--line); }
 .btn--toggle-on { background: var(--good-bg); border-color: var(--good); color: var(--good); }
 .btn--repeat, .btn--stop { background: #fff; border-color: var(--line); }
@@ -131,7 +167,7 @@ button { font-family: inherit; cursor: pointer; }
   text-align: left; padding: 14px; border-radius: 14px;
   border: 2px solid var(--line); background: var(--surface);
 }
-.profile-chip--active { border-color: var(--brand); background: #eef4ff; }
+.profile-chip--active { border-color: var(--brand); background: var(--brand-soft); }
 .profile-chip__icon { font-size: 1.6rem; }
 .profile-chip__label { font-weight: 800; font-size: 1.05rem; }
 .profile-chip__desc { font-size: 0.8rem; color: var(--ink-soft); }
@@ -211,13 +247,16 @@ button { font-family: inherit; cursor: pointer; }
 
 /* 검색 홈 */
 .home { display: flex; flex-direction: column; gap: 18px; }
-.home__headline { margin: 4px 0 0; font-size: 1.6rem; }
+.home__intro { padding: 10px 2px 0; }
+.home__kicker { margin: 0 0 3px; color: var(--brand-dark); font-weight: 800; font-size: .84rem; }
+.home__headline { margin: 0; font-size: clamp(1.65rem, 5vw, 2.1rem); line-height: 1.25; letter-spacing: -.02em; }
+.home__description { margin: 7px 0 0; color: var(--ink-soft); }
 
 /* 홈 음성 진입 버튼(큰 마이크) */
 .voice-entry {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 20px; border-radius: var(--radius);
-  border: 2px solid var(--brand); background: #eef4ff; color: var(--brand);
+  border: 2px solid var(--brand); background: var(--brand-soft); color: var(--brand-dark);
 }
 .voice-entry:disabled { border-color: var(--line); background: #f1f5f9; color: var(--ink-soft); }
 .voice-entry__mic { font-size: 2.2rem; }
@@ -230,7 +269,7 @@ button { font-family: inherit; cursor: pointer; }
   text-align: left; padding: 12px 14px; border-radius: 12px;
   border: 1px solid var(--line); background: var(--surface); font-size: 0.92rem;
 }
-.suggest__chip:hover { background: #eef4ff; border-color: var(--brand); }
+.suggest__chip:hover { background: var(--brand-soft); border-color: var(--brand); }
 
 /* 데모 목적지 */
 .demodest__row { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -273,7 +312,7 @@ button { font-family: inherit; cursor: pointer; }
 /* 음성 챗봇 Dock(하단 고정) */
 .voicedock {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
-  max-width: 720px; margin: 0 auto;
+  max-width: 820px; margin: 0 auto;
   background: rgba(255,255,255,0.98); border-top: 1px solid var(--line);
   box-shadow: 0 -6px 20px rgba(0,0,0,0.08);
   padding: 8px 14px calc(8px + env(safe-area-inset-bottom));
@@ -314,9 +353,23 @@ button { font-family: inherit; cursor: pointer; }
 /* 검색마다 달라지는 조건. 장기 프로필과 분리해 첫 화면에서 바로 조정한다. */
 .route-conditions { margin: 1rem 0; }
 .route-conditions__hint { margin: .25rem 0 .65rem; color: var(--ink-soft); font-size: .9rem; }
+.route-conditions__time { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; margin: 0 0 .75rem; font-weight: 700; }
+.route-conditions__time input { min-height: 42px; padding: 0 .65rem; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+.route-conditions__time-presets { display: flex; flex-wrap: wrap; gap: .45rem; margin: -.2rem 0 .55rem; }
+.route-conditions__time-presets button { min-height: 36px; padding: 0 .7rem; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); font: inherit; font-size: .86rem; font-weight: 700; }
+.route-conditions__time-presets button:hover { border-color: var(--brand); color: var(--brand-dark); }
+.route-conditions__shade-note { margin: 0 0 .75rem; color: var(--ink-soft); font-size: .84rem; }
 .route-conditions__buttons { display: flex; flex-wrap: wrap; gap: .5rem; }
 .condition-chip { border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); padding: .65rem .9rem; font: inherit; font-weight: 700; cursor: pointer; }
 .condition-chip--active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.route-list__hint { margin: -.5rem 0 .75rem; color: var(--ink-soft); font-size: .9rem; }
+.map__shade-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .8rem; padding: .7rem .8rem; background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; font-size: .86rem; }
+.map__shade-controls small { flex-basis: 100%; color: var(--ink-soft); }
+.map__shade-toggle { min-height: 38px; padding: 0 .75rem; border: 1px solid var(--line); border-radius: 9px; background: #fff; font-weight: 700; }
+.map__shade-ratio { font-weight: 800; color: #006f3b; }
+.map__legend { display: inline-block; width: .8rem; height: .8rem; margin-right: .25rem; border-radius: 2px; vertical-align: -.08rem; }
+.map__legend--shade { background: #00b84a; }
+.map__legend--sun { background: #ff5a1f; }
 .route-feedback { margin-top: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; background: #f8fbff; }
 .route-feedback__actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .75rem; }
 .route-feedback label { display: block; margin-top: .55rem; }
@@ -329,9 +382,34 @@ button { font-family: inherit; cursor: pointer; }
 .facility-report textarea { min-height: 4.5rem; resize: vertical; }
 .facility-report .btn { margin-top: .35rem; }
 
+.install-prompt {
+  position: fixed; z-index: 30; left: 50%; bottom: 82px; transform: translateX(-50%);
+  width: min(calc(100% - 24px), 760px);
+  display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px;
+  padding: 14px 14px 14px 18px; border: 1px solid #b9d9c7; border-radius: 18px;
+  background: #fff; box-shadow: 0 14px 38px rgba(25, 65, 41, .18);
+}
+.install-prompt p { margin: 2px 0 0; color: var(--ink-soft); font-size: .86rem; }
+.install-prompt__button { min-height: 42px; flex: none; }
+.install-prompt__close { width: 42px; height: 42px; border: 0; background: transparent; font-size: 1.45rem; color: var(--ink-soft); }
+
 @media (max-width: 480px) {
+  .app__header { align-items: flex-start; }
+  .app__brandmark { width: 38px; height: 38px; border-radius: 12px; }
+  .app__subtitle { display: none; }
+  .connection { display: none; }
+  .app__header-actions { max-width: 145px; }
+  .app__header .btn { min-height: 34px; padding: 0 8px; font-size: .75rem; }
   .profiles__grid { grid-template-columns: 1fr; }
   .searchbar { grid-template-columns: 1fr; }
   .searchbar__swap { justify-self: center; }
+  .searchbar__actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .searchbar__actions .btn--primary { grid-column: 1 / -1; }
   .suggest__grid, .scoreval__grid { grid-template-columns: 1fr; }
+  .install-prompt { grid-template-columns: 1fr auto; }
+  .install-prompt__close { position: absolute; top: 1px; right: 1px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; }
 }

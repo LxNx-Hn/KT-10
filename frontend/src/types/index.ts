@@ -101,6 +101,29 @@ export interface RouteCandidate {
     resolutionM?: number;
     status: 'estimated_90m' | 'unavailable' | 'invalid';
   };
+  shade?: {
+    status: 'estimated_demo' | 'estimated_public' | 'not_daylight' | 'unavailable';
+    evaluatedAt: string;
+    shadeRatio?: number;
+    shadedWalkM?: number;
+    totalWalkM?: number;
+    solarAzimuthDeg?: number;
+    solarElevationDeg?: number;
+    buildingHeightCoverage?: number;
+    buildingCount?: number;
+    knownHeightBuildingCount?: number;
+    estimateKind?: 'estimate' | 'lower_bound';
+    overlayResolutionM?: number;
+    walkingGeometryQuality?: 'exact' | 'mixed' | 'estimated';
+    includesTreeShade?: boolean;
+    includesTerrainShadow?: boolean;
+    source: string;
+    dataQuality: 'demo' | 'public' | 'measured';
+    shadowPolygons: LatLng[][];
+    pathSegments: Array<{ start: LatLng; end: LatLng; shaded: boolean }>;
+    calculationNote: string;
+  };
+  characteristics?: Array<'fastest' | 'lowest_slope' | 'most_shade'>;
 }
 
 /* ───────────────────────── 날씨 ───────────────────────── */
@@ -188,6 +211,8 @@ export interface ScoringOptions {
   weatherAvoid?: boolean;
   /** 계단 회피·승강기 우선 모드(접근성/승강기 가중 강화) */
   avoidStairs?: boolean;
+  /** 태양 위치와 그늘 계산 기준 시각(ISO 8601) */
+  departureAt?: string;
 }
 
 /** 채점된 경로(후보 + 점수 결합) */

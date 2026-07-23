@@ -6,8 +6,8 @@
  * - 음성 챗봇이 하단(문서 마지막)에 고정 영역으로 존재하는가
  * - 경로 검색 후 RouteCards 가 MapView 보다 먼저 표시되는가
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { act, cleanup, render } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import App from '@/App';
 import { useAppStore } from '@/store/appStore';
 import { recommendRoutes } from '@/scoring/engine';
@@ -34,6 +34,45 @@ function seedResults() {
   });
 }
 
+function seedShadedResults() {
+  seedResults();
+  const state = useAppStore.getState();
+  const recommendations = state.recommendations.map((item, index) => {
+    if (index !== 0) return item;
+    const path = item.route.path ?? [];
+    const start = path[0] ?? { lat: 35.1629, lng: 129.0532 };
+    const end = path[1] ?? { lat: 35.1628, lng: 129.0533 };
+    return {
+      ...item,
+      route: {
+        ...item.route,
+        shade: {
+          status: 'estimated_demo' as const,
+          evaluatedAt: '2026-07-23T14:00:00+09:00',
+          shadeRatio: 0.5,
+          includesTreeShade: false,
+          includesTerrainShadow: false,
+          source: '합성 건물',
+          dataQuality: 'demo' as const,
+          shadowPolygons: [[
+            start,
+            { lat: start.lat, lng: end.lng },
+            end,
+            { lat: end.lat, lng: start.lng },
+            start,
+          ]],
+          pathSegments: [
+            { start, end, shaded: true },
+            { start: end, end: path[2] ?? end, shaded: false },
+          ],
+          calculationNote: '테스트',
+        },
+      },
+    };
+  });
+  useAppStore.setState({ recommendations });
+}
+
 beforeEach(() => {
   useAppStore.setState({
     origin: null,
@@ -45,7 +84,10 @@ beforeEach(() => {
     error: null,
   });
 });
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllEnvs();
+});
 
 describe('UI 상태 — 검색 중심 구조', () => {
   it('첫 화면에서 검색창이 지도 섹션보다 먼저 렌더링된다', () => {
@@ -74,7 +116,10 @@ describe('UI 상태 — 검색 중심 구조', () => {
     expect(dock).toBeTruthy();
     expect(dock!.getAttribute('aria-label')).toBe('음성 챗봇');
     expect(precedes(main!, dock!)).toBe(true);
-    // 마이크/말하기 버튼 포함
+    // 기본은 콘텐츠를 가리지 않도록 접혀 있고, 펼치면 마이크 버튼이 나타난다.
+    const handle = dock!.querySelector('.voicedock__handle');
+    expect(handle?.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(handle!);
     expect(dock!.querySelector('.voice-fab')).toBeTruthy();
   });
 
@@ -94,5 +139,20 @@ describe('UI 상태 — 검색 중심 구조', () => {
     expect(container.querySelector('.route-card__final')).toBeNull();
     expect(container.querySelector('.route-card__feature')?.textContent).toMatch(/경로|이동시간|환승|도보/);
     expect(container.querySelector('.scoreval')).toBeNull();
+  });
+
+  it('건물 그림자는 경로 아래에 그리고 그늘·햇빛 구간 색을 구분한다', () => {
+    vi.stubEnv('VITE_KAKAO_MAP_KEY', '');
+    const { container } = render(<App />);
+    act(() => seedShadedResults());
+    const mapSvg = container.querySelector('.map svg');
+    expect(mapSvg?.querySelectorAll('polygon').length).toBe(1);
+    expect(mapSvg?.querySelector('line[stroke="#00b84a"]')).toBeTruthy();
+    expect(mapSvg?.querySelector('line[stroke="#ff5a1f"]')).toBeTruthy();
+    const children = Array.from(mapSvg?.children ?? []);
+    expect(children.findIndex((child) => child.tagName === 'polygon')).toBeLessThan(
+      children.findIndex((child) => child.tagName === 'polyline'),
+    );
+    expect(container.textContent).toContain('나무 그늘 미포함');
   });
 });

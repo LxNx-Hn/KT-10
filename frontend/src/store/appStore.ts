@@ -14,6 +14,7 @@ import { findPlace } from '@/data/places';
 import { DEMO_OD } from '@/data/routes';
 import { isInDistrict } from '@/config/district';
 import type { WeatherAvoidanceMode } from '@/voice/intents';
+import { toUserMessage } from '@/api/http';
 
 /** 날씨 회피 모드 → 데모 날씨 시나리오 매핑 */
 const WEATHER_MODE_SCENARIO: Record<WeatherAvoidanceMode, WeatherScenarioId | null> = {
@@ -23,6 +24,14 @@ const WEATHER_MODE_SCENARIO: Record<WeatherAvoidanceMode, WeatherScenarioId | nu
   dust: 'dust',
   general: null,
 };
+
+function defaultDemoDepartureAt(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}T14:00`;
+}
 
 interface AppState {
   /* 입력 */
@@ -52,6 +61,7 @@ interface AppState {
   toggleCarryLuggage: () => void;
   toggleLowFloorPriority: () => void;
   toggleWeatherAvoid: () => void;
+  setDepartureAt: (value: string) => void;
   toggleLargeUi: () => void;
   selectRoute: (id: string | null) => void;
   setLastSpoken: (s: string) => void;
@@ -77,7 +87,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   destination: null,
   weatherScenario: DEFAULT_WEATHER,
   weather: null,
-  options: {},
+  options: { departureAt: defaultDemoDepartureAt() },
 
   candidates: [],
   recommendations: [],
@@ -97,9 +107,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDestination: (destination) => set({ destination }),
 
   setWeatherScenario: async (weatherScenario) => {
-    const weather = await adapters.weather.getCurrent(weatherScenario);
-    set({ weatherScenario, weather });
-    if (get().candidates.length) get().rescore();
+    try {
+      const weather = await adapters.weather.getCurrent(weatherScenario);
+      set({ weatherScenario, weather, error: null });
+      if (get().candidates.length) await get().rescore();
+    } catch (error) {
+      set({ error: toUserMessage(error, '날씨 정보를 불러오지 못했습니다.') });
+    }
   },
 
   toggleCarryLuggage: () => {
@@ -147,9 +161,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedRouteId: recommendations[0]?.route.id ?? null,
         loading: false,
       });
-    } catch (e) {
-      set({ loading: false, error: '경로를 불러오지 못했습니다. 다시 시도해 주세요.' });
-      console.error(e);
+    } catch (error) {
+      set({
+        loading: false,
+        error: toUserMessage(error, '경로를 불러오지 못했습니다. 다시 시도해 주세요.'),
+      });
+      console.error(error);
     }
   },
 
@@ -157,15 +174,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   rescore: async () => {
     const { origin, destination, profile, weatherScenario, options, selectedRouteId } = get();
     if (!origin || !destination || !get().recommendations.length) return;
-    const recommendations = await adapters.routes.recommend(
-      origin, destination, profile, weatherScenario, options,
-    );
-    const stillThere = recommendations.some((r) => r.route.id === selectedRouteId);
-    set({
-      candidates: recommendations.map((r) => r.route),
-      recommendations,
-      selectedRouteId: stillThere ? selectedRouteId : recommendations[0]?.route.id ?? null,
-    });
+    set({ loading: true, error: null });
+    try {
+      const recommendations = await adapters.routes.recommend(
+        origin, destination, profile, weatherScenario, options,
+      );
+      const stillThere = recommendations.some((r) => r.route.id === selectedRouteId);
+      set({
+        candidates: recommendations.map((r) => r.route),
+        recommendations,
+        selectedRouteId: stillThere ? selectedRouteId : recommendations[0]?.route.id ?? null,
+        loading: false,
+      });
+    } catch (error) {
+      set({
+        loading: false,
+        error: toUserMessage(error, '변경한 조건으로 경로를 다시 계산하지 못했습니다.'),
+      });
+    }
   },
 
   /* ── 음성 챗봇 연동 액션 (요구사항 §9) ── */
@@ -174,6 +200,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   ensureOrigin: () => {
     if (get().origin) return;
     get().useCurrentLocation();
+  },
+
+  setDepartureAt: (departureAt) => {
+    set((s) => ({ options: { ...s.options, departureAt } }));
+    if (get().candidates.length) get().rescore();
   },
 
   /** 브라우저 Geolocation으로 확인된 부산 좌표만 출발지로 사용한다. */

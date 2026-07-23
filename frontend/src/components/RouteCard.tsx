@@ -17,19 +17,16 @@ export default function RouteCard({
   const selectedRouteId = useAppStore((s) => s.selectedRouteId);
   const selectRoute = useAppStore((s) => s.selectRoute);
   const setLastSpoken = useAppStore((s) => s.setLastSpoken);
-  const recommendations = useAppStore((s) => s.recommendations);
   const selected = selectedRouteId === route.id;
 
-  const minimumDuration = Math.min(...recommendations.map((r) => r.route.totalDurationMin));
-  const minimumTransfers = Math.min(...recommendations.map((r) => r.route.transferCount));
-  const minimumWalk = Math.min(...recommendations.map((r) => r.route.totalWalkM));
-  const characteristic = route.totalDurationMin === minimumDuration
-    ? '이동시간이 가장 짧은 경로'
-    : route.transferCount === minimumTransfers
-      ? '환승이 가장 적은 경로'
-      : route.totalWalkM === minimumWalk
-        ? '도보 이동이 가장 짧은 경로'
-        : '접근성 특성을 고려한 경로';
+  const characteristicLabels = {
+    fastest: '제일 빠른 길',
+    lowest_slope: '경사도 적은 길',
+    most_shade: '그늘 많은 길',
+  };
+  const characteristic = route.characteristics?.length
+    ? route.characteristics.map((value) => characteristicLabels[value]).join(' · ')
+    : '접근성 규칙 점수 상위 경로';
 
   const stairSegments = route.segments.filter((segment) => segment.mode === 'walk' || segment.mode === 'transfer');
   const stairKnown = stairSegments.some((segment) => segment.hasStairs !== undefined);
@@ -95,6 +92,28 @@ export default function RouteCard({
         )}
         {terrain?.status === 'estimated_90m' && terrain.elevationGainM !== undefined && terrain.elevationGainM > 0 && (
           <Badge tone="neutral">누적 오르막 {Math.round(terrain.elevationGainM)}m</Badge>
+        )}
+        {(route.shade?.status === 'estimated_demo' || route.shade?.status === 'estimated_public')
+          && route.shade.shadeRatio !== undefined && (
+          <Badge tone="good">
+            {route.shade.estimateKind === 'lower_bound' ? '확인된 건물 그늘 최소 ' : '건물 그늘 '}
+            {Math.round(route.shade.shadeRatio * 100)}%
+          </Badge>
+        )}
+        {route.shade?.status === 'estimated_demo' && (
+          <Badge tone="neutral">데모 건물 높이</Badge>
+        )}
+        {route.shade?.status === 'estimated_public' && (
+          <Badge tone="neutral">
+            공공 건물 높이 {route.shade.knownHeightBuildingCount ?? '미확인'}
+            /{route.shade.buildingCount ?? '미확인'}건
+          </Badge>
+        )}
+        {(route.shade?.status === 'estimated_demo' || route.shade?.status === 'estimated_public') && (
+          <Badge tone="neutral">나무 그늘 미포함</Badge>
+        )}
+        {route.shade?.status === 'not_daylight' && (
+          <Badge tone="neutral">야간 · 주간 그늘 계산 안 함</Badge>
         )}
       </div>
 

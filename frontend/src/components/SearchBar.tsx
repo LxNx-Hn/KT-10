@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { adapters } from '@/adapters';
 import type { Place } from '@/types';
+import { toUserMessage } from '@/api/http';
 
 /** 장소 검색 입력 + 자동완성 드롭다운 */
 function PlaceInput({
@@ -16,19 +17,39 @@ function PlaceInput({
   const [text, setText] = useState(value?.name ?? '');
   const [results, setResults] = useState<Place[]>([]);
   const [open, setOpen] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const timer = useRef<number | undefined>(undefined);
+  const requestId = useRef(0);
 
   useEffect(() => {
     setText(value?.name ?? '');
   }, [value]);
 
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
   const onChange = (q: string) => {
     setText(q);
+    setSearchError('');
     window.clearTimeout(timer.current);
+    const currentRequest = ++requestId.current;
+    if (q.trim().length < 2) {
+      setResults([]);
+      setOpen(false);
+      return;
+    }
     timer.current = window.setTimeout(async () => {
-      const r = await adapters.places.searchPlaces(q);
-      setResults(r);
-      setOpen(r.length > 0);
+      try {
+        const r = await adapters.places.searchPlaces(q.trim());
+        if (currentRequest !== requestId.current) return;
+        setResults(r);
+        setOpen(r.length > 0);
+        setSearchError(r.length ? '' : '검색 결과가 없습니다.');
+      } catch (error) {
+        if (currentRequest !== requestId.current) return;
+        setResults([]);
+        setOpen(false);
+        setSearchError(toUserMessage(error, '장소를 검색하지 못했습니다.'));
+      }
     }, 200);
   };
 
@@ -43,7 +64,14 @@ function PlaceInput({
         onChange={(e) => onChange(e.target.value)}
         onFocus={() => results.length && setOpen(true)}
         aria-label={label}
+        aria-describedby={searchError ? `${label}-search-status` : undefined}
+        autoComplete="off"
       />
+      {searchError && (
+        <span className="place-input__status" id={`${label}-search-status`} role="status">
+          {searchError}
+        </span>
+      )}
       {open && (
         <ul className="place-input__list" role="listbox">
           {results.map((p) => (
@@ -72,6 +100,7 @@ export default function SearchBar() {
   const { origin, destination, setOrigin, setDestination, search, loadDemoOd, loading } =
     useAppStore();
   const useCurrentLocation = useAppStore((s) => s.useCurrentLocation);
+  const isDemo = import.meta.env.VITE_DATA_SOURCE !== 'live';
 
   return (
     <section className="searchbar" aria-label="출발지 도착지 검색">
@@ -93,9 +122,11 @@ export default function SearchBar() {
         <button type="button" className="btn btn--ghost" onClick={useCurrentLocation}>
           📍 현재 위치 사용
         </button>
-        <button type="button" className="btn btn--ghost" onClick={loadDemoOd}>
-          데모 경로 채우기
-        </button>
+        {isDemo && (
+          <button type="button" className="btn btn--ghost" onClick={loadDemoOd}>
+            데모 경로 채우기
+          </button>
+        )}
         <button
           type="button"
           className="btn btn--primary"

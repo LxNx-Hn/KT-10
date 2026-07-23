@@ -16,8 +16,11 @@ export default function RouteList() {
     );
 
   return (
-    <section className="route-list" aria-label="추천 경로 3개">
-      <h2 className="section-title">추천 경로 {recommendations.length}개</h2>
+    <section className="route-list" aria-label="규칙 기반 비교 경로">
+      <h2 className="section-title">비교 경로 {recommendations.length}개</h2>
+      <p className="route-list__hint">
+        제일 빠른 길·경사도 적은 길·그늘 많은 길을 먼저 보여주고, 점수는 비교 보조값으로 사용합니다.
+      </p>
       {recommendations.map((item, i) => (
         <RouteCard key={item.route.id} item={item} rank={i + 1} />
       ))}

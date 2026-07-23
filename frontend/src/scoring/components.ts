@@ -89,13 +89,21 @@ export function scoreWeatherSafety(
 ): number {
   const outdoorWalk = walkSegs(r).filter((s) => s.outdoor);
   const outdoorWalkMin = outdoorWalk.reduce((a, s) => a + s.durationMin, 0);
+  // 검증된 그늘만 노출시간을 감면한다. 미확인 그늘을 0으로 대입하지 않는다.
+  let heatExposedWalkMin = outdoorWalkMin;
+  if (
+    (r.shade?.status === 'estimated_demo' || r.shade?.status === 'estimated_public')
+    && r.shade.shadeRatio !== undefined
+  ) {
+    heatExposedWalkMin *= 1 - r.shade.shadeRatio;
+  }
   const waitMin = busSegs(r).reduce((a, s) => a + (s.waitMin ?? 0), 0);
   const hasStairsOrSlope = r.segments.some((s) => s.hasStairs || s.hasSlope);
 
   let risk = 0;
   // 폭염 + 긴 실외 보행
   if (w.isHeatwave || w.feelsLikeC >= 33) {
-    risk += clamp(outdoorWalkMin * 1.5, 0, 35) + (w.isHeatwave ? 10 : 0);
+    risk += clamp(heatExposedWalkMin * 1.5, 0, 35) + (w.isHeatwave ? 10 : 0);
   }
   // 한파 + 긴 대기시간
   if (w.isColdwave || w.feelsLikeC <= -5) {
