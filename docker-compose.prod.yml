@@ -1,0 +1,110 @@
+name: kt10
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kt10
+      POSTGRES_USER: kt10
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kt10 -d kt10"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  ai:
+    build:
+      context: .
+      dockerfile: ai/Dockerfile
+    restart: unless-stopped
+    environment:
+      ODSAY_API_KEY: ${ODSAY_API_KEY:?ODSAY_API_KEY is required}
+      TMAP_API_KEY: ${TMAP_API_KEY:-}
+      PYTHONUTF8: "1"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      ROUTE_MODE: ${ROUTE_MODE:-live}
+      BUILDING_SOURCE: ${BUILDING_SOURCE:-vworld}
+      AI_SERVER_URL: http://ai:8001
+      ODSAY_API_KEY: ${ODSAY_API_KEY:?ODSAY_API_KEY is required}
+      VWORLD_API_KEY: ${VWORLD_API_KEY:?VWORLD_API_KEY is required}
+      VWORLD_API_DOMAIN: ${PUBLIC_ORIGIN:?PUBLIC_ORIGIN is required}
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:?KAKAO_REST_API_KEY is required}
+      KAKAO_OAUTH_CLIENT_SECRET: ${KAKAO_OAUTH_CLIENT_SECRET:?KAKAO_OAUTH_CLIENT_SECRET is required}
+      KAKAO_OAUTH_REDIRECT_URI: ${PUBLIC_ORIGIN}/api/auth/kakao/callback
+      FRONTEND_URL: ${PUBLIC_ORIGIN}
+      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:?OPENWEATHER_API_KEY is required}
+      BUS_SERVICE_KEY: ${BUS_SERVICE_KEY:?BUS_SERVICE_KEY is required}
+      DATABASE_URL: postgresql+psycopg://kt10:${POSTGRES_PASSWORD}@postgres:5432/kt10
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      TRAINING_ANONYMIZATION_SALT: ${TRAINING_ANONYMIZATION_SALT:?TRAINING_ANONYMIZATION_SALT is required}
+      ALLOWED_ORIGINS: ${PUBLIC_ORIGIN}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-8}
+      PERSONALIZATION_LEARNING_RATE: "0.25"
+      PERSONALIZATION_REGULARIZATION: "0.02"
+      PERSONALIZATION_MAX_SHARE: "0.35"
+      PERSONALIZATION_PRIOR_REVIEWS: "5"
+      PERSONALIZATION_USABLE_WEIGHT: "0.45"
+      PERSONALIZATION_RATING_WEIGHT: "0.35"
+      PERSONALIZATION_REUSE_WEIGHT: "0.20"
+      PYTHONUTF8: "1"
+    command:
+      - uvicorn
+      - backend.app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --proxy-headers
+      - --forwarded-allow-ips=*
+    depends_on:
+      ai:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.prod
+      args:
+        VITE_KAKAO_MAP_KEY: ${VITE_KAKAO_MAP_KEY:?VITE_KAKAO_MAP_KEY is required}
+        VITE_DATA_SOURCE: live
+        VITE_API_BASE: ""
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+volumes:
+  postgres-data:

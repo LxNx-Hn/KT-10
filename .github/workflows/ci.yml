@@ -92,8 +92,14 @@ jobs:
           import json
           from pathlib import Path
 
-          roots = [Path("ai"), Path("backend"), Path("data"), Path("docs"), Path("frontend/src")]
-          suffixes = {".py", ".md", ".json", ".jsonl", ".ts", ".tsx", ".css", ".yml", ".yaml"}
+          roots = [
+              Path(".github"), Path("ai"), Path("backend"), Path("data"),
+              Path("docs"), Path("frontend"), Path("scripts"),
+          ]
+          suffixes = {
+              ".py", ".md", ".json", ".jsonl", ".ts", ".tsx", ".css",
+              ".html", ".conf", ".svg", ".yml", ".yaml",
+          }
           for root in roots:
               for path in root.rglob("*"):
                   if path.is_file() and path.suffix.lower() in suffixes:
@@ -104,15 +110,26 @@ jobs:
               for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                   if line.strip():
                       json.loads(line)
+          for path in (Path("README.md"), Path("docker-compose.yml"), Path("docker-compose.prod.yml")):
+              path.read_text(encoding="utf-8")
 
   docker-build:
     runs-on: ubuntu-latest
+    env:
+      PUBLIC_ORIGIN: http://localhost:8080
+      POSTGRES_PASSWORD: ci-postgres-password
+      SESSION_SECRET: ci-session-secret-at-least-32-characters
+      TRAINING_ANONYMIZATION_SALT: ci-training-salt-at-least-32-characters
+      VITE_KAKAO_MAP_KEY: ci-kakao-js-key
+      KAKAO_REST_API_KEY: ci-kakao-rest-key
+      KAKAO_OAUTH_CLIENT_SECRET: ci-kakao-oauth-secret
+      ODSAY_API_KEY: ci-odsay-key
+      VWORLD_API_KEY: ci-vworld-key
+      OPENWEATHER_API_KEY: ci-openweather-key
+      BUS_SERVICE_KEY: ci-bus-service-key
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare keyless build configuration
-        run: |
-          cp ai/.env.example ai/.env
-          cp backend/.env.example backend/.env
-          cp frontend/.env.example frontend/.env
-      - run: docker compose config --quiet
-      - run: docker compose build
+      - name: Validate production compose
+        run: docker compose -f docker-compose.prod.yml config --quiet
+      - name: Build production images
+        run: docker compose -f docker-compose.prod.yml build
