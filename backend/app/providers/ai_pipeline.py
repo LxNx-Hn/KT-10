@@ -269,6 +269,11 @@ def _to_route_candidate(
     )
 
     route_id = str(r.get("route_id") or f"ai-{rank}")
+    trait_labels = (
+        r.get("trait_labels")
+        or (r.get("traits") or {}).get("labels")
+        or []
+    )
     path = [
         {"lat": point["lat"], "lng": point["lng"]}
         for point in r.get("path") or []
@@ -299,6 +304,7 @@ def _to_route_candidate(
             resolution_m=feature.get("elevation_resolution_m"),
             status=feature.get("elevation_status", "unavailable"),
         ),
+        trait_labels=trait_labels,
     )
 
 

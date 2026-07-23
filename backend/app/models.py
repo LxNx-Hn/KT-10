@@ -113,6 +113,20 @@ class ShadeSummary(CamelModel):
     calculation_note: str
 
 
+class TraitEvidence(CamelModel):
+    feature: str
+    value: str | float | int | bool | None = None
+    unit: Optional[str] = None
+    source: str
+
+
+class RouteTraitLabel(CamelModel):
+    label_id: str
+    display_label: str
+    evidence_status: Literal["observed", "derived", "unavailable"]
+    evidence: list[TraitEvidence] = Field(default_factory=list)
+
+
 class RouteCandidate(CamelModel):
     id: str
     summary: str
@@ -127,6 +141,7 @@ class RouteCandidate(CamelModel):
     geometry_quality: Optional[Literal["exact", "mixed", "estimated"]] = None
     terrain: Optional[TerrainSummary] = None
     shade: Optional[ShadeSummary] = None
+    trait_labels: list[RouteTraitLabel] = Field(default_factory=list)
     characteristics: list[
         Literal[
             "fastest",

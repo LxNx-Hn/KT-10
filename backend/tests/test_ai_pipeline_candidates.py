@@ -58,6 +58,21 @@ def _candidate_payload() -> dict:
             "elevation_source": "Open-Meteo Copernicus DEM GLO-90",
             "elevation_resolution_m": 90,
         },
+        "trait_labels": [
+            {
+                "label_id": "gentle_slope",
+                "display_label": "경사가 완만한 길",
+                "evidence_status": "derived",
+                "evidence": [
+                    {
+                        "feature": "max_slope_percent",
+                        "value": 4.2,
+                        "unit": "percent",
+                        "source": "copernicus_glo90",
+                    }
+                ],
+            }
+        ],
     }
 
 
@@ -73,6 +88,8 @@ def test_labeling_candidate_maps_geometry_and_terrain_without_invention():
     assert route.terrain.status == "estimated_90m"
     assert route.terrain.avg_slope_percent == 1.4
     assert route.segments[0].path is not None
+    assert route.trait_labels[0].label_id == "gentle_slope"
+    assert route.trait_labels[0].evidence[0].value == 4.2
 
 
 def test_labeling_candidate_rejects_missing_geometry():
