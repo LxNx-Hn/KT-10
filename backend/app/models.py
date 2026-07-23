@@ -12,7 +12,9 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-ProfileId = Literal["general", "elderly", "child", "disabled"]
+ProfileId = Literal[
+    "general", "elderly", "child", "youth", "disabled", "pregnant"
+]
 SegmentMode = Literal["walk", "bus", "subway", "transfer"]
 AirQuality = Literal["good", "moderate", "bad", "very_bad"]
 SkyCondition = Literal["clear", "cloudy", "rain", "snow"]
@@ -125,9 +127,17 @@ class RouteCandidate(CamelModel):
     geometry_quality: Optional[Literal["exact", "mixed", "estimated"]] = None
     terrain: Optional[TerrainSummary] = None
     shade: Optional[ShadeSummary] = None
-    characteristics: list[Literal["fastest", "lowest_slope", "most_shade"]] = Field(
-        default_factory=list
-    )
+    characteristics: list[
+        Literal[
+            "fastest",
+            "shortest_walk",
+            "lowest_slope",
+            "most_shade",
+            "fewest_transfers",
+            "stair_free",
+            "low_floor_confirmed",
+        ]
+    ] = Field(default_factory=list)
 
 
 class WeatherCondition(CamelModel):
@@ -161,6 +171,9 @@ class BusStopArrivals(CamelModel):
 class ScoreComponents(CamelModel):
     accessibility: Optional[float] = None
     walk_comfort: Optional[float] = None
+    slope_comfort: Optional[float] = None
+    shade_comfort: Optional[float] = None
+    transfer_simplicity: Optional[float] = None
     elevator: Optional[float] = None
     low_floor_bus: Optional[float] = None
     weather_safety: Optional[float] = None
@@ -184,6 +197,9 @@ class RouteScore(CamelModel):
     cautions: list[str]
     voice_summary: str
     feedback_token: Optional[str] = None
+    score_kind: Literal[
+        "rule_baseline", "judge_baseline", "human_model"
+    ] = "rule_baseline"
 
 
 class ScoredRoute(CamelModel):
@@ -193,9 +209,12 @@ class ScoredRoute(CamelModel):
 
 class ScoringOptions(CamelModel):
     carry_luggage: bool = False
+    stroller: bool = False
     low_floor_priority: bool = False
     weather_avoid: bool = False
     avoid_stairs: bool = False
+    shade_priority: bool = False
+    minimize_transfers: bool = False
     departure_at: Optional[datetime] = None
 
 

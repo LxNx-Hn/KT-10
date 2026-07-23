@@ -14,6 +14,9 @@ FEATURES = (
     "wheelchair_stair_burden", "wheelchair_elevator_gap", "walking_aid_walk_burden",
     "max_walk_excess_m", "weather_priority_walk_burden",
     "shade_ratio", "shaded_walk_m", "solar_elevation_deg",
+    "stroller_walk_burden", "stroller_stair_burden",
+    "stroller_elevator_gap", "shade_priority_unshaded_walk_m",
+    "minimize_transfers_burden",
 )
 
 

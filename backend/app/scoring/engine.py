@@ -28,11 +28,22 @@ from .weights import COMPONENT_KEYS, PROFILE_WEIGHTS, Weights, apply_option_weig
 
 def weighted_final(c: ScoreComponents, w: Weights) -> float:
     cd = c.model_dump()
-    return clamp(sum(cd[k] * w[k] for k in COMPONENT_KEYS))
+    available = [key for key in COMPONENT_KEYS if cd[key] is not None]
+    available_weight = sum(w[key] for key in available)
+    if available_weight <= 0:
+        raise ValueError("점수화할 수 있는 확인된 경로 특성이 없습니다.")
+    return clamp(
+        sum(cd[key] * w[key] for key in available) / available_weight
+    )
 
 
 def _round_components(c: ScoreComponents) -> ScoreComponents:
-    return ScoreComponents(**{k: round1(v) for k, v in c.model_dump().items()})
+    return ScoreComponents(
+        **{
+            key: round1(value) if value is not None else None
+            for key, value in c.model_dump().items()
+        }
+    )
 
 
 def score_route(
@@ -47,6 +58,9 @@ def score_route(
     components = ScoreComponents(
         accessibility=comp.score_accessibility(route),
         walk_comfort=comp.score_walk_comfort(route),
+        slope_comfort=comp.score_slope_comfort(route),
+        shade_comfort=comp.score_shade_comfort(route),
+        transfer_simplicity=comp.score_transfer_simplicity(route),
         elevator=comp.score_elevator(route),
         low_floor_bus=comp.score_low_floor_bus(route),
         weather_safety=comp.score_weather_safety(route, weather),
@@ -57,9 +71,12 @@ def score_route(
     weights = apply_option_weights(
         PROFILE_WEIGHTS[profile],
         carry_luggage=opts.carry_luggage,
+        stroller=opts.stroller,
         low_floor_priority=opts.low_floor_priority,
         weather_avoid=opts.weather_avoid,
         avoid_stairs=opts.avoid_stairs,
+        shade_priority=opts.shade_priority,
+        minimize_transfers=opts.minimize_transfers,
     )
     final_score = round1(weighted_final(components, weights))
 

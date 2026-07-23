@@ -401,8 +401,40 @@ def assign_characteristics(routes: list[RouteCandidate]) -> list[RouteCandidate]
         route.characteristics = []
     if not routes:
         return routes
-    fastest = min(routes, key=lambda route: route.total_duration_min)
-    fastest.characteristics.append("fastest")
+    fastest_value = min(route.total_duration_min for route in routes)
+    for route in routes:
+        if route.total_duration_min == fastest_value:
+            route.characteristics.append("fastest")
+
+    shortest_walk_value = min(route.total_walk_m for route in routes)
+    for route in routes:
+        if route.total_walk_m == shortest_walk_value:
+            route.characteristics.append("shortest_walk")
+
+    fewest_transfers_value = min(route.transfer_count for route in routes)
+    for route in routes:
+        if route.transfer_count == fewest_transfers_value:
+            route.characteristics.append("fewest_transfers")
+
+    for route in routes:
+        relevant_segments = [
+            segment
+            for segment in route.segments
+            if segment.mode in ("walk", "transfer")
+        ]
+        if (
+            relevant_segments
+            and all(segment.has_stairs is False for segment in relevant_segments)
+        ):
+            route.characteristics.append("stair_free")
+        bus_segments = [
+            segment for segment in route.segments if segment.mode == "bus"
+        ]
+        if (
+            bus_segments
+            and all(segment.is_low_floor_bus is True for segment in bus_segments)
+        ):
+            route.characteristics.append("low_floor_confirmed")
 
     slope_candidates = [
         route for route in routes
@@ -412,14 +444,20 @@ def assign_characteristics(routes: list[RouteCandidate]) -> list[RouteCandidate]
         and route.terrain.min_slope_percent is not None
     ]
     if slope_candidates:
-        lowest_slope = min(
-            slope_candidates,
-            key=lambda route: max(
+        slope_value = min(
+            max(
                 abs(route.terrain.max_slope_percent or 0),
                 abs(route.terrain.min_slope_percent or 0),
-            ),
+            )
+            for route in slope_candidates
         )
-        lowest_slope.characteristics.append("lowest_slope")
+        for route in slope_candidates:
+            worst_slope = max(
+                abs(route.terrain.max_slope_percent or 0),
+                abs(route.terrain.min_slope_percent or 0),
+            )
+            if worst_slope == slope_value:
+                route.characteristics.append("lowest_slope")
 
     shade_candidates = [
         route for route in routes
@@ -428,6 +466,8 @@ def assign_characteristics(routes: list[RouteCandidate]) -> list[RouteCandidate]
         and route.shade.shade_ratio is not None
     ]
     if shade_candidates:
-        most_shade = max(shade_candidates, key=lambda route: route.shade.shade_ratio or 0)
-        most_shade.characteristics.append("most_shade")
+        shade_value = max(route.shade.shade_ratio or 0 for route in shade_candidates)
+        for route in shade_candidates:
+            if (route.shade.shade_ratio or 0) == shade_value:
+                route.characteristics.append("most_shade")
     return routes

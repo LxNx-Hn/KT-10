@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 
 from app.data.routes import demo_candidates
 from app.data.weather import WEATHER_SCENARIOS
+from app.models import ScoringOptions
 from app.rule_demo import personalize_and_sign, route_features, select_representative_routes
 from app.scoring import recommend_routes
 from app.settings import settings
@@ -20,14 +21,13 @@ def _scored_routes():
     )
 
 
-def test_representatives_preserve_route_characteristic_winners():
+def test_result_selection_preserves_score_order_and_trait_badges():
     selected = select_representative_routes(_scored_routes(), 3)
-    characteristics = {
-        characteristic
-        for item in selected
-        for characteristic in item.route.characteristics
-    }
-    assert characteristics == {"fastest", "lowest_slope", "most_shade"}
+    assert [item.score.final_score for item in selected] == sorted(
+        [item.score.final_score for item in selected],
+        reverse=True,
+    )
+    assert any(item.route.characteristics for item in selected)
 
 
 def test_unknown_route_attributes_are_not_converted_to_zero():
@@ -40,6 +40,26 @@ def test_unknown_route_attributes_are_not_converted_to_zero():
         item for item in _scored_routes() if item.route.id == "r1-overpass"
     )
     assert route_features(overpass, "general")["crosswalk_count"] is None
+
+
+def test_trip_condition_interactions_keep_unknown_distinct_from_zero():
+    subway = next(
+        item for item in _scored_routes() if item.route.id == "r2-subway"
+    )
+    features = route_features(
+        subway,
+        "pregnant",
+        ScoringOptions(
+            carry_luggage=True,
+            stroller=True,
+            shade_priority=True,
+            minimize_transfers=True,
+        ),
+    )
+    assert features["luggage_walk_burden"] == subway.route.total_walk_m
+    assert features["stroller_walk_burden"] == subway.route.total_walk_m
+    assert features["shade_priority_unshaded_walk_m"] is not None
+    assert features["minimize_transfers_burden"] == subway.route.transfer_count
 
 
 def test_rule_demo_signs_feedback_and_applies_bounded_personalization(monkeypatch):

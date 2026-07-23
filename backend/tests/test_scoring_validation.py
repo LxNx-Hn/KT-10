@@ -29,14 +29,16 @@ def _opts(**kw):
 
 # ── 표1: 프로필 × 경로 최종점수 (평상 날씨) — 프론트와 동일해야 함 ──
 EXPECTED_FINAL = {
-    "general": {"r1-overpass": 79.6, "r2-subway": 92.0, "r3-lowfloor": 87.0, "r4-regularbus": 88.1},
-    "elderly": {"r1-overpass": 67.9, "r2-subway": 92.1, "r3-lowfloor": 87.6, "r4-regularbus": 85.7},
-    "child": {"r1-overpass": 79.8, "r2-subway": 93.0, "r3-lowfloor": 88.8, "r4-regularbus": 86.9},
-    "disabled": {"r1-overpass": 67.1, "r2-subway": 91.8, "r3-lowfloor": 90.0, "r4-regularbus": 78.6},
+    "general": {"r1-overpass": 82.6, "r2-subway": 91.6, "r3-lowfloor": 86.1, "r4-regularbus": 88.2},
+    "elderly": {"r1-overpass": 70.2, "r2-subway": 92.1, "r3-lowfloor": 86.6, "r4-regularbus": 85.4},
+    "child": {"r1-overpass": 83.1, "r2-subway": 93.6, "r3-lowfloor": 89.4, "r4-regularbus": 87.8},
+    "youth": {"r1-overpass": 86.0, "r2-subway": 92.8, "r3-lowfloor": 87.6, "r4-regularbus": 89.8},
+    "disabled": {"r1-overpass": 69.2, "r2-subway": 91.9, "r3-lowfloor": 88.9, "r4-regularbus": 79.9},
+    "pregnant": {"r1-overpass": 70.5, "r2-subway": 92.2, "r3-lowfloor": 86.0, "r4-regularbus": 87.1},
 }
 
 
-@pytest.mark.parametrize("profile", ["general", "elderly", "child", "disabled"])
+@pytest.mark.parametrize("profile", list(EXPECTED_FINAL))
 def test_final_score_table_matches_frontend(profile):
     s = score_all(profile, "normal")
     for rid, expected in EXPECTED_FINAL[profile].items():
@@ -98,12 +100,77 @@ def test_low_floor_priority_raises_rank():
 
 
 def test_carry_luggage_penalizes_walking_heavy_route():
-    from app.models import ScoringOptions
-
     off = score_all("general", "normal")
     on = score_all("general", "normal", carry_luggage=True)
     # 육교 도보 경로는 짐 많음 조건에서 보행 부담 비중이 커져 상대적으로 더 낮아진다.
     assert on["r1-overpass"].final_score < off["r1-overpass"].final_score
+
+
+def test_stroller_prefers_elevator_route_over_stair_route():
+    off = score_all("general", "normal")
+    on = score_all("general", "normal", stroller=True)
+    off_gap = off["r2-subway"].final_score - off["r1-overpass"].final_score
+    on_gap = on["r2-subway"].final_score - on["r1-overpass"].final_score
+    assert on_gap > off_gap
+
+
+def test_shade_priority_uses_only_known_building_shade():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.shade import add_demo_shade
+
+    routes = add_demo_shade(
+        demo_candidates(),
+        datetime(2026, 7, 23, 14, 0, tzinfo=ZoneInfo("Asia/Seoul")),
+    )
+    fastest = min(route.total_duration_min for route in routes)
+    off = {
+        route.id: score_route(
+            route, NORMAL, "general", fastest, index + 1, _opts()
+        )
+        for index, route in enumerate(routes)
+    }
+    on = {
+        route.id: score_route(
+            route,
+            NORMAL,
+            "general",
+            fastest,
+            index + 1,
+            _opts(shade_priority=True),
+        )
+        for index, route in enumerate(routes)
+    }
+    most_shaded = max(
+        routes,
+        key=lambda route: (
+            route.shade.shade_ratio
+            if route.shade and route.shade.shade_ratio is not None
+            else -1
+        ),
+    )
+    least_shaded = min(
+        routes,
+        key=lambda route: (
+            route.shade.shade_ratio
+            if route.shade and route.shade.shade_ratio is not None
+            else 2
+        ),
+    )
+    assert (
+        on[most_shaded.id].final_score - off[most_shaded.id].final_score
+        > on[least_shaded.id].final_score - off[least_shaded.id].final_score
+    )
+
+
+def test_unknown_shade_is_omitted_not_zero_filled():
+    route = demo_candidates()[0]
+    fastest = route.total_duration_min
+    score = score_route(
+        route, NORMAL, "general", fastest, 1, _opts(shade_priority=True)
+    )
+    assert score.components.shade_comfort is None
 
 
 def test_weather_changes_score():

@@ -255,14 +255,15 @@ async def routes_recommend(
     scored = recommend_routes(
         candidates, weather, req.profile, req.options, top_n=len(candidates)
     )
-    # demo와 live 모두 대표 규칙(빠른 길·완만한 길·그늘 많은 길)을 먼저 보장한다.
-    # 각 대표 경로 안의 정렬은 같은 검증된 점수 엔진을 사용한다.
+    # 대표 특성은 배지로만 보존하고 결과 순서는 프로필·이번 이동 조건의
+    # 비교 적합 점수순으로 유지한다.
     selected = select_representative_routes(scored, req.top_n)
     try:
         return personalize_and_sign(
             selected,
             req.profile,
             user.preference.personalization_state if user and user.preference else None,
+            req.options,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

@@ -146,11 +146,15 @@ def test_synthetic_buildings_are_not_applied_to_live_routes(monkeypatch):
     assert settings.active_sources()["buildings"] == "synthetic-demo(inactive-outside-demo)"
 
 
-def test_routes_recommend_returns_rule_characteristics_and_shade():
+@pytest.mark.parametrize(
+    "profile",
+    ["general", "elderly", "child", "youth", "disabled", "pregnant"],
+)
+def test_routes_recommend_returns_score_ranked_traits_and_shade(profile):
     body = {
         "origin": _place_payload("gu-office"),
         "destination": _place_payload("seomyeon-stn"),
-        "profile": "disabled",
+        "profile": profile,
         "weatherScenario": "normal",
         "options": {
             "lowFloorPriority": False,
@@ -162,12 +166,9 @@ def test_routes_recommend_returns_rule_characteristics_and_shade():
     assert r.status_code == 200
     results = r.json()
     assert len(results) == 3
-    characteristics = {
-        characteristic
-        for result in results
-        for characteristic in result["route"]["characteristics"]
-    }
-    assert characteristics == {"fastest", "lowest_slope", "most_shade"}
+    scores = [result["score"]["finalScore"] for result in results]
+    assert scores == sorted(scores, reverse=True)
+    assert any(result["route"]["characteristics"] for result in results)
     assert all(result["route"]["shade"]["status"] == "estimated_demo" for result in results)
     assert all(
         0 <= result["route"]["shade"]["shadeRatio"] <= 1
@@ -179,4 +180,27 @@ def test_routes_recommend_returns_rule_characteristics_and_shade():
     )
     # camelCase 점수 필드
     assert "finalScore" in results[0]["score"]
+    assert results[0]["score"]["scoreKind"] == "rule_baseline"
     assert "lowFloorStatus" in results[0]["score"]
+
+
+def test_routes_recommend_accepts_new_trip_conditions():
+    body = {
+        "origin": _place_payload("gu-office"),
+        "destination": _place_payload("seomyeon-stn"),
+        "profile": "pregnant",
+        "weatherScenario": "normal",
+        "options": {
+            "carryLuggage": True,
+            "stroller": True,
+            "avoidStairs": True,
+            "shadePriority": True,
+            "lowFloorPriority": True,
+            "minimizeTransfers": True,
+            "departureAt": "2026-07-23T14:00:00+09:00",
+        },
+        "topN": 3,
+    }
+    response = client.post("/api/routes/recommend", json=body)
+    assert response.status_code == 200
+    assert len(response.json()) == 3

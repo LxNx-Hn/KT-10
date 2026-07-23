@@ -52,10 +52,13 @@ def _pipeline_payload(
         "weather": _WEATHER_TO_AI.get(weather_scenario, "normal"),
         "prioritize_weather_safety": options.weather_avoid,
         "carry_luggage": options.carry_luggage,
+        "stroller": options.stroller,
         "avoid_stairs": options.avoid_stairs or bool(
             user_preference and user_preference.avoid_stairs_required
         ),
         "low_floor_priority": options.low_floor_priority,
+        "shade_priority": options.shade_priority,
+        "minimize_transfers": options.minimize_transfers,
         "uses_wheelchair": bool(user_preference and user_preference.uses_wheelchair),
         "uses_walking_aid": bool(user_preference and user_preference.uses_walking_aid),
         "max_walk_distance_m": (
@@ -195,8 +198,18 @@ async def get_ai_pipeline_routes(
         key=rank_value,
         reverse=True,
     )
+    model_tier = str((data.get("metadata") or {}).get("model_tier") or "human_model")
     reranked = [{**route, "rank": index + 1} for index, route in enumerate(routes[:top_n])]
-    return [_to_scored_route(route, origin, destination, profile) for route in reranked]
+    return [
+        _to_scored_route(
+            route,
+            origin,
+            destination,
+            profile,
+            model_tier=model_tier,
+        )
+        for route in reranked
+    ]
 
 
 def _to_segment(item: dict, rank: int, index: int) -> RouteSegment:
@@ -289,7 +302,14 @@ def _to_route_candidate(
     )
 
 
-def _to_scored_route(r: dict, origin: Place, destination: Place, profile: str) -> ScoredRoute:
+def _to_scored_route(
+    r: dict,
+    origin: Place,
+    destination: Place,
+    profile: str,
+    *,
+    model_tier: str = "human_model",
+) -> ScoredRoute:
     feature = r.get("features") or {}
     tags = r.get("tags") or []
     reasons = r.get("reasons") or []
@@ -317,6 +337,11 @@ def _to_scored_route(r: dict, origin: Place, destination: Place, profile: str) -
         reasons=[str(reason) for reason in reasons],
         cautions=cautions,
         voice_summary=voice_summary,
+        score_kind=(
+            "judge_baseline"
+            if model_tier == "judge_baseline"
+            else "human_model"
+        ),
         feedback_token=create_feedback_token(
             route.id,
             str(r.get("model_version") or "xgboost-human"),

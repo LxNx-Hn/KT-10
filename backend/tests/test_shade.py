@@ -52,7 +52,7 @@ def test_concave_building_shadow_is_not_inflated_to_convex_hull():
     assert not shadow.covers(Point(13, 3))
 
 
-def test_characteristics_cover_three_rule_types():
+def test_characteristics_cover_factual_route_traits():
     routes = assign_characteristics(add_demo_shade(
         demo_candidates(),
         datetime(2026, 7, 23, 14, 0, tzinfo=KST),
@@ -60,4 +60,10 @@ def test_characteristics_cover_three_rule_types():
     characteristics = {
         characteristic for route in routes for characteristic in route.characteristics
     }
-    assert characteristics == {"fastest", "lowest_slope", "most_shade"}
+    assert {
+        "fastest",
+        "shortest_walk",
+        "lowest_slope",
+        "most_shade",
+        "fewest_transfers",
+    }.issubset(characteristics)

@@ -1,5 +1,5 @@
 """
-8개 하위 점수 계산 함수 (기획서 §7). 순수 함수, 0~100 "좋음 점수" 반환.
+11개 하위 점수 계산 함수. 순수 함수, 0~100 "좋음 점수"를 반환한다.
 프론트엔드 scoring/components.ts 와 동일한 산식.
 """
 from __future__ import annotations
@@ -57,6 +57,39 @@ def score_walk_comfort(r: RouteCandidate) -> float:
     return clamp(
         100 - dist_penalty - time_penalty - stair_penalty - slope_penalty - transfer_penalty
     )
+
+
+def score_slope_comfort(r: RouteCandidate) -> float | None:
+    """90m 지형 추정이 있을 때만 경사 편의 점수를 계산한다."""
+    terrain = r.terrain
+    if (
+        terrain is None
+        or terrain.status != "estimated_90m"
+        or terrain.max_slope_percent is None
+        or terrain.min_slope_percent is None
+    ):
+        return None
+    worst_grade = max(
+        abs(terrain.max_slope_percent),
+        abs(terrain.min_slope_percent),
+    )
+    return clamp(100 - worst_grade * 8)
+
+
+def score_shade_comfort(r: RouteCandidate) -> float | None:
+    """확인 가능한 주간 건물 그늘만 점수화하고 미확인은 None으로 둔다."""
+    shade = r.shade
+    if (
+        shade is None
+        or shade.status not in ("estimated_demo", "estimated_public")
+        or shade.shade_ratio is None
+    ):
+        return None
+    return clamp(shade.shade_ratio * 100)
+
+
+def score_transfer_simplicity(r: RouteCandidate) -> float:
+    return clamp(100 - r.transfer_count * 25)
 
 
 def score_elevator(r: RouteCandidate) -> float:

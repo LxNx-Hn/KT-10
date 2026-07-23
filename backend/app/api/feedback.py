@@ -22,7 +22,9 @@ from .auth import _preference_dict, current_user
 
 router = APIRouter(prefix="/api", tags=["feedback"])
 
-Profile = Literal["general", "elderly", "child", "disabled"]
+Profile = Literal[
+    "general", "elderly", "child", "youth", "disabled", "pregnant"
+]
 IssueType = Literal["stairs", "slope", "elevator", "low_floor_bus", "walking_distance", "transfer", "duration", "safety", "weather", "other"]
 FacilityIssueType = Literal["missing", "relocated", "closed", "inaccessible", "information_incorrect", "other"]
 

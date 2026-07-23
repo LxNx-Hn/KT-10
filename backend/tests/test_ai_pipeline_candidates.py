@@ -1,5 +1,5 @@
-from app.models import Place
-from app.providers.ai_pipeline import _to_route_candidate
+from app.models import Place, ScoringOptions
+from app.providers.ai_pipeline import _pipeline_payload, _to_route_candidate
 
 
 ORIGIN = Place(id="origin", name="부산역", lat=35.1151, lng=129.0414)
@@ -85,3 +85,27 @@ def test_labeling_candidate_rejects_missing_geometry():
         assert "geometry" in str(exc)
     else:
         raise AssertionError("geometry 없는 live 경로를 허용하면 안 됩니다.")
+
+
+def test_pipeline_payload_keeps_profile_and_trip_conditions_separate():
+    payload = _pipeline_payload(
+        ORIGIN,
+        DESTINATION,
+        "pregnant",
+        "normal",
+        ScoringOptions(
+            carry_luggage=True,
+            stroller=True,
+            avoid_stairs=True,
+            shade_priority=True,
+            low_floor_priority=True,
+            minimize_transfers=True,
+        ),
+    )
+    assert payload["profile"] == "pregnant"
+    assert payload["carry_luggage"] is True
+    assert payload["stroller"] is True
+    assert payload["avoid_stairs"] is True
+    assert payload["shade_priority"] is True
+    assert payload["low_floor_priority"] is True
+    assert payload["minimize_transfers"] is True
