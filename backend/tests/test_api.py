@@ -1,12 +1,17 @@
 """REST API 스모크 테스트 (FastAPI TestClient). camelCase JSON 호환성 포함."""
 import asyncio
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
 
+import app.main as app_main
 from app.data.places import find_place
 from app.data.routes import demo_candidates
+from app.data.weather import WEATHER_SCENARIOS
 from app.main import _add_configured_shade, app
+from app.providers.ai_pipeline import EnrichedCandidateBundle
 from app.settings import settings
 
 client = TestClient(app)
@@ -18,6 +23,7 @@ def _isolated_demo_sources(monkeypatch):
     for field in (
         "ai_server_url", "odsay_api_key", "kakao_rest_api_key",
         "openweather_api_key", "bus_service_key", "vworld_api_key",
+        "labeling_api_token",
     ):
         monkeypatch.setattr(settings, field, "")
     monkeypatch.setattr(settings, "route_mode", "demo")
@@ -138,12 +144,17 @@ def test_vworld_mode_missing_key_does_not_silently_fall_back(monkeypatch):
     assert "VWORLD_API_KEY" in response.json()["detail"]
 
 
-def test_synthetic_buildings_are_not_applied_to_live_routes(monkeypatch):
+def test_explicit_demo_buildings_remain_labeled_when_used_with_live_routes(monkeypatch):
     monkeypatch.setattr(settings, "route_mode", "live")
     monkeypatch.setattr(settings, "building_source", "demo")
-    routes = asyncio.run(_add_configured_shade(demo_candidates()))
-    assert all(route.shade is None for route in routes)
-    assert settings.active_sources()["buildings"] == "synthetic-demo(inactive-outside-demo)"
+    routes = asyncio.run(_add_configured_shade(
+        demo_candidates(),
+        datetime(2026, 7, 24, 14, 0, tzinfo=ZoneInfo("Asia/Seoul")),
+    ))
+    assert all(route.shade is not None for route in routes)
+    assert all(route.shade.status == "estimated_demo" for route in routes)
+    assert all(route.shade.data_quality == "demo" for route in routes)
+    assert settings.active_sources()["buildings"] == "synthetic-demo"
 
 
 @pytest.mark.parametrize(
@@ -204,3 +215,136 @@ def test_routes_recommend_accepts_new_trip_conditions():
     response = client.post("/api/routes/recommend", json=body)
     assert response.status_code == 200
     assert len(response.json()) == 3
+
+
+def test_labeling_candidates_requires_explicit_ai_mode():
+    settings.labeling_api_token = "test-labeling-token-" + "x" * 32
+    body = {
+        "origin": _place_payload("gu-office"),
+        "destination": _place_payload("seomyeon-stn"),
+        "profile": "general",
+        "weatherScenario": "normal",
+    }
+    response = client.post(
+        "/api/routes/labeling-candidates",
+        json=body,
+        headers={"X-Labeling-Token": settings.labeling_api_token},
+    )
+    assert response.status_code == 503
+    assert "ROUTE_MODE=ai" in response.json()["detail"]
+
+
+def test_labeling_candidates_uses_weather_shade_and_enriched_provenance(
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "route_mode", "ai")
+    monkeypatch.setattr(settings, "ai_server_url", "http://ai.test")
+    monkeypatch.setattr(settings, "building_source", "demo")
+    monkeypatch.setattr(
+        settings,
+        "labeling_api_token",
+        "test-labeling-token-" + "x" * 32,
+    )
+
+    async def fake_weather(_scenario):
+        return WEATHER_SCENARIOS["normal"]
+
+    async def fake_candidates(*_args, **_kwargs):
+        routes = demo_candidates()[:2]
+        for route in routes:
+            route.model_group_id = "source-group"
+            route.model_snapshot_hash = "a" * 64
+            route.model_features = {"total_duration_min": route.total_duration_min}
+        return routes
+
+    async def fake_enrich(routes, _options):
+        evaluated_at = routes[0].shade.evaluated_at.isoformat()
+        assert all(
+            route.shade.evaluated_at.isoformat() == evaluated_at
+            for route in routes
+        )
+        snapshots = {}
+        traits = {}
+        for index, route in enumerate(routes):
+            route.model_features = {
+                "total_duration_min": route.total_duration_min,
+                "shade_ratio": route.shade.shade_ratio,
+            }
+            snapshot_hash = f"{index + 1:064x}"
+            snapshots[route.id] = {
+                "snapshot_schema_version": "route-feature-snapshot-v2",
+                "snapshot_kind": "live_route_candidate",
+                "captured_at": evaluated_at,
+                "group_id": "enriched-group",
+                "route_id": route.id,
+                "sources": [*route.sources, "demo-buildings-v1"],
+                "geometry_quality": route.geometry_quality,
+                "features": route.model_features,
+                "feature_snapshot_hash": snapshot_hash,
+            }
+            traits[route.id] = {
+                "schema_version": "route-traits-v1",
+                "group_id": "enriched-group",
+                "route_id": route.id,
+                "feature_snapshot_hash": snapshot_hash,
+                "labels": [],
+            }
+        return EnrichedCandidateBundle(
+            group_id="enriched-group",
+            captured_at="2026-07-24T04:00:00+00:00",
+            shade_evaluated_at=evaluated_at,
+            snapshots=snapshots,
+            traits=traits,
+        )
+
+    monkeypatch.setattr(app_main, "get_current_weather", fake_weather)
+    monkeypatch.setattr(app_main, "get_ai_pipeline_candidates", fake_candidates)
+    monkeypatch.setattr(app_main, "enrich_ai_pipeline_candidates", fake_enrich)
+    body = {
+        "origin": _place_payload("gu-office"),
+        "destination": _place_payload("seomyeon-stn"),
+        "profile": "general",
+        "weatherScenario": "normal",
+        "options": {
+            "shadePriority": True,
+            "departureAt": "2026-07-24T14:00:00+09:00",
+        },
+    }
+
+    response = client.post(
+        "/api/routes/labeling-candidates",
+        json=body,
+        headers={"X-Labeling-Token": settings.labeling_api_token},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["group_id"] == "enriched-group"
+    assert len(result["candidates"]) == 2
+    assert all(
+        row["feature_snapshot"]["group_id"] == "enriched-group"
+        and row["feature_snapshot"]["features"]["shade_ratio"] is not None
+        and row["trait_labels"]["feature_snapshot_hash"]
+        == row["feature_snapshot"]["feature_snapshot_hash"]
+        for row in result["candidates"]
+    )
+
+
+def test_labeling_candidates_rejects_missing_batch_token(monkeypatch):
+    monkeypatch.setattr(settings, "route_mode", "ai")
+    monkeypatch.setattr(settings, "ai_server_url", "http://ai.test")
+    monkeypatch.setattr(
+        settings,
+        "labeling_api_token",
+        "test-labeling-token-" + "x" * 32,
+    )
+    body = {
+        "origin": _place_payload("gu-office"),
+        "destination": _place_payload("seomyeon-stn"),
+        "profile": "general",
+        "weatherScenario": "normal",
+    }
+
+    response = client.post("/api/routes/labeling-candidates", json=body)
+
+    assert response.status_code == 403

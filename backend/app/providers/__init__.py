@@ -5,5 +5,9 @@
 from .places import search_places  # noqa: F401
 from .weather import get_current_weather  # noqa: F401
 from .odsay import get_public_transit_candidates  # noqa: F401
-from .ai_pipeline import get_ai_pipeline_candidates, get_ai_pipeline_routes  # noqa: F401
+from .ai_pipeline import (  # noqa: F401
+    enrich_ai_pipeline_candidates,
+    get_ai_pipeline_candidates,
+    rank_ai_pipeline_candidates,
+)
 from .busan_bus import get_bus_arrivals, search_bus_stops  # noqa: F401

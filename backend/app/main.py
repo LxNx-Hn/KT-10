@@ -6,10 +6,12 @@ FastAPI 앱. 장소/경로/버스/날씨 데이터를 REST 로 제공하고 서�
 """
 from __future__ import annotations
 
+import hmac
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.auth import optional_current_user, router as auth_router
@@ -30,8 +32,9 @@ from .models import (
     WeatherCondition,
 )
 from .providers import (
+    enrich_ai_pipeline_candidates,
     get_ai_pipeline_candidates,
-    get_ai_pipeline_routes,
+    rank_ai_pipeline_candidates,
     get_current_weather,
     get_bus_arrivals,
     search_bus_stops,
@@ -41,7 +44,7 @@ from .providers.ai_pipeline import AIProviderError
 from .providers.vworld_buildings import get_vworld_buildings
 from .rule_demo import personalize_and_sign, select_representative_routes
 from .scoring import recommend_routes
-from .shade import add_demo_shade, add_shade, assign_characteristics
+from .shade import KST, add_demo_shade, add_shade, assign_characteristics
 from .settings import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -81,10 +84,11 @@ async def _add_configured_shade(
 ) -> list[RouteCandidate]:
     if not candidates:
         return candidates
+    # 한 후보군의 시간별 그늘은 정확히 같은 시각을 사용해야 학습·후기
+    # 스냅샷이 경로마다 몇 마이크로초씩 달라지지 않는다.
+    effective_at = departure_at or datetime.now(KST)
     if settings.building_source == "demo":
-        if settings.route_mode != "demo":
-            return assign_characteristics(candidates)
-        return assign_characteristics(add_demo_shade(candidates, departure_at))
+        return assign_characteristics(add_demo_shade(candidates, effective_at))
     if not settings.live_buildings:
         raise HTTPException(
             status_code=503,
@@ -94,7 +98,7 @@ async def _add_configured_shade(
         buildings = await get_vworld_buildings(candidates)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return assign_characteristics(add_shade(candidates, departure_at, buildings))
+    return assign_characteristics(add_shade(candidates, effective_at, buildings))
 
 
 @app.get("/api/health")
@@ -207,12 +211,29 @@ async def routes_recommend(
             raise HTTPException(status_code=503, detail="ROUTE_MODE=ai requires AI_SERVER_URL.")
         try:
             current_weather = await get_current_weather(req.weather_scenario)
-            return await get_ai_pipeline_routes(
-                req.origin, req.destination, req.profile,
-                req.weather_scenario, req.options, top_n=req.top_n,
-                personalization_state=(user.preference.personalization_state if user and user.preference else None),
+            candidates = await get_ai_pipeline_candidates(
+                req.origin,
+                req.destination,
+                req.profile,
+                req.weather_scenario,
+                req.options,
                 user_preference=(user.preference if user else None),
                 weather_condition=current_weather,
+            )
+            candidates = await _add_configured_shade(
+                candidates,
+                req.options.departure_at,
+            )
+            return await rank_ai_pipeline_candidates(
+                candidates,
+                req.profile,
+                req.options,
+                top_n=req.top_n,
+                personalization_state=(
+                    user.preference.personalization_state
+                    if user and user.preference
+                    else None
+                ),
             )
         except AIProviderError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -247,6 +268,14 @@ async def routes_recommend(
     candidates = await _add_configured_shade(
         candidates, req.options.departure_at
     )
+    if settings.route_mode == "live":
+        try:
+            await enrich_ai_pipeline_candidates(candidates, req.options)
+        except AIProviderError as exc:
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail=str(exc),
+            ) from exc
     if weather is None:
         try:
             weather = await get_current_weather(req.weather_scenario)
@@ -267,3 +296,89 @@ async def routes_recommend(
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/routes/labeling-candidates")
+async def routes_labeling_candidates(
+    req: RecommendRequest,
+    labeling_token: str | None = Header(
+        default=None,
+        alias="X-Labeling-Token",
+    ),
+) -> dict:
+    """추천과 동일한 수집·그늘 결합 경로로 학습용 고정 후보를 만든다."""
+    if (
+        len(settings.labeling_api_token) < 32
+        or labeling_token is None
+        or not hmac.compare_digest(labeling_token, settings.labeling_api_token)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Valid labeling batch credentials are required.",
+        )
+    if not settings.live_ai_pipeline:
+        raise HTTPException(
+            status_code=503,
+            detail="ROUTE_MODE=ai and AI_SERVER_URL are required for labeling candidates.",
+        )
+    try:
+        current_weather = await get_current_weather(req.weather_scenario)
+        candidates = await get_ai_pipeline_candidates(
+            req.origin,
+            req.destination,
+            req.profile,
+            req.weather_scenario,
+            req.options,
+            weather_condition=current_weather,
+        )
+        candidates = await _add_configured_shade(
+            candidates,
+            req.options.departure_at,
+        )
+        bundle = await enrich_ai_pipeline_candidates(candidates, req.options)
+    except AIProviderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    rows = []
+    for route in candidates:
+        segment_distances = [segment.distance_m for segment in route.segments]
+        total_distance_m = (
+            sum(float(value) for value in segment_distances)
+            if segment_distances and all(value is not None for value in segment_distances)
+            else None
+        )
+        rows.append({
+            "route_id": route.id,
+            "summary": route.summary,
+            "duration_min": route.total_duration_min,
+            "distance_m": total_distance_m,
+            "sources": bundle.snapshots[route.id]["sources"],
+            "geometry_quality": route.geometry_quality,
+            "path": [
+                point.model_dump(mode="json", by_alias=False)
+                for point in (route.path or [])
+            ],
+            "segments": [
+                segment.model_dump(
+                    mode="json",
+                    by_alias=False,
+                    exclude_none=True,
+                )
+                for segment in route.segments
+            ],
+            "features": route.model_features,
+            "feature_snapshot": bundle.snapshots[route.id],
+            "trait_labels": bundle.traits[route.id],
+        })
+    return {
+        "group_id": bundle.group_id,
+        "candidates": rows,
+        "metadata": {
+            "captured_at": bundle.captured_at,
+            "shade_evaluated_at": bundle.shade_evaluated_at,
+            "weather": req.weather_scenario,
+            "building_source": settings.building_source,
+        },
+    }

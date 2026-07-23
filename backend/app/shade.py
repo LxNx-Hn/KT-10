@@ -466,8 +466,17 @@ def assign_characteristics(routes: list[RouteCandidate]) -> list[RouteCandidate]
         and route.shade.shade_ratio is not None
     ]
     if shade_candidates:
-        shade_value = max(route.shade.shade_ratio or 0 for route in shade_candidates)
-        for route in shade_candidates:
-            if (route.shade.shade_ratio or 0) == shade_value:
-                route.characteristics.append("most_shade")
+        shade_value = max(
+            float(route.shade.shade_ratio)
+            for route in shade_candidates
+            if route.shade and route.shade.shade_ratio is not None
+        )
+        if shade_value > 0:
+            for route in shade_candidates:
+                if (
+                    route.shade
+                    and route.shade.shade_ratio is not None
+                    and float(route.shade.shade_ratio) == shade_value
+                ):
+                    route.characteristics.append("most_shade")
     return routes

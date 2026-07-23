@@ -29,12 +29,12 @@ def _opts(**kw):
 
 # ── 표1: 프로필 × 경로 최종점수 (평상 날씨) — 프론트와 동일해야 함 ──
 EXPECTED_FINAL = {
-    "general": {"r1-overpass": 82.6, "r2-subway": 91.6, "r3-lowfloor": 86.1, "r4-regularbus": 88.2},
-    "elderly": {"r1-overpass": 70.2, "r2-subway": 92.1, "r3-lowfloor": 86.6, "r4-regularbus": 85.4},
-    "child": {"r1-overpass": 83.1, "r2-subway": 93.6, "r3-lowfloor": 89.4, "r4-regularbus": 87.8},
-    "youth": {"r1-overpass": 86.0, "r2-subway": 92.8, "r3-lowfloor": 87.6, "r4-regularbus": 89.8},
-    "disabled": {"r1-overpass": 69.2, "r2-subway": 91.9, "r3-lowfloor": 88.9, "r4-regularbus": 79.9},
-    "pregnant": {"r1-overpass": 70.5, "r2-subway": 92.2, "r3-lowfloor": 86.0, "r4-regularbus": 87.1},
+    "general": {"r1-overpass": 85.3, "r2-subway": 89.8, "r3-lowfloor": 85.1, "r4-regularbus": 86.4},
+    "elderly": {"r1-overpass": 72.4, "r2-subway": 90.9, "r3-lowfloor": 86.5, "r4-regularbus": 83.4},
+    "child": {"r1-overpass": 83.0, "r2-subway": 91.7, "r3-lowfloor": 88.3, "r4-regularbus": 85.7},
+    "youth": {"r1-overpass": 87.0, "r2-subway": 90.4, "r3-lowfloor": 85.9, "r4-regularbus": 87.4},
+    "disabled": {"r1-overpass": 66.7, "r2-subway": 90.9, "r3-lowfloor": 88.4, "r4-regularbus": 73.8},
+    "pregnant": {"r1-overpass": 72.8, "r2-subway": 90.7, "r3-lowfloor": 85.7, "r4-regularbus": 85.5},
 }
 
 
@@ -52,7 +52,9 @@ EXPECTED_WEATHER_RISK = {
     "normal": {"r1-overpass": 0, "r2-subway": 0, "r3-lowfloor": 0, "r4-regularbus": 0},
     "heatwave": {"r1-overpass": 25, "r2-subway": 16, "r3-lowfloor": 19, "r4-regularbus": 16},
     "coldwave": {"r1-overpass": 5, "r2-subway": 2, "r3-lowfloor": 13, "r4-regularbus": 8},
-    "rain": {"r1-overpass": 30, "r2-subway": 12, "r3-lowfloor": 28, "r4-regularbus": 12},
+    # 일부 보행/환승 구간의 계단 정보가 미확인이므로 비 미끄럼 위험도
+    # 임의의 0/안전값으로 대체하지 않는다.
+    "rain": {"r1-overpass": None, "r2-subway": None, "r3-lowfloor": None, "r4-regularbus": None},
     "dust": {"r1-overpass": 20, "r2-subway": 14, "r3-lowfloor": 16, "r4-regularbus": 14},
 }
 
@@ -61,7 +63,10 @@ EXPECTED_WEATHER_RISK = {
 def test_weather_risk_table_matches_frontend(scenario):
     s = score_all("general", scenario)
     for rid, expected in EXPECTED_WEATHER_RISK[scenario].items():
-        assert s[rid].display.weather_risk == pytest.approx(expected, abs=1e-6)
+        if expected is None:
+            assert s[rid].display.weather_risk is None
+        else:
+            assert s[rid].display.weather_risk == pytest.approx(expected, abs=1e-6)
 
 
 # ── 검증 항목(기획서 §8) ──
@@ -178,6 +183,36 @@ def test_weather_changes_score():
     heat = score_all("general", "heatwave")
     assert heat["r1-overpass"].components.weather_safety < normal["r1-overpass"].components.weather_safety
     assert heat["r1-overpass"].final_score < normal["r1-overpass"].final_score
+
+
+def test_rain_slope_risk_is_scored_when_stair_evidence_is_complete():
+    import copy
+
+    route = copy.deepcopy(ROUTES[2])
+    for segment in route.segments:
+        if (
+            segment.mode in ("walk", "transfer")
+            and segment.has_stairs is None
+            and segment.stairs_count is None
+        ):
+            segment.has_stairs = False
+    normal = score_route(
+        route,
+        WEATHER_SCENARIOS["normal"],
+        "general",
+        route.total_duration_min,
+        1,
+    )
+    rain = score_route(
+        route,
+        WEATHER_SCENARIOS["rain"],
+        "general",
+        route.total_duration_min,
+        1,
+    )
+    assert normal.display.weather_risk is not None
+    assert rain.display.weather_risk is not None
+    assert rain.display.weather_risk > normal.display.weather_risk
 
 
 def test_verified_demo_shade_reduces_heat_exposure_only_when_known():

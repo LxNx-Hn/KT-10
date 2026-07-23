@@ -142,6 +142,16 @@ class RouteCandidate(CamelModel):
     terrain: Optional[TerrainSummary] = None
     shade: Optional[ShadeSummary] = None
     trait_labels: list[RouteTraitLabel] = Field(default_factory=list)
+    # AI 수집 단계의 검증된 수치 피처. 백엔드가 건물 그늘을 결합한 뒤
+    # 내부 rank endpoint에 다시 보낼 때만 쓰며 클라이언트 응답에는 노출하지 않는다.
+    model_features: dict[str, float | int | bool | None] = Field(
+        default_factory=dict,
+        exclude=True,
+    )
+    model_snapshot: dict = Field(default_factory=dict, exclude=True)
+    model_group_id: Optional[str] = Field(default=None, exclude=True)
+    model_holdout_group_id: Optional[str] = Field(default=None, exclude=True)
+    model_snapshot_hash: Optional[str] = Field(default=None, exclude=True)
     characteristics: list[
         Literal[
             "fastest",

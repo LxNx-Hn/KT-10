@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     # PostgreSQL + Kakao 로그인. 실제 값은 배포 환경변수로만 주입한다.
     database_url: str = ""
     session_secret: str = ""
+    labeling_api_token: str = ""
     kakao_oauth_client_secret: str = ""
     kakao_oauth_redirect_uri: str = "http://localhost:8002/api/auth/kakao/callback"
     frontend_url: str = "http://localhost:5173"
@@ -133,6 +134,7 @@ class Settings(BaseSettings):
             "postgresql": self.database_configured,
             "kakao_login": self.kakao_login_configured,
             "personalization_policy": self.personalization_configured,
+            "labeling_batch_auth": len(self.labeling_api_token) >= 32,
         }
 
     def active_sources(self) -> dict[str, str]:
@@ -156,8 +158,6 @@ class Settings(BaseSettings):
                 if self.live_buildings
                 else "vworld(missing-key)"
                 if self.building_source == "vworld"
-                else "synthetic-demo(inactive-outside-demo)"
-                if self.route_mode != "demo"
                 else "synthetic-demo"
             ),
             "database": "postgresql(configured)" if self.database_configured else "not configured",

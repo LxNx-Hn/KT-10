@@ -91,8 +91,16 @@ def score_route(
         route_id=route.id,
         components=_round_components(components),
         display=ScoreDisplay(
-            walk_burden=round1(100 - components.walk_comfort),
-            weather_risk=round1(100 - components.weather_safety),
+            walk_burden=(
+                round1(100 - components.walk_comfort)
+                if components.walk_comfort is not None
+                else None
+            ),
+            weather_risk=(
+                round1(100 - components.weather_safety)
+                if components.weather_safety is not None
+                else None
+            ),
         ),
         final_score=final_score,
         low_floor_status=low_floor_status,

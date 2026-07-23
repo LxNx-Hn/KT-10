@@ -1,5 +1,17 @@
 from app.models import Place, ScoringOptions
-from app.providers.ai_pipeline import _pipeline_payload, _to_route_candidate
+import json
+import asyncio
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+import app.providers.ai_pipeline as ai_pipeline
+from app.providers.ai_pipeline import (
+    _pipeline_payload,
+    _to_route_candidate,
+    rank_ai_pipeline_candidates,
+)
+from app.settings import settings
+from app.shade import add_demo_shade
 
 
 ORIGIN = Place(id="origin", name="부산역", lat=35.1151, lng=129.0414)
@@ -58,21 +70,48 @@ def _candidate_payload() -> dict:
             "elevation_source": "Open-Meteo Copernicus DEM GLO-90",
             "elevation_resolution_m": 90,
         },
-        "trait_labels": [
-            {
-                "label_id": "gentle_slope",
-                "display_label": "경사가 완만한 길",
-                "evidence_status": "derived",
-                "evidence": [
-                    {
-                        "feature": "max_slope_percent",
-                        "value": 4.2,
-                        "unit": "percent",
-                        "source": "copernicus_glo90",
-                    }
-                ],
-            }
-        ],
+        "feature_snapshot": {
+            "snapshot_schema_version": "route-feature-snapshot-v2",
+            "snapshot_kind": "live_route_candidate",
+            "captured_at": "2026-07-24T12:00:00+09:00",
+            "group_id": "group-live-1",
+            "route_id": "route-live-1",
+            "sources": ["odsay", "osmnx"],
+            "geometry_quality": "mixed",
+            "features": {
+                "transfer_count": 0,
+                "walk_distance_m": 320,
+                "avg_slope_percent": 1.4,
+                "max_slope_percent": 4.2,
+                "min_slope_percent": -2.1,
+                "elevation_gain_m": 7.5,
+                "elevation_status": "estimated_90m",
+                "elevation_source": "Open-Meteo Copernicus DEM GLO-90",
+                "elevation_resolution_m": 90,
+            },
+            "feature_snapshot_hash": "a" * 64,
+        },
+        "trait_labels": {
+            "schema_version": "route-traits-v1",
+            "group_id": "group-live-1",
+            "route_id": "route-live-1",
+            "feature_snapshot_hash": "a" * 64,
+            "labels": [
+                {
+                    "label_id": "gentle_slope",
+                    "display_label": "경사가 완만한 길",
+                    "evidence_status": "derived",
+                    "evidence": [
+                        {
+                            "feature": "max_slope_percent",
+                            "value": 4.2,
+                            "unit": "percent",
+                            "source": "copernicus_glo90",
+                        }
+                    ],
+                }
+            ],
+        },
     }
 
 
@@ -104,6 +143,30 @@ def test_labeling_candidate_rejects_missing_geometry():
         raise AssertionError("geometry 없는 live 경로를 허용하면 안 됩니다.")
 
 
+def test_labeling_candidate_rejects_invalid_trait_wrapper():
+    payload = _candidate_payload()
+    payload["trait_labels"].pop("labels")
+
+    try:
+        _to_route_candidate(payload, ORIGIN, DESTINATION, 1)
+    except RuntimeError as exc:
+        assert "labels list" in str(exc)
+    else:
+        raise AssertionError("labels 배열이 없는 특성 wrapper를 허용하면 안 됩니다.")
+
+
+def test_labeling_candidate_rejects_trait_from_different_snapshot():
+    payload = _candidate_payload()
+    payload["trait_labels"]["feature_snapshot_hash"] = "b" * 64
+
+    try:
+        _to_route_candidate(payload, ORIGIN, DESTINATION, 1)
+    except RuntimeError as exc:
+        assert "snapshot hash" in str(exc)
+    else:
+        raise AssertionError("다른 스냅샷의 특성 라벨을 허용하면 안 됩니다.")
+
+
 def test_pipeline_payload_keeps_profile_and_trip_conditions_separate():
     payload = _pipeline_payload(
         ORIGIN,
@@ -126,3 +189,174 @@ def test_pipeline_payload_keeps_profile_and_trip_conditions_separate():
     assert payload["shade_priority"] is True
     assert payload["low_floor_priority"] is True
     assert payload["minimize_transfers"] is True
+
+
+def test_ai_personalization_score_preserves_personalized_order_for_frontend(
+    monkeypatch,
+):
+    first_payload = _candidate_payload()
+    first_payload["route_id"] = "global-first"
+    first_payload["feature_snapshot"]["route_id"] = "global-first"
+    first_payload["trait_labels"]["route_id"] = "global-first"
+    second_payload = _candidate_payload()
+    second_payload["route_id"] = "personal-first"
+    second_payload["feature_snapshot"]["route_id"] = "personal-first"
+    second_payload["trait_labels"]["route_id"] = "personal-first"
+    candidates = [
+        _to_route_candidate(first_payload, ORIGIN, DESTINATION, 1),
+        _to_route_candidate(second_payload, ORIGIN, DESTINATION, 2),
+    ]
+
+    async def fake_enrich(routes, _options):
+        for route, shade_ratio in zip(routes, (0.0, 1.0), strict=True):
+            route.model_features = {
+                "shade_ratio": shade_ratio,
+                "walk_distance_m": route.total_walk_m,
+            }
+            route.model_group_id = "enriched-group-1"
+            route.model_holdout_group_id = "od-group-1"
+            route.model_snapshot_hash = f"{route.id}-hash"
+            route.model_snapshot = {
+                "snapshot_schema_version": "route-feature-snapshot-v2",
+                "snapshot_kind": "live_route_candidate",
+                "captured_at": "2026-07-24T03:00:00+00:00",
+                "shade_evaluated_at": "2026-07-24T05:00:00+00:00",
+                "sources": ["odsay"],
+            }
+
+    async def fake_post(path, _payload):
+        assert path == "/rank/candidates"
+        return {
+            "ranked": [
+                {
+                    "route_id": "global-first",
+                    "relative_fit_score": 0.65,
+                },
+                {
+                    "route_id": "personal-first",
+                    "relative_fit_score": 0.35,
+                },
+            ],
+            "metadata": {
+                "model_tier": "human_validated",
+                "model_version": "human-test",
+            },
+        }
+
+    monkeypatch.setattr(
+        ai_pipeline,
+        "enrich_ai_pipeline_candidates",
+        fake_enrich,
+    )
+    monkeypatch.setattr(ai_pipeline, "_post_pipeline", fake_post)
+    monkeypatch.setattr(settings, "personalization_max_share", 0.35)
+    monkeypatch.setattr(settings, "personalization_prior_reviews", 5.0)
+    monkeypatch.setattr(settings, "personalization_learning_rate", 0.25)
+    monkeypatch.setattr(settings, "personalization_regularization", 0.02)
+    monkeypatch.setattr(settings, "personalization_usable_weight", 0.45)
+    monkeypatch.setattr(settings, "personalization_rating_weight", 0.35)
+    monkeypatch.setattr(settings, "personalization_reuse_weight", 0.20)
+    state = json.dumps({
+        "version": 1,
+        "bias": -10.0,
+        "weights": {"shade_ratio": 20.0},
+        "updates": 1000,
+    })
+
+    results = asyncio.run(
+        rank_ai_pipeline_candidates(
+            candidates,
+            "general",
+            ScoringOptions(),
+            top_n=2,
+            personalization_state=state,
+        )
+    )
+
+    assert [item.route.id for item in results] == [
+        "personal-first",
+        "global-first",
+    ]
+    assert results[0].score.final_score > results[1].score.final_score
+
+
+def test_backend_shade_is_enriched_before_ai_ranking(monkeypatch):
+    route = _to_route_candidate(_candidate_payload(), ORIGIN, DESTINATION, 1)
+    add_demo_shade(
+        [route],
+        datetime(2026, 7, 24, 14, 0, tzinfo=ZoneInfo("Asia/Seoul")),
+    )
+    captured = {}
+
+    async def fake_post(path, payload):
+        if path == "/labeling/enriched-snapshots":
+            row = payload["candidates"][0]
+            snapshot = {
+                "snapshot_schema_version": "route-feature-snapshot-v2",
+                "snapshot_kind": "live_route_candidate",
+                "captured_at": payload["captured_at"],
+                "shade_evaluated_at": payload["shade_evaluated_at"],
+                "group_id": "enriched-group-1",
+                "holdout_group_id": payload["holdout_group_id"],
+                "route_id": row["route_id"],
+                "sources": row["sources"],
+                "geometry_quality": row["geometry_quality"],
+                "features": row["features"],
+            }
+            snapshot["feature_snapshot_hash"] = (
+                ai_pipeline._canonical_snapshot_hash(snapshot)
+            )
+            return {
+                "group_id": "enriched-group-1",
+                "captured_at": payload["captured_at"],
+                "shade_evaluated_at": payload["shade_evaluated_at"],
+                "candidates": [{
+                    "route_id": row["route_id"],
+                    "feature_snapshot": snapshot,
+                    "trait_labels": {
+                        "schema_version": "route-traits-v1",
+                        "group_id": "enriched-group-1",
+                        "route_id": row["route_id"],
+                        "feature_snapshot_hash": snapshot["feature_snapshot_hash"],
+                        "labels": [],
+                    },
+                }],
+            }
+        captured["path"] = path
+        captured["payload"] = payload
+        return {
+            "ranked": [{
+                "route_id": route.id,
+                "rank": 1,
+                "model_score": 0.8,
+                "relative_fit_score": 1.0,
+                "selection_probability": 1.0,
+            }],
+            "metadata": {
+                "model_tier": "judge_baseline",
+                "model_version": "judge-test",
+            },
+        }
+
+    monkeypatch.setattr(ai_pipeline, "_post_pipeline", fake_post)
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
+
+    results = asyncio.run(
+        rank_ai_pipeline_candidates(
+            [route],
+            "general",
+            ScoringOptions(shade_priority=True),
+            top_n=1,
+        )
+    )
+
+    sent = captured["payload"]["candidates"][0]["features"]
+    assert captured["path"] == "/rank/candidates"
+    assert sent["shade_ratio"] == route.shade.shade_ratio
+    assert sent["shaded_walk_m"] == route.shade.shaded_walk_m
+    assert sent["shade_building_height_coverage"] == (
+        route.shade.building_height_coverage
+    )
+    assert sent["shade_priority_unshaded_walk_m"] is not None
+    assert results[0].route.shade.status == "estimated_demo"
+    assert results[0].score.score_kind == "judge_baseline"

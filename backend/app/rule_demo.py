@@ -1,6 +1,10 @@
 """설명 가능한 데모 경로 비교와 사용자별 온라인 재정렬."""
 from __future__ import annotations
 
+import hashlib
+import json
+from datetime import UTC, datetime
+
 from .feedback_tokens import create_feedback_token
 from .models import ScoredRoute, ScoringOptions
 from .personalization import blended_rank_score, parse_state
@@ -8,6 +12,26 @@ from .scoring.explain import build_voice_summary
 from .settings import settings
 
 RULE_MODEL_VERSION = "rule-baseline-v2"
+SNAPSHOT_SCHEMA_VERSION = "route-feature-snapshot-v2"
+LIVE_SNAPSHOT_KIND = "live_route_candidate"
+DEMO_SNAPSHOT_KIND = "demo_route_candidate"
+
+
+def _snapshot_hash(snapshot: dict) -> str:
+    canonical = {
+        key: value
+        for key, value in snapshot.items()
+        if key != "feature_snapshot_hash"
+    }
+    return hashlib.sha256(
+        json.dumps(
+            canonical,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def route_features(
@@ -126,10 +150,174 @@ def personalize_and_sign(
     if active and not settings.personalization_configured:
         raise RuntimeError("Personalization policy is not configured.")
 
-    rows = [
+    rows: list[tuple[ScoredRoute, dict]] = [
         (item, route_features(item, profile, options))
         for item in items
     ]
+    if rows:
+        opts = options or ScoringOptions()
+        first_route = rows[0][0].route
+        if settings.route_mode == "live":
+            live_rows: list[tuple[ScoredRoute, dict]] = []
+            group_ids: set[str] = set()
+            holdout_group_ids: set[str] = set()
+            captured_times: set[str] = set()
+            shade_times: set[str] = set()
+            for item, rule_features in rows:
+                route = item.route
+                snapshot = route.model_snapshot
+                if (
+                    not snapshot
+                    or snapshot.get("snapshot_schema_version")
+                    != SNAPSHOT_SCHEMA_VERSION
+                    or snapshot.get("snapshot_kind") != LIVE_SNAPSHOT_KIND
+                    or snapshot.get("route_id") != route.id
+                    or not route.model_features
+                    or snapshot.get("features") != route.model_features
+                    or snapshot.get("feature_snapshot_hash")
+                    != _snapshot_hash(snapshot)
+                ):
+                    raise RuntimeError(
+                        "Live rule feedback requires a verified enriched feature snapshot."
+                    )
+                group_id = str(snapshot.get("group_id") or "")
+                holdout_group_id = str(snapshot.get("holdout_group_id") or "")
+                captured_at = str(snapshot.get("captured_at") or "")
+                shade_evaluated_at = str(
+                    snapshot.get("shade_evaluated_at") or ""
+                )
+                sources = snapshot.get("sources")
+                if (
+                    not group_id
+                    or not holdout_group_id
+                    or not captured_at
+                    or not shade_evaluated_at
+                    or not isinstance(sources, list)
+                    or not sources
+                ):
+                    raise RuntimeError(
+                        "Live rule feedback snapshot provenance is incomplete."
+                    )
+                group_ids.add(group_id)
+                holdout_group_ids.add(holdout_group_id)
+                captured_times.add(captured_at)
+                shade_times.add(shade_evaluated_at)
+                live_rows.append((
+                    item,
+                    {
+                        **route.model_features,
+                        "route_id": route.id,
+                        "profile": profile,
+                        "rule_score": rule_features["rule_score"],
+                        "solar_elevation_deg": rule_features[
+                            "solar_elevation_deg"
+                        ],
+                        "group_id": group_id,
+                        "holdout_group_id": holdout_group_id,
+                        "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
+                        "snapshot_kind": LIVE_SNAPSHOT_KIND,
+                        "captured_at": captured_at,
+                        "shade_evaluated_at": shade_evaluated_at,
+                        "sources": list(sources),
+                        "geometry_quality": snapshot.get(
+                            "geometry_quality"
+                        ),
+                        "feature_snapshot_hash": snapshot[
+                            "feature_snapshot_hash"
+                        ],
+                        "training_eligible": True,
+                    },
+                ))
+            if (
+                len(group_ids) != 1
+                or len(holdout_group_ids) != 1
+                or len(captured_times) != 1
+                or len(shade_times) != 1
+            ):
+                raise RuntimeError(
+                    "Live rule feedback candidates do not share one query snapshot."
+                )
+            rows = live_rows
+        else:
+            if not first_route.path or len(first_route.path) < 2:
+                raise RuntimeError("Signed rule feedback requires route geometry.")
+            holdout_fingerprint = {
+                "origin": {
+                    "lat": round(first_route.path[0].lat, 5),
+                    "lng": round(first_route.path[0].lng, 5),
+                },
+                "destination": {
+                    "lat": round(first_route.path[-1].lat, 5),
+                    "lng": round(first_route.path[-1].lng, 5),
+                },
+            }
+            holdout_group_id = "od-" + hashlib.sha256(
+                json.dumps(
+                    holdout_fingerprint,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()[:20]
+            shade_times = {
+                item.route.shade.evaluated_at.astimezone(UTC).isoformat()
+                for item, _ in rows
+                if item.route.shade is not None
+            }
+            if len(shade_times) != 1:
+                raise RuntimeError(
+                    "Signed rule feedback requires one fixed shade evaluation time."
+                )
+            captured_at = datetime.now(UTC).isoformat()
+            shade_evaluated_at = next(iter(shade_times))
+            query_context = {
+                "holdout_group_id": holdout_group_id,
+                "captured_at": captured_at,
+                "shade_evaluated_at": shade_evaluated_at,
+                "profile": profile,
+                "options": opts.model_dump(mode="json", by_alias=False),
+                "route_ids": sorted(item.route.id for item, _ in rows),
+            }
+            group_id = "rule-" + hashlib.sha256(
+                json.dumps(
+                    query_context,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()[:20]
+            for item, features in rows:
+                route = item.route
+                if not route.sources:
+                    raise RuntimeError(
+                        "Signed rule feedback requires route sources."
+                    )
+                snapshot = {
+                    "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
+                    "snapshot_kind": DEMO_SNAPSHOT_KIND,
+                    "captured_at": captured_at,
+                    "shade_evaluated_at": shade_evaluated_at,
+                    "group_id": group_id,
+                    "holdout_group_id": holdout_group_id,
+                    "route_id": route.id,
+                    "sources": list(route.sources),
+                    "geometry_quality": route.geometry_quality,
+                    "features": dict(features),
+                }
+                snapshot["feature_snapshot_hash"] = _snapshot_hash(snapshot)
+                features.update({
+                    "group_id": group_id,
+                    "holdout_group_id": holdout_group_id,
+                    "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
+                    "snapshot_kind": DEMO_SNAPSHOT_KIND,
+                    "captured_at": captured_at,
+                    "shade_evaluated_at": shade_evaluated_at,
+                    "sources": list(route.sources),
+                    "geometry_quality": route.geometry_quality,
+                    "feature_snapshot_hash": snapshot[
+                        "feature_snapshot_hash"
+                    ],
+                    "training_eligible": False,
+                })
     if active:
         assert settings.personalization_max_share is not None
         assert settings.personalization_prior_reviews is not None

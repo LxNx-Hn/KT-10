@@ -123,7 +123,7 @@ def update_state(
 
 
 def blended_rank_score(
-    global_probability: float,
+    global_fit_score: float,
     state: dict,
     features: dict,
     *,
@@ -132,6 +132,6 @@ def blended_rank_score(
 ) -> float:
     updates = int(state.get("updates", 0))
     if updates <= 0:
-        return global_probability
+        return global_fit_score
     personal_share = max_personal_share * updates / (updates + prior_reviews)
-    return (1 - personal_share) * global_probability + personal_share * predict(state, features)
+    return (1 - personal_share) * global_fit_score + personal_share * predict(state, features)
