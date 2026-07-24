@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { demoCandidates } from '@/data/routes';
 import { WEATHER_SCENARIOS } from '@/data/weather';
 import { recommendRoutes, scoreRoute } from '@/scoring/engine';
+import { scoreWeatherSafety } from '@/scoring/components';
 import {
   PROFILE_WEIGHTS,
   SCORE_COMPONENT_KEYS,
@@ -25,6 +26,19 @@ import type { ProfileId, RouteCandidate, ScoredRoute } from '@/types';
 
 const ROUTES = demoCandidates();
 const NORMAL = WEATHER_SCENARIOS.normal;
+
+it('실내·실외 미확인 보행을 날씨안전 100점으로 만들지 않는다', () => {
+  const route = {
+    ...ROUTES[0],
+    segments: ROUTES[0].segments.map((segment) => (
+      segment.mode === 'walk'
+        ? { ...segment, outdoor: undefined }
+        : segment
+    )),
+  };
+
+  expect(scoreWeatherSafety(route, WEATHER_SCENARIOS.heatwave)).toBeUndefined();
+});
 
 /** 모든 후보를 채점해 routeId→finalScore 맵 반환 */
 function scoreAll(profile: ProfileId, weatherId: keyof typeof WEATHER_SCENARIOS, opts = {}) {

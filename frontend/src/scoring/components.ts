@@ -124,7 +124,12 @@ export function scoreWeatherSafety(
   r: RouteCandidate,
   w: WeatherCondition,
 ): number | undefined {
-  const outdoorWalk = walkSegs(r).filter((s) => s.outdoor);
+  const walks = walkSegs(r);
+  if (walks.length === 0 || walks.some((segment) => segment.outdoor === undefined)) {
+    // 미확인 노출을 실외 0분으로 간주해 날씨안전 100점을 만들지 않는다.
+    return undefined;
+  }
+  const outdoorWalk = walks.filter((s) => s.outdoor);
   const outdoorWalkMin = outdoorWalk.reduce((a, s) => a + s.durationMin, 0);
   // 검증된 그늘만 노출시간을 감면한다. 미확인 그늘을 0으로 대입하지 않는다.
   let heatExposedWalkMin = outdoorWalkMin;

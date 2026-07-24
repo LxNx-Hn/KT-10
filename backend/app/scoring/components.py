@@ -134,7 +134,12 @@ def score_low_floor_bus(r: RouteCandidate) -> float | None:
 
 
 def score_weather_safety(r: RouteCandidate, w: WeatherCondition) -> float | None:
-    outdoor_walk = [s for s in _walk_segs(r) if s.outdoor]
+    walk_segments = _walk_segs(r)
+    if not walk_segments or any(s.outdoor is None for s in walk_segments):
+        # 실내·실외 미확인을 실외 0분으로 계산하면 폭염·한파·미세먼지에서
+        # 근거 없는 100점이 된다. 노출 여부가 확인될 때만 산정한다.
+        return None
+    outdoor_walk = [s for s in walk_segments if s.outdoor]
     outdoor_walk_min = sum(s.duration_min for s in outdoor_walk)
     # 검증된 그늘만 노출시간을 감면한다. 미확인 그늘을 0으로 대입하지 않는다.
     heat_exposed_walk_min = outdoor_walk_min

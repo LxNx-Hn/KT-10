@@ -7,9 +7,26 @@ import pytest
 from app.data.routes import demo_candidates
 from app.data.weather import WEATHER_SCENARIOS
 from app.scoring import recommend_routes, score_route
+from app.scoring.components import score_weather_safety
 
 ROUTES = demo_candidates()
 NORMAL = WEATHER_SCENARIOS["normal"]
+
+
+def test_unknown_outdoor_exposure_does_not_become_perfect_weather_safety():
+    route = ROUTES[0].model_copy(update={
+        "segments": [
+            segment.model_copy(update={"outdoor": None})
+            if segment.mode == "walk"
+            else segment
+            for segment in ROUTES[0].segments
+        ],
+    })
+
+    assert score_weather_safety(
+        route,
+        WEATHER_SCENARIOS["heatwave"],
+    ) is None
 
 
 def score_all(profile: str, scenario: str, **opts):
