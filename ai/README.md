@@ -1,8 +1,9 @@
 # AI 경로 수집·순위화 파이프라인
 
 운영 추천은 합성 라벨이나 규칙 점수로 학습하지 않습니다. AI 서비스가
-ODsay·TMAP에서 실제 후보를 수집하고, OSMnx는 필요한 보행 geometry
-복구에만 사용합니다. 저장된 공간 레이어와 Open-Meteo GLO-90 지형
+ODsay·TMAP에서 실제 후보를 수집합니다. OSMnx 보행 geometry 복구는
+`OSMNX_WALK_GEOMETRY_ENABLED=true`인 환경에서만 사용하며 기본값은
+응답 지연을 막기 위해 `false`입니다. 저장된 공간 레이어와 Open-Meteo GLO-90 지형
 피처를 결합한 뒤 백엔드가 출발시각의 건물 그늘을 계산합니다. 마지막으로
 동결된 enriched snapshot을 프로필별 `XGBRanker`가 비교합니다.
 
@@ -44,6 +45,9 @@ AI 내부 API는 다음과 같습니다.
 ODsay 또는 TMAP 키가 없으면 해당 공급자는 `CollectorNotConfigured`로
 기록됩니다. 모든 실제 경로 공급자가 실패하면 가짜 직선이나 0분 경로로
 대체하지 않고 503을 반환합니다.
+ODsay 후보 안의 보행 구간은 TMAP을 우선 사용하고, TMAP이 없거나 실패하면
+opt-in된 OSMnx를 시도합니다. 둘 다 사용할 수 없으면 화면 연결선만
+`estimated`로 명시하며 시간·거리를 새로 추정하지 않습니다.
 
 ## 스냅샷과 학습 자료
 

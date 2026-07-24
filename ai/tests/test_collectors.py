@@ -5,6 +5,7 @@ ai/.env 에 실제 키가 설정돼 있어도 결과가 흔들리지 않도록,
 settings의 키 값은 monkeypatch로 강제 고정한다 (환경 비의존).
 """
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -28,6 +29,63 @@ def test_tmap_fails_explicitly_without_api_key(monkeypatch):
     monkeypatch.setattr(settings, "TMAP_API_KEY", "")
     with pytest.raises(CollectorNotConfigured):
         asyncio.run(TmapRouteCollector().collect(ORIGIN, DEST))
+
+
+def test_odsay_walk_geometry_defaults_to_estimated_without_provider(monkeypatch):
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "")
+    monkeypatch.setattr(settings, "OSMNX_WALK_GEOMETRY_ENABLED", False)
+
+    path, quality = asyncio.run(OdsayRouteCollector._walk_geometry(ORIGIN, DEST))
+
+    assert path == [ORIGIN, DEST]
+    assert quality == "estimated"
+
+
+def test_odsay_walk_geometry_prefers_tmap(monkeypatch):
+    async def tmap_collect(_self, _start, _end):
+        return [SimpleNamespace(path=[ORIGIN, DEST])]
+
+    async def osmnx_collect(_self, _start, _end):
+        raise AssertionError("TMAP 성공 후 OSMnx를 호출하면 안 됩니다.")
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "OSMNX_WALK_GEOMETRY_ENABLED", True)
+    monkeypatch.setattr(TmapRouteCollector, "collect", tmap_collect)
+    monkeypatch.setattr(OsmnxRouteCollector, "collect", osmnx_collect)
+
+    path, quality = asyncio.run(OdsayRouteCollector._walk_geometry(ORIGIN, DEST))
+
+    assert path == [ORIGIN, DEST]
+    assert quality == "exact"
+
+
+def test_odsay_walk_geometry_uses_osmnx_only_when_enabled(monkeypatch):
+    async def osmnx_collect(_self, _start, _end):
+        return [SimpleNamespace(path=[ORIGIN, DEST])]
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "")
+    monkeypatch.setattr(settings, "OSMNX_WALK_GEOMETRY_ENABLED", True)
+    monkeypatch.setattr(OsmnxRouteCollector, "collect", osmnx_collect)
+
+    path, quality = asyncio.run(OdsayRouteCollector._walk_geometry(ORIGIN, DEST))
+
+    assert path == [ORIGIN, DEST]
+    assert quality == "exact"
+
+
+def test_odsay_walk_geometry_falls_back_when_enabled_providers_fail(monkeypatch):
+    async def fail_collect(_self, _start, _end):
+        raise CollectorError("provider unavailable")
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "OSMNX_WALK_GEOMETRY_ENABLED", True)
+    monkeypatch.setattr(TmapRouteCollector, "collect", fail_collect)
+    monkeypatch.setattr(OsmnxRouteCollector, "collect", fail_collect)
+
+    path, quality = asyncio.run(OdsayRouteCollector._walk_geometry(ORIGIN, DEST))
+
+    assert path == [ORIGIN, DEST]
+    assert quality == "estimated"
 
 
 def test_osmnx_fails_explicitly_when_graph_unavailable(monkeypatch):
@@ -97,18 +155,32 @@ def test_odsay_load_lane_keeps_absolute_coordinates():
     assert coords[0] == Coordinate(lat=35.1150, lng=129.0500)
 
 
+def test_odsay_normalizes_abbreviated_search_map_object():
+    assert OdsayRouteCollector._load_lane_map_object("71216:1:17:20") == "0:0@71216:1:17:20"
+    assert (
+        OdsayRouteCollector._load_lane_map_object(
+            "70002:2:70231:70219@70001:2:70119:70113"
+        )
+        == "0:0@70002:2:70231:70219@70001:2:70119:70113"
+    )
+    assert (
+        OdsayRouteCollector._load_lane_map_object("126:35@100:1:1:2")
+        == "126:35@100:1:1:2"
+    )
+
+
 def test_odsay_collect_uses_search_and_load_lane_contract(monkeypatch):
     import collectors.odsay_collector as module
 
     search_payload = {"result": {"path": [{
-        "info": {"totalTime": 20, "totalDistance": 5000, "totalWalk": 100, "mapObj": "126:35@100:1:1:2"},
+        "info": {"totalTime": 20, "totalDistance": 5000, "totalWalk": 100, "mapObj": "100:1:1:2"},
         "subPath": [{
             "trafficType": 2, "sectionTime": 18, "distance": 4900,
             "startName": "부산역", "endName": "서면역", "lane": [{"busNo": "100"}],
         }],
     }]}}
     lane_payload = {"result": {"lane": [{"section": [{"graphPos": [
-        {"x": 3.04, "y": 0.115}, {"x": 3.059, "y": 0.157},
+        {"x": 129.04, "y": 35.115}, {"x": 129.059, "y": 35.157},
     ]}]}]}}
 
     class Response:
@@ -121,6 +193,8 @@ def test_odsay_collect_uses_search_and_load_lane_contract(monkeypatch):
         async def __aenter__(self): return self
         async def __aexit__(self, *args): return None
         async def get(self, url, **kwargs):
+            if url.endswith("loadLane"):
+                assert kwargs["params"]["mapObject"] == "0:0@100:1:1:2"
             return Response(lane_payload if url.endswith("loadLane") else search_payload)
 
     monkeypatch.setattr(settings, "ODSAY_API_KEY", "test-key")

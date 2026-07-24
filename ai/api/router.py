@@ -358,9 +358,9 @@ async def labeling_candidates(req: RecommendRequest):
 async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], dict]:
     origin = Coordinate(lat=req.origin_lat, lng=req.origin_lng)
     destination = Coordinate(lat=req.dest_lat, lng=req.dest_lng)
-    # OSMnx is used only inside ODsay to recover walking geometry. It has no
-    # authoritative travel-time value and therefore must not become a scored
-    # standalone route candidate.
+    # Opt-in OSMnx is used only inside ODsay to recover walking geometry. It has
+    # no authoritative travel-time value and therefore must not become a
+    # scored standalone route candidate.
     collectors = [OdsayRouteCollector(), TmapRouteCollector()]
     source_names = [collector.source_name for collector in collectors]
     results = await asyncio.gather(

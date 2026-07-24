@@ -41,6 +41,20 @@ class OdsayRouteCollector(BaseRouteCollector):
         except (AttributeError, TypeError, ValueError) as exc:
             raise CollectorError("ODsay mapObject의 기준 좌표 형식이 올바르지 않습니다.") from exc
 
+    @staticmethod
+    def _load_lane_map_object(map_object: str) -> str:
+        """검색 응답의 축약 mapObj를 loadLane 요청 형식으로 정규화한다."""
+        if not isinstance(map_object, str) or not map_object.strip():
+            raise CollectorError("ODsay mapObject가 비어 있습니다.")
+        value = map_object.strip()
+        # searchPubTransPathT는 부산 버스 단일 구간처럼 기준점 없이
+        # ``ID:Class:StartIdx:EndIdx`` 노선 토큰 하나 이상을 반환할 수 있다.
+        # 기준점은 ``BaseX:BaseY`` 두 필드이고 노선 토큰은 네 필드이므로,
+        # 첫 토큰의 필드 수로 이미 기준점이 포함되었는지 판별한다.
+        first_token = value.split("@", 1)[0]
+        has_base = len(first_token.split(":")) == 2
+        return value if has_base else f"0:0@{value}"
+
     @classmethod
     def _lane_paths(cls, data: dict, map_object: str) -> list[list[Coordinate]]:
         base_x, base_y = cls._map_base(map_object)
@@ -78,10 +92,11 @@ class OdsayRouteCollector(BaseRouteCollector):
         destination: Coordinate,
     ) -> list[list[Coordinate]]:
         margin = 0.02
+        load_lane_map_object = self._load_lane_map_object(map_object)
         response = await client.get(
             self.LANE_URL,
             params={
-                "mapObject": map_object,
+                "mapObject": load_lane_map_object,
                 "left": min(origin.lng, destination.lng) - margin,
                 "top": max(origin.lat, destination.lat) + margin,
                 "right": max(origin.lng, destination.lng) + margin,
@@ -95,7 +110,7 @@ class OdsayRouteCollector(BaseRouteCollector):
         api_error = self._api_error(data)
         if api_error:
             raise CollectorError(f"ODsay loadLane 실패: {api_error}")
-        paths = self._lane_paths(data, map_object)
+        paths = self._lane_paths(data, load_lane_map_object)
         if not paths:
             raise CollectorError("ODsay loadLane 응답에 유효한 경로 좌표가 없습니다.")
         return paths
@@ -136,14 +151,17 @@ class OdsayRouteCollector(BaseRouteCollector):
 
     @staticmethod
     async def _walk_geometry(start: Coordinate, end: Coordinate) -> tuple[list[Coordinate], str]:
-        # TMAP 키가 있으면 공식 보행 경로를 우선하고, 없으면 OSM 보행 네트워크를 사용한다.
-        from collectors.osmnx_collector import OsmnxRouteCollector
+        # TMAP 키가 있으면 공식 보행 경로를 우선한다. OSMnx는 외부 그래프
+        # 조회 지연이 크므로 명시적으로 활성화한 환경에서만 보조로 사용한다.
         from collectors.tmap_collector import TmapRouteCollector
 
         collectors = []
         if settings.TMAP_API_KEY and not settings.TMAP_API_KEY.startswith("YOUR_"):
             collectors.append(TmapRouteCollector())
-        collectors.append(OsmnxRouteCollector())
+        if settings.OSMNX_WALK_GEOMETRY_ENABLED:
+            from collectors.osmnx_collector import OsmnxRouteCollector
+
+            collectors.append(OsmnxRouteCollector())
         for collector in collectors:
             try:
                 candidates = await collector.collect(start, end)

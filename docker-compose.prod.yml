@@ -24,6 +24,7 @@ services:
     environment:
       ODSAY_API_KEY: ${ODSAY_API_KEY:?ODSAY_API_KEY is required}
       TMAP_API_KEY: ${TMAP_API_KEY:-}
+      OSMNX_WALK_GEOMETRY_ENABLED: ${OSMNX_WALK_GEOMETRY_ENABLED:-false}
       RANKER_TIER: ${RANKER_TIER:-human_validated}
       PYTHONUTF8: "1"
     healthcheck:
