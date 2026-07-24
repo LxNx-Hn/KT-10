@@ -10,3 +10,5 @@ dev-dist
 *.log
 coverage
 .vite
+test-results
+playwright-report

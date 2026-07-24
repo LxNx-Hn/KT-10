@@ -161,6 +161,37 @@ describe('UI 상태 — 검색 중심 구조', () => {
     expect(container.querySelector('.route-card__stats')?.textContent).toMatch(/분.*도보.*환승/);
   });
 
+  it('그늘을 계산할 수 없으면 0% 대신 정보 없음과 계산 사유를 표시한다', () => {
+    const { container } = render(<App />);
+    act(() => {
+      seedResults();
+      const [first, ...rest] = useAppStore.getState().recommendations;
+      const updated = {
+        ...first,
+        route: {
+          ...first.route,
+          shade: {
+            status: 'unavailable' as const,
+            evaluatedAt: '2026-07-24T14:00:00+09:00',
+            source: '검증용 데모 건물 높이 데이터',
+            dataQuality: 'demo' as const,
+            calculationNote: '선택한 경로가 건물 데이터의 검증 범위를 벗어났습니다.',
+          },
+        },
+      };
+      useAppStore.setState({
+        recommendations: [updated, ...rest],
+        candidates: [updated.route, ...rest.map((item) => item.route)],
+      });
+    });
+
+    const routeId = useAppStore.getState().recommendations[0].route.id;
+    const card = container.querySelector(`[data-route-id="${routeId}"]`)!;
+    expect(card.textContent).toContain('건물 그늘 정보 없음');
+    expect(card.textContent).toContain('건물 데이터의 검증 범위를 벗어났습니다');
+    expect(card.textContent).not.toContain('건물 그늘 0%');
+  });
+
   it('일부 구간만 계단 없음이면 전체 경로를 계단 없음으로 단정하지 않는다', () => {
     const { container } = render(<App />);
     act(() => {
