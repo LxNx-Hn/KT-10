@@ -206,3 +206,222 @@ def test_odsay_collect_uses_search_and_load_lane_contract(monkeypatch):
     assert result[0].geometry_quality == "exact"
     assert result[0].segments[0]["mode"] == "bus"
     assert len(result[0].segments[0]["path"]) == 2
+
+
+def test_odsay_rejects_malformed_map_object_tokens():
+    with pytest.raises(CollectorError, match="노선 토큰"):
+        OdsayRouteCollector._load_lane_map_object("malformed")
+    with pytest.raises(CollectorError, match="노선 토큰"):
+        OdsayRouteCollector._load_lane_map_object("126:35@too:few")
+
+
+def test_odsay_lane_paths_preserve_empty_lane_position():
+    payload = {"result": {"lane": [
+        {"section": [{"graphPos": [{"x": "bad", "y": 35.1}]}]},
+        {"section": [{"graphPos": [
+            {"x": 129.05, "y": 35.11},
+            {"x": 129.06, "y": 35.12},
+        ]}]},
+    ]}}
+
+    paths = OdsayRouteCollector._lane_paths(
+        payload,
+        "126:35@100:1:1:2@101:1:1:2",
+    )
+
+    assert paths[0] == []
+    assert paths[1][0] == Coordinate(lat=35.11, lng=129.05)
+
+
+@pytest.mark.parametrize("invalid_info", [None, [], "malformed"])
+def test_odsay_skips_invalid_candidate_and_keeps_next_valid_one(
+    monkeypatch,
+    invalid_info,
+):
+    import collectors.odsay_collector as module
+
+    invalid = {
+        "info": invalid_info,
+        "subPath": [{
+            "trafficType": 2,
+            "sectionTime": 18,
+            "distance": 4900,
+        }],
+    }
+    valid = {
+        "info": {
+            "totalTime": 20,
+            "totalDistance": 5000,
+            "mapObj": "101:1:1:2",
+        },
+        "subPath": [{
+            "trafficType": 2,
+            "sectionTime": 18,
+            "distance": 4900,
+        }],
+    }
+    search_payload = {"result": {"path": [invalid, valid]}}
+    lane_payload = {"result": {"lane": [{"section": [{"graphPos": [
+        {"x": 129.04, "y": 35.115},
+        {"x": 129.059, "y": 35.157},
+    ]}]}]}}
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.payload
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, url, **kwargs):
+            return Response(
+                lane_payload if url.endswith("loadLane") else search_payload
+            )
+
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "test-key")
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+
+    result = asyncio.run(OdsayRouteCollector().collect(ORIGIN, DEST))
+
+    assert len(result) == 1
+    assert result[0].duration_min == 20
+
+
+@pytest.mark.parametrize("malformed_result", [None, [], "malformed"])
+def test_odsay_rejects_non_object_result(monkeypatch, malformed_result):
+    import collectors.odsay_collector as module
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"result": malformed_result}
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "test-key")
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+
+    with pytest.raises(CollectorError, match="result가 객체"):
+        asyncio.run(OdsayRouteCollector().collect(ORIGIN, DEST))
+
+
+@pytest.mark.parametrize(
+    ("field", "malformed_value"),
+    [
+        ("geometry", None),
+        ("geometry", []),
+        ("geometry", "malformed"),
+        ("properties", None),
+        ("properties", []),
+        ("properties", "malformed"),
+    ],
+)
+def test_tmap_rejects_non_object_nested_fields(
+    monkeypatch,
+    field,
+    malformed_value,
+):
+    import collectors.tmap_collector as module
+
+    feature = {
+        "geometry": {
+            "type": "LineString",
+            "coordinates": [
+                [ORIGIN.lng, ORIGIN.lat],
+                [DEST.lng, DEST.lat],
+            ],
+        },
+        "properties": {
+            "totalTime": 600,
+            "totalDistance": 1000,
+        },
+    }
+    feature[field] = malformed_value
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"features": [feature]}
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "test-key")
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+
+    with pytest.raises(CollectorError, match=field):
+        asyncio.run(TmapRouteCollector().collect(ORIGIN, DEST))
+
+
+def test_odsay_rejects_missing_transit_lane_instead_of_shifting_next_lane():
+    collector = OdsayRouteCollector()
+    path = {
+        "info": {
+            "totalTime": 20,
+            "totalDistance": 5000,
+            "mapObj": "100:1:1:2@101:1:1:2",
+        },
+        "subPath": [
+            {"trafficType": 2, "sectionTime": 8, "distance": 2000},
+            {"trafficType": 1, "sectionTime": 10, "distance": 2900},
+        ],
+    }
+
+    async def run():
+        async def fake_load_lane(*_args):
+            return [
+                [],
+                [
+                    Coordinate(lat=35.12, lng=129.05),
+                    Coordinate(lat=35.13, lng=129.06),
+                ],
+            ]
+
+        collector._load_lane = fake_load_lane
+        with pytest.raises(CollectorError, match="bus 구간"):
+            await collector._build_candidate(
+                object(),
+                path,
+                ORIGIN,
+                DEST,
+            )
+
+    asyncio.run(run())
