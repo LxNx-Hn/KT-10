@@ -108,6 +108,75 @@ def test_vworld_provider_requires_key(monkeypatch):
         asyncio.run(get_vworld_buildings(demo_candidates()[:1]))
 
 
+def test_vworld_provider_rejects_invalid_total_count(monkeypatch):
+    monkeypatch.setattr(settings, "vworld_api_key", "test-secret")
+    payload = _feature_collection()
+    payload["response"]["record"]["total"] = "not-a-number"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, request=request, json=payload)
+
+    with pytest.raises(RuntimeError, match="전체 건수"):
+        asyncio.run(
+            get_vworld_buildings(
+                demo_candidates()[:1],
+                transport=httpx.MockTransport(handler),
+            )
+        )
+
+
+def test_vworld_provider_rejects_early_pagination_end(monkeypatch):
+    monkeypatch.setattr(settings, "vworld_api_key", "test-secret")
+    first = _feature_collection()
+    first["response"]["record"]["total"] = "3"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params["page"] == "1":
+            return httpx.Response(200, request=request, json=first)
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "response": {
+                    "status": "OK",
+                    "record": {"total": "3"},
+                    "result": {
+                        "featureCollection": {"features": []}
+                    },
+                }
+            },
+        )
+
+    with pytest.raises(RuntimeError, match="먼저 종료"):
+        asyncio.run(
+            get_vworld_buildings(
+                demo_candidates()[:1],
+                transport=httpx.MockTransport(handler),
+            )
+        )
+
+
+def test_vworld_provider_rejects_duplicate_feature_across_pages(monkeypatch):
+    monkeypatch.setattr(settings, "vworld_api_key", "test-secret")
+    first = _feature_collection()
+    first_features = first["response"]["result"]["featureCollection"]["features"]
+    first["response"]["record"]["total"] = "2"
+    first["response"]["result"]["featureCollection"]["features"] = [
+        first_features[0]
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, request=request, json=first)
+
+    with pytest.raises(RuntimeError, match="중복 feature ID"):
+        asyncio.run(
+            get_vworld_buildings(
+                demo_candidates()[:1],
+                transport=httpx.MockTransport(handler),
+            )
+        )
+
+
 def test_public_shade_reports_height_coverage_without_zero_fill():
     buildings = {
         "source": "VWorld LT_C_BLDGINFO WFS",

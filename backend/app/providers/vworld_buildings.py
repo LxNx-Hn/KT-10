@@ -57,10 +57,20 @@ def _feature_collection(payload: dict[str, Any]) -> tuple[list[dict], int]:
     if not isinstance(features, list):
         raise RuntimeError("VWorld 건물 응답의 GeoJSON features를 확인할 수 없습니다.")
     record = response.get("record") or {}
-    try:
-        total = int(record.get("total", len(features)))
-    except (TypeError, ValueError):
+    raw_total = record.get("total")
+    if raw_total is None:
         total = len(features)
+    else:
+        try:
+            total = int(raw_total)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "VWorld 건물 응답의 전체 건수가 유효하지 않습니다."
+            ) from exc
+        if total < 0:
+            raise RuntimeError(
+                "VWorld 건물 응답의 전체 건수가 유효하지 않습니다."
+            )
     return features, total
 
 
@@ -170,6 +180,7 @@ async def get_vworld_buildings(
         base_params["domain"] = settings.vworld_api_domain
 
     all_features: list[dict] = []
+    seen_feature_ids: set[str] = set()
     page = 1
     total = 0
     try:
@@ -192,8 +203,37 @@ async def get_vworld_buildings(
                         f"경로 주변 건물이 {total}건으로 안전 조회 한도 "
                         f"{MAX_FEATURES}건을 초과했습니다."
                     )
+                if len(features) > PAGE_SIZE:
+                    raise RuntimeError(
+                        "VWorld 건물 응답이 요청한 페이지 크기를 초과했습니다."
+                    )
+                page_ids = [
+                    str(feature["id"])
+                    for feature in features
+                    if isinstance(feature, dict)
+                    and feature.get("id") not in (None, "")
+                ]
+                duplicate_ids = seen_feature_ids.intersection(page_ids)
+                if len(page_ids) != len(set(page_ids)) or duplicate_ids:
+                    raise RuntimeError(
+                        "VWorld 건물 페이지에 중복 feature ID가 있습니다."
+                    )
+                seen_feature_ids.update(page_ids)
                 all_features.extend(features)
-                if not features or len(all_features) >= total:
+                if len(all_features) > MAX_FEATURES:
+                    raise RuntimeError(
+                        f"경로 주변 건물이 안전 조회 한도 "
+                        f"{MAX_FEATURES}건을 초과했습니다."
+                    )
+                if len(all_features) > total:
+                    raise RuntimeError(
+                        "VWorld 건물 응답의 전체 건수와 페이지 결과가 다릅니다."
+                    )
+                if not features and len(all_features) < total:
+                    raise RuntimeError(
+                        "VWorld 건물 페이지가 전체 건수보다 먼저 종료됐습니다."
+                    )
+                if len(all_features) >= total:
                     break
                 page += 1
     except httpx.HTTPStatusError as exc:
