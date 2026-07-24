@@ -38,6 +38,18 @@ IMPORT_SOURCES = {
     "OPENWEATHER_API_KEY": ROOT / "backend" / ".env",
     "BUS_SERVICE_KEY": ROOT / "backend" / ".env",
 }
+# 외부 전달 파일에서 쓰일 수 있는 명칭을 정규화한다. JavaScript 키와
+# REST 키는 서로 대체할 수 없으므로 의도적으로 별도 항목으로 유지한다.
+IMPORT_ALIASES = {
+    "VITE_KAKAO_MAP_KEY": ("VITE_KAKAO_MAP_KEY", "KAKAO_JAVASCRIPT_KEY"),
+    "KAKAO_REST_API_KEY": ("KAKAO_REST_API_KEY",),
+    "KAKAO_OAUTH_CLIENT_SECRET": ("KAKAO_OAUTH_CLIENT_SECRET",),
+    "ODSAY_API_KEY": ("ODSAY_API_KEY",),
+    "TMAP_API_KEY": ("TMAP_API_KEY",),
+    "VWORLD_API_KEY": ("VWORLD_API_KEY",),
+    "OPENWEATHER_API_KEY": ("OPENWEATHER_API_KEY",),
+    "BUS_SERVICE_KEY": ("BUS_SERVICE_KEY", "BUSAN_BUS_API_KEY"),
+}
 
 
 def _values(path: Path) -> dict[str, str]:
@@ -64,9 +76,19 @@ def _render(template: str, values: dict[str, str]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def prepare(import_existing: bool) -> None:
+def _first_present(values: dict[str, str], aliases: tuple[str, ...]) -> str:
+    for alias in aliases:
+        value = values.get(alias, "")
+        if value:
+            return value
+    return ""
+
+
+def prepare(import_existing: bool, import_env: Path | None = None) -> None:
     if not EXAMPLE.exists():
         raise SystemExit(".env.production.example 파일이 없습니다.")
+    if import_env is not None and not import_env.is_file():
+        raise SystemExit("가져올 환경파일이 없습니다.")
     template = EXAMPLE.read_text(encoding="utf-8")
     values = _values(EXAMPLE)
     values.update(_values(TARGET))
@@ -77,6 +99,11 @@ def prepare(import_existing: bool) -> None:
         for key, path in IMPORT_SOURCES.items():
             if not values.get(key):
                 values[key] = source_cache[path].get(key, "")
+    if import_env is not None:
+        imported = _values(import_env)
+        for key, aliases in IMPORT_ALIASES.items():
+            if not values.get(key):
+                values[key] = _first_present(imported, aliases)
     for key, size in GENERATED.items():
         if not values.get(key):
             values[key] = secrets.token_urlsafe(size)
@@ -118,11 +145,19 @@ def main() -> None:
         action="store_true",
         help=".env.production의 필수 설정을 값 노출 없이 검사합니다.",
     )
+    parser.add_argument(
+        "--import-env",
+        type=Path,
+        help=(
+            "추가 환경파일을 가져옵니다. KAKAO_JAVASCRIPT_KEY는 지도용 "
+            "VITE_KAKAO_MAP_KEY로만 매핑하며 REST 키로 대체하지 않습니다."
+        ),
+    )
     args = parser.parse_args()
     if args.check:
         check()
     else:
-        prepare(args.import_existing)
+        prepare(args.import_existing, args.import_env)
 
 
 if __name__ == "__main__":
