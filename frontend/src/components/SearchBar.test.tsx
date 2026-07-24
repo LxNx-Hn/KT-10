@@ -38,6 +38,15 @@ async function finishDebounce() {
 }
 
 describe('출발지·도착지 장소 검색', () => {
+  it('선택되지 않은 출발지를 즉시 안내하고 해당 입력으로 초점을 옮긴다', () => {
+    const { getByLabelText, getByRole } = render(<SearchBar />);
+
+    fireEvent.click(getByRole('button', { name: '경로 찾기' }));
+
+    expect(getByRole('alert').textContent).toContain('출발지');
+    expect(document.activeElement).toBe(getByLabelText('출발지'));
+  });
+
   it('부산역 Kakao 검색 결과를 키보드 Enter로 출발지에 선택한다', async () => {
     const search = vi.spyOn(adapters.places, 'searchPlaces').mockResolvedValue([BUSAN_STATION]);
     const { getByLabelText, getByRole } = render(<SearchBar />);
@@ -110,5 +119,17 @@ describe('출발지·도착지 장소 검색', () => {
 
     expect(getByRole('status').textContent).toContain('‘북구청’에 대한 부산 지역 검색 결과');
     expect(getByRole('status').textContent).toContain('장소명이나 주소');
+  });
+
+  it('입력 영역 밖을 누르면 열려 있던 장소 결과를 닫는다', async () => {
+    vi.spyOn(adapters.places, 'searchPlaces').mockResolvedValue([BUSAN_STATION]);
+    const { getByLabelText, queryByRole } = render(<SearchBar />);
+
+    fireEvent.change(getByLabelText('출발지'), { target: { value: '부산역' } });
+    await finishDebounce();
+    expect(queryByRole('option')).toBeTruthy();
+
+    fireEvent.pointerDown(document.body);
+    expect(queryByRole('option')).toBeNull();
   });
 });

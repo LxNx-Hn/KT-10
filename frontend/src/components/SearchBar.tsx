@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { adapters } from '@/adapters';
 import type { Place } from '@/types';
@@ -9,10 +9,12 @@ function PlaceInput({
   label,
   value,
   onSelect,
+  inputRef,
 }: {
   label: string;
   value: Place | null;
   onSelect: (p: Place | null) => void;
+  inputRef: RefObject<HTMLInputElement>;
 }) {
   const [text, setText] = useState(value?.name ?? '');
   const [results, setResults] = useState<Place[]>([]);
@@ -22,16 +24,32 @@ function PlaceInput({
   const [activeIndex, setActiveIndex] = useState(-1);
   const timer = useRef<number | undefined>(undefined);
   const requestId = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
   const inputId = `${label}-place-input`;
   const listId = `${label}-place-results`;
 
   useEffect(() => {
     setText(value?.name ?? '');
+    setResults([]);
+    setOpen(false);
+    setSearching(false);
+    setSearchError('');
+    setActiveIndex(-1);
   }, [value]);
 
-  useEffect(() => () => {
-    requestId.current += 1;
-    window.clearTimeout(timer.current);
+  useEffect(() => {
+    const closeWhenOutside = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+        setActiveIndex(-1);
+      }
+    };
+    document.addEventListener('pointerdown', closeWhenOutside);
+    return () => {
+      document.removeEventListener('pointerdown', closeWhenOutside);
+      requestId.current += 1;
+      window.clearTimeout(timer.current);
+    };
   }, []);
 
   const onChange = (q: string) => {
@@ -87,9 +105,10 @@ function PlaceInput({
   };
 
   return (
-    <div className="place-input">
+    <div className="place-input" ref={containerRef}>
       <label className="place-input__label" htmlFor={inputId}>{label}</label>
       <input
+        ref={inputRef}
         id={inputId}
         className="place-input__field"
         type="text"
@@ -119,8 +138,9 @@ function PlaceInput({
         aria-label={label}
         aria-describedby={(searching || searchError) ? `${label}-search-status` : undefined}
         aria-autocomplete="list"
-        aria-controls={listId}
+        aria-controls={open ? listId : undefined}
         aria-expanded={open}
+        aria-busy={searching}
         aria-activedescendant={
           open && activeIndex >= 0 ? `${listId}-option-${activeIndex}` : undefined
         }
@@ -152,7 +172,9 @@ function PlaceInput({
                 onClick={() => selectPlace(p)}
               >
                 <strong>{p.name}</strong>
-                <span>{p.category ?? ''} · {p.address ?? ''}</span>
+                {(p.category || p.address) && (
+                  <span>{[p.category, p.address].filter(Boolean).join(' · ')}</span>
+                )}
               </button>
             </li>
           ))}
@@ -167,10 +189,44 @@ export default function SearchBar() {
     useAppStore();
   const useCurrentLocation = useAppStore((s) => s.useCurrentLocation);
   const isDemo = import.meta.env.VITE_DATA_SOURCE !== 'live';
+  const originInputRef = useRef<HTMLInputElement>(null);
+  const destinationInputRef = useRef<HTMLInputElement>(null);
+  const [validationError, setValidationError] = useState('');
+
+  useEffect(() => {
+    if (origin && destination) setValidationError('');
+  }, [origin, destination]);
+
+  const submitSearch = () => {
+    if (!origin || !destination) {
+      const missing = !origin ? '출발지' : '도착지';
+      setValidationError(`${missing}를 검색 결과에서 선택해 주세요.`);
+      (!origin ? originInputRef : destinationInputRef).current?.focus();
+      return;
+    }
+    setValidationError('');
+    void search();
+  };
 
   return (
-    <section className="searchbar" aria-label="출발지 도착지 검색">
-      <PlaceInput label="출발지" value={origin} onSelect={setOrigin} />
+    <form
+      className="searchbar"
+      role="search"
+      aria-label="출발지 도착지 검색"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submitSearch();
+      }}
+    >
+      <PlaceInput
+        label="출발지"
+        value={origin}
+        onSelect={(place) => {
+          setValidationError('');
+          setOrigin(place);
+        }}
+        inputRef={originInputRef}
+      />
       <button
         type="button"
         className="searchbar__swap"
@@ -182,7 +238,15 @@ export default function SearchBar() {
       >
         ⇅
       </button>
-      <PlaceInput label="도착지" value={destination} onSelect={setDestination} />
+      <PlaceInput
+        label="도착지"
+        value={destination}
+        onSelect={(place) => {
+          setValidationError('');
+          setDestination(place);
+        }}
+        inputRef={destinationInputRef}
+      />
 
       <div className="searchbar__actions">
         <button type="button" className="btn btn--ghost" onClick={useCurrentLocation}>
@@ -194,14 +258,16 @@ export default function SearchBar() {
           </button>
         )}
         <button
-          type="button"
+          type="submit"
           className="btn btn--primary"
-          onClick={() => void search()}
           disabled={loading}
         >
           {loading ? '경로 찾는 중…' : '경로 찾기'}
         </button>
       </div>
-    </section>
+      {validationError && (
+        <p className="searchbar__validation" role="alert">{validationError}</p>
+      )}
+    </form>
   );
 }

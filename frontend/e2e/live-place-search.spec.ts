@@ -28,7 +28,9 @@ test('Kakao Places에서 북구청과 부산역을 실제 검색·선택한다',
   await expect(destination).toHaveValue(/부산역/);
 
   await page.getByRole('button', { name: '경로 찾기' }).click();
-  await expect(page.getByRole('heading', { name: '추천 경로 3개' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '추천 경로 3개' })).toBeVisible({
+    timeout: 20_000,
+  });
   await expect(page.locator('.route-card')).toHaveCount(3);
   await expect(page.locator('.route-card').first()).toContainText(
     '규칙 베이스라인 적합 점수',
