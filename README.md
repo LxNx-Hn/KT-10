@@ -14,6 +14,9 @@
 [현재 상태 보고서](docs/CURRENT_STATUS_AND_FOLLOW_UP_REPORT.md)를
 기준으로 합니다. 활성 프론트 구조와 실행 계약은
 [Map-first UI v2](frontend/src/v2/README.md)에 정리되어 있습니다.
+실제 공개 전에 필요한 도메인·공급자 콘솔·검증 순서는
+[최종 배포 잔여 작업 체크리스트](docs/FINAL_DEPLOYMENT_REMAINING_CHECKLIST.md)를
+따릅니다.
 
 ## 확정된 추천 계약
 
