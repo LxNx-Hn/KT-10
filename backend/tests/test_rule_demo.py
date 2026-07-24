@@ -66,7 +66,11 @@ def test_trip_condition_interactions_keep_unknown_distinct_from_zero():
 
 def test_rule_demo_signs_feedback_and_applies_bounded_personalization(monkeypatch):
     monkeypatch.setattr(settings, "route_mode", "demo")
-    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
+    monkeypatch.setattr(
+        settings,
+        "session_secret",
+        "test-session-secret-with-at-least-32-chars",
+    )
     monkeypatch.setattr(settings, "personalization_max_share", 0.35)
     monkeypatch.setattr(settings, "personalization_prior_reviews", 5.0)
     monkeypatch.setattr(settings, "personalization_learning_rate", 0.25)
@@ -91,9 +95,37 @@ def test_rule_demo_signs_feedback_and_applies_bounded_personalization(monkeypatc
     assert features["captured_at"] != features["shade_evaluated_at"]
 
 
+def test_signed_rank_matches_frontend_score_and_duration_tie_break(
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "route_mode", "demo")
+    monkeypatch.setattr(
+        settings,
+        "session_secret",
+        "test-session-secret-with-at-least-32-chars",
+    )
+    selected = select_representative_routes(_scored_routes(), 2)
+    selected[0].score.final_score = 80.0
+    selected[1].score.final_score = 80.0
+    selected[0].route.total_duration_min = 40
+    selected[1].route.total_duration_min = 20
+
+    result = personalize_and_sign(selected, "general", None)
+
+    assert [item.route.total_duration_min for item in result] == [20, 40]
+    assert [
+        verify_feedback_token(item.score.feedback_token)["displayed_rank"]
+        for item in result
+    ] == [1, 2]
+
+
 def test_live_rule_feedback_reuses_verified_enriched_snapshot(monkeypatch):
     monkeypatch.setattr(settings, "route_mode", "live")
-    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
+    monkeypatch.setattr(
+        settings,
+        "session_secret",
+        "test-session-secret-with-at-least-32-chars",
+    )
     selected = select_representative_routes(_scored_routes(), 3)
     captured_at = "2026-07-24T06:00:00+00:00"
     shade_evaluated_at = "2026-07-23T05:00:00+00:00"

@@ -12,6 +12,7 @@ from datetime import datetime, UTC
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -26,6 +27,9 @@ router = APIRouter(prefix="/api", tags=["feedback"])
 Profile = Literal[
     "general", "elderly", "child", "youth", "disabled", "pregnant"
 ]
+PROFILE_IDS = {
+    "general", "elderly", "child", "youth", "disabled", "pregnant"
+}
 IssueType = Literal["stairs", "slope", "elevator", "low_floor_bus", "walking_distance", "transfer", "duration", "safety", "weather", "other"]
 FacilityIssueType = Literal["missing", "relocated", "closed", "inaccessible", "information_incorrect", "other"]
 
@@ -121,17 +125,24 @@ def record_impression(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if snapshot.get("route_id") != payload.route_id:
         raise HTTPException(status_code=400, detail="Feedback token route does not match.")
-    import json
-    profile = snapshot["features"].get("profile") or (
-        user.preference.profile if user.preference else "general"
-    )
+    if snapshot["displayed_rank"] != payload.rank:
+        raise HTTPException(
+            status_code=400,
+            detail="Feedback token displayed rank does not match.",
+        )
+    profile = snapshot["features"].get("profile")
+    if profile not in PROFILE_IDS:
+        raise HTTPException(
+            status_code=400,
+            detail="Feedback token profile is invalid.",
+        )
 
     impression = RouteImpression(
         user_id=user.id,
         route_id=payload.route_id,
         rank=payload.rank,
-        model_version=str(snapshot.get("model_version") or "unknown")[:64],
-        profile=str(profile)[:16],
+        model_version=snapshot["model_version"],
+        profile=profile,
         feature_snapshot=json.dumps(snapshot["features"], ensure_ascii=False, separators=(",", ":")),
     )
     db.add(impression)
@@ -147,11 +158,25 @@ def record_review(
 ) -> dict:
     if not settings.personalization_configured:
         raise HTTPException(status_code=503, detail="Personalization policy is not configured.")
-    assert settings.personalization_learning_rate is not None
-    assert settings.personalization_regularization is not None
-    assert settings.personalization_usable_weight is not None
-    assert settings.personalization_rating_weight is not None
-    assert settings.personalization_reuse_weight is not None
+    learning_rate = settings.personalization_learning_rate
+    regularization = settings.personalization_regularization
+    usable_weight = settings.personalization_usable_weight
+    rating_weight = settings.personalization_rating_weight
+    reuse_weight = settings.personalization_reuse_weight
+    if any(
+        value is None
+        for value in (
+            learning_rate,
+            regularization,
+            usable_weight,
+            rating_weight,
+            reuse_weight,
+        )
+    ):
+        raise HTTPException(
+            status_code=503,
+            detail="Personalization policy is incomplete.",
+        )
     impression = db.get(RouteImpression, payload.impression_id)
     if impression is None or impression.user_id != user.id or impression.route_id != payload.route_id:
         raise HTTPException(status_code=400, detail="The review must reference this user's displayed route.")
@@ -168,26 +193,35 @@ def record_review(
             status_code=409,
             detail="This displayed route already has a review.",
         )
+    # 동일 사용자의 서로 다른 후기가 동시에 도착해도 마지막 커밋이 이전
+    # 온라인 학습 갱신을 덮어쓰지 않도록 상태 행을 직렬화한다.
+    preference = db.scalar(
+        select(UserPreference)
+        .where(UserPreference.user_id == user.id)
+        .with_for_update()
+    )
+    if preference is None:
+        preference = UserPreference(user_id=user.id)
+        db.add(preference)
+        db.flush()
     review = RouteReview(user_id=user.id, **payload.model_dump())
     db.add(review)
-    if user.preference is None:
-        user.preference = UserPreference(user_id=user.id)
     features = json.loads(impression.feature_snapshot)
     target = reward_target(
         was_usable=payload.was_usable,
         rating=payload.rating,
         would_reuse=payload.would_reuse,
-        usable_weight=settings.personalization_usable_weight,
-        rating_weight=settings.personalization_rating_weight,
-        reuse_weight=settings.personalization_reuse_weight,
+        usable_weight=usable_weight,
+        rating_weight=rating_weight,
+        reuse_weight=reuse_weight,
     )
-    user.preference.personalization_state = json.dumps(
+    preference.personalization_state = json.dumps(
         update_state(
-            parse_state(user.preference.personalization_state),
+            parse_state(preference.personalization_state),
             features,
             target,
-            learning_rate_base=settings.personalization_learning_rate,
-            regularization=settings.personalization_regularization,
+            learning_rate_base=learning_rate,
+            regularization=regularization,
         ),
         ensure_ascii=False,
         separators=(",", ":"),
@@ -216,7 +250,9 @@ def report_facility(
 
 @router.get("/admin/facility-reports")
 def list_facility_reports(
-    status_filter: str | None = Query(default=None, alias="status"),
+    status_filter: Literal[
+        "pending", "verified", "rejected", "resolved"
+    ] | None = Query(default=None, alias="status"),
     _: User = Depends(current_admin),
     db: Session = Depends(database_session),
 ) -> list[dict]:

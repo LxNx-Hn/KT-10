@@ -319,25 +319,41 @@ def personalize_and_sign(
                     "training_eligible": False,
                 })
     if active:
-        assert settings.personalization_max_share is not None
-        assert settings.personalization_prior_reviews is not None
+        max_personal_share = settings.personalization_max_share
+        prior_reviews = settings.personalization_prior_reviews
+        if max_personal_share is None or prior_reviews is None:
+            raise RuntimeError("Personalization ranking policy is incomplete.")
         for item, features in rows:
             item.score.final_score = round(
                 blended_rank_score(
                     item.score.final_score / 100,
                     state,
                     features,
-                    max_personal_share=settings.personalization_max_share,
-                    prior_reviews=settings.personalization_prior_reviews,
+                    max_personal_share=max_personal_share,
+                    prior_reviews=prior_reviews,
                 ) * 100,
                 1,
             )
-        rows.sort(key=lambda row: row[0].score.final_score, reverse=True)
+    # 프론트엔드는 표시된 0.1점 단위 점수, 소요시간, 응답 순서로
+    # 정렬한다. 서명 rank도 정확히 같은 공개 계약으로 확정해야 근접
+    # 점수·동점에서 후기 노출 순위가 어긋나지 않는다.
+    indexed_rows = list(enumerate(rows))
+    indexed_rows.sort(
+        key=lambda row: (
+            -row[1][0].score.final_score,
+            row[1][0].route.total_duration_min,
+            row[0],
+        )
+    )
+    rows = [row for _, row in indexed_rows]
 
     result: list[ScoredRoute] = []
     for rank, (item, features) in enumerate(rows, start=1):
         item.score.feedback_token = create_feedback_token(
-            item.route.id, RULE_MODEL_VERSION, features
+            item.route.id,
+            RULE_MODEL_VERSION,
+            features,
+            displayed_rank=rank,
         )
         item.score.voice_summary = build_voice_summary(
             item.route,

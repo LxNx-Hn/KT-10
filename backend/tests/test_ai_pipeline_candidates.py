@@ -1,4 +1,5 @@
 from app.models import LatLng, Place, ScoringOptions
+from app.feedback_tokens import verify_feedback_token
 import json
 import asyncio
 from datetime import datetime
@@ -280,6 +281,88 @@ def test_ai_personalization_score_preserves_personalized_order_for_frontend(
     assert results[0].score.final_score > results[1].score.final_score
 
 
+def test_ai_signed_rank_uses_display_score_and_duration_tie_break(
+    monkeypatch,
+):
+    slower_payload = _candidate_payload()
+    slower_payload["route_id"] = "slower"
+    slower_payload["duration_min"] = 30
+    slower_payload["feature_snapshot"]["route_id"] = "slower"
+    slower_payload["trait_labels"]["route_id"] = "slower"
+    faster_payload = _candidate_payload()
+    faster_payload["route_id"] = "faster"
+    faster_payload["duration_min"] = 20
+    faster_payload["feature_snapshot"]["route_id"] = "faster"
+    faster_payload["trait_labels"]["route_id"] = "faster"
+    candidates = [
+        _to_route_candidate(slower_payload, ORIGIN, DESTINATION, 1),
+        _to_route_candidate(faster_payload, ORIGIN, DESTINATION, 2),
+    ]
+
+    async def fake_enrich(routes, _options):
+        for route in routes:
+            route.model_features = {
+                "walk_distance_m": route.total_walk_m,
+            }
+            route.model_group_id = "enriched-group-1"
+            route.model_holdout_group_id = "od-group-1"
+            route.model_snapshot_hash = f"{route.id}-hash"
+            route.model_snapshot = {
+                "snapshot_schema_version": "route-feature-snapshot-v2",
+                "snapshot_kind": "live_route_candidate",
+                "captured_at": "2026-07-24T03:00:00+00:00",
+                "shade_evaluated_at": "2026-07-24T05:00:00+00:00",
+                "sources": ["odsay"],
+            }
+
+    async def fake_post(path, _payload):
+        assert path == "/rank/candidates"
+        return {
+            "ranked": [
+                {
+                    "route_id": "slower",
+                    "relative_fit_score": 0.80049,
+                },
+                {
+                    "route_id": "faster",
+                    "relative_fit_score": 0.8004,
+                },
+            ],
+            "metadata": {
+                "model_tier": "human_validated",
+                "model_version": "human-test",
+            },
+        }
+
+    monkeypatch.setattr(
+        ai_pipeline,
+        "enrich_ai_pipeline_candidates",
+        fake_enrich,
+    )
+    monkeypatch.setattr(ai_pipeline, "_post_pipeline", fake_post)
+    monkeypatch.setattr(
+        settings,
+        "session_secret",
+        "test-session-secret-with-at-least-32-chars",
+    )
+
+    results = asyncio.run(
+        rank_ai_pipeline_candidates(
+            candidates,
+            "general",
+            ScoringOptions(),
+            top_n=2,
+        )
+    )
+
+    assert [item.route.id for item in results] == ["faster", "slower"]
+    assert [item.score.final_score for item in results] == [80.0, 80.0]
+    assert [
+        verify_feedback_token(item.score.feedback_token)["displayed_rank"]
+        for item in results
+    ] == [1, 2]
+
+
 def test_backend_shade_is_enriched_before_ai_ranking(monkeypatch):
     route = _to_route_candidate(_candidate_payload(), ORIGIN, DESTINATION, 1)
     route.path = [
@@ -349,7 +432,11 @@ def test_backend_shade_is_enriched_before_ai_ranking(monkeypatch):
         }
 
     monkeypatch.setattr(ai_pipeline, "_post_pipeline", fake_post)
-    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
+    monkeypatch.setattr(
+        settings,
+        "session_secret",
+        "test-session-secret-with-at-least-32-chars",
+    )
 
     results = asyncio.run(
         rank_ai_pipeline_candidates(

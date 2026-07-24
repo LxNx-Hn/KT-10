@@ -463,6 +463,7 @@ def _score_existing_ai_candidate(
                 "profile": profile,
                 **features,
             },
+            displayed_rank=rank,
         ),
     )
     return ScoredRoute(route=route, score=score)
@@ -539,17 +540,30 @@ async def rank_ai_pipeline_candidates(
             )
         displayed_score = global_fit_score
         if personalization_active:
-            assert settings.personalization_max_share is not None
-            assert settings.personalization_prior_reviews is not None
+            max_personal_share = settings.personalization_max_share
+            prior_reviews = settings.personalization_prior_reviews
+            if max_personal_share is None or prior_reviews is None:
+                raise AIProviderError(
+                    503,
+                    "Personalization ranking policy is incomplete.",
+                )
             displayed_score = blended_rank_score(
                 global_fit_score,
                 state,
                 features_by_id[route_id],
-                max_personal_share=settings.personalization_max_share,
-                prior_reviews=settings.personalization_prior_reviews,
+                max_personal_share=max_personal_share,
+                prior_reviews=prior_reviews,
             )
         scored_rows.append((route_by_id[route_id], displayed_score))
-    scored_rows.sort(key=lambda row: row[1], reverse=True)
+    # UI가 받는 점수는 0.1점 단위다. 그보다 작은 내부 점수 차이로
+    # 순위를 먼저 고정하면 UI의 동점 소요시간 정렬과 서명 rank가
+    # 달라질 수 있으므로 공개 점수 계약으로 최종 순위를 확정한다.
+    scored_rows.sort(
+        key=lambda row: (
+            -round1(clamp(row[1] * 100)),
+            row[0].total_duration_min,
+        )
+    )
 
     return [
         _score_existing_ai_candidate(
