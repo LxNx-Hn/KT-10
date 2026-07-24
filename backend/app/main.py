@@ -90,6 +90,8 @@ app.include_router(feedback_router)
 async def _add_configured_shade(
     candidates: list[RouteCandidate],
     departure_at=None,
+    *,
+    wait_for_buildings: bool = False,
 ) -> list[RouteCandidate]:
     if not candidates:
         return candidates
@@ -104,7 +106,10 @@ async def _add_configured_shade(
             detail="BUILDING_SOURCE=vworld requires VWORLD_API_KEY.",
         )
     try:
-        buildings = await get_vworld_buildings(candidates)
+        buildings = await get_vworld_buildings(
+            candidates,
+            wait_for_complete=wait_for_buildings,
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return assign_characteristics(add_shade(candidates, effective_at, buildings))
@@ -361,6 +366,7 @@ async def routes_labeling_candidates(
         candidates = await _add_configured_shade(
             candidates,
             req.options.departure_at,
+            wait_for_buildings=True,
         )
         bundle = await enrich_ai_pipeline_candidates(candidates, req.options)
     except AIProviderError as exc:

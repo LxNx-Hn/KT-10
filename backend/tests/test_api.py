@@ -183,6 +183,30 @@ def test_explicit_demo_buildings_remain_labeled_when_used_with_live_routes(monke
     assert settings.active_sources()["buildings"] == "synthetic-demo"
 
 
+def test_labeling_shade_can_wait_for_complete_vworld_corridor(monkeypatch):
+    monkeypatch.setattr(settings, "building_source", "vworld")
+    monkeypatch.setattr(settings, "vworld_api_key", "configured")
+    wait_values = []
+
+    async def fake_buildings(_routes, *, wait_for_complete=False):
+        wait_values.append(wait_for_complete)
+        return {
+            "source": "test-buildings",
+            "dataQuality": "demo",
+            "buildings": [],
+        }
+
+    monkeypatch.setattr(app_main, "get_vworld_buildings", fake_buildings)
+
+    asyncio.run(_add_configured_shade(
+        demo_candidates(),
+        datetime(2026, 7, 24, 14, 0, tzinfo=ZoneInfo("Asia/Seoul")),
+        wait_for_buildings=True,
+    ))
+
+    assert wait_values == [True]
+
+
 @pytest.mark.parametrize(
     "profile",
     ["general", "elderly", "child", "youth", "disabled", "pregnant"],
