@@ -3,24 +3,33 @@ OSMnx 직접 계산 보행 경로 수집기.
 
 OD를 포함하는 동적 경계의 보행 그래프를 캐시하며, 실패를 직선 경로로 위장하지 않는다.
 """
-from itertools import islice
-from hashlib import sha256
-from pathlib import Path
 import asyncio
 import logging
-import math
+from hashlib import sha256
+from pathlib import Path
 from threading import BoundedSemaphore, Lock
+from typing import NamedTuple
 from weakref import WeakKeyDictionary
 
 import networkx as nx
+import numpy as np
 import osmnx as ox
-
-from collectors.base import BaseRouteCollector, CollectorError, RouteCandidate, Coordinate
 from config import settings
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import dijkstra
+from sklearn.neighbors import BallTree
+
+from collectors.base import (
+    BaseRouteCollector,
+    CollectorError,
+    Coordinate,
+    RouteCandidate,
+)
 
 GRAPH_CACHE_DIR = Path(__file__).resolve().parents[1] / "data" / "cache" / "osmnx"
 _graphs: dict[str, object] = {}
 _digraphs: WeakKeyDictionary = WeakKeyDictionary()
+_routing_indexes: WeakKeyDictionary = WeakKeyDictionary()
 _graph_locks: dict[str, Lock] = {}
 _graph_locks_guard = Lock()
 _overpass_slots = BoundedSemaphore(2)
@@ -38,6 +47,13 @@ ox.settings.overpass_url = str(settings.OSMNX_OVERPASS_URL).rstrip("/")
 ox.settings.requests_timeout = settings.OSMNX_REQUEST_TIMEOUT_SECONDS
 ox.settings.http_user_agent = "KT-10-accessible-routing/1.0"
 ox.settings.cache_folder = GRAPH_CACHE_DIR / "http"
+
+
+class RoutingIndex(NamedTuple):
+    node_ids: np.ndarray
+    nearest_tree: BallTree
+    node_positions: dict[object, int]
+    adjacency: csr_matrix
 
 
 def _graph_lock(key: str) -> Lock:
@@ -105,11 +121,133 @@ def _load_regional_graph():
         return _graphs[key]
 
 
+def _routing_index(digraph):
+    """연결된 보행망과 최근접 노드 인덱스를 그래프별로 한 번만 만든다."""
+    graph_identity = id(digraph)
+    with _graph_lock(f"routing-index-{graph_identity}"):
+        cached = _routing_indexes.get(digraph)
+        if cached is not None:
+            return cached
+        connected_nodes = max(
+            nx.weakly_connected_components(digraph),
+            key=len,
+            default=set(),
+        )
+        if len(connected_nodes) < 2:
+            raise nx.NetworkXNoPath(
+                "연결된 OSM 보행 도로망을 찾을 수 없습니다."
+            )
+        node_ids = np.asarray(tuple(connected_nodes), dtype=object)
+        radians = np.radians(np.asarray([
+            (
+                float(digraph.nodes[node]["y"]),
+                float(digraph.nodes[node]["x"]),
+            )
+            for node in node_ids
+        ]))
+        node_positions = {
+            node: position
+            for position, node in enumerate(node_ids)
+        }
+        connected_graph = digraph.subgraph(connected_nodes)
+        edge_count = connected_graph.number_of_edges()
+        rows = np.fromiter(
+            (
+                node_positions[start]
+                for start, _, _ in connected_graph.edges(data=True)
+            ),
+            dtype=np.int32,
+            count=edge_count,
+        )
+        columns = np.fromiter(
+            (
+                node_positions[end]
+                for _, end, _ in connected_graph.edges(data=True)
+            ),
+            dtype=np.int32,
+            count=edge_count,
+        )
+        lengths = np.fromiter(
+            (
+                float(data["length"])
+                for _, _, data in connected_graph.edges(data=True)
+            ),
+            dtype=np.float64,
+            count=edge_count,
+        )
+        if np.any(~np.isfinite(lengths)) or np.any(lengths <= 0):
+            raise ValueError("OSM 보행 그래프 간선 길이가 올바르지 않습니다.")
+        adjacency = csr_matrix(
+            (lengths, (rows, columns)),
+            shape=(len(node_ids), len(node_ids)),
+        )
+        adjacency.sum_duplicates()
+        adjacency.sort_indices()
+        index = RoutingIndex(
+            node_ids=node_ids,
+            nearest_tree=BallTree(radians, metric="haversine"),
+            node_positions=node_positions,
+            adjacency=adjacency,
+        )
+        _routing_indexes[digraph] = index
+        return index
+
+
+def _nearest_connected_nodes(
+    digraph,
+    origin: Coordinate,
+    destination: Coordinate,
+) -> tuple[object, object]:
+    index = _routing_index(digraph)
+    query = np.radians(np.asarray([
+        (origin.lat, origin.lng),
+        (destination.lat, destination.lng),
+    ]))
+    neighbor_count = min(2, len(index.node_ids))
+    _, indexes = index.nearest_tree.query(query, k=neighbor_count)
+    origin_node = index.node_ids[indexes[0][0]]
+    destination_node = index.node_ids[indexes[1][0]]
+    if origin_node == destination_node:
+        destination_node = index.node_ids[indexes[1][1]]
+    return origin_node, destination_node
+
+
+def _shortest_path(
+    index: RoutingIndex,
+    origin_node: object,
+    destination_node: object,
+) -> list[object]:
+    origin_position = index.node_positions[origin_node]
+    destination_position = index.node_positions[destination_node]
+    distances, predecessors = dijkstra(
+        index.adjacency,
+        directed=True,
+        indices=origin_position,
+        return_predecessors=True,
+    )
+    if not np.isfinite(distances[destination_position]):
+        raise nx.NetworkXNoPath(
+            "연결된 OSM 보행 경로를 찾을 수 없습니다."
+        )
+    path_positions = [destination_position]
+    current = destination_position
+    while current != origin_position:
+        current = int(predecessors[current])
+        if current < 0 or len(path_positions) > len(index.node_ids):
+            raise nx.NetworkXNoPath(
+                "OSM 보행 경로 선행 노드를 복원할 수 없습니다."
+            )
+        path_positions.append(current)
+    path_positions.reverse()
+    return [index.node_ids[position] for position in path_positions]
+
+
 def prepare_regional_graph() -> dict[str, int] | None:
     """지역 GraphML이 있으면 요청 전에 메모리에 적재해 첫 호출 지연을 없앤다."""
     if not _regional_graph_path().exists():
         return None
     graph = _load_regional_graph()
+    _routing_index(graph)
     return {
         "nodes": graph.number_of_nodes(),
         "edges": graph.number_of_edges(),
@@ -184,10 +322,6 @@ def _route_candidates_from_graph(
     origin: Coordinate,
     destination: Coordinate,
 ) -> list[RouteCandidate]:
-    o_node = ox.nearest_nodes(graph, X=origin.lng, Y=origin.lat)
-    d_node = ox.nearest_nodes(graph, X=destination.lng, Y=destination.lat)
-
-    # shortest_simple_paths는 MultiDiGraph를 지원하지 않으므로
     # 병렬 간선 중 최단 거리만 남긴 DiGraph로 변환한다.
     if graph.is_directed() and not graph.is_multigraph():
         digraph = graph
@@ -198,56 +332,16 @@ def _route_candidates_from_graph(
             if digraph is None:
                 digraph = ox.convert.to_digraph(graph, weight="length")
                 _digraphs[graph] = digraph
-    if o_node == d_node or not nx.has_path(digraph, o_node, d_node):
-        # retain_all 그래프에서는 출입구·건물 통로처럼 가까운 고립 노드가
-        # 좌표 스냅 대상으로 선택될 수 있다. 이때 직선으로 대체하지 않고
-        # 가장 큰 왕복 가능 보행망 안에서 양 끝점을 다시 스냅한다.
-        connected_nodes = max(
-            nx.strongly_connected_components(digraph),
-            key=len,
-            default=set(),
-        )
-        if len(connected_nodes) < 2:
-            raise nx.NetworkXNoPath(
-                "연결된 OSM 보행 도로망을 찾을 수 없습니다."
-            )
-
-        def nearest_connected_node(coordinate: Coordinate):
-            longitude_scale = math.cos(math.radians(coordinate.lat))
-            return min(
-                connected_nodes,
-                key=lambda node: (
-                    (
-                        float(digraph.nodes[node]["x"]) - coordinate.lng
-                    ) * longitude_scale
-                ) ** 2 + (
-                    float(digraph.nodes[node]["y"]) - coordinate.lat
-                ) ** 2,
-            )
-
-        o_node = nearest_connected_node(origin)
-        d_node = nearest_connected_node(destination)
-        if o_node == d_node:
-            destination_nodes = connected_nodes - {o_node}
-            d_node = min(
-                destination_nodes,
-                key=lambda node: (
-                    (
-                        float(digraph.nodes[node]["x"]) - destination.lng
-                    ) * math.cos(math.radians(destination.lat))
-                ) ** 2 + (
-                    float(digraph.nodes[node]["y"]) - destination.lat
-                ) ** 2,
-            )
-    paths = list(islice(
-        nx.shortest_simple_paths(
-            digraph,
-            o_node,
-            d_node,
-            weight="length",
-        ),
-        3,
-    ))
+    o_node, d_node = _nearest_connected_nodes(
+        digraph,
+        origin,
+        destination,
+    )
+    paths = [_shortest_path(
+        _routing_index(digraph),
+        o_node,
+        d_node,
+    )]
     candidates = []
     for path_nodes in paths:
         coords = [
@@ -291,14 +385,19 @@ class OsmnxRouteCollector(BaseRouteCollector):
             _schedule_graph_warm(origin, destination)
             raise CollectorError("OSMnx 보행 그래프를 백그라운드에서 준비 중입니다.") from exc
         try:
-            return _route_candidates_from_graph(graph, origin, destination)
+            return await asyncio.to_thread(
+                _route_candidates_from_graph,
+                graph,
+                origin,
+                destination,
+            )
         except Exception as exc:
             raise CollectorError(
                 f"OSMnx 보행 경로 계산 실패: {type(exc).__name__}"
             ) from exc
 
     async def collect(self, origin: Coordinate, destination: Coordinate) -> list:
-        """OD 동적 보행 그래프에서 최대 3개 실제 네트워크 선형을 반환한다.
+        """OD 보행 그래프에서 최단 실제 네트워크 선형을 반환한다.
 
         OSM 도로 그래프에는 보행 소요시간이 없다. 사용자별 보행속도 정책이
         확정되기 전까지 시간을 임의 환산하지 않고 ``None``으로 유지한다.
@@ -309,6 +408,11 @@ class OsmnxRouteCollector(BaseRouteCollector):
                 asyncio.to_thread(_get_graph, origin, destination),
                 timeout=settings.OSMNX_WALK_GEOMETRY_TIMEOUT_SECONDS,
             )
-            return _route_candidates_from_graph(G, origin, destination)
+            return await asyncio.to_thread(
+                _route_candidates_from_graph,
+                G,
+                origin,
+                destination,
+            )
         except Exception as exc:
             raise CollectorError(f"OSMnx 보행 경로 계산 실패: {type(exc).__name__}") from exc

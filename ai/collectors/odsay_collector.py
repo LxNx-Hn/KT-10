@@ -443,7 +443,15 @@ class OdsayRouteCollector(BaseRouteCollector):
                     raise CollectorError(
                         "ODsay 보행 구간의 시작·끝 좌표를 확인할 수 없습니다."
                     )
-                segment_path, quality = await self._walk_geometry(*endpoints)
+                if section_distance == 0:
+                    if endpoints[0] != endpoints[1]:
+                        raise CollectorError(
+                            "ODsay 0m 보행 구간의 시작·끝 좌표가 일치하지 않습니다."
+                        )
+                    segment_path = [endpoints[0], endpoints[1]]
+                    quality = "exact"
+                else:
+                    segment_path, quality = await self._walk_geometry(*endpoints)
             else:
                 segment_path = (
                     lane_paths[lane_index]

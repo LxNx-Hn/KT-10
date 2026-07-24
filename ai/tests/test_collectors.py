@@ -176,6 +176,7 @@ def test_odsay_walk_geometry_returns_immediately_while_cache_warms(
     monkeypatch.setattr(settings, "OSMNX_WALK_GEOMETRY_ENABLED", True)
     monkeypatch.setattr(osmnx_collector, "GRAPH_CACHE_DIR", tmp_path)
     osmnx_collector._graphs.clear()
+    osmnx_collector._routing_indexes.clear()
     osmnx_collector._warming_keys.clear()
     monkeypatch.setattr(osmnx_collector, "_get_graph", slow_graph)
 
@@ -234,6 +235,7 @@ def test_osmnx_prefers_prebuilt_regional_graph(monkeypatch, tmp_path):
     )
     osmnx_collector._graphs.clear()
     osmnx_collector._digraphs.clear()
+    osmnx_collector._routing_indexes.clear()
 
     first = osmnx_collector._get_graph(ORIGIN, DEST)
     second = osmnx_collector._get_graph(ORIGIN, DEST)
@@ -549,6 +551,57 @@ def test_odsay_lane_paths_preserve_empty_lane_position():
 
     assert paths[0] == []
     assert paths[1][0] == Coordinate(lat=35.11, lng=129.05)
+
+
+def test_odsay_zero_distance_transfer_does_not_create_detour(monkeypatch):
+    collector = OdsayRouteCollector()
+    shared_stop = {"startX": 129.05, "startY": 35.10}
+    path = {
+        "info": {"totalTime": 20, "totalDistance": 2000},
+        "subPath": [
+            {"trafficType": 3, "sectionTime": 3, "distance": 100},
+            {
+                "trafficType": 2,
+                "sectionTime": 8,
+                "distance": 900,
+                "startX": 129.04,
+                "startY": 35.11,
+                "endX": 129.05,
+                "endY": 35.10,
+            },
+            {"trafficType": 3, "sectionTime": 0, "distance": 0},
+            {
+                "trafficType": 2,
+                "sectionTime": 6,
+                "distance": 900,
+                **shared_stop,
+                "endX": 129.06,
+                "endY": 35.12,
+            },
+            {"trafficType": 3, "sectionTime": 3, "distance": 100},
+        ],
+    }
+    walk_calls = []
+
+    async def fake_walk(start, end):
+        walk_calls.append((start, end))
+        return [start, end], "exact"
+
+    monkeypatch.setattr(settings, "ODSAY_LOAD_LANE_ENABLED", False)
+    monkeypatch.setattr(collector, "_walk_geometry", fake_walk)
+
+    route = asyncio.run(collector._build_candidate(
+        None,
+        path,
+        ORIGIN,
+        DEST,
+    ))
+
+    zero_walk = route.segments[2]
+    assert zero_walk["distance_m"] == 0
+    assert zero_walk["path"][0] == zero_walk["path"][1]
+    assert zero_walk["geometry_quality"] == "exact"
+    assert len(walk_calls) == 2
 
 
 @pytest.mark.parametrize("invalid_info", [None, [], "malformed"])
