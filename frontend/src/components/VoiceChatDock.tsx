@@ -14,7 +14,11 @@ const STATUS_LABEL: Record<VoiceChatStatus, string> = {
 };
 
 /** 하단 고정 실시간 음성 챗봇 패널 (요구사항 §7) */
-export default function VoiceChatDock() {
+export default function VoiceChatDock({
+  variant = 'dock',
+}: {
+  variant?: 'dock' | 'map-first';
+}) {
   const status = useVoiceChatStore((s) => s.status);
   const messages = useVoiceChatStore((s) => s.messages);
   const interim = useVoiceChatStore((s) => s.interim);
@@ -63,17 +67,43 @@ export default function VoiceChatDock() {
     void handleUserInput(t);
   };
 
+  if (variant === 'map-first' && !open) {
+    return null;
+  }
+
   return (
-    <div className="voicedock" role="region" aria-label="음성 챗봇">
-      <button
-        type="button"
-        className="voicedock__handle"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className={`voicedock__dot voicedock__dot--${status}`} aria-hidden="true" />
-        음성 챗봇 · {STATUS_LABEL[status]} {open ? '▾' : '▴'}
-      </button>
+    <div
+      className={variant === 'map-first' ? 'voicedock voicedock--map-first' : 'voicedock'}
+      role="region"
+      aria-label="음성 챗봇"
+    >
+      {variant === 'map-first' ? (
+        <button
+          type="button"
+          className="voicedock__handle"
+          aria-expanded={open}
+          aria-label="음성 챗봇 닫기"
+          onClick={() => {
+            if (listening) stop();
+            stopSpeaking();
+            if (status === 'listening' || status === 'speaking') setStatus('idle');
+            setOpen(false);
+          }}
+        >
+          <span className={`voicedock__dot voicedock__dot--${status}`} aria-hidden="true" />
+          음성 챗봇 · {STATUS_LABEL[status]} · 닫기 ✕
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="voicedock__handle"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          <span className={`voicedock__dot voicedock__dot--${status}`} aria-hidden="true" />
+          음성 챗봇 · {STATUS_LABEL[status]} {open ? '▾' : '▴'}
+        </button>
+      )}
 
       {open && (
         <div className="voicedock__body">
