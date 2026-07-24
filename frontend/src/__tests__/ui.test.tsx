@@ -175,6 +175,8 @@ describe('UI 상태 — 검색 중심 구조', () => {
             evaluatedAt: '2026-07-24T14:00:00+09:00',
             source: '검증용 데모 건물 높이 데이터',
             dataQuality: 'demo' as const,
+            shadowPolygons: [],
+            pathSegments: [],
             calculationNote: '선택한 경로가 건물 데이터의 검증 범위를 벗어났습니다.',
           },
         },
