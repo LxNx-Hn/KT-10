@@ -18,7 +18,7 @@
 [최종 배포 잔여 작업 체크리스트](docs/FINAL_DEPLOYMENT_REMAINING_CHECKLIST.md)를
 따릅니다.
 Windows에서 키 확인부터 실제 장소검색·경로·경사·건물 그늘과 비운영
-Judge 모델까지 점검하는 명령은 [로컬 테스트 가이드](docs/LOCAL_TESTING.md)에
+초기 평가 모델까지 점검하는 명령은 [로컬 테스트 가이드](docs/LOCAL_TESTING.md)에
 분리했습니다.
 
 ## 확정된 추천 계약
@@ -64,7 +64,7 @@ JSON과 manifest checksum을 검증한 뒤 로드하며 역할은 다음과 같�
 
 - `ai/data/rankers.human-candidate.zip`: 사람 평가로 학습한 관리자 검토 전 후보
 - `ai/data/rankers.human-validated.zip`: checksum·승인자·승인 근거를 남겨 수동 승격한 운영 모델
-- `ai/data/rankers.judge-baseline.zip`: 외부 LLM 평가로 학습하는 비운영 baseline
+- `ai/data/rankers.bootstrap-baseline.zip`: 초기 평가로 학습하는 비운영 baseline
 - `ai/data/rankers.review-mixed-candidate.zip`: 동의 후기를 제한적으로 섞은 별도 검토 후보
 
 그늘 데모의 입력·계산식·실데이터 교체 조건은 [docs/SHADE_RULE_DEMO.md](docs/SHADE_RULE_DEMO.md)를 참고하세요.
@@ -93,22 +93,23 @@ JSON과 manifest checksum을 검증한 뒤 로드하며 역할은 다음과 같�
   명시합니다.
 - 사람 평가용 `route_features.jsonl`은 0바이트,
   `route_labels.csv`는 헤더만이며 사람 후보·승인 모델은 아직 없습니다.
-  별도 Judge 배치는 실제 부산 OD 3개·후보 9개와 Codex 평가 54개를
-  보존하고 `rankers.judge-baseline.zip`까지 생성했습니다. 기본
-  `RANKER_TIER=human_validated`의 `/model/status`는 계속 `ready=false`이고,
-  로컬 비교에서 `judge_baseline`을 명시한 경우에만 준비됩니다.
+  2026-07-24의 부산 OD 3개·후보 9개·프로필 평가 54개는 모델 계약을
+  확인한 기술 스모크 기록입니다. 확대 학습 입력과 혼동하지 않도록 당시
+  평가 원문과 모델은 현재 배포 저장소에서 제외했습니다. 기본
+  `RANKER_TIER=human_validated`의 `/model/status`는 계속 `ready=false`입니다.
 - `ROUTE_MODE=live` 규칙 베이스라인은 모델 없이 동작합니다. 운영
   `ROUTE_MODE=ai`, `RANKER_TIER=human_validated`는 사람 라벨과 관리자
-  승인 모델이 준비되기 전까지 비활성입니다. 비운영 Judge 비교는
-  `RANKER_TIER=judge_baseline`을 명시한 로컬 환경에서만 사용할 수 있습니다.
+  승인 모델이 준비되기 전까지 비활성입니다. 비운영 초기 평가 비교는
+  새 아티팩트를 생성한 뒤 `RANKER_TIER=bootstrap_baseline`을 명시한
+  로컬 환경에서만 사용할 수 있습니다.
 - 제공된 2023~2025 대중교통 만족도 압축파일은 161개 시군의 집단 평균
   데이터로 감사했습니다. OD·후보 경로·좌표·선택 순위가 없어 경로
   학습 라벨로 사용하지 않았고, 혼잡·환승 안내·교통약자 시설의 선택형
   직접 후기 항목과 데이터 감사 산출물로 반영했습니다.
-- 실제 후보 9개에 대해 6개 프로필의 54개 `llm_judge` 평가와 근거,
-  프롬프트 해시·평가시각·피처 해시를 고정했습니다. 이 결과는 부산
-  OD 3개뿐인 기술 베이스라인이며 실제 사용자 검증이나 장애인 접근성
-  보장으로 표현하지 않습니다.
+- 실제 후보 9개에 대해 6개 프로필의 54개 외부 평가와 근거,
+  평가 지침 해시·평가시각·피처 해시를 고정해 계약을 검증했습니다.
+  이 결과는 부산 OD 3개뿐인 역사적 기술 스모크이며 실제 사용자 검증이나
+  장애인 접근성 보장으로 표현하지 않습니다.
 - GLO-90 경사는 실제 DEM 조회 기반의 약 90m 지형 추정입니다. 그늘은
   건물만 계산하며 나무·지형 그늘을 포함하지 않습니다.
 - AI·백엔드·프론트 운영 이미지는 비루트·capability 제거·
@@ -209,12 +210,11 @@ $env:PYTHONPATH='ai'
 `captured_at`은 실제 후보 수집시각, `shade_evaluated_at`은 태양·건물
 그늘을 계산한 출발시각으로 분리되며 둘 다 스냅샷에 보존됩니다.
 
-동결된 경로 사실을 블라인드 입력으로 사용하는 LLM judge 평가는 별도
-baseline입니다. 현재 저장소에는 실제 후보 9개와 Codex가 입력 피처만 보고
-평가한 54개 라벨, 학습된 `rankers.judge-baseline.zip`이 있습니다.
-새 배치를 만들 때는 빈 평가표의 `evaluated_at`, `relevance`,
-`rationale`를 실제 평가 결과로 모두 채워야 합니다. 기존·새 결과 모두
-실사용자 검증 모델로 표현하거나 자동 승격하지 않습니다.
+동결된 경로 사실을 블라인드 입력으로 사용하는 외부 평가는 별도
+baseline입니다. 새 배치를 만들 때는 빈 평가표의 `evaluated_at`,
+`relevance`, `rationale`를 실제 평가 결과로 모두 채워야 합니다.
+기존·새 결과 모두 실사용자 검증 모델로 표현하거나 자동 승격하지
+않습니다.
 
 기존 사람 라벨 절차는 생성된 `labeling_sheet.csv`를 9명이 0~4
 relevance로 평가하고, 확정본을 `route_labels.csv`, 같은 배치의 스냅샷을

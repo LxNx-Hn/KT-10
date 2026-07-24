@@ -92,7 +92,7 @@ geometry 결측, 야간 상태를 임의의 그늘 0%로 바꾸지 않습니다.
 경로 집합, 해시, 프로필 행렬, 동일 평가자의 중복 라벨, 최소 평가자 수를
 검증합니다.
 
-Judge JSONL은 이 계약에 더해 `judge_run_id`, `judge_source`,
+초기 평가 JSONL은 이 계약에 더해 `evaluation_run_id`, `evaluation_source`,
 `rubric_version`, `prompt_hash`, 실제 `evaluated_at`, 판단 근거를
 필수로 보존합니다. LLM/Codex judge 라벨은 초기 베이스라인으로 사용할 수
 있지만 사람 라벨과 합쳐 출처를 숨기지 않습니다.
@@ -102,7 +102,7 @@ Judge JSONL은 이 계약에 더해 `judge_run_id`, `judge_source`,
 
 | 파일 | 라벨 출처와 역할 |
 | --- | --- |
-| `rankers.judge-baseline.zip` | 외부 LLM judge 평가 기반 비운영 비교선 |
+| `rankers.bootstrap-baseline.zip` | 외부 평가 기반 비운영 비교선 |
 | `rankers.human-candidate.zip` | 최소 9명 사람 평가 기반 수동 검토 후보 |
 | `rankers.review-mixed-candidate.zip` | 동의 후기를 제한적으로 섞은 별도 후보, 자동 승격 금지 |
 | `rankers.human-validated.zip` | 사람 후보의 SHA-256과 승인 근거를 확인해 관리자가 승격한 운영 파일 |

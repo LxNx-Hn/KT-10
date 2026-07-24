@@ -40,7 +40,7 @@ GLO-90, VWorld, OpenWeather, 부산 버스와 PostgreSQL을 실제로 연결해
 
 현재 배포 readiness에서 남은 항목은 실제 운영 HTTPS origin과 그 origin의
 Kakao 웹 플랫폼·OAuth Redirect URI 등록입니다. 학습 기반 `ai` 모드는
-별도입니다. Codex judge 기술 베이스라인은 명시적 `judge_baseline`에서
+별도입니다. 초기 평가 기술 베이스라인은 명시적 `bootstrap_baseline`에서
 `ready=true`와 실제 순위 응답을 확인했지만, 사람 평가와 관리자 승인
 모델은 없습니다. 따라서 기본 `human_validated`의 `/model/status`는
 `ready=false`이며, 이를 규칙 기반 `live` 서비스의 실행 실패로 표현하지
@@ -105,30 +105,29 @@ GLO-90 경사, CCTV·시설 밀도와 건물 그늘의 분석 geometry로 사용
 | --- | --- |
 | `ai/data/training/route_features.jsonl` | 실제 후보 0건 |
 | `ai/data/training/route_labels.csv` | 헤더만 존재 |
-| `ai/data/training/judge_baseline/route_features.jsonl` | 부산 OD 3개·실제 후보 9개 |
-| Judge 완성 평가 JSONL | Codex 1회·6개 프로필·54개 |
-| `rankers.judge-baseline.zip` | 생성 완료, 비운영 기술 베이스라인 |
+| 초기 평가용 실제 후보 | 확대 수집 대기; 3 OD 기술 스모크 원문은 배포 저장소에서 제외 |
+| 초기 평가 JSONL | 확대 평가 대기; 2026-07-24 계약 검증 기록만 문서에 보존 |
+| `rankers.bootstrap-baseline.zip` | 없음; 확대 수집·평가 후 생성 예정 |
 | `rankers.human-candidate.zip` | 없음 |
 | `rankers.review-mixed-candidate.zip` | 없음 |
 | `rankers.human-validated.zip` | 없음 |
-| AI `/model/status` | 기본 `human_validated`는 `ready=false`; 명시적 `judge_baseline`은 `ready=true` |
+| AI `/model/status` | 기본 `human_validated`는 `ready=false`; 초기 평가 모델도 현재 미생성 |
 
 모델 파일은 실행 가능한 pickle이 아니라 checksum manifest와 프로필별
 XGBoost JSON을 담은 ZIP입니다.
 
 | 파일 | 용도 | 자동 운영 승격 |
 | --- | --- | --- |
-| `rankers.judge-baseline.zip` | 외부 LLM judge 기반 비교선 | 금지 |
+| `rankers.bootstrap-baseline.zip` | 외부 평가 기반 비교선 | 금지 |
 | `rankers.human-candidate.zip` | 최소 9명 사람 평가 기반 후보 | 금지 |
 | `rankers.review-mixed-candidate.zip` | 동의 후기를 제한적으로 섞은 후보 | 금지 |
 | `rankers.human-validated.zip` | SHA-256과 승인 근거를 확인한 운영 모델 | 해당 없음, 관리자 수동 생성 |
 
-Judge 템플릿·검증·학습 코드로 실제 후보를 동결한 뒤 Codex가 입력 피처만
-보고 0~4 relevance와 rationale을 작성했습니다. 프롬프트 해시, 평가시각,
-피처 해시와 모델 SHA-256을 보존합니다. 다만 OD 3개·후보 9개이고
-프로필별 holdout 검증 OD도 1개뿐이므로 로딩·순위화 계약을 확인하는 기술
-베이스라인입니다. 이를 실제 사용자 또는 사람 검증 모델로 표현하면 안
-됩니다.
+2026-07-24에는 실제 후보를 동결한 뒤 외부 평가로 0~4 relevance와
+rationale, 평가 지침 해시, 평가시각, 피처 해시와 모델 SHA-256 계약을
+검증했습니다. 다만 OD 3개·후보 9개이고 프로필별 holdout 검증 OD도
+1개뿐인 기술 스모크였으므로 평가 원문과 모델은 확대 학습 입력에서
+제외했습니다. 이를 실제 사용자 또는 사람 검증 모델로 표현하면 안 됩니다.
 
 ## 5. 라벨링·개인화 상태
 
@@ -288,9 +287,9 @@ OpenWeather, 버스, PostgreSQL, session, 개인화, 라벨링 인증은
 | 실제 브라우저 QA | Kakao 지도 v2에서 `북구청`·`부산역` 검색, ODsay 경로 3개, GLO-90 경사, 다음 카드 `2/3` 확인; 콘솔 오류 0건 |
 | ODsay live E2E | 개발 IP 인증, search/loadLane, 부산진구청·북구청 OD 통과 |
 | 우선 OD cache warm | 3/3 exact walking·terrain·shade 상태; 캐시 응답 2.07초, 1.72초, 1.88초 |
-| Judge baseline runtime | 9개 실제 후보·54개 Codex 라벨, 6개 프로필 artifact 로드 `ready=true`, 실제 추천 `scoreKind=judge_baseline` |
+| 초기 평가 runtime 이력 | 당시 9개 실제 후보·54개 평가, 6개 프로필 artifact 로드 계약 확인; 현재 아티팩트는 확대 학습 전 미생성 |
 | 실제 공급자 E2E | Kakao REST, ODsay, VWorld, OpenWeather, 부산 버스 live 확인; Kakao OAuth는 운영 HTTPS origin 등록 대기 |
-| 원격 CI | 라벨·Judge 모델·로컬 검증·문서 HEAD `2f447e1`의 5개 job 전체 성공; production 이미지와 hardened runtime 포함 ([run 30101398317](https://github.com/LxNx-Hn/KT-10/actions/runs/30101398317)) |
+| 원격 CI 이력 | 당시 라벨·초기 평가 모델·로컬 검증·문서 HEAD `2f447e1`의 5개 job 전체 성공; production 이미지와 hardened runtime 포함 ([run 30101398317](https://github.com/LxNx-Hn/KT-10/actions/runs/30101398317)) |
 
 ## 10. 배포 완료 기준
 
@@ -309,12 +308,12 @@ OpenWeather, 버스, PostgreSQL, session, 개인화, 라벨링 인증은
 - [x] Kakao Local, VWorld, OpenWeather 운영 키 실호출
 - [ ] Kakao OAuth 운영 origin·Redirect URI 등록
 - [ ] 운영 도메인 TLS 종료와 외부 443·내부 loopback handoff
-- [x] 실제 후보와 Codex judge 평가 데이터
+- [ ] 확대된 실제 후보와 초기 평가 데이터
 - [ ] 선택한 tier의 검증 모델과 오프라인 비교 보고서
 - [x] 최종 전체 로컬 테스트·생산 빌드·Docker 이미지 빌드
 - [x] 모바일·데스크톱 브라우저 지도-카드 동기화 검증
 - [x] 작업 단위별 커밋·푸시
-- [x] 라벨·Judge 모델·로컬 검증·문서 HEAD `2f447e1` 원격 CI 5개 job 통과
+- [ ] 확대 학습 모델·로컬 검증·현재 HEAD 원격 CI 통과
 
 모든 미완료 항목을 통과하기 전에는 “키만 넣으면 배포 완료” 또는
 “실사용자 검증 AI”라고 표현하지 않습니다. 외부 모델 없이도 동작하는

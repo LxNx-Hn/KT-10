@@ -45,7 +45,7 @@ python scripts\prepare_deployment_env.py --import-existing
 - 선택: `OSMNX_WALK_GEOMETRY_ENABLED`: 느린 OSM 보행망 복구를 허용할
   때만 `true`; 운영 기본값은 `false`
 - `RANKER_TIER`: 기본 `human_validated`, 비운영 비교 데모에서만
-  `judge_baseline`
+  `bootstrap_baseline`
 
 `POSTGRES_PASSWORD`, `SESSION_SECRET`, `TRAINING_ANONYMIZATION_SALT`,
 `LABELING_API_TOKEN`은 준비 스크립트가 생성합니다.
@@ -216,7 +216,7 @@ PostgreSQL `postgres-data` 볼륨은 별도 주기로 백업합니다. 전역 �
 | `RANKER_TIER` | 필요한 파일 | 운영 의미 |
 | --- | --- | --- |
 | `human_validated` | `rankers.human-validated.zip` | 관리자 승인 사람 모델 |
-| `judge_baseline` | `rankers.judge-baseline.zip` | LLM judge 비교 데모, 실사용자 검증 아님 |
+| `bootstrap_baseline` | `rankers.bootstrap-baseline.zip` | 초기 평가 비교 데모, 실사용자 검증 아님 |
 
 아카이브에는 프로필별 XGBoost JSON, 피처 스키마, 라벨 출처, 검증 지표와
 각 모델의 SHA-256이 들어갑니다. 실행 가능한 pickle은 읽지 않습니다.

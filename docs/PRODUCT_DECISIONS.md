@@ -70,7 +70,7 @@
 - 모델의 SHAP 값이나 LLM 설명을 인과관계 또는 검증된 안전 근거라고
   표현하지 않습니다.
 
-## 4. AI 평가 베이스라인과 운영 모델
+## 4. 초기 평가 베이스라인과 운영 모델
 
 LLM/Codex judge로 초기 경로를 평가하고 학습하는 것은 실제 사용자 라벨이
 적은 단계의 베이스라인으로 허용합니다. 평가 입력은 공급자 이름과 기존
@@ -81,7 +81,7 @@ LLM/Codex judge로 초기 경로를 평가하고 학습하는 것은 실제 사�
 
 | 산출물 | 의미 | 운영 자동 승격 |
 | --- | --- | --- |
-| `rankers.judge-baseline.zip` | 외부 LLM judge 라벨 기반 베이스라인 | 금지 |
+| `rankers.bootstrap-baseline.zip` | 외부 평가 라벨 기반 베이스라인 | 금지 |
 | `rankers.human-candidate.zip` | 실제 사용자·전문가 라벨 기반 후보 | 금지 |
 | `rankers.review-mixed-candidate.zip` | 동의 후기를 제한적으로 섞은 별도 후보 | 금지 |
 | `rankers.human-validated.zip` | 사람 후보의 SHA-256과 근거를 검토해 수동 승격한 운영 모델 | 자동 승격 없음 |

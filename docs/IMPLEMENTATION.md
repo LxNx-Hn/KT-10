@@ -72,7 +72,7 @@
 가리고, 경로 사실·판단 근거·미확인 항목, 루브릭·프롬프트·모델 버전을
 보존합니다.
 
-- `rankers.judge-baseline.zip`: 외부 LLM judge 라벨 기반 비운영 비교선
+- `rankers.bootstrap-baseline.zip`: 외부 평가 라벨 기반 비운영 비교선
 - `rankers.human-candidate.zip`: 실제 사용자·전문가 라벨 기반 후보
 - `rankers.review-mixed-candidate.zip`: 동의 후기를 제한적으로 섞은
   별도 후보, 사람 후보로 가장하거나 자동 승격하지 않음
@@ -83,7 +83,7 @@
 pickle을 역직렬화하지 않습니다. 현재 저장소에는 실제 후보·완성 라벨과
 모델 파일이 없으므로 키만 설정한다고 모델이 자동 생성되지는 않습니다.
 Judge 베이스라인도 실제 후보를 동결한 뒤 외부 LLM 평가 결과를
-`judge-label-v1`에 채워야 학습할 수 있습니다.
+`bootstrap-evaluation-label-v1`에 채워야 학습할 수 있습니다.
 
 학습/검증은 동일 OD가 경계를 넘지 않는 그룹 holdout을 사용하고 NDCG@3,
 후보쌍 선호 정확도와 프로필별 오류를 기록합니다.

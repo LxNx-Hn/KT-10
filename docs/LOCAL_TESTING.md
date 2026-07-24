@@ -113,22 +113,21 @@ npm run test:e2e:places
 cd ..
 ```
 
-## 5. Codex judge 베이스라인 테스트
+## 5. 초기 평가 베이스라인 테스트
 
-저장소에는 실제 후보 9개를 제가 6개 프로필로 평가한 54개
-`llm_judge` 라벨과 그 라벨로 학습한 비운영 모델이 있다.
+현재 배포 저장소에는 확대 학습 전의 임시 평가 원문과 모델을 포함하지
+않습니다. 후보 수집·평가·학습을 완료해 다음 두 파일이 생성된 경우에만
+로컬 비교 모드를 명시적으로 켭니다.
 
-- 피처: `ai/data/training/judge_baseline/route_features.jsonl`
-- 라벨: `ai/data/training/judge_baseline/judge_labels.jsonl`
-- 모델: `ai/data/rankers.judge-baseline.zip`
-- 지표·계보: `ai/data/rankers.judge-baseline.metadata.json`
+- 모델: `ai/data/rankers.bootstrap-baseline.zip`
+- 지표·계보: `ai/data/rankers.bootstrap-baseline.metadata.json`
 
-이 모델은 로컬 비교 데모에서만 명시적으로 켠다. 아래 PowerShell 환경변수는
-Compose 치환값만 임시로 덮어쓰며 `.env.production` 파일을 수정하지 않는다.
+아래 PowerShell 환경변수는 Compose 치환값만 임시로 덮어쓰며
+`.env.production` 파일을 수정하지 않습니다.
 
 ```powershell
 $env:ROUTE_MODE='ai'
-$env:RANKER_TIER='judge_baseline'
+$env:RANKER_TIER='bootstrap_baseline'
 docker compose --env-file .env.production -f docker-compose.prod.yml `
   up -d --build --wait
 docker compose --env-file .env.production -f docker-compose.prod.yml `
@@ -136,16 +135,14 @@ docker compose --env-file .env.production -f docker-compose.prod.yml `
   "import json,urllib.request; print(json.dumps(json.load(urllib.request.urlopen('http://localhost:8001/model/status')), ensure_ascii=False))"
 ```
 
-`ready=true`, `configured_tier=judge_baseline`,
-`model_tier=judge_baseline`이어야 한다. AI 내부 상태 API는 공개 프론트에
-노출하지 않으므로 Compose의 AI 컨테이너 안에서 조회한다. 같은 장소 검색을
-실행하면 경로 카드의 점수 종류가 `AI 평가 베이스라인 적합 점수`로
-표시돼야 한다.
+`ready=true`, `configured_tier=bootstrap_baseline`,
+`model_tier=bootstrap_baseline`이어야 합니다. AI 내부 상태 API는 공개
+프론트에 노출하지 않으므로 Compose의 AI 컨테이너 안에서 조회합니다.
+같은 장소 검색을 실행하면 경로 카드에는 내부 평가 방식과 무관하게
+`프로필 적합 점수`만 표시돼야 합니다.
 
-이 모드는 실제 사용자 검증 결과가 아니다. 학습 데이터가 부산 OD 3개,
-경로 9개뿐이고 프로필별 검증 OD도 1개이므로 모델 파일·로딩·순위화 계약을
-검증하는 기술 베이스라인으로만 사용한다. 특히 계단·엘리베이터·저상버스
-피처가 미확인인 후보가 있어 장애인 접근성을 보장하지 않는다.
+이 모드는 실제 사용자 검증 결과가 아닙니다. 계단·엘리베이터·저상버스
+피처가 미확인인 후보가 있으면 장애인 접근성을 보장하지 않습니다.
 
 테스트가 끝나면 기본 실시간 규칙 모드로 되돌린다.
 

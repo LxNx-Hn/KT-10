@@ -5,7 +5,7 @@
 .venv/
 **/.venv/
 
-# AI 도구 로컬 파일
+# 개발 도구 로컬 파일
 .claude/
 claude/
 claude-preview/
