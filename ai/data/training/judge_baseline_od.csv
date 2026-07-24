@@ -1,0 +1,4 @@
+origin_name,origin_lat,origin_lng,dest_name,dest_lat,dest_lng,weather,departure_at,carry_luggage,stroller,shade_priority,minimize_transfers,avoid_stairs,low_floor_priority
+부산광역시북구청,35.1972959413305,128.990036594514,부산역,35.11520340622514,129.04154985192403,heatwave,2026-07-25T14:00:00+09:00,false,false,true,false,false,false
+부산진구청,35.16285368220081,129.05316320469666,서면역 부산1호선,35.157939062512,129.059300883545,normal,2026-07-25T14:00:00+09:00,false,true,false,true,true,true
+부산역,35.11520340622514,129.04154985192403,서면역 부산1호선,35.157939062512,129.059300883545,rain,2026-07-25T14:00:00+09:00,true,false,true,true,true,true
