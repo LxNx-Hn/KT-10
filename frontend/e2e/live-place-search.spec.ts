@@ -38,7 +38,7 @@ test('Kakao Places에서 북구청과 부산역을 실제 검색·선택한다',
     .locator(':scope > [role="listitem"]');
   await expect(routeCards).toHaveCount(3);
   await expect(routeCards.first()).toContainText(
-    '규칙 베이스라인 적합 점수',
+    '프로필 적합 점수',
   );
 
   expect(consoleProblems, consoleProblems.join('\n')).toEqual([]);

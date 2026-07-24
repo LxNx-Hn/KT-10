@@ -317,7 +317,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     ).toBeTruthy();
     expect(
       container.querySelector('.map-first__route-score')?.textContent,
-    ).toContain('규칙 베이스라인 적합 점수');
+    ).toContain('프로필 적합 점수');
     expect(container.textContent).toContain(
       '안전도나 성공 확률이 아닙니다',
     );
@@ -640,7 +640,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(text).not.toContain('OpenStreetMap');
   });
 
-  it('AI 평가 베이스라인 점수 종류를 규칙 점수와 구분한다', () => {
+  it('내부 점수 구현과 무관하게 프로필 적합 점수로 표시한다', () => {
     const { container } = render(<App />);
     act(() => {
       seedResults();
@@ -660,7 +660,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       useAppStore.setState({ recommendations });
     });
     expect(container.textContent).toContain(
-      'AI 평가 베이스라인 적합 점수',
+      '프로필 적합 점수',
     );
   });
 

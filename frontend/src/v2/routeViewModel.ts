@@ -13,9 +13,9 @@ export const SCORE_KIND_LABEL: Record<
   NonNullable<RouteScore['scoreKind']>,
   string
 > = {
-  rule_baseline: '규칙 베이스라인 적합 점수',
-  judge_baseline: 'AI 평가 베이스라인 적합 점수',
-  human_model: '검증 모델 적합 점수',
+  rule_baseline: '프로필 적합 점수',
+  judge_baseline: '프로필 적합 점수',
+  human_model: '프로필 적합 점수',
 };
 
 const CHARACTERISTIC_LABEL: Record<
