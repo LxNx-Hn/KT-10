@@ -209,6 +209,40 @@ def test_osmnx_uses_writable_app_cache_without_status_rate_limit():
     ).rstrip("/")
 
 
+def test_osmnx_prefers_prebuilt_regional_graph(monkeypatch, tmp_path):
+    import networkx as nx
+    import collectors.osmnx_collector as osmnx_collector
+
+    regional_path = tmp_path / "busan-walk.graphml"
+    regional_path.touch()
+    graph = nx.DiGraph()
+    loads = 0
+
+    def load_graph(_path, **_kwargs):
+        nonlocal loads
+        loads += 1
+        return graph
+
+    monkeypatch.setattr(osmnx_collector, "GRAPH_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(osmnx_collector.nx, "read_graphml", load_graph)
+    monkeypatch.setattr(
+        osmnx_collector.ox.graph,
+        "graph_from_bbox",
+        lambda *_args, **_kwargs: pytest.fail(
+            "지역 보행 그래프가 있으면 Overpass를 호출하면 안 됩니다."
+        ),
+    )
+    osmnx_collector._graphs.clear()
+    osmnx_collector._digraphs.clear()
+
+    first = osmnx_collector._get_graph(ORIGIN, DEST)
+    second = osmnx_collector._get_graph(ORIGIN, DEST)
+
+    assert first is graph
+    assert second is graph
+    assert loads == 1
+
+
 def test_osmnx_fails_explicitly_when_graph_unavailable(monkeypatch):
     import collectors.osmnx_collector as osmnx_collector
 

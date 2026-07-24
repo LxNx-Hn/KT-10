@@ -48,6 +48,28 @@ def test_liveness_does_not_claim_candidate_pipeline_readiness():
     assert response.json() == {"status": "ok", "service": "ai"}
 
 
+def test_lifespan_preloads_regional_walk_graph_when_enabled(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        ai_main.settings,
+        "OSMNX_WALK_GEOMETRY_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        ai_main,
+        "prepare_regional_graph",
+        lambda: calls.append(True) or {"nodes": 10, "edges": 20},
+    )
+
+    async def run():
+        async with ai_main.lifespan(app):
+            return None
+
+    asyncio.run(run())
+
+    assert calls == [True]
+
+
 def test_readiness_requires_odsay_but_not_model_artifact(monkeypatch):
     monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "")
     monkeypatch.setattr(ai_main, "_get_layers", lambda: REQUIRED_LAYERS)

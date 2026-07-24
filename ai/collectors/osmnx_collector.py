@@ -10,6 +10,7 @@ import asyncio
 import logging
 import math
 from threading import BoundedSemaphore, Lock
+from weakref import WeakKeyDictionary
 
 import networkx as nx
 import osmnx as ox
@@ -19,6 +20,7 @@ from config import settings
 
 GRAPH_CACHE_DIR = Path(__file__).resolve().parents[1] / "data" / "cache" / "osmnx"
 _graphs: dict[str, object] = {}
+_digraphs: WeakKeyDictionary = WeakKeyDictionary()
 _graph_locks: dict[str, Lock] = {}
 _graph_locks_guard = Lock()
 _overpass_slots = BoundedSemaphore(2)
@@ -52,7 +54,13 @@ def _graph_cache_path(key: str) -> Path:
     return GRAPH_CACHE_DIR / f"{key}.graphml"
 
 
+def _regional_graph_path() -> Path:
+    return GRAPH_CACHE_DIR / "busan-walk.graphml"
+
+
 def _load_cached_graph(origin: Coordinate, destination: Coordinate):
+    if _regional_graph_path().exists():
+        return _load_regional_graph()
     key = _graph_key(origin, destination)
     with _graph_lock(key):
         if key in _graphs:
@@ -65,7 +73,52 @@ def _load_cached_graph(origin: Coordinate, destination: Coordinate):
         return graph
 
 
+def _load_regional_graph():
+    key = "busan-regional-walk"
+    with _graph_lock(key):
+        if key not in _graphs:
+            graph = nx.read_graphml(
+                _regional_graph_path(),
+                node_type=int,
+                force_multigraph=False,
+            )
+            if not graph.is_directed() or graph.is_multigraph():
+                raise ValueError("부산 보행 GraphML이 단일 방향 그래프가 아닙니다.")
+            for node_id, data in graph.nodes(data=True):
+                try:
+                    data["x"] = float(data["x"])
+                    data["y"] = float(data["y"])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f"부산 보행 GraphML 노드 {node_id} 좌표가 올바르지 않습니다."
+                    ) from exc
+            for start, end, data in graph.edges(data=True):
+                try:
+                    data["length"] = float(data["length"])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "부산 보행 GraphML 간선 "
+                        f"{start}->{end} 길이가 올바르지 않습니다."
+                    ) from exc
+            graph.graph["crs"] = "EPSG:4326"
+            _graphs[key] = graph
+        return _graphs[key]
+
+
+def prepare_regional_graph() -> dict[str, int] | None:
+    """지역 GraphML이 있으면 요청 전에 메모리에 적재해 첫 호출 지연을 없앤다."""
+    if not _regional_graph_path().exists():
+        return None
+    graph = _load_regional_graph()
+    return {
+        "nodes": graph.number_of_nodes(),
+        "edges": graph.number_of_edges(),
+    }
+
+
 def _get_graph(origin: Coordinate, destination: Coordinate):
+    if _regional_graph_path().exists():
+        return _load_regional_graph()
     key = _graph_key(origin, destination)
     with _graph_lock(key):
         if key in _graphs:
@@ -136,7 +189,15 @@ def _route_candidates_from_graph(
 
     # shortest_simple_paths는 MultiDiGraph를 지원하지 않으므로
     # 병렬 간선 중 최단 거리만 남긴 DiGraph로 변환한다.
-    digraph = ox.convert.to_digraph(graph, weight="length")
+    if graph.is_directed() and not graph.is_multigraph():
+        digraph = graph
+    else:
+        graph_identity = id(graph)
+        with _graph_lock(f"digraph-{graph_identity}"):
+            digraph = _digraphs.get(graph)
+            if digraph is None:
+                digraph = ox.convert.to_digraph(graph, weight="length")
+                _digraphs[graph] = digraph
     if o_node == d_node or not nx.has_path(digraph, o_node, d_node):
         # retain_all 그래프에서는 출입구·건물 통로처럼 가까운 고립 노드가
         # 좌표 스냅 대상으로 선택될 수 있다. 이때 직선으로 대체하지 않고

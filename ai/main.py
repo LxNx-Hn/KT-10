@@ -5,13 +5,16 @@ AI FastAPI 서버 진입점.
 --app-dir ai 로 ai/ 를 sys.path에 추가하여 내부 모듈(collectors, scoring 등)을
 ai_pipeline 시절과 동일한 unprefixed import로 그대로 사용할 수 있게 한다.
 """
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.router import _get_layers, router
+from collectors.osmnx_collector import prepare_regional_graph
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -27,7 +30,27 @@ REQUIRED_LAYER_NAMES = frozenset({
     "bus_stop",
 })
 
-app = FastAPI(title="교통약자 경로추천 AI 서버")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    if settings.OSMNX_WALK_GEOMETRY_ENABLED:
+        try:
+            graph_status = await asyncio.to_thread(prepare_regional_graph)
+            if graph_status is not None:
+                logger.info(
+                    "부산 오프라인 보행 그래프 준비 완료: nodes=%s edges=%s",
+                    graph_status["nodes"],
+                    graph_status["edges"],
+                )
+        except Exception:
+            logger.exception("부산 오프라인 보행 그래프 준비 실패")
+            raise
+    yield
+
+
+app = FastAPI(
+    title="교통약자 경로추천 AI 서버",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
