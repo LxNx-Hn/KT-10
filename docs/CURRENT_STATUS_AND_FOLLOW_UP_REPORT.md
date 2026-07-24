@@ -261,7 +261,7 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 | ODsay live E2E | 개발 IP 인증, search/loadLane, 부산진구청·북구청 OD 통과 |
 | Kakao Places live E2E | 등록 origin `http://localhost:5173`에서 두 검색어 통과; `127.0.0.1`은 별도 도메인 등록 전 명시적 실패 |
 | 다른 실제 공급자 E2E | Kakao REST·OAuth, VWorld, OpenWeather 외부 키 대기 |
-| 원격 CI | 마지막 확인 성공은 `31c3169`의 5개 job; v2 통합 HEAD는 최종 문서 커밋 후 재확인 예정 |
+| 원격 CI | v2 기능·문서 HEAD `dd2c2a6`의 5개 job 전체 성공; production 이미지와 hardened runtime 포함 ([run 30086352908](https://github.com/LxNx-Hn/KT-10/actions/runs/30086352908)) |
 
 ## 10. 배포 완료 기준
 
@@ -283,7 +283,7 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 - [x] 최종 전체 로컬 테스트·생산 빌드·Docker 이미지 빌드
 - [x] 모바일·데스크톱 브라우저 지도-카드 동기화 검증
 - [x] 작업 단위별 커밋·푸시
-- [ ] v2 기능·문서 통합 `main` 원격 CI 5개 job 통과
+- [x] v2 기능·문서 통합 `main` 원격 CI 5개 job 통과
 
 모든 미완료 항목을 통과하기 전에는 “키만 넣으면 배포 완료” 또는
 “실사용자 검증 AI”라고 표현하지 않습니다. 외부 모델 없이도 동작하는
