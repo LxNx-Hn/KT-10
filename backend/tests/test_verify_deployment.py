@@ -14,15 +14,22 @@ def test_verify_places_checks_both_queries_and_kakao_rest_source(monkeypatch):
         query = parse_qs(urlparse(path).query)["q"][0]
         seen.append(query)
         return (
-            [{"name": f"부산광역시 {query}"}],
+            [{
+                "id": f"id-{query}",
+                "name": f"부산광역시 {query}",
+                "lat": 35.1,
+                "lng": 129.1,
+            }],
             {"x-place-search-source": "kakao-rest"},
         )
 
     monkeypatch.setattr(verify_deployment, "request", fake_request)
 
-    verify_deployment.verify_places("https://route.example.kr")
+    places = verify_deployment.verify_places("https://route.example.kr")
 
     assert seen == ["부산역", "북구청"]
+    assert set(places) == {"부산역", "북구청"}
+    assert places["부산역"]["id"] == "id-부산역"
 
 
 def test_verify_places_rejects_demo_provider(monkeypatch):
@@ -30,7 +37,7 @@ def test_verify_places_rejects_demo_provider(monkeypatch):
         verify_deployment,
         "request",
         lambda base, path, body=None: (
-            [{"name": "부산역"}],
+            [{"id": "1", "name": "부산역", "lat": 35.1, "lng": 129.1}],
             {"x-place-search-source": "demo"},
         ),
     )
@@ -44,7 +51,7 @@ def test_verify_places_rejects_unrelated_results(monkeypatch):
         verify_deployment,
         "request",
         lambda base, path, body=None: (
-            [{"name": "전혀 다른 장소"}],
+            [{"id": "1", "name": "전혀 다른 장소", "lat": 35.1, "lng": 129.1}],
             {"x-place-search-source": "kakao-rest"},
         ),
     )
@@ -118,6 +125,48 @@ def test_public_deployment_base_requires_https():
     assert verify_deployment._validated_base(
         "http://127.0.0.1:8080",
     ) == ("http", "127.0.0.1", 8080)
+
+
+def test_local_readiness_gaps_are_allowed_only_with_explicit_local_flag():
+    readiness = {
+        "ready": False,
+        "missing": ["origin_security", "kakao_login"],
+    }
+
+    verify_deployment.verify_readiness(
+        readiness,
+        allow_local_gaps=True,
+        is_local_http=True,
+    )
+
+    with pytest.raises(RuntimeError, match="운영 설정 미완료"):
+        verify_deployment.verify_readiness(
+            readiness,
+            allow_local_gaps=False,
+            is_local_http=True,
+        )
+    with pytest.raises(RuntimeError, match="운영 설정 미완료"):
+        verify_deployment.verify_readiness(
+            readiness,
+            allow_local_gaps=True,
+            is_local_http=False,
+        )
+
+
+def test_local_readiness_flag_never_hides_other_missing_checks():
+    with pytest.raises(RuntimeError, match="live_route_candidates"):
+        verify_deployment.verify_readiness(
+            {
+                "ready": False,
+                "missing": [
+                    "origin_security",
+                    "kakao_login",
+                    "live_route_candidates",
+                ],
+            },
+            allow_local_gaps=True,
+            is_local_http=True,
+        )
 
 
 def test_request_rejects_cross_origin_redirect(monkeypatch):

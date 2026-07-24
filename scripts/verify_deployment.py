@@ -11,6 +11,8 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
+LOCAL_ONLY_READINESS_GAPS = frozenset({"origin_security", "kakao_login"})
+
 
 def _url_origin(url: str) -> tuple[str, str, int | None]:
     parsed = urlsplit(url)
@@ -76,7 +78,8 @@ def request(base: str, path: str, body: dict | None = None) -> tuple[dict | str,
     return raw, response_headers
 
 
-def verify_places(base: str) -> None:
+def verify_places(base: str) -> dict[str, dict]:
+    selected_places: dict[str, dict] = {}
     for query in ("부산역", "북구청"):
         places, place_headers = request(
             base,
@@ -84,17 +87,41 @@ def verify_places(base: str) -> None:
         )
         if not isinstance(places, list) or not places:
             raise RuntimeError(f"Kakao 장소 검색이 '{query}' 결과를 반환하지 않았습니다.")
-        names = [
-            str(place.get("name") or "")
-            for place in places
-            if isinstance(place, dict)
-        ]
-        if not any(query in name.replace(" ", "") for name in names):
+        selected = next(
+            (
+                place
+                for place in places
+                if isinstance(place, dict)
+                and query in str(place.get("name") or "").replace(" ", "")
+            ),
+            None,
+        )
+        if selected is None:
             raise RuntimeError(
                 f"Kakao 장소 검색 결과에 요청한 '{query}' 장소명이 없습니다."
             )
         if place_headers.get("x-place-search-source") != "kakao-rest":
             raise RuntimeError("Kakao 장소 검색이 demo 공급자로 대체되었습니다.")
+        lat = selected.get("lat")
+        lng = selected.get("lng")
+        if (
+            isinstance(lat, bool)
+            or not isinstance(lat, (int, float))
+            or not math.isfinite(lat)
+            or isinstance(lng, bool)
+            or not isinstance(lng, (int, float))
+            or not math.isfinite(lng)
+        ):
+            raise RuntimeError(
+                f"Kakao 장소 검색 결과의 '{query}' 좌표가 올바르지 않습니다."
+            )
+        selected_places[query] = {
+            "id": str(selected.get("id") or f"deploy-{query}"),
+            "name": str(selected.get("name") or query),
+            "lat": lat,
+            "lng": lng,
+        }
+    return selected_places
 
 
 def _fresh_observation(value: object, label: str) -> None:
@@ -139,8 +166,38 @@ def verify_homepage_security(
         raise RuntimeError("/: Server 헤더가 Nginx 버전을 노출합니다.")
 
 
-def verify(base: str) -> None:
-    scheme, _, _ = _validated_base(base)
+def verify_readiness(
+    readiness: object,
+    *,
+    allow_local_gaps: bool,
+    is_local_http: bool,
+) -> None:
+    if isinstance(readiness, dict) and readiness.get("ready") is True:
+        return
+    raw_missing = readiness.get("missing", []) if isinstance(readiness, dict) else []
+    missing = {
+        str(item)
+        for item in raw_missing
+        if isinstance(item, str) and item
+    } if isinstance(raw_missing, list) else set()
+    if (
+        allow_local_gaps
+        and is_local_http
+        and missing
+        and missing.issubset(LOCAL_ONLY_READINESS_GAPS)
+    ):
+        return
+    raise RuntimeError(
+        f"/api/readiness: 운영 설정 미완료 ({', '.join(sorted(missing))})"
+    )
+
+
+def verify(base: str, *, allow_local_readiness_gaps: bool = False) -> None:
+    scheme, hostname, _ = _validated_base(base)
+    is_local_http = (
+        scheme == "http"
+        and hostname in {"localhost", "127.0.0.1", "::1"}
+    )
     homepage, homepage_headers = request(base, "/")
     if not isinstance(homepage, str) or "부산 접근성 길찾기" not in homepage:
         raise RuntimeError("/: 운영 프론트 문서를 확인할 수 없습니다.")
@@ -159,11 +216,13 @@ def verify(base: str) -> None:
         raise RuntimeError("/sw.js: 서비스 워커를 확인할 수 없습니다.")
 
     readiness, _ = request(base, "/api/readiness")
-    if not isinstance(readiness, dict) or readiness.get("ready") is not True:
-        missing = readiness.get("missing", []) if isinstance(readiness, dict) else []
-        raise RuntimeError(f"/api/readiness: 운영 설정 미완료 ({', '.join(missing)})")
+    verify_readiness(
+        readiness,
+        allow_local_gaps=allow_local_readiness_gaps,
+        is_local_http=is_local_http,
+    )
 
-    verify_places(base)
+    places = verify_places(base)
 
     weather, _ = request(base, "/api/weather")
     verify_weather(weather)
@@ -187,18 +246,8 @@ def verify(base: str) -> None:
         base,
         "/api/routes/recommend",
         {
-            "origin": {
-                "id": "deploy-busan-station",
-                "name": "부산역",
-                "lat": 35.1151,
-                "lng": 129.0414,
-            },
-            "destination": {
-                "id": "deploy-seomyeon-station",
-                "name": "서면역",
-                "lat": 35.1578,
-                "lng": 129.0590,
-            },
+            "origin": places["북구청"],
+            "destination": places["부산역"],
             "profile": "general",
             "weatherScenario": "normal",
             "options": {"departureAt": departure},
@@ -267,9 +316,20 @@ def verify(base: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://localhost:8080", help="배포된 서비스 origin")
+    parser.add_argument(
+        "--allow-local-readiness-gaps",
+        action="store_true",
+        help=(
+            "localhost HTTP에서만 origin_security와 kakao_login 누락을 허용합니다. "
+            "공개 배포 검증에는 사용하지 않습니다."
+        ),
+    )
     args = parser.parse_args()
     try:
-        verify(args.base.rstrip("/"))
+        verify(
+            args.base.rstrip("/"),
+            allow_local_readiness_gaps=args.allow_local_readiness_gaps,
+        )
     except (RuntimeError, json.JSONDecodeError) as exc:
         print(f"배포 스모크 검증 실패: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
