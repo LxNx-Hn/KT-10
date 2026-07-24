@@ -19,6 +19,12 @@ GENERATED = {
     "TRAINING_ANONYMIZATION_SALT": 32,
     "LABELING_API_TOKEN": 48,
 }
+MIN_SECRET_LENGTHS = {
+    "POSTGRES_PASSWORD": 16,
+    "SESSION_SECRET": 32,
+    "TRAINING_ANONYMIZATION_SALT": 16,
+    "LABELING_API_TOKEN": 32,
+}
 REQUIRED_EXTERNAL = (
     "VITE_KAKAO_MAP_KEY",
     "KAKAO_REST_API_KEY",
@@ -125,10 +131,66 @@ def check() -> None:
     ]
     origin = values.get("PUBLIC_ORIGIN", "")
     parsed = urlparse(origin)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    try:
+        _ = parsed.port
+        invalid_origin_port = False
+    except ValueError:
+        invalid_origin_port = True
+    if (
+        invalid_origin_port
+        or parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or origin.endswith("/")
+    ):
         missing.append("PUBLIC_ORIGIN(valid URL)")
     if origin.startswith("http://") and parsed.hostname not in {"localhost", "127.0.0.1"}:
         missing.append("PUBLIC_ORIGIN(HTTPS required outside localhost)")
+    for key, minimum in MIN_SECRET_LENGTHS.items():
+        if values.get(key) and len(values[key]) < minimum:
+            missing.append(f"{key}(minimum {minimum} characters)")
+    generated_values = [
+        values.get(key, "")
+        for key in GENERATED
+        if values.get(key)
+    ]
+    if len(generated_values) != len(set(generated_values)):
+        missing.append("generated secrets(must be distinct)")
+    if (
+        values.get("VITE_KAKAO_MAP_KEY")
+        and values.get("VITE_KAKAO_MAP_KEY")
+        == values.get("KAKAO_REST_API_KEY")
+    ):
+        missing.append("Kakao JavaScript/REST keys(must be distinct)")
+    try:
+        port = int(values.get("PORT", ""))
+    except ValueError:
+        port = 0
+    if not 1 <= port <= 65535:
+        missing.append("PORT(1..65535)")
+    try:
+        request_timeout = float(values.get("REQUEST_TIMEOUT", ""))
+    except ValueError:
+        request_timeout = 0
+    if not 0 < request_timeout <= 60:
+        missing.append("REQUEST_TIMEOUT(>0 and <=60)")
+    if values.get("ROUTE_MODE") not in {"live", "ai"}:
+        missing.append("ROUTE_MODE(live or ai)")
+    if values.get("BUILDING_SOURCE") != "vworld":
+        missing.append("BUILDING_SOURCE(vworld)")
+    if values.get("RANKER_TIER") != "human_validated":
+        missing.append("RANKER_TIER(human_validated)")
+    if values.get("OSMNX_WALK_GEOMETRY_ENABLED", "").lower() not in {
+        "true",
+        "false",
+    }:
+        missing.append("OSMNX_WALK_GEOMETRY_ENABLED(boolean)")
     if missing:
         print("배포 준비 미완료: " + ", ".join(dict.fromkeys(missing)))
         raise SystemExit(1)
