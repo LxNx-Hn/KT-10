@@ -2,7 +2,7 @@ pandas==2.2.2
 geopandas==1.1.4
 shapely==2.1.2
 numpy==1.26.4
-xgboost==2.1.1
+xgboost-cpu==2.1.1
 scikit-learn==1.5.1
 openpyxl==3.1.5
 defusedxml==0.7.1
