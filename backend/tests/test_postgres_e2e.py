@@ -36,7 +36,11 @@ pytestmark = pytest.mark.skipif(
 
 def test_postgres_review_updates_user_personalization(monkeypatch):
     assert settings.database_configured
-    monkeypatch.setattr(settings, "session_secret", "postgres-e2e-only-secret")
+    monkeypatch.setattr(
+        settings,
+        "session_secret",
+        "postgres-e2e-only-secret-with-32-chars",
+    )
     monkeypatch.setattr(settings, "route_mode", "demo")
     monkeypatch.setattr(settings, "building_source", "demo")
     monkeypatch.setattr(settings, "openweather_api_key", "")

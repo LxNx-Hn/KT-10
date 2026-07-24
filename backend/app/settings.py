@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -54,7 +55,7 @@ class Settings(BaseSettings):
     )
 
     # 외부 호출 타임아웃(초)
-    request_timeout: float = 4.0
+    request_timeout: float = Field(default=4.0, gt=0, le=60)
 
     # 후기 개인화 정책. 실제 검증 전 임의 기본값을 넣지 않고 운영자가 명시한다.
     personalization_learning_rate: float | None = Field(default=None, gt=0, le=1)
@@ -71,39 +72,115 @@ class Settings(BaseSettings):
 
     @property
     def live_places(self) -> bool:
-        return bool(self.kakao_rest_api_key)
+        return bool(self.kakao_rest_api_key.strip())
 
     @property
     def live_weather(self) -> bool:
-        return bool(self.openweather_api_key)
+        return bool(self.openweather_api_key.strip())
 
     @property
     def live_bus(self) -> bool:
-        return bool(self.bus_service_key)
+        return bool(self.bus_service_key.strip())
 
     @property
     def live_routes(self) -> bool:
-        return self.route_mode == "live" and bool(self.ai_server_url)
+        return self.route_mode == "live" and bool(self.ai_server_url.strip())
 
     @property
     def live_ai_pipeline(self) -> bool:
-        return self.route_mode == "ai" and bool(self.ai_server_url)
+        return self.route_mode == "ai" and bool(self.ai_server_url.strip())
 
     @property
     def live_buildings(self) -> bool:
-        return self.building_source == "vworld" and bool(self.vworld_api_key)
+        return self.building_source == "vworld" and bool(
+            self.vworld_api_key.strip()
+        )
 
     @property
     def database_configured(self) -> bool:
-        return self.database_url.startswith("postgresql")
+        return self.database_url.strip().startswith("postgresql+psycopg://")
+
+    @property
+    def session_signing_configured(self) -> bool:
+        """서명키는 생성 스크립트와 동일하게 최소 32자 이상만 허용한다."""
+        return len(self.session_secret.strip()) >= 32
+
+    @staticmethod
+    def _parsed_http_url(value: str, *, origin_only: bool):
+        try:
+            parsed = urlsplit(value)
+            # 잘못된 포트는 .port 접근 시 ValueError가 발생한다.
+            _ = parsed.port
+        except ValueError:
+            return None
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or (origin_only and parsed.path not in {"", "/"})
+        ):
+            return None
+        return parsed
+
+    @property
+    def origin_security_configured(self) -> bool:
+        parsed_origins = [
+            self._parsed_http_url(origin, origin_only=True)
+            for origin in self.origins
+        ]
+        frontend = self._parsed_http_url(
+            self.frontend_url,
+            origin_only=True,
+        )
+        redirect = self._parsed_http_url(
+            self.kakao_oauth_redirect_uri,
+            origin_only=False,
+        )
+        if (
+            not parsed_origins
+            or any(origin is None for origin in parsed_origins)
+            or frontend is None
+            or redirect is None
+            or redirect.path != "/api/auth/kakao/callback"
+        ):
+            return False
+        normalized_origins = {
+            f"{origin.scheme}://{origin.netloc}".rstrip("/")
+            for origin in parsed_origins
+            if origin is not None
+        }
+        frontend_origin = (
+            f"{frontend.scheme}://{frontend.netloc}".rstrip("/")
+        )
+        redirect_origin = (
+            f"{redirect.scheme}://{redirect.netloc}".rstrip("/")
+        )
+        if (
+            frontend_origin not in normalized_origins
+        ):
+            return False
+        if self.app_env == "production":
+            if redirect_origin != frontend_origin:
+                return False
+            if any(
+                parsed.scheme != "https"
+                for parsed in (*parsed_origins, frontend, redirect)
+                if parsed is not None
+            ):
+                return False
+        return True
 
     @property
     def kakao_login_configured(self) -> bool:
         return bool(
-            self.kakao_rest_api_key
-            and self.kakao_oauth_client_secret
-            and self.session_secret
+            self.kakao_rest_api_key.strip()
+            and self.kakao_oauth_client_secret.strip()
+            and self.session_signing_configured
             and self.database_configured
+            and self.origin_security_configured
         )
 
     @property
@@ -132,9 +209,11 @@ class Settings(BaseSettings):
             "live_weather": self.live_weather,
             "live_bus_arrivals": self.live_bus,
             "postgresql": self.database_configured,
+            "session_signing": self.session_signing_configured,
+            "origin_security": self.origin_security_configured,
             "kakao_login": self.kakao_login_configured,
             "personalization_policy": self.personalization_configured,
-            "labeling_batch_auth": len(self.labeling_api_token) >= 32,
+            "labeling_batch_auth": len(self.labeling_api_token.strip()) >= 32,
         }
 
     def active_sources(self) -> dict[str, str]:

@@ -22,7 +22,12 @@ _SESSION_COOKIE = "mobility_session"
 
 
 def _secure_cookie() -> bool:
-    return settings.kakao_oauth_redirect_uri.startswith("https://")
+    # 운영에서는 설정 실수로 redirect URI가 잘못돼도 세션 쿠키를 평문
+    # 전송 가능 상태로 낮추지 않는다.
+    return (
+        settings.app_env == "production"
+        or settings.kakao_oauth_redirect_uri.startswith("https://")
+    )
 
 
 def _configured() -> None:
@@ -33,6 +38,38 @@ def _configured() -> None:
 def _serializer() -> URLSafeTimedSerializer:
     _configured()
     return URLSafeTimedSerializer(settings.session_secret, salt="mobility-session-v1")
+
+
+def _provider_identity(profile: object) -> tuple[str, str | None]:
+    if not isinstance(profile, dict):
+        raise ValueError("Kakao user profile is not an object.")
+    raw_id = profile.get("id")
+    if (
+        isinstance(raw_id, bool)
+        or not isinstance(raw_id, (int, str))
+        or not str(raw_id).isdigit()
+        or int(raw_id) <= 0
+        or len(str(raw_id)) > 64
+    ):
+        raise ValueError("Kakao user profile ID is invalid.")
+    properties = profile.get("properties")
+    if properties is None:
+        nickname = None
+    elif not isinstance(properties, dict):
+        raise ValueError("Kakao user profile properties are invalid.")
+    else:
+        raw_nickname = properties.get("nickname")
+        if raw_nickname is None:
+            nickname = None
+        elif (
+            not isinstance(raw_nickname, str)
+            or not raw_nickname.strip()
+            or len(raw_nickname) > 100
+        ):
+            raise ValueError("Kakao user profile nickname is invalid.")
+        else:
+            nickname = raw_nickname
+    return str(raw_id), nickname
 
 
 def current_user(
@@ -92,7 +129,13 @@ async def kakao_callback(
     db: Session = Depends(database_session),
 ) -> Response:
     _configured()
-    if error or not code or not state or state != request.cookies.get(_STATE_COOKIE):
+    cookie_state = request.cookies.get(_STATE_COOKIE)
+    state_valid = bool(
+        state
+        and cookie_state
+        and secrets.compare_digest(state, cookie_state)
+    )
+    if error or not code or not state_valid:
         raise HTTPException(status_code=400, detail="Kakao authorization was rejected or state validation failed.")
     try:
         async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
@@ -111,11 +154,10 @@ async def kakao_callback(
             )
             user_response.raise_for_status()
         profile = user_response.json()
-        kakao_id = str(profile["id"])
+        kakao_id, nickname = _provider_identity(profile)
     except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
         log.warning("Kakao OAuth provider response failed (%s)", type(exc).__name__)
         raise HTTPException(status_code=502, detail="Kakao login provider request failed.") from exc
-    nickname = ((profile.get("properties") or {}).get("nickname"))
     user = db.scalar(select(User).where(User.kakao_id == kakao_id))
     if user is None:
         user = User(kakao_id=kakao_id, nickname=nickname)
