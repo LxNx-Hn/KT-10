@@ -18,7 +18,7 @@ const CHARACTERISTIC_LABEL: Record<
 
 const SCORE_KIND_LABEL: Record<NonNullable<RouteScore['scoreKind']>, string> = {
   rule_baseline: '프로필 적합 점수',
-  judge_baseline: '프로필 적합 점수',
+  bootstrap_baseline: '프로필 적합 점수',
   human_model: '프로필 적합 점수',
 };
 

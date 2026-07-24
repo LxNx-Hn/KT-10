@@ -652,7 +652,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
                   ...item,
                   score: {
                     ...item.score,
-                    scoreKind: 'judge_baseline' as const,
+                    scoreKind: 'bootstrap_baseline' as const,
                   },
                 }
               : item,

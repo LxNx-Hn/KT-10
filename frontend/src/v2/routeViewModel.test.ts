@@ -190,7 +190,7 @@ describe('v2 경로 표시 모델', () => {
 
   it.each([
     ['rule_baseline', '프로필 적합 점수'],
-    ['judge_baseline', '프로필 적합 점수'],
+    ['bootstrap_baseline', '프로필 적합 점수'],
     ['human_model', '프로필 적합 점수'],
   ] as const)('%s 점수 종류를 명시한다', (scoreKind, label) => {
     const view = buildRouteViewModel(

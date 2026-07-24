@@ -222,7 +222,7 @@ export interface RouteScore {
   };
   finalScore: number; // 최종 추천 점수 0~100
   /** 점수 생성 근거. 누락된 구버전 응답은 rule_baseline으로 표시한다. */
-  scoreKind?: 'rule_baseline' | 'judge_baseline' | 'human_model';
+  scoreKind?: 'rule_baseline' | 'bootstrap_baseline' | 'human_model';
   lowFloorStatus: LowFloorStatus;
   reasons: string[]; // 추천 이유
   cautions: string[]; // 주의사항
