@@ -929,6 +929,7 @@ export default function MapFirstApp() {
   const selectRoute = useAppStore((state) => state.selectRoute);
   const useCurrentLocation = useAppStore((state) => state.useCurrentLocation);
   const search = useAppStore((state) => state.search);
+  const refreshEnrichment = useAppStore((state) => state.refreshEnrichment);
   const voiceStatus = useVoiceChatStore((state) => state.status);
   const requestListen = useVoiceChatStore((state) => state.requestListen);
 
@@ -941,6 +942,7 @@ export default function MapFirstApp() {
   const originInputRef = useRef<HTMLInputElement>(null);
   const destinationInputRef = useRef<HTMLInputElement>(null);
   const locatingTimerRef = useRef<number>();
+  const enrichmentRefreshRef = useRef({ odKey: '', attempt: 0 });
 
   const ranked = useMemo(
     () => serverRankedRecommendations(recommendations),
@@ -990,6 +992,42 @@ export default function MapFirstApp() {
       setLocating(false);
     }
   }, [error, locating, origin]);
+
+  useEffect(() => {
+    if (
+      dataSource !== 'live'
+      || !origin
+      || !destination
+      || !recommendations.length
+      || recommendations.every(
+        ({ route }) => (
+          route.geometryQuality === 'exact'
+          && route.terrain?.status === 'estimated_90m'
+          && route.shade?.status !== 'unavailable'
+        ),
+      )
+    ) {
+      return undefined;
+    }
+    const odKey = `${origin.id}->${destination.id}`;
+    if (enrichmentRefreshRef.current.odKey !== odKey) {
+      enrichmentRefreshRef.current = { odKey, attempt: 0 };
+    }
+    const delays = [5_000, 10_000, 20_000, 30_000];
+    const attempt = enrichmentRefreshRef.current.attempt;
+    if (attempt >= delays.length) return undefined;
+    const timer = window.setTimeout(() => {
+      enrichmentRefreshRef.current.attempt += 1;
+      void refreshEnrichment();
+    }, delays[attempt]);
+    return () => window.clearTimeout(timer);
+  }, [
+    dataSource,
+    destination,
+    origin,
+    recommendations,
+    refreshEnrichment,
+  ]);
 
   const closeDrawer = useCallback(() => setDrawer(null), []);
 

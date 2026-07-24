@@ -53,6 +53,18 @@ function beginWeatherRequest(): number {
   return weatherRequestGeneration;
 }
 
+function routeSemanticKey(route: RouteCandidate): string {
+  return JSON.stringify({
+    summary: route.summary,
+    segments: route.segments.map((segment) => ({
+      mode: segment.mode,
+      busRouteName: segment.busRouteName ?? null,
+      stationName: segment.stationName ?? null,
+      description: segment.description,
+    })),
+  });
+}
+
 export type ToggleableScoringOption =
   | 'carryLuggage'
   | 'stroller'
@@ -103,6 +115,7 @@ interface AppState {
   loadDemoOd: () => void;
   search: () => Promise<void>;
   rescore: () => Promise<void>;
+  refreshEnrichment: () => Promise<void>;
 
   /* 음성 챗봇 연동 액션 (요구사항 §9) */
   ensureOrigin: () => void;
@@ -331,6 +344,61 @@ export const useAppStore = create<AppState>((set, get) => ({
         loading: false,
         error: toUserMessage(error, '변경한 조건으로 경로를 다시 계산하지 못했습니다.'),
       });
+    }
+  },
+
+  /** 첫 화면을 막지 않고 백그라운드 사전계산 결과만 조용히 갱신한다. */
+  refreshEnrichment: async () => {
+    const {
+      origin,
+      destination,
+      profile,
+      weatherScenario,
+      options,
+      selectedRouteId,
+      recommendations: previous,
+    } = get();
+    if (!origin || !destination || !previous.length) return;
+    const requestGeneration = beginRecommendationRequest();
+    const previousSelected = previous.find(
+      ({ route }) => route.id === selectedRouteId,
+    );
+    const previousSemanticKey = previousSelected
+      ? routeSemanticKey(previousSelected.route)
+      : null;
+    try {
+      const recommendations = await adapters.routes.recommend(
+        origin,
+        destination,
+        profile,
+        weatherScenario,
+        options,
+      );
+      if (
+        !isLatestRecommendationRequest(requestGeneration)
+        || !recommendations.length
+      ) {
+        return;
+      }
+      const semanticMatch = previousSemanticKey
+        ? recommendations.find(
+          ({ route }) => routeSemanticKey(route) === previousSemanticKey,
+        )
+        : undefined;
+      const directMatch = recommendations.find(
+        ({ route }) => route.id === selectedRouteId,
+      );
+      set({
+        candidates: recommendations.map(({ route }) => route),
+        recommendations,
+        selectedRouteId: (
+          semanticMatch
+          ?? directMatch
+          ?? serverRankedRecommendations(recommendations)[0]
+        )?.route.id ?? null,
+      });
+    } catch {
+      // 초기 경로는 이미 표시 중이므로 백그라운드 보강 실패로 화면을 지우지 않는다.
     }
   },
 

@@ -24,6 +24,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -75,5 +76,38 @@ describe('live 장소 검색 공급자', () => {
     await expect(liveAdapters.places.searchPlaces('부산역')).resolves.toEqual([
       BUSAN_STATION,
     ]);
+  });
+});
+
+describe('live 경로 요청 제한시간', () => {
+  it('첫 화면을 오래 막지 않도록 경로 요청을 20초에 중단한다', async () => {
+    vi.useFakeTimers();
+    let requestSignal: AbortSignal | undefined;
+    vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => {
+      requestSignal = init?.signal ?? undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        requestSignal?.addEventListener('abort', () => {
+          reject(new DOMException('aborted', 'AbortError'));
+        });
+      });
+    }));
+
+    const request = liveAdapters.routes.recommend(
+      BUSAN_STATION,
+      { ...BUSAN_STATION, id: 'destination', name: '북구청' },
+      'general',
+      'normal',
+      {},
+    );
+    const rejection = expect(request).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+
+    await vi.advanceTimersByTimeAsync(7_000);
+    expect(requestSignal?.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(13_000);
+    expect(requestSignal?.aborted).toBe(true);
+    await rejection;
   });
 });

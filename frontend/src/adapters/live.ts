@@ -10,12 +10,17 @@ import { searchKakaoPlaces } from '@/map/kakaoPlaces';
  * VITE_DATA_SOURCE=live 일 때 사용. 백엔드는 camelCase JSON 으로 응답하여 도메인 타입과 호환.
  * 운영 빌드는 같은 출처의 /api를 사용하고, 로컬 개발은 VITE_API_BASE로 변경 가능.
  */
-const TIMEOUT_MS = 7000;
+const DEFAULT_TIMEOUT_MS = 7000;
+const ROUTE_TIMEOUT_MS = 20000;
 
 /** 타임아웃이 있는 fetch (백엔드 무응답 시 무한 대기 방지) */
-async function fetchWithTimeout(path: string, init?: RequestInit): Promise<Response> {
+async function fetchWithTimeout(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(`${API_BASE}${path}`, {
       credentials: 'include',
@@ -44,12 +49,20 @@ async function searchBackendPlaces(query: string): Promise<Place[]> {
   return (await res.json()) as Place[];
 }
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetchWithTimeout(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+async function postJson<T>(
+  path: string,
+  body: unknown,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+  const res = await fetchWithTimeout(
+    path,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    timeoutMs,
+  );
   if (!res.ok) await throwApiError(res, '요청을 처리하지 못했습니다');
   return (await res.json()) as T;
 }
@@ -77,7 +90,7 @@ export const liveAdapters: Adapters = {
         weatherScenario,
         options,
         topN,
-      }),
+      }, ROUTE_TIMEOUT_MS),
   },
   bus: {
     getArrivals: async (stopId) => {
