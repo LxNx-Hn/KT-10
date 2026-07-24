@@ -25,7 +25,7 @@ class Settings(BaseSettings):
         ge=60,
         le=31_536_000,
     )
-    ODSAY_TIMEOUT_SECONDS: int = Field(default=20, ge=5, le=60)
+    ODSAY_TIMEOUT_SECONDS: int = Field(default=20, ge=5, le=600)
     # 일반 서비스는 ODsay loadLane 정밀 선형을 유지한다. API 호출 예산이
     # 제한된 학습 수집 전용 컨테이너만 false로 설정해 정류장 연결선을
     # estimated로 기록하고 검색 API 1회만 사용한다.
