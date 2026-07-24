@@ -8,6 +8,9 @@
   "od_count": 800,
   "unique_directional_od_count": 800,
   "public_poi_count_after_boundary_and_coordinate_dedup": 54346,
+  "anchor_count": 320,
+  "anchors_per_district": 20,
+  "unique_endpoint_count": 318,
   "source": {
     "path": "data/raw/동백전_가맹점_현황.csv",
     "sha256": "a3e8dd0e1cb89b4ee0011a4fcba9d0c40b5f608779927b88c463743ea2280de7"
@@ -35,22 +38,22 @@
     "해운대구": 50
   },
   "destination_district_counts": {
-    "강서구": 45,
-    "금정구": 66,
-    "기장군": 50,
-    "남구": 38,
-    "동구": 29,
-    "동래구": 44,
-    "부산진구": 88,
-    "북구": 46,
-    "사상구": 52,
-    "사하구": 86,
-    "서구": 38,
-    "수영구": 48,
-    "연제구": 49,
-    "영도구": 26,
-    "중구": 30,
-    "해운대구": 65
+    "강서구": 57,
+    "금정구": 52,
+    "기장군": 51,
+    "남구": 52,
+    "동구": 49,
+    "동래구": 50,
+    "부산진구": 57,
+    "북구": 42,
+    "사상구": 59,
+    "사하구": 52,
+    "서구": 42,
+    "수영구": 42,
+    "연제구": 53,
+    "영도구": 58,
+    "중구": 33,
+    "해운대구": 51
   },
   "distance_band_counts": {
     "long_12_to_25km": 160,
@@ -68,9 +71,9 @@
     "transfer_min_evening": 100
   },
   "straight_line_km": {
-    "minimum": 1.5233,
-    "median": 6.952,
-    "maximum": 24.5006
+    "minimum": 1.502,
+    "median": 6.7865,
+    "maximum": 24.9848
   },
   "sampling_contract": {
     "distance_bands": [

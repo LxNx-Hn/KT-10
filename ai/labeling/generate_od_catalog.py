@@ -18,6 +18,7 @@ from typing import Any
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from sklearn.cluster import KMeans
 from sklearn.neighbors import BallTree
 
 GENERATOR_VERSION = "busan-public-poi-od-v1"
@@ -220,6 +221,67 @@ def load_public_pois(source_path: Path, boundary_path: Path) -> pd.DataFrame:
     return result
 
 
+def select_spatial_anchors(
+    pois: pd.DataFrame,
+    *,
+    anchors_per_district: int,
+    seed: int,
+) -> pd.DataFrame:
+    """각 구·군의 장소 분포를 대표하는 실제 POI를 결정적으로 선택한다."""
+    if anchors_per_district < 2:
+        raise ValueError("구·군별 앵커는 최소 2개여야 합니다.")
+    required = {"name", "lat", "lng", "district"}
+    missing = required.difference(pois.columns)
+    if missing:
+        raise ValueError("장소 풀 컬럼 누락: " + ", ".join(sorted(missing)))
+    anchors = []
+    for district, district_rows in pois.groupby("district", sort=True):
+        district_rows = district_rows.sort_values(
+            ["lat", "lng", "name"]
+        ).reset_index(drop=True)
+        if len(district_rows) < anchors_per_district:
+            raise ValueError(
+                f"{district}: 앵커 후보가 {anchors_per_district}개보다 적습니다."
+            )
+        mean_latitude = float(district_rows["lat"].mean())
+        projected = np.column_stack([
+            district_rows["lng"].to_numpy(dtype=float)
+            * math.cos(math.radians(mean_latitude)),
+            district_rows["lat"].to_numpy(dtype=float),
+        ])
+        district_seed = int.from_bytes(
+            hashlib.sha256(f"{seed}:{district}".encode("utf-8")).digest()[:4],
+            "big",
+        )
+        model = KMeans(
+            n_clusters=anchors_per_district,
+            random_state=district_seed,
+            n_init=10,
+        ).fit(projected)
+        selected_indices: set[int] = set()
+        for center in sorted(
+            model.cluster_centers_.tolist(),
+            key=lambda value: (value[1], value[0]),
+        ):
+            distances = np.square(projected - np.asarray(center)).sum(axis=1)
+            for candidate_index in np.argsort(distances, kind="stable"):
+                normalized_index = int(candidate_index)
+                if normalized_index not in selected_indices:
+                    selected_indices.add(normalized_index)
+                    break
+        if len(selected_indices) != anchors_per_district:
+            raise RuntimeError(f"{district}: 공간 앵커 수가 일치하지 않습니다.")
+        anchors.append(district_rows.iloc[sorted(selected_indices)])
+    result = (
+        pd.concat(anchors, ignore_index=True)
+        .sort_values(["district", "lat", "lng", "name"])
+        .reset_index(drop=True)
+    )
+    if result.duplicated(["lat", "lng"]).any():
+        raise RuntimeError("선택된 공간 앵커 좌표가 중복되었습니다.")
+    return result
+
+
 def _format_bool(value: bool) -> str:
     return "true" if value else "false"
 
@@ -390,9 +452,15 @@ def write_catalog(
     metadata_path: Path,
     count: int,
     seed: int,
+    anchors_per_district: int = 20,
 ) -> dict[str, Any]:
     pois = load_public_pois(source_path, boundary_path)
-    rows = generate_catalog_rows(pois, count=count, seed=seed)
+    anchors = select_spatial_anchors(
+        pois,
+        anchors_per_district=anchors_per_district,
+        seed=seed,
+    )
+    rows = generate_catalog_rows(anchors, count=count, seed=seed)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(OUTPUT_COLUMNS))
@@ -418,6 +486,15 @@ def write_catalog(
             for row in rows
         }),
         "public_poi_count_after_boundary_and_coordinate_dedup": len(pois),
+        "anchor_count": len(anchors),
+        "anchors_per_district": anchors_per_district,
+        "unique_endpoint_count": len({
+            (row["origin_lat"], row["origin_lng"])
+            for row in rows
+        } | {
+            (row["dest_lat"], row["dest_lng"])
+            for row in rows
+        }),
         "source": {
             "path": source_path.as_posix(),
             "sha256": _sha256_file(source_path),
@@ -506,6 +583,7 @@ def main() -> None:
     )
     parser.add_argument("--count", type=int, default=800)
     parser.add_argument("--seed", type=int, default=20260725)
+    parser.add_argument("--anchors-per-district", type=int, default=20)
     args = parser.parse_args()
     metadata = write_catalog(
         source_path=args.source or _default_source(),
@@ -514,6 +592,7 @@ def main() -> None:
         metadata_path=args.metadata,
         count=args.count,
         seed=args.seed,
+        anchors_per_district=args.anchors_per_district,
     )
     print(json.dumps({
         "output": str(args.output),

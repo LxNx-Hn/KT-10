@@ -7,6 +7,7 @@ from labeling.generate_od_catalog import (
     Situation,
     _allocate_counts,
     generate_catalog_rows,
+    select_spatial_anchors,
 )
 
 
@@ -80,3 +81,25 @@ def test_catalog_is_deterministic_balanced_and_unique():
         for row in first
         if row["distance_band"] == "far"
     )
+
+
+def test_spatial_anchor_selection_is_deterministic_and_district_balanced():
+    first = select_spatial_anchors(
+        _poi_grid(),
+        anchors_per_district=5,
+        seed=20260725,
+    )
+    second = select_spatial_anchors(
+        _poi_grid(),
+        anchors_per_district=5,
+        seed=20260725,
+    )
+
+    assert first.equals(second)
+    assert len(first) == 15
+    assert first.groupby("district").size().to_dict() == {
+        "A구": 5,
+        "B구": 5,
+        "C구": 5,
+    }
+    assert not first.duplicated(["lat", "lng"]).any()
