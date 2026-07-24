@@ -30,6 +30,7 @@ def test_traits_include_comparative_and_confirmed_factual_labels():
             min_slope_percent=-4,
             elevation_source="open-meteo-glo90",
             shade_ratio=0.2,
+            dongbaekjeon_store_count_200m=4,
             stair_count=0,
             is_low_floor_bus=None,
         ),
@@ -42,6 +43,7 @@ def test_traits_include_comparative_and_confirmed_factual_labels():
             min_slope_percent=-3,
             elevation_source="open-meteo-glo90",
             shade_ratio=0.7,
+            dongbaekjeon_store_count_200m=9,
             stair_count=None,
             is_low_floor_bus=True,
         ),
@@ -55,6 +57,7 @@ def test_traits_include_comparative_and_confirmed_factual_labels():
         "lowest_slope",
         "most_shade",
         "low_floor_confirmed",
+        "most_dongbaekjeon_stores",
     } <= _ids(traits["r2"])
     assert traits["r2"]["feature_snapshot_hash"] == snapshots[1]["feature_snapshot_hash"]
     assert traits["r2"]["provenance"]["labeler_kind"] == "deterministic_factual"
@@ -68,6 +71,16 @@ def test_traits_include_comparative_and_confirmed_factual_labels():
         "unit": "ratio",
         "source": "building_shade",
     }]
+    dongbaekjeon_label = next(
+        label for label in traits["r2"]["labels"]
+        if label["label_id"] == "most_dongbaekjeon_stores"
+    )
+    assert dongbaekjeon_label["evidence"] == [{
+        "feature": "dongbaekjeon_store_count_200m",
+        "value": 9,
+        "unit": "count",
+        "source": "busan_public_data",
+    }]
 
 
 def test_unknown_comparative_fact_suppresses_positive_label_for_whole_set():
@@ -80,6 +93,7 @@ def test_unknown_comparative_fact_suppresses_positive_label_for_whole_set():
             max_slope_percent=2,
             min_slope_percent=-2,
             shade_ratio=0.8,
+            dongbaekjeon_store_count_200m=3,
             stair_count=None,
             is_low_floor_bus=None,
         ),
@@ -91,6 +105,7 @@ def test_unknown_comparative_fact_suppresses_positive_label_for_whole_set():
             max_slope_percent=None,
             min_slope_percent=None,
             shade_ratio=None,
+            dongbaekjeon_store_count_200m=None,
             stair_count=None,
             is_low_floor_bus=None,
         ),
@@ -98,7 +113,13 @@ def test_unknown_comparative_fact_suppresses_positive_label_for_whole_set():
     traits = generate_route_traits(snapshots)
 
     assert "fastest" in _ids(traits["known"])
-    for label_id in ("shortest", "fewest_transfers", "lowest_slope", "most_shade"):
+    for label_id in (
+        "shortest",
+        "fewest_transfers",
+        "lowest_slope",
+        "most_shade",
+        "most_dongbaekjeon_stores",
+    ):
         assert label_id not in _ids(traits["known"])
         assert label_id not in _ids(traits["unknown"])
     assert traits["unknown"]["labels"] == []

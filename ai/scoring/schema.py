@@ -15,7 +15,7 @@ FEATURE_COLS = [
     "cctv_density_50m", "crosswalk_count", "crosswalk_signal_ratio",
     "shelter_nearby", "aed_nearby", "wheelchair_charger_nearby",
     "smart_shelter_nearby", "smart_shelter_has_ac",
-    "dongbaekjeon_store_count_200m", "bus_stop_count_200m",
+    "bus_stop_count_200m",
     "crowd_level", "temp_c", "feels_like_c", "precipitation_mm", "wind_ms", "pm10",
     "weather_heatwave", "weather_coldwave", "weather_rain", "weather_bad_air",
     "stair_avoidance_burden", "luggage_walk_burden", "luggage_stair_burden",
@@ -24,6 +24,11 @@ FEATURE_COLS = [
     "weather_priority_walk_burden",
     "stroller_walk_burden", "stroller_stair_burden", "stroller_elevator_gap",
     "shade_priority_unshaded_walk_m", "minimize_transfers_burden",
+]
+
+# 경로 주변 생활정보로는 보존하지만 추천 점수와 모델 입력에는 사용하지 않는다.
+AUXILIARY_FEATURE_COLS = [
+    "dongbaekjeon_store_count_200m",
 ]
 
 RATIO_FEATURES = frozenset({

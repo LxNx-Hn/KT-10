@@ -24,6 +24,7 @@ from scoring.train import (
     load_human_training_data,
     train_rankers,
 )
+from scoring.schema import AUXILIARY_FEATURE_COLS
 
 
 def _training_frame() -> pd.DataFrame:
@@ -496,3 +497,8 @@ def test_snapshot_builder_canonicalizes_duplicate_source_order():
 
     assert first["sources"] == ["odsay", "tmap"]
     assert first["feature_snapshot_hash"] == second["feature_snapshot_hash"]
+
+
+def test_dongbaekjeon_is_auxiliary_not_a_ranker_feature():
+    assert "dongbaekjeon_store_count_200m" in AUXILIARY_FEATURE_COLS
+    assert "dongbaekjeon_store_count_200m" not in FEATURE_COLS

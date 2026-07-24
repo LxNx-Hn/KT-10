@@ -119,6 +119,22 @@ def generate_route_traits(
         )
         else set()
     )
+    dongbaekjeon_values = [
+        snapshot["features"].get("dongbaekjeon_store_count_200m")
+        for snapshot in snapshots
+    ]
+    most_dongbaekjeon_stores = (
+        _maximum_route_ids(
+            snapshots,
+            lambda features: features.get("dongbaekjeon_store_count_200m"),
+        )
+        if (
+            dongbaekjeon_values
+            and all(value is not None for value in dongbaekjeon_values)
+            and max(float(value) for value in dongbaekjeon_values) > 0
+        )
+        else set()
+    )
 
     result: dict[str, dict[str, Any]] = {}
     for snapshot in snapshots:
@@ -191,6 +207,18 @@ def generate_route_traits(
                     features.get("shade_ratio"),
                     "ratio",
                     "building_shade",
+                )],
+            ))
+        if route_id in most_dongbaekjeon_stores:
+            labels.append(_label(
+                "most_dongbaekjeon_stores",
+                "동백전 가맹점 많은 길",
+                "derived",
+                [_evidence(
+                    "dongbaekjeon_store_count_200m",
+                    features.get("dongbaekjeon_store_count_200m"),
+                    "count",
+                    "busan_public_data",
                 )],
             ))
         if features.get("stair_count") == 0:

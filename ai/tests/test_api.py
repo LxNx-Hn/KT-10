@@ -263,10 +263,14 @@ def test_labeling_candidates_does_not_require_trained_model(monkeypatch):
 
 def test_rank_candidates_uses_backend_enriched_complete_features(monkeypatch):
     class Ranker:
-        def predict(self, _frame):
+        received_columns = None
+
+        def predict(self, frame):
+            self.received_columns = list(frame.columns)
             return np.array([0.2, 0.8])
 
-    monkeypatch.setattr(api_router, "_rankers", {"general": Ranker()})
+    ranker = Ranker()
+    monkeypatch.setattr(api_router, "_rankers", {"general": ranker})
     monkeypatch.setattr(api_router, "_get_model_metadata", lambda: {
         "model_version": "bootstrap-test",
         "model_tier": "bootstrap_baseline",
@@ -283,6 +287,7 @@ def test_rank_candidates_uses_backend_enriched_complete_features(monkeypatch):
                     "shade_ratio": 0.2,
                     "shaded_walk_m": 100,
                     "shade_building_height_coverage": 1.0,
+                    "dongbaekjeon_store_count_200m": 1,
                 },
             },
             {
@@ -292,6 +297,7 @@ def test_rank_candidates_uses_backend_enriched_complete_features(monkeypatch):
                     "shade_ratio": 0.8,
                     "shaded_walk_m": 400,
                     "shade_building_height_coverage": 1.0,
+                    "dongbaekjeon_store_count_200m": 999,
                 },
             },
         ],
@@ -305,6 +311,7 @@ def test_rank_candidates_uses_backend_enriched_complete_features(monkeypatch):
     ]
     assert body["ranked"][0]["relative_fit_score"] == 1.0
     assert body["metadata"]["model_tier"] == "bootstrap_baseline"
+    assert "dongbaekjeon_store_count_200m" not in ranker.received_columns
 
 
 def test_rank_candidates_rejects_incomplete_features(monkeypatch):
@@ -332,6 +339,7 @@ def test_enriched_snapshot_identity_changes_with_shade_evaluation_time():
         "shaded_walk_m": 300.0,
         "shade_building_height_coverage": 1.0,
         "shade_priority_unshaded_walk_m": 200.0,
+        "dongbaekjeon_store_count_200m": 12,
     }
 
     def request_at(shade_evaluated_at: str):
@@ -373,6 +381,12 @@ def test_enriched_snapshot_identity_changes_with_shade_evaluation_time():
     assert (
         morning_body["candidates"][0]["feature_snapshot"]["feature_snapshot_hash"]
         != afternoon_body["candidates"][0]["feature_snapshot"]["feature_snapshot_hash"]
+    )
+    assert (
+        afternoon_body["candidates"][0]["feature_snapshot"]["features"][
+            "dongbaekjeon_store_count_200m"
+        ]
+        == 12
     )
     trait = afternoon_body["candidates"][0]["trait_labels"]
     assert trait["feature_snapshot_hash"] == (

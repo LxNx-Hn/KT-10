@@ -29,7 +29,7 @@ from scoring.bootstrap_baseline import (
     load_bootstrap_baseline_rankers,
 )
 from scoring.predict import predict_and_rank
-from scoring.schema import validate_feature_values
+from scoring.schema import AUXILIARY_FEATURE_COLS, validate_feature_values
 from scoring.snapshots import build_live_feature_snapshot
 from scoring.train import FEATURE_COLS, ModelNotReady, load_model_metadata, load_rankers
 
@@ -129,6 +129,8 @@ class EnrichedSnapshotsRequest(BaseModel):
 def _validated_feature_row(
     route_id: str,
     features: dict[str, Any],
+    *,
+    include_auxiliary: bool = False,
 ) -> dict[str, float | int | bool | None]:
     missing = [name for name in FEATURE_COLS if name not in features]
     if missing:
@@ -140,8 +142,16 @@ def _validated_feature_row(
                 "missing": missing,
             },
         )
+    columns = [
+        *FEATURE_COLS,
+        *(
+            name
+            for name in AUXILIARY_FEATURE_COLS
+            if include_auxiliary and name in features
+        ),
+    ]
     row: dict[str, float | int | bool | None] = {}
-    for name in FEATURE_COLS:
+    for name in columns:
         value = features[name]
         if value is not None and (
             isinstance(value, str)
@@ -158,7 +168,7 @@ def _validated_feature_row(
             )
         row[name] = value
     try:
-        validate_feature_values(row, FEATURE_COLS)
+        validate_feature_values(row, columns)
     except ValueError as exc:
         raise HTTPException(
             status_code=422,
@@ -192,7 +202,11 @@ def enriched_snapshots(req: EnrichedSnapshotsRequest) -> dict:
             )
         validated.append((
             candidate,
-            _validated_feature_row(candidate.route_id, candidate.features),
+            _validated_feature_row(
+                candidate.route_id,
+                candidate.features,
+                include_auxiliary=True,
+            ),
         ))
 
     context = {
