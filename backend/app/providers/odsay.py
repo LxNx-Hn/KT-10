@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 
 import httpx
 
@@ -16,10 +17,19 @@ def _required_number(container: dict, key: str, *, minimum: float = 0) -> float:
     """외부 응답의 필수 수치를 결측 0으로 바꾸지 않고 검증한다."""
     if key not in container or container[key] is None:
         raise ValueError(f"ODsay response is missing {key}")
+    if isinstance(container[key], bool):
+        raise ValueError(f"ODsay response has invalid {key}")
     value = float(container[key])
-    if value < minimum:
+    if not math.isfinite(value) or value < minimum:
         raise ValueError(f"ODsay response has invalid {key}")
     return value
+
+
+def _required_integer(container: dict, key: str, *, minimum: int = 0) -> int:
+    value = _required_number(container, key, minimum=minimum)
+    if not value.is_integer():
+        raise ValueError(f"ODsay response has non-integer {key}")
+    return int(value)
 
 
 def _lane_name(sub: dict) -> str:
@@ -46,10 +56,12 @@ def _segment(path_index: int, segment_index: int, sub: dict) -> RouteSegment:
             distance_m=distance, bus_route_name=_lane_name(sub),
             # ODsay 응답만으로 저상버스 여부는 확정하지 않는다.
         )
-    return RouteSegment(
-        id=f"odsay-{path_index}-{segment_index}", mode="walk",
-        description="도보 이동", duration_min=duration, distance_m=distance, outdoor=True,
-    )
+    if traffic_type == 3:
+        return RouteSegment(
+            id=f"odsay-{path_index}-{segment_index}", mode="walk",
+            description="도보 이동", duration_min=duration, distance_m=distance, outdoor=True,
+        )
+    raise ValueError("ODsay response has unsupported trafficType")
 
 
 def _normalize(payload: dict, origin: Place, destination: Place) -> list[RouteCandidate]:
@@ -60,10 +72,22 @@ def _normalize(payload: dict, origin: Place, destination: Place) -> list[RouteCa
         try:
             total_duration = _required_number(info, "totalTime", minimum=0.000001)
             total_walk = _required_number(info, "totalWalk")
-            bus_transfers = int(_required_number(info, "busTransitCount"))
-            subway_transfers = int(_required_number(info, "subwayTransitCount"))
+            if info.get("transferCount") is not None:
+                transfer_count = _required_integer(info, "transferCount")
+            else:
+                bus_boardings = _required_integer(info, "busTransitCount")
+                subway_boardings = _required_integer(
+                    info,
+                    "subwayTransitCount",
+                )
+                total_boardings = bus_boardings + subway_boardings
+                if total_boardings < 1:
+                    raise ValueError(
+                        "ODsay response has no public-transit boardings"
+                    )
+                transfer_count = total_boardings - 1
             segments = [_segment(i, j, sub) for j, sub in enumerate(item.get("subPath") or [])]
-        except (TypeError, ValueError):
+        except (AttributeError, TypeError, ValueError):
             continue
         if not segments:
             continue
@@ -74,15 +98,15 @@ def _normalize(payload: dict, origin: Place, destination: Place) -> list[RouteCa
             origin=origin.name, destination=destination.name, segments=segments,
             total_duration_min=total_duration,
             total_walk_m=total_walk,
-            transfer_count=bus_transfers + subway_transfers,
+            transfer_count=transfer_count,
         ))
     return out
 
 
 async def get_public_transit_candidates(origin: Place, destination: Place) -> list[RouteCandidate]:
     """Fetch real candidates. Fail loudly rather than misrepresenting a synthetic route as live."""
-    if not settings.live_routes:
-        return []
+    if not settings.odsay_api_key:
+        raise RuntimeError("ODSAY_API_KEY is required for ODsay route lookup.")
     params = {
         "apiKey": settings.odsay_api_key,
         "SX": origin.lng, "SY": origin.lat,

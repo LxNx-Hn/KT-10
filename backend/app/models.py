@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 ProfileId = Literal[
@@ -25,47 +25,51 @@ LowFloorStatus = Literal["confirmed", "regular", "unknown", "none"]
 class CamelModel(BaseModel):
     """snake_case 속성 + camelCase JSON. 입력은 양쪽 모두 허용."""
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        allow_inf_nan=False,
+    )
 
 
 class LatLng(CamelModel):
-    lat: float
-    lng: float
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
 
 
 class Place(CamelModel):
-    id: str
-    name: str
+    id: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=200)
     lat: float = Field(ge=34.8, le=35.5)
     lng: float = Field(ge=128.7, le=129.4)
-    category: Optional[str] = None
-    address: Optional[str] = None
+    category: Optional[str] = Field(default=None, max_length=200)
+    address: Optional[str] = Field(default=None, max_length=500)
 
 
 class RouteSegment(CamelModel):
-    id: str
+    id: str = Field(min_length=1, max_length=200)
     mode: SegmentMode
-    description: str
-    duration_min: float
-    distance_m: Optional[float] = None
+    description: str = Field(min_length=1, max_length=500)
+    duration_min: float = Field(ge=0)
+    distance_m: Optional[float] = Field(default=None, ge=0)
 
     # 보행 구간
     outdoor: Optional[bool] = None
     has_stairs: Optional[bool] = None
-    stairs_count: Optional[int] = None
+    stairs_count: Optional[int] = Field(default=None, ge=0)
     has_slope: Optional[bool] = None
-    crosswalk_count: Optional[int] = None
+    crosswalk_count: Optional[int] = Field(default=None, ge=0)
 
     # 버스 구간
     bus_route_name: Optional[str] = None
     is_low_floor_bus: Optional[bool] = None  # None = 미확인
-    wait_min: Optional[float] = None
+    wait_min: Optional[float] = Field(default=None, ge=0)
 
     # 역/수직이동
     station_name: Optional[str] = None
     has_elevator: Optional[bool] = None  # None = 미확인
     needs_vertical_move: Optional[bool] = None
-    path: Optional[list[LatLng]] = None
+    path: Optional[list[LatLng]] = Field(default=None, min_length=2)
     geometry_quality: Optional[Literal["exact", "mixed", "estimated"]] = None
 
 
@@ -73,13 +77,41 @@ class TerrainSummary(CamelModel):
     avg_slope_percent: Optional[float] = None
     max_slope_percent: Optional[float] = None
     min_slope_percent: Optional[float] = None
-    uphill_distance_m: Optional[float] = None
-    downhill_distance_m: Optional[float] = None
-    elevation_gain_m: Optional[float] = None
-    elevation_loss_m: Optional[float] = None
-    source: Optional[str] = None
-    resolution_m: Optional[int] = None
+    uphill_distance_m: Optional[float] = Field(default=None, ge=0)
+    downhill_distance_m: Optional[float] = Field(default=None, ge=0)
+    elevation_gain_m: Optional[float] = Field(default=None, ge=0)
+    elevation_loss_m: Optional[float] = Field(default=None, ge=0)
+    source: Optional[str] = Field(default=None, max_length=200)
+    resolution_m: Optional[int] = Field(default=None, gt=0)
     status: Literal["estimated_90m", "unavailable", "invalid"] = "unavailable"
+
+    @model_validator(mode="after")
+    def validate_status_metrics(self):
+        measurements = (
+            self.avg_slope_percent,
+            self.max_slope_percent,
+            self.min_slope_percent,
+            self.uphill_distance_m,
+            self.downhill_distance_m,
+            self.elevation_gain_m,
+            self.elevation_loss_m,
+        )
+        if self.status == "estimated_90m":
+            if (
+                self.avg_slope_percent is None
+                or self.max_slope_percent is None
+                or self.min_slope_percent is None
+                or self.resolution_m is None
+                or not self.source
+            ):
+                raise ValueError(
+                    "estimated terrain requires slope, resolution, and source."
+                )
+        elif any(value is not None for value in measurements):
+            raise ValueError(
+                "unavailable or invalid terrain cannot expose measurements."
+            )
+        return self
 
 
 class ShadePathSegment(CamelModel):
@@ -95,7 +127,7 @@ class ShadeSummary(CamelModel):
     shaded_walk_m: Optional[float] = Field(default=None, ge=0)
     total_walk_m: Optional[float] = Field(default=None, ge=0)
     solar_azimuth_deg: Optional[float] = Field(default=None, ge=0, lt=360)
-    solar_elevation_deg: Optional[float] = None
+    solar_elevation_deg: Optional[float] = Field(default=None, ge=-90, le=90)
     building_height_coverage: Optional[float] = Field(default=None, ge=0, le=1)
     building_count: Optional[int] = Field(default=None, ge=0)
     known_height_building_count: Optional[int] = Field(default=None, ge=0)
@@ -111,6 +143,38 @@ class ShadeSummary(CamelModel):
     shadow_polygons: list[list[LatLng]] = Field(default_factory=list)
     path_segments: list[ShadePathSegment] = Field(default_factory=list)
     calculation_note: str
+
+    @model_validator(mode="after")
+    def validate_status_metrics(self):
+        estimated = self.status in ("estimated_demo", "estimated_public")
+        if estimated and self.shade_ratio is None:
+            raise ValueError("estimated shade requires shadeRatio.")
+        if not estimated and any(
+            value is not None
+            for value in (
+                self.shade_ratio,
+                self.shaded_walk_m,
+                self.estimate_kind,
+            )
+        ):
+            raise ValueError(
+                "unavailable or non-daylight shade cannot expose estimated metrics."
+            )
+        if (
+            self.shaded_walk_m is not None
+            and self.total_walk_m is not None
+            and self.shaded_walk_m > self.total_walk_m
+        ):
+            raise ValueError("shadedWalkM cannot exceed totalWalkM.")
+        if (
+            self.known_height_building_count is not None
+            and self.building_count is not None
+            and self.known_height_building_count > self.building_count
+        ):
+            raise ValueError(
+                "knownHeightBuildingCount cannot exceed buildingCount."
+            )
+        return self
 
 
 class TraitEvidence(CamelModel):
@@ -128,15 +192,15 @@ class RouteTraitLabel(CamelModel):
 
 
 class RouteCandidate(CamelModel):
-    id: str
-    summary: str
-    origin: str
-    destination: str
-    segments: list[RouteSegment]
-    total_duration_min: float
-    total_walk_m: float
-    transfer_count: int
-    path: Optional[list[LatLng]] = None
+    id: str = Field(min_length=1, max_length=200)
+    summary: str = Field(min_length=1, max_length=500)
+    origin: str = Field(min_length=1, max_length=200)
+    destination: str = Field(min_length=1, max_length=200)
+    segments: list[RouteSegment] = Field(min_length=1, max_length=200)
+    total_duration_min: float = Field(gt=0)
+    total_walk_m: float = Field(ge=0)
+    transfer_count: int = Field(ge=0)
+    path: Optional[list[LatLng]] = Field(default=None, min_length=2, max_length=50_000)
     sources: list[str] = Field(default_factory=list)
     geometry_quality: Optional[Literal["exact", "mixed", "estimated"]] = None
     terrain: Optional[TerrainSummary] = None
@@ -166,25 +230,47 @@ class RouteCandidate(CamelModel):
 
 
 class WeatherCondition(CamelModel):
-    label: str
+    label: str = Field(min_length=1, max_length=100)
     temp_c: float
     feels_like_c: float
-    precipitation_mm: float
+    precipitation_mm: float = Field(ge=0)
     is_heatwave: Optional[bool] = None
     is_coldwave: Optional[bool] = None
-    wind_ms: float
-    pm10: float
+    wind_ms: float = Field(ge=0)
+    pm10: float = Field(ge=0)
     sky: SkyCondition
     air: AirQuality
+    observed_at: Optional[datetime] = None
+    air_quality_observed_at: Optional[datetime] = None
+
+    @model_validator(mode="after")
+    def validate_observation_times(self):
+        if (self.observed_at is None) != (
+            self.air_quality_observed_at is None
+        ):
+            raise ValueError(
+                "weather and air-quality observation times must be paired."
+            )
+        if self.label == "실시간" and self.observed_at is None:
+            raise ValueError(
+                "live weather requires provider observation times."
+            )
+        if self.observed_at is not None and (
+            self.observed_at.tzinfo is None
+            or self.air_quality_observed_at is None
+            or self.air_quality_observed_at.tzinfo is None
+        ):
+            raise ValueError("weather observation times require UTC offsets.")
+        return self
 
 
 class BusArrival(CamelModel):
     route_name: str
     vehicle_no: Optional[str] = None
-    arrival_min: Optional[int] = None
+    arrival_min: Optional[int] = Field(default=None, ge=0)
     arrival_message: Optional[str] = None
     is_low_floor: Optional[bool] = None  # None = 미확인
-    remaining_stops: Optional[int] = None
+    remaining_stops: Optional[int] = Field(default=None, ge=0)
 
 
 class BusStopArrivals(CamelModel):
@@ -216,7 +302,7 @@ class RouteScore(CamelModel):
     route_id: str
     components: ScoreComponents
     display: ScoreDisplay
-    final_score: float
+    final_score: float = Field(ge=0, le=100)
     low_floor_status: LowFloorStatus
     reasons: list[str]
     cautions: list[str]

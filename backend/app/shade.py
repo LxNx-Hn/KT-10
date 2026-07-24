@@ -159,7 +159,11 @@ def _swept_shadow(polygon: Polygon, shift: tuple[float, float]) -> BaseGeometry:
     pieces: list[BaseGeometry] = [polygon, shifted]
     for ring in [polygon.exterior, *polygon.interiors]:
         coordinates = list(ring.coords)
-        for left, right in zip(coordinates, coordinates[1:]):
+        for left, right in zip(
+            coordinates,
+            coordinates[1:],
+            strict=False,
+        ):
             pieces.append(Polygon([
                 left,
                 right,
@@ -345,7 +349,11 @@ def calculate_shade(
         line.intersection(shadow_geometry).length for line in route_lines
     )
     for projected in projected_paths:
-        for left, right in zip(projected, projected[1:]):
+        for left, right in zip(
+            projected,
+            projected[1:],
+            strict=False,
+        ):
             length = _distance(left, right)
             steps = max(1, math.ceil(length / SAMPLE_INTERVAL_M))
             for index in range(steps):
@@ -366,11 +374,31 @@ def calculate_shade(
                     shaded=shadow_geometry.covers(Point(midpoint)),
                 ))
     if total_geometry_m <= 0:
-        ratio = None
-        shaded_walk_m = None
-    else:
-        ratio = shaded_geometry_m / total_geometry_m
-        shaded_walk_m = analyzed_walk_m * ratio if analyzed_walk_m is not None else None
+        return ShadeSummary(
+            status="unavailable",
+            evaluated_at=evaluated_at,
+            total_walk_m=analyzed_walk_m,
+            solar_azimuth_deg=round(azimuth, 2),
+            solar_elevation_deg=round(elevation, 2),
+            building_height_coverage=(
+                round(coverage, 4) if coverage is not None else None
+            ),
+            building_count=total_buildings,
+            known_height_building_count=known_heights,
+            walking_geometry_quality=walking_quality,
+            source=source,
+            data_quality=data_quality,
+            calculation_note=(
+                "실외 도보 geometry의 길이가 0이어서 그늘 비율을 "
+                "계산하지 않았습니다."
+            ),
+        )
+    ratio = shaded_geometry_m / total_geometry_m
+    shaded_walk_m = (
+        analyzed_walk_m * ratio
+        if analyzed_walk_m is not None
+        else None
+    )
     estimate_kind = "lower_bound" if coverage is not None and coverage < 1 else "estimate"
     display_polygons = _display_polygons(shadow_geometry)
     return ShadeSummary(

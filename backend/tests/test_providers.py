@@ -97,6 +97,63 @@ def test_kakao_places_reports_auth_failure_without_exposing_key(monkeypatch):
     assert "must-not-leak" not in str(error.value)
 
 
+def test_kakao_places_rejects_malformed_provider_contract(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            json={"documents": [{"id": "broken", "place_name": "좌표 없음"}]},
+        )
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        places_provider.httpx,
+        "AsyncClient",
+        lambda **kwargs: real_client(transport=transport, **kwargs),
+    )
+    monkeypatch.setattr(settings, "kakao_rest_api_key", "test-rest-key")
+
+    with pytest.raises(RuntimeError, match="provider request failed"):
+        asyncio.run(search_places("북구청"))
+
+
+def test_kakao_places_filters_results_outside_busan_bounds(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "documents": [
+                    {
+                        "id": "seoul",
+                        "place_name": "서울역",
+                        "y": "37.5547",
+                        "x": "126.9707",
+                    },
+                    {
+                        "id": "busan",
+                        "place_name": "부산역",
+                        "y": "35.1151",
+                        "x": "129.0414",
+                    },
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        places_provider.httpx,
+        "AsyncClient",
+        lambda **kwargs: real_client(transport=transport, **kwargs),
+    )
+    monkeypatch.setattr(settings, "kakao_rest_api_key", "test-rest-key")
+
+    results = asyncio.run(search_places("역"))
+    assert [place.name for place in results] == ["부산역"]
+
+
 def test_weather_falls_back_to_mock_without_key(monkeypatch):
     _force_mock(monkeypatch)
     w = asyncio.run(get_current_weather("heatwave"))
@@ -118,16 +175,43 @@ def test_live_weather_uses_measured_pm10_and_aqi():
         "main": {"temp": 28.4, "feels_like": 30.1},
         "wind": {"speed": 2.4},
         "weather": [{"main": "Clear"}],
+        "dt": 1784862000,
     }
-    air = {"list": [{"main": {"aqi": 3}, "components": {"pm10": 61.25}}]}
+    air = {
+        "list": [{
+            "main": {"aqi": 3},
+            "components": {"pm10": 61.25},
+            "dt": 1784861700,
+        }]
+    }
     result = _map_openweather(weather, air)
     assert result.pm10 == 61.2
     assert result.air == "bad"
+    assert result.observed_at is not None
+    assert result.observed_at.isoformat() == "2026-07-24T03:00:00+00:00"
+    assert result.air_quality_observed_at is not None
+    assert result.air_quality_observed_at.isoformat() == "2026-07-24T02:55:00+00:00"
 
 
 def test_live_weather_rejects_missing_measurement_instead_of_defaulting():
     with pytest.raises(ValueError, match="필수 관측값"):
         _map_openweather({"main": {}, "wind": {}, "weather": []}, {"list": []})
+
+
+def test_live_weather_rejects_missing_observation_times():
+    weather = {
+        "main": {"temp": 28.4, "feels_like": 30.1},
+        "wind": {"speed": 2.4},
+        "weather": [{"main": "Clear"}],
+    }
+    air = {
+        "list": [{
+            "main": {"aqi": 3},
+            "components": {"pm10": 61.25},
+        }]
+    }
+    with pytest.raises(ValueError, match="필수 관측값"):
+        _map_openweather(weather, air)
 
 
 def test_odsay_normalizer_rejects_missing_required_metrics():
@@ -145,3 +229,145 @@ def test_odsay_normalizer_rejects_missing_required_metrics():
         }]}
     }
     assert _normalize(payload, origin, destination) == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("totalWalk", float("nan")),
+        ("busTransitCount", 1.5),
+    ],
+)
+def test_odsay_normalizer_rejects_nonfinite_or_fractional_metrics(
+    field,
+    value,
+):
+    origin = Place(id="a", name="부산역", lat=35.1151, lng=129.0414)
+    destination = Place(
+        id="b",
+        name="서면역",
+        lat=35.1578,
+        lng=129.0594,
+    )
+    info = {
+        "totalTime": 20,
+        "totalWalk": 320,
+        "busTransitCount": 0,
+        "subwayTransitCount": 0,
+    }
+    info[field] = value
+    payload = {
+        "result": {"path": [{
+            "info": info,
+            "subPath": [{
+                "trafficType": 3,
+                "sectionTime": 5,
+                "distance": 320,
+            }],
+        }]}
+    }
+    assert _normalize(payload, origin, destination) == []
+
+
+def test_odsay_normalizer_rejects_unknown_traffic_type():
+    origin = Place(id="a", name="부산역", lat=35.1151, lng=129.0414)
+    destination = Place(
+        id="b",
+        name="서면역",
+        lat=35.1578,
+        lng=129.0594,
+    )
+    payload = {
+        "result": {"path": [{
+            "info": {
+                "totalTime": 20,
+                "totalWalk": 320,
+                "busTransitCount": 1,
+                "subwayTransitCount": 0,
+            },
+            "subPath": [{
+                "trafficType": 99,
+                "sectionTime": 5,
+                "distance": 320,
+            }],
+        }]}
+    }
+    assert _normalize(payload, origin, destination) == []
+
+
+def _odsay_transfer_payload(info: dict) -> dict:
+    return {
+        "result": {"path": [{
+            "info": {
+                "totalTime": 20,
+                "totalWalk": 320,
+                **info,
+            },
+            "subPath": [{
+                "trafficType": 1,
+                "sectionTime": 15,
+                "distance": 3000,
+                "lane": [{"name": "1호선"}],
+            }],
+        }]}
+    }
+
+
+def test_odsay_direct_boarding_is_zero_transfers():
+    origin = Place(id="a", name="부산역", lat=35.1151, lng=129.0414)
+    destination = Place(
+        id="b",
+        name="서면역",
+        lat=35.1578,
+        lng=129.0594,
+    )
+    routes = _normalize(
+        _odsay_transfer_payload({
+            "busTransitCount": 0,
+            "subwayTransitCount": 1,
+        }),
+        origin,
+        destination,
+    )
+    assert routes[0].transfer_count == 0
+    transfer_route = _normalize(
+        _odsay_transfer_payload({
+            "busTransitCount": 1,
+            "subwayTransitCount": 1,
+        }),
+        origin,
+        destination,
+    )
+    assert transfer_route[0].transfer_count == 1
+
+
+def test_odsay_transfer_count_prefers_explicit_provider_metric():
+    origin = Place(id="a", name="부산역", lat=35.1151, lng=129.0414)
+    destination = Place(
+        id="b",
+        name="서면역",
+        lat=35.1578,
+        lng=129.0594,
+    )
+    routes = _normalize(
+        _odsay_transfer_payload({"transferCount": 2}),
+        origin,
+        destination,
+    )
+    assert routes[0].transfer_count == 2
+
+
+def test_odsay_missing_transfer_metric_requires_both_boarding_counts():
+    origin = Place(id="a", name="부산역", lat=35.1151, lng=129.0414)
+    destination = Place(
+        id="b",
+        name="서면역",
+        lat=35.1578,
+        lng=129.0594,
+    )
+    routes = _normalize(
+        _odsay_transfer_payload({"subwayTransitCount": 1}),
+        origin,
+        destination,
+    )
+    assert routes == []

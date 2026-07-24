@@ -76,6 +76,23 @@ def test_night_outside_demo_bounds_stays_not_daylight():
     assert shade.shade_ratio is None
 
 
+def test_zero_length_walking_geometry_is_unavailable_not_estimated():
+    route = demo_candidates()[0].model_copy(deep=True)
+    assert route.path is not None
+    first = route.path[0]
+    route.path = [first.model_copy(), first.model_copy()]
+
+    shade = add_demo_shade(
+        [route],
+        datetime(2026, 7, 23, 14, 0, tzinfo=KST),
+    )[0].shade
+
+    assert shade is not None
+    assert shade.status == "unavailable"
+    assert shade.shade_ratio is None
+    assert "길이가 0" in shade.calculation_note
+
+
 def test_concave_building_shadow_is_not_inflated_to_convex_hull():
     footprint = Polygon([
         (0, 0), (4, 0), (4, 1), (1, 1), (1, 4), (0, 4), (0, 0),

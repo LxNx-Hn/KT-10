@@ -17,20 +17,45 @@ KAKAO_KEYWORD_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 
 def _map_kakao(documents: list[dict]) -> list[Place]:
     out: list[Place] = []
+    malformed = 0
+    bounds = DISTRICT["bounds"]
     for i, d in enumerate(documents):
+        if not isinstance(d, dict):
+            malformed += 1
+            continue
         try:
+            name = str(d["place_name"]).strip()
+            if not name:
+                raise ValueError("empty place name")
+            lat = float(d["y"])
+            lng = float(d["x"])
+            # rect는 검색 힌트이므로 공급자가 권역 밖 결과를 반환할 수 있다.
+            # 이 경우는 계약 오류가 아니라 명시적인 서비스 권역 필터다.
+            if not (
+                bounds["min_lat"] <= lat <= bounds["max_lat"]
+                and bounds["min_lng"] <= lng <= bounds["max_lng"]
+            ):
+                continue
             out.append(
                 Place(
-                    id=d.get("id") or f"kakao-{i}",
-                    name=d["place_name"],
-                    lat=float(d["y"]),
-                    lng=float(d["x"]),
+                    id=str(d.get("id") or f"kakao-{i}"),
+                    name=name,
+                    lat=lat,
+                    lng=lng,
                     category=d.get("category_group_name") or None,
                     address=d.get("road_address_name") or d.get("address_name") or None,
                 )
             )
         except (KeyError, ValueError, TypeError):
+            malformed += 1
             continue
+    if malformed:
+        log.warning(
+            "Kakao 장소검색 응답에서 계약 위반 문서 %s건을 제외했습니다.",
+            malformed,
+        )
+    if documents and malformed == len(documents):
+        raise ValueError("Kakao place search response has no valid documents.")
     return out
 
 
@@ -56,7 +81,13 @@ async def search_places(query: str) -> list[Place]:
                 headers={"Authorization": f"KakaoAK {settings.kakao_rest_api_key}"},
             )
             res.raise_for_status()
-            return _map_kakao(res.json().get("documents", []))
+            payload = res.json()
+            if not isinstance(payload, dict) or not isinstance(
+                payload.get("documents"),
+                list,
+            ):
+                raise ValueError("Kakao place search response is invalid.")
+            return _map_kakao(payload["documents"])
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
         log.warning("Kakao 장소검색 HTTP 실패(status=%s)", status)
