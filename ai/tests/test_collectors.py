@@ -425,3 +425,38 @@ def test_odsay_rejects_missing_transit_lane_instead_of_shifting_next_lane():
             )
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("traffic_type", [True, False])
+def test_odsay_rejects_boolean_traffic_type(traffic_type):
+    collector = OdsayRouteCollector()
+    path = {
+        "info": {
+            "totalTime": 20,
+            "totalDistance": 5000,
+            "mapObj": "100:1:1:2",
+        },
+        "subPath": [{
+            "trafficType": traffic_type,
+            "sectionTime": 18,
+            "distance": 4900,
+        }],
+    }
+
+    async def run():
+        async def fake_load_lane(*_args):
+            return [[
+                Coordinate(lat=35.12, lng=129.05),
+                Coordinate(lat=35.13, lng=129.06),
+            ]]
+
+        collector._load_lane = fake_load_lane
+        with pytest.raises(CollectorError, match="trafficType"):
+            await collector._build_candidate(
+                object(),
+                path,
+                ORIGIN,
+                DEST,
+            )
+
+    asyncio.run(run())

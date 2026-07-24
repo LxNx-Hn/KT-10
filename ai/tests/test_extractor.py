@@ -3,7 +3,11 @@ import pytest
 import geopandas as gpd
 from shapely.geometry import Point
 from preprocessing.load_layers import load_all_layers
-from features.extractor import extract_route_features, _zero_features
+from features.extractor import (
+    _zero_features,
+    extract_route_features,
+    extract_route_features_for_parts,
+)
 
 
 @pytest.fixture(scope="module")
@@ -45,10 +49,86 @@ def test_buffer_is_measured_in_meters():
     """경로에서 약 30m 지점은 포함하고 약 300m 지점은 50m 버퍼에서 제외한다."""
     route = [(35.1150, 129.0400), (35.1160, 129.0400)]
     cctv = gpd.GeoDataFrame(
-        {"name": ["near", "far"]},
+        {"name": ["near", "far"], "카메라대수": [1, 1]},
         geometry=[Point(129.0403, 35.1155), Point(129.0433, 35.1155)],
         crs="EPSG:4326",
     )
     feats = extract_route_features(route, {"cctv": cctv})
     assert feats["cctv_density_50m"] is not None
     assert 8 < feats["cctv_density_50m"] < 10
+
+
+def test_zero_length_route_does_not_invent_density_denominator():
+    route = [(35.1150, 129.0400), (35.1150, 129.0400)]
+    cctv = gpd.GeoDataFrame(
+        {"name": ["same-place"], "카메라대수": [1]},
+        geometry=[Point(129.0400, 35.1150)],
+        crs="EPSG:4326",
+    )
+
+    assert extract_route_features(route, {"cctv": cctv}) == _zero_features()
+
+
+def test_all_missing_ratio_observations_remain_unknown():
+    route = [(35.1150, 129.0400), (35.1160, 129.0400)]
+    crosswalk = gpd.GeoDataFrame(
+        {"has_signal": [None]},
+        geometry=[Point(129.0400, 35.1155)],
+        crs="EPSG:4326",
+    )
+
+    features = extract_route_features(route, {"crosswalk": crosswalk})
+
+    assert features["crosswalk_count"] == 1
+    assert features["crosswalk_signal_ratio"] is None
+
+
+def test_cctv_density_sums_cameras_instead_of_installation_rows():
+    route = [(35.1150, 129.0400), (35.1160, 129.0400)]
+    one_camera = gpd.GeoDataFrame(
+        {"카메라대수": [1]},
+        geometry=[Point(129.0400, 35.1155)],
+        crs="EPSG:4326",
+    )
+    three_cameras = gpd.GeoDataFrame(
+        {"카메라대수": [3]},
+        geometry=[Point(129.0400, 35.1155)],
+        crs="EPSG:4326",
+    )
+
+    one = extract_route_features(route, {"cctv": one_camera})
+    three = extract_route_features(route, {"cctv": three_cameras})
+
+    assert three["cctv_density_50m"] == pytest.approx(
+        one["cctv_density_50m"] * 3,
+        abs=0.0001,
+    )
+
+
+def test_cctv_missing_camera_count_remains_unknown():
+    route = [(35.1150, 129.0400), (35.1160, 129.0400)]
+    cctv = gpd.GeoDataFrame(
+        {"카메라대수": [None]},
+        geometry=[Point(129.0400, 35.1155)],
+        crs="EPSG:4326",
+    )
+
+    features = extract_route_features(route, {"cctv": cctv})
+
+    assert features["cctv_density_50m"] is None
+
+
+def test_disconnected_parts_do_not_buffer_the_artificial_gap():
+    parts = [
+        [(35.1150, 129.0400), (35.1151, 129.0400)],
+        [(35.1200, 129.0400), (35.1201, 129.0400)],
+    ]
+    cctv = gpd.GeoDataFrame(
+        {"name": ["between-parts"], "카메라대수": [1]},
+        geometry=[Point(129.0400, 35.11755)],
+        crs="EPSG:4326",
+    )
+
+    features = extract_route_features_for_parts(parts, {"cctv": cctv})
+
+    assert features["cctv_density_50m"] == 0

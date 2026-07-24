@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 from datetime import UTC, datetime
+from threading import Lock
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
@@ -15,16 +16,17 @@ from collectors.base import Coordinate
 from collectors.odsay_collector import OdsayRouteCollector
 from collectors.tmap_collector import TmapRouteCollector
 from config import settings
-from features.extractor import extract_route_features
-from features.elevation import extract_elevation_features
+from features.extractor import extract_route_features_for_parts
+from features.elevation import extract_elevation_features_for_parts
 from labeling.route_traits import generate_route_traits
-from merger.route_merger import merge_route_candidates
+from merger.route_merger import merge_route_candidates, sample_path_by_distance
 from preprocessing.load_layers import load_all_layers
 from scoring.judge_baseline import (
     load_judge_baseline_metadata,
     load_judge_baseline_rankers,
 )
 from scoring.predict import predict_and_rank
+from scoring.schema import validate_feature_values
 from scoring.snapshots import build_live_feature_snapshot
 from scoring.train import FEATURE_COLS, ModelNotReady, load_model_metadata, load_rankers
 
@@ -32,12 +34,15 @@ router = APIRouter()
 
 _layers = None
 _rankers = None
+_layers_lock = Lock()
 
 
 def _get_layers():
     global _layers
     if _layers is None:
-        _layers = load_all_layers(use_cache=True)
+        with _layers_lock:
+            if _layers is None:
+                _layers = load_all_layers(use_cache=True)
     return _layers
 
 
@@ -104,7 +109,7 @@ class EnrichedSnapshotCandidate(BaseModel):
     route_id: str = Field(min_length=1, max_length=200)
     base_snapshot_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     sources: list[str] = Field(min_length=1)
-    geometry_quality: str | None = None
+    geometry_quality: Literal["exact", "mixed", "estimated"]
     features: dict[str, Any]
 
 
@@ -147,6 +152,13 @@ def _validated_feature_row(
                 detail=f"{route_id}: {name}은 유한한 숫자, boolean 또는 null이어야 합니다.",
             )
         row[name] = value
+    try:
+        validate_feature_values(row, FEATURE_COLS)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{route_id}: {exc}",
+        ) from exc
     return row
 
 
@@ -390,21 +402,28 @@ async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], d
 
     layers = _get_layers()
     merged_candidates = merge_route_candidates(candidates)
-    elevation_features = await asyncio.gather(*(
-        extract_elevation_features([(point.lat, point.lng) for point in candidate.path])
+    analysis_parts = [
+        _analysis_route_parts(candidate)
         for candidate in merged_candidates
+    ]
+    elevation_features = await asyncio.gather(*(
+        extract_elevation_features_for_parts(parts)
+        for parts in analysis_parts
     ))
     route_features: list[dict] = []
-    for candidate, elevation in zip(merged_candidates, elevation_features):
+    for candidate, parts, elevation in zip(
+        merged_candidates,
+        analysis_parts,
+        elevation_features,
+    ):
         if candidate.duration_min is None or candidate.duration_min <= 0:
             raise HTTPException(
                 status_code=502,
                 detail=f"{candidate.source} 경로에 검증 가능한 소요시간이 없습니다.",
             )
-        coordinates = [(point.lat, point.lng) for point in candidate.path]
         feature = {
             **_parse_api_features(candidate),
-            **extract_route_features(coordinates, layers),
+            **extract_route_features_for_parts(parts, layers),
             **elevation,
             # 건물 그늘은 현재 백엔드의 검증된 building provider가 계산한다.
             # AI 후보 단계에서 확인할 수 없는 값은 0으로 추정하지 않는다.
@@ -431,6 +450,45 @@ async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], d
         "sources_failed": failed,
         "source_errors": source_errors,
     }
+
+
+def _analysis_route_parts(candidate) -> list[list[tuple[float, float]]]:
+    """표시 geometry와 분리된, 공급자가 확인한 보행 분석 parts."""
+    if candidate.source == "odsay":
+        walk_segments = [
+            segment
+            for segment in candidate.segments
+            if segment.get("mode") == "walk"
+        ]
+        parts: list[list[tuple[float, float]]] = []
+        for segment in walk_segments:
+            if segment.get("geometry_quality") != "exact":
+                # 역·정류장 양 끝점을 이은 직선은 표시용 추정선일 뿐 실제
+                # 보행 동선이 아니다. 이를 DEM·시설 버퍼에 넣으면 경사와
+                # 주변 시설을 실제 관측처럼 만들므로 분석하지 않는다.
+                return []
+            path = segment.get("path")
+            if not isinstance(path, list) or len(path) < 2:
+                # 일부만 분석하면 전체 보행 경로의 피처처럼 과장되므로
+                # 선언된 보행 part 하나라도 확인 불가하면 모두 미확인 처리한다.
+                return []
+            parts.append([
+                (float(point.lat), float(point.lng))
+                for point in path
+            ])
+        return parts
+
+    if (
+        candidate.source == "tmap"
+        and set(candidate.sources) == {"tmap"}
+        and candidate.geometry_quality == "exact"
+        and len(candidate.path) >= 2
+    ):
+        return [[
+            (float(point.lat), float(point.lng))
+            for point in candidate.path
+        ]]
+    return []
 
 
 def _route_snapshots(
@@ -546,11 +604,16 @@ def _summary(feature: dict) -> str:
 
 
 def _route_id(feature: dict) -> str:
+    path = [
+        Coordinate(lat=float(point["lat"]), lng=float(point["lng"]))
+        for point in feature["_path"]
+    ]
+    sampled_path = sample_path_by_distance(path, n=41) or path
     fingerprint = {
         "sources": sorted(feature["_sources"]),
         "path": [
-            [round(point["lat"], 5), round(point["lng"], 5)]
-            for point in feature["_path"][::max(1, len(feature["_path"]) // 40)]
+            [round(point.lat, 5), round(point.lng, 5)]
+            for point in sampled_path
         ],
         "segments": [
             [segment.get("mode"), segment.get("bus_route_name"), segment.get("station_name")]
@@ -569,56 +632,178 @@ def _explicit_bool(value) -> bool | None:
     return None
 
 
+def _nonnegative_int(value) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number < 0 or not number.is_integer():
+        return None
+    return int(number)
+
+
+def _nonnegative_float(value) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
+
+
+def _mapping(value) -> dict:
+    """공급자 중첩 값이 객체가 아니면 빈 객체로 취급한다."""
+    return value if isinstance(value, dict) else {}
+
+
+def _mapping_list(value) -> list[dict] | None:
+    """모든 원소가 객체인 배열만 완전히 관측된 배열로 인정한다."""
+    if (
+        not isinstance(value, list)
+        or any(not isinstance(item, dict) for item in value)
+    ):
+        return None
+    return value
+
+
+def _provider_text(value) -> str | None:
+    """설명 필드에는 공급자의 scalar 문자열만 사용한다."""
+    if value is None or isinstance(value, (dict, list, tuple, set)):
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _lane_low_floor_status(value) -> bool | None:
+    """한 버스 구간의 모든 lane이 명시된 경우에만 저상 여부를 확정한다."""
+    lanes = _mapping_list(value)
+    if not lanes:
+        return None
+    markers: list[bool] = []
+    for lane in lanes:
+        marker = (
+            _explicit_bool(lane.get("lowFloorYn"))
+            if "lowFloorYn" in lane
+            else _explicit_bool(lane.get("isLowFloor"))
+        )
+        if marker is None:
+            return None
+        markers.append(marker)
+    # 완전 관측 상태에서는 하나라도 일반버스이면 경로 구간은 일반버스다.
+    return all(markers)
+
+
+def _walk_facility_status(sub_path: dict) -> tuple[int | None, bool | None]:
+    """한 보행·환승 구간의 계단 수와 승강기 여부를 tri-state로 읽는다."""
+    stair_info = sub_path.get("stairInfo")
+    if not isinstance(stair_info, dict):
+        return None, None
+    stairs = (
+        _nonnegative_int(stair_info.get("stairCount"))
+        if "stairCount" in stair_info
+        else None
+    )
+    elevator = (
+        _explicit_bool(stair_info.get("elevatorYN"))
+        if "elevatorYN" in stair_info
+        else None
+    )
+    return stairs, elevator
+
+
+def _tmap_stair_feature_count(raw: dict) -> int | None:
+    """완전한 TMAP feature 배열에서 명시된 계단 feature만 센다."""
+    features = _mapping_list(raw.get("features"))
+    if features is None:
+        return None
+    count = 0
+    for item in features:
+        properties = item.get("properties")
+        if not isinstance(properties, dict):
+            return None
+        facility_type = str(properties.get("facilityType") or "")
+        if "계단" in facility_type:
+            count += 1
+    # 명시된 계단은 확인 가능하지만, feature 부재만으로 계단 0을 단정하지 않는다.
+    return count if count > 0 else None
+
+
 def _parse_api_features(candidate) -> dict:
     """외부 응답에서 확인 가능한 값만 추출하며 결측을 0으로 바꾸지 않는다."""
-    raw = candidate.raw_response or {}
-    info = raw.get("info") or {}
-    sub_paths = raw.get("subPath") or []
+    raw = _mapping(candidate.raw_response)
+    info = _mapping(raw.get("info"))
+    sub_paths = _mapping_list(raw.get("subPath"))
 
-    transfer_count = info.get("transferCount")
-    if transfer_count is None and any(key in info for key in ("busTransitCount", "subwayTransitCount")):
-        transfer_count = int(info.get("busTransitCount") or 0) + int(info.get("subwayTransitCount") or 0)
+    transfer_count = _nonnegative_int(info.get("transferCount"))
+    bus_rides = _nonnegative_int(info.get("busTransitCount"))
+    subway_rides = _nonnegative_int(info.get("subwayTransitCount"))
+    if transfer_count is None and bus_rides is not None and subway_rides is not None:
+        # ODsay의 두 필드는 실제 탑승한 버스·도시철도 수다. 직통 예시도
+        # 1을 반환하므로 환승 횟수는 전체 탑승 수에서 최초 탑승을 뺀 값이다.
+        transfer_count = max(0, bus_rides + subway_rides - 1)
     if transfer_count is None and candidate.source == "tmap":
         transfer_count = 0
-    walk_distance = info.get("totalWalk")
+    walk_distance = _nonnegative_float(info.get("totalWalk"))
     if walk_distance is None and candidate.source == "tmap":
         walk_distance = candidate.distance_m
 
-    stairs = 0
-    stairs_observed = False
-    elevator_values: list[bool] = []
-    low_floor_values: list[bool] = []
-    for sub_path in sub_paths:
-        if sub_path.get("trafficType") == 2:
-            for lane in sub_path.get("lane") or []:
-                marker = _explicit_bool(lane.get("lowFloorYn", lane.get("isLowFloor")))
-                if marker is not None:
-                    low_floor_values.append(marker)
-        if sub_path.get("trafficType") == 3:
-            stair_info = sub_path.get("stairInfo") or {}
-            if "stairCount" in stair_info:
-                stairs_observed = True
-                stairs += int(stair_info.get("stairCount") or 0)
-            marker = _explicit_bool(stair_info.get("elevatorYN"))
-            if marker is not None:
-                elevator_values.append(marker)
-
-    for item in raw.get("features") or []:
-        facility_type = str((item.get("properties") or {}).get("facilityType") or "")
-        if "계단" in facility_type:
-            stairs_observed = True
-            stairs += 1
-
     low_floor = None
-    if low_floor_values:
-        low_floor = True if all(low_floor_values) else False if not any(low_floor_values) else None
-    elevator_ratio = sum(elevator_values) / len(elevator_values) if elevator_values else None
+    stairs = None
+    elevator_ratio = None
+    if (
+        sub_paths is not None
+        and all(
+            type(sub_path.get("trafficType")) is int
+            and sub_path.get("trafficType") in {1, 2, 3}
+            for sub_path in sub_paths
+        )
+    ):
+        bus_paths = [
+            sub_path
+            for sub_path in sub_paths
+            if sub_path.get("trafficType") == 2
+        ]
+        bus_values = [
+            _lane_low_floor_status(sub_path.get("lane"))
+            for sub_path in bus_paths
+        ]
+        if bus_values and all(value is not None for value in bus_values):
+            low_floor = all(value is True for value in bus_values)
+
+        walk_paths = [
+            sub_path
+            for sub_path in sub_paths
+            if sub_path.get("trafficType") == 3
+        ]
+        walk_values = [
+            _walk_facility_status(sub_path)
+            for sub_path in walk_paths
+        ]
+        stair_values = [value[0] for value in walk_values]
+        elevator_values = [value[1] for value in walk_values]
+        if stair_values and all(value is not None for value in stair_values):
+            stairs = sum(int(value) for value in stair_values)
+        if (
+            elevator_values
+            and all(value is not None for value in elevator_values)
+        ):
+            elevator_ratio = (
+                sum(value is True for value in elevator_values)
+                / len(elevator_values)
+            )
+
+    if candidate.source == "tmap":
+        stairs = _tmap_stair_feature_count(raw)
+
     return {
         "avg_slope_percent": None,
         "max_slope_percent": None,
         "min_slope_percent": None,
         "slope_iqr": None,
-        "stair_count": stairs if stairs_observed else None,
+        "stair_count": stairs,
         "elevator_ratio": elevator_ratio,
         "transfer_count": transfer_count,
         "walk_distance_m": walk_distance,
@@ -628,39 +813,115 @@ def _parse_api_features(candidate) -> dict:
 
 
 def _public_segments(candidate) -> list[dict]:
-    segments = []
-    for index, item in enumerate(candidate.segments):
-        raw = item.get("raw") or {}
+    route_facilities = _parse_api_features(candidate)
+    observations = []
+    for item in candidate.segments:
+        raw = _mapping(item.get("raw"))
         mode = item.get("mode", "transfer")
-        lane = (raw.get("lane") or [{}])[0]
-        start_name = raw.get("startName")
-        end_name = raw.get("endName")
-        name = lane.get("busNo") or lane.get("name")
+        stairs, elevator = (
+            _walk_facility_status(raw)
+            if mode in {"walk", "transfer"}
+            else (None, None)
+        )
+        observations.append({
+            "item": item,
+            "raw": raw,
+            "mode": mode,
+            "stairs": stairs,
+            "elevator": elevator,
+            "low_floor": (
+                _lane_low_floor_status(raw.get("lane"))
+                if mode == "bus"
+                else None
+            ),
+        })
+
+    bus_values = [
+        observation["low_floor"]
+        for observation in observations
+        if observation["mode"] == "bus"
+    ]
+    walk_values = [
+        observation
+        for observation in observations
+        if observation["mode"] in {"walk", "transfer"}
+    ]
+    low_floor_complete = (
+        bool(bus_values)
+        and all(value is not None for value in bus_values)
+        and route_facilities["is_low_floor_bus"] is not None
+    )
+    stairs_complete = (
+        bool(walk_values)
+        and all(
+            observation["stairs"] is not None
+            for observation in walk_values
+        )
+        and route_facilities["stair_count"] is not None
+    )
+    elevator_complete = (
+        bool(walk_values)
+        and all(
+            observation["elevator"] is not None
+            for observation in walk_values
+        )
+        and route_facilities["elevator_ratio"] is not None
+    )
+
+    segments = []
+    for index, observation in enumerate(observations):
+        item = observation["item"]
+        raw = observation["raw"]
+        mode = observation["mode"]
+        lanes = _mapping_list(raw.get("lane"))
+        lane = lanes[0] if lanes else {}
+        start_name = _provider_text(raw.get("startName"))
+        end_name = _provider_text(raw.get("endName"))
+        name = (
+            _provider_text(lane.get("busNo"))
+            or _provider_text(lane.get("name"))
+        )
         description = " → ".join(value for value in (start_name, end_name) if value)
         if name:
             description = f"{name} · {description}" if description else str(name)
-        stair_info = raw.get("stairInfo") or {}
-        stairs = int(stair_info.get("stairCount") or 0) if "stairCount" in stair_info else None
-        elevator = _explicit_bool(stair_info.get("elevatorYN"))
-        low_floor_values = [
-            marker for lane_item in (raw.get("lane") or [])
-            if (marker := _explicit_bool(lane_item.get("lowFloorYn", lane_item.get("isLowFloor")))) is not None
-        ]
-        low_floor = None if not low_floor_values else all(low_floor_values)
+        stairs = (
+            observation["stairs"]
+            if stairs_complete
+            else None
+        )
+        elevator = (
+            observation["elevator"]
+            if elevator_complete
+            else None
+        )
+        low_floor = (
+            observation["low_floor"]
+            if low_floor_complete
+            else None
+        )
+        needs_vertical_move = (
+            True
+            if (
+                (stairs is not None and stairs > 0)
+                or elevator is True
+            )
+            else None
+        )
         segments.append({
             "id": f"{candidate.source}-{index}",
             "mode": mode,
             "description": description or {"walk": "보행 이동", "bus": "버스 이동", "subway": "도시철도 이동"}.get(mode, "환승 이동"),
             "duration_min": item["duration_min"],
             "distance_m": item.get("distance_m"),
-            "outdoor": True if mode == "walk" else None,
+            # ODsay의 trafficType=3은 보행만 뜻하며 실내·실외를 구분하지 않는다.
+            "outdoor": None,
             "has_stairs": None if stairs is None else stairs > 0,
             "stairs_count": stairs,
             "bus_route_name": str(name) if mode == "bus" and name else None,
             "is_low_floor_bus": low_floor if mode == "bus" else None,
             "station_name": start_name if mode == "subway" else None,
             "has_elevator": elevator,
-            "needs_vertical_move": elevator is not None or stairs is not None,
+            "needs_vertical_move": needs_vertical_move,
             "path": [{"lat": point.lat, "lng": point.lng} for point in item.get("path") or []] or None,
             "geometry_quality": item.get("geometry_quality"),
         })
@@ -668,13 +929,22 @@ def _public_segments(candidate) -> list[dict]:
         return segments
     # OSMnx/TMAP 단일 보행 후보는 실제 geometry와 공급자 거리를 보유한다.
     if candidate.source in {"osmnx", "tmap"}:
+        stairs = (
+            _tmap_stair_feature_count(_mapping(candidate.raw_response))
+            if candidate.source == "tmap"
+            else None
+        )
         return [{
             "id": f"{candidate.source}-0",
             "mode": "walk",
             "description": "보행 경로",
             "duration_min": candidate.duration_min,
             "distance_m": candidate.distance_m,
-            "outdoor": True,
+            # TMAP 보행 geometry만으로 실내·실외 여부를 단정할 수 없다.
+            "outdoor": None,
+            "has_stairs": True if stairs is not None else None,
+            "stairs_count": stairs,
+            "needs_vertical_move": True if stairs is not None else None,
             "path": [{"lat": point.lat, "lng": point.lng} for point in candidate.path],
             "geometry_quality": candidate.geometry_quality,
         }]

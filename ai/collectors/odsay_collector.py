@@ -280,7 +280,10 @@ class OdsayRouteCollector(BaseRouteCollector):
                 positive=False,
             )
             traffic_type = sub.get("trafficType")
-            if traffic_type not in {1, 2, 3}:
+            if (
+                type(traffic_type) is not int
+                or traffic_type not in {1, 2, 3}
+            ):
                 raise CollectorError(
                     f"지원하지 않는 ODsay trafficType입니다: {traffic_type!r}"
                 )

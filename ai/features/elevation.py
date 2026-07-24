@@ -5,13 +5,14 @@ Open-Meteo Elevation API는 최대 100개 WGS84 좌표를 받으며 90m 해상�
 """
 from __future__ import annotations
 
-from math import asin, cos, radians, sin, sqrt
+from math import asin, ceil, cos, isfinite, radians, sin, sqrt
 
 import httpx
 import numpy as np
 
 ELEVATION_URL = "https://api.open-meteo.com/v1/elevation"
 MAX_POINTS = 100
+SAMPLE_SPACING_M = 90.0
 SOURCE = "Copernicus DEM GLO-90 via Open-Meteo"
 
 
@@ -24,11 +25,66 @@ def _haversine_m(a: tuple[float, float], b: tuple[float, float]) -> float:
     return radius * 2 * asin(sqrt(value))
 
 
-def _sample(coords: list[tuple[float, float]], limit: int = MAX_POINTS) -> list[tuple[float, float]]:
-    if len(coords) <= limit:
-        return coords
-    indices = np.linspace(0, len(coords) - 1, limit, dtype=int)
-    return [coords[index] for index in dict.fromkeys(indices)]
+def _valid_coordinate(point: tuple[float, float]) -> bool:
+    try:
+        lat, lng = float(point[0]), float(point[1])
+    except (IndexError, TypeError, ValueError):
+        return False
+    return isfinite(lat) and isfinite(lng) and -90 <= lat <= 90 and -180 <= lng <= 180
+
+
+def _sample(
+    coords: list[tuple[float, float]],
+    limit: int = MAX_POINTS,
+) -> list[tuple[float, float]]:
+    """약 90m 누적거리 간격으로 보간하되 API 상한을 지킨다.
+
+    공급자 geometry는 같은 선도 정점 밀도가 다르고, 긴 직선은 시작·끝 두
+    점만 줄 수 있다. 정점 인덱스 표본은 이 경우 중간 지형을 완전히 놓치므로
+    실제 누적거리 기준으로 표본을 만든다.
+    """
+    if limit < 2 or len(coords) < 2 or any(not _valid_coordinate(point) for point in coords):
+        return []
+
+    compact = [(float(coords[0][0]), float(coords[0][1]))]
+    for point in coords[1:]:
+        normalized = (float(point[0]), float(point[1]))
+        if _haversine_m(compact[-1], normalized) > 1e-6:
+            compact.append(normalized)
+    if len(compact) < 2:
+        return []
+
+    cumulative = [0.0]
+    for start, end in zip(compact, compact[1:]):
+        cumulative.append(cumulative[-1] + _haversine_m(start, end))
+    total = cumulative[-1]
+    if not isfinite(total) or total <= 0:
+        return []
+
+    count = min(limit, max(2, ceil(total / SAMPLE_SPACING_M) + 1))
+    sampled: list[tuple[float, float]] = []
+    segment_index = 0
+    for index in range(count):
+        target = total * index / (count - 1)
+        while (
+            segment_index < len(compact) - 2
+            and cumulative[segment_index + 1] < target
+        ):
+            segment_index += 1
+        segment_start = cumulative[segment_index]
+        segment_end = cumulative[segment_index + 1]
+        ratio = (
+            (target - segment_start) / (segment_end - segment_start)
+            if segment_end > segment_start
+            else 0.0
+        )
+        start = compact[segment_index]
+        end = compact[segment_index + 1]
+        sampled.append((
+            start[0] + (end[0] - start[0]) * ratio,
+            start[1] + (end[1] - start[1]) * ratio,
+        ))
+    return sampled
 
 
 def _empty(status: str) -> dict:
@@ -47,31 +103,64 @@ def _empty(status: str) -> dict:
     }
 
 
-def calculate_slope_features(
-    coords: list[tuple[float, float]], elevations: list[float]
+def calculate_slope_features_for_parts(
+    coord_parts: list[list[tuple[float, float]]],
+    elevation_parts: list[list[float]],
 ) -> dict:
-    if len(coords) < 2 or len(coords) != len(elevations):
+    """서로 끊어진 보행 구간을 연결하지 않고 경사 피처를 합산한다."""
+    if (
+        not coord_parts
+        or len(coord_parts) != len(elevation_parts)
+        or any(
+            len(coords) < 2
+            or len(coords) != len(elevations)
+            or any(not _valid_coordinate(point) for point in coords)
+            for coords, elevations in zip(coord_parts, elevation_parts)
+        )
+    ):
         return _empty("invalid")
     grades: list[float] = []
+    grade_distances: list[float] = []
     uphill_distance = downhill_distance = gain = loss = 0.0
-    for start, end, z1, z2 in zip(coords, coords[1:], elevations, elevations[1:]):
-        distance = _haversine_m(start, end)
-        if distance < 1:
-            continue
-        delta = float(z2) - float(z1)
-        grade = delta / distance * 100
-        grades.append(grade)
-        if delta > 0:
-            gain += delta
-            uphill_distance += distance
-        elif delta < 0:
-            loss += abs(delta)
-            downhill_distance += distance
+    for coords, elevations in zip(coord_parts, elevation_parts):
+        for start, end, z1, z2 in zip(
+            coords,
+            coords[1:],
+            elevations,
+            elevations[1:],
+        ):
+            distance = _haversine_m(start, end)
+            if distance < 1:
+                continue
+            if isinstance(z1, bool) or isinstance(z2, bool):
+                return _empty("invalid")
+            try:
+                start_elevation = float(z1)
+                end_elevation = float(z2)
+            except (TypeError, ValueError):
+                return _empty("invalid")
+            if not isfinite(start_elevation) or not isfinite(end_elevation):
+                return _empty("invalid")
+            delta = end_elevation - start_elevation
+            grade = delta / distance * 100
+            if not isfinite(grade):
+                return _empty("invalid")
+            grades.append(grade)
+            grade_distances.append(distance)
+            if delta > 0:
+                gain += delta
+                uphill_distance += distance
+            elif delta < 0:
+                loss += abs(delta)
+                downhill_distance += distance
     if not grades:
         return _empty("invalid")
     absolute = np.abs(np.asarray(grades, dtype=float))
     return {
-        "avg_slope_percent": round(float(absolute.mean()), 3),
+        "avg_slope_percent": round(
+            float(np.average(absolute, weights=np.asarray(grade_distances))),
+            3,
+        ),
         "max_slope_percent": round(float(max(grades)), 3),
         "min_slope_percent": round(float(min(grades)), 3),
         "slope_iqr": round(float(np.percentile(absolute, 75) - np.percentile(absolute, 25)), 3),
@@ -85,30 +174,65 @@ def calculate_slope_features(
     }
 
 
+def calculate_slope_features(
+    coords: list[tuple[float, float]], elevations: list[float]
+) -> dict:
+    """단일 연속 경로 호환 API."""
+    return calculate_slope_features_for_parts([coords], [elevations])
+
+
 async def extract_elevation_features(
     route_coords: list[tuple[float, float]],
     client: httpx.AsyncClient | None = None,
 ) -> dict:
-    sampled = _sample(route_coords)
-    if len(sampled) < 2:
+    """단일 연속 경로 호환 API."""
+    return await extract_elevation_features_for_parts([route_coords], client)
+
+
+async def extract_elevation_features_for_parts(
+    route_parts: list[list[tuple[float, float]]],
+    client: httpx.AsyncClient | None = None,
+) -> dict:
+    """보행 parts만 고도 조회하며 서로 떨어진 parts 사이 경사는 만들지 않는다."""
+    sampled_parts = [_sample(part) for part in route_parts]
+    if not sampled_parts or any(len(part) < 2 for part in sampled_parts):
         return _empty("unavailable")
+    sampled = [point for part in sampled_parts for point in part]
     owns_client = client is None
     client = client or httpx.AsyncClient(follow_redirects=True)
     try:
-        response = await client.get(
-            ELEVATION_URL,
-            params={
-                "latitude": ",".join(str(lat) for lat, _ in sampled),
-                "longitude": ",".join(str(lng) for _, lng in sampled),
-            },
-            timeout=12.0,
+        elevations: list[float] = []
+        for start in range(0, len(sampled), MAX_POINTS):
+            batch = sampled[start:start + MAX_POINTS]
+            response = await client.get(
+                ELEVATION_URL,
+                params={
+                    "latitude": ",".join(str(lat) for lat, _ in batch),
+                    "longitude": ",".join(str(lng) for _, lng in batch),
+                },
+                timeout=12.0,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not isinstance(data, dict):
+                return _empty("unavailable")
+            batch_elevations = data.get("elevation")
+            if (
+                not isinstance(batch_elevations, list)
+                or len(batch_elevations) != len(batch)
+            ):
+                return _empty("unavailable")
+            elevations.extend(batch_elevations)
+
+        elevation_parts: list[list[float]] = []
+        offset = 0
+        for part in sampled_parts:
+            elevation_parts.append(elevations[offset:offset + len(part)])
+            offset += len(part)
+        return calculate_slope_features_for_parts(
+            sampled_parts,
+            elevation_parts,
         )
-        response.raise_for_status()
-        data = response.json()
-        elevations = data.get("elevation")
-        if not isinstance(elevations, list):
-            return _empty("unavailable")
-        return calculate_slope_features(sampled, elevations)
     except (httpx.HTTPError, ValueError, TypeError):
         return _empty("unavailable")
     finally:
