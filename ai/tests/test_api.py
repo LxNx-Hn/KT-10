@@ -147,23 +147,29 @@ def test_spatial_layer_initialization_is_single_flight(monkeypatch):
     assert all(result is results[0] for result in results)
 
 
-def test_model_status_loads_judge_only_when_explicitly_configured(monkeypatch):
+def test_model_status_loads_bootstrap_only_when_explicitly_configured(
+    monkeypatch,
+):
     monkeypatch.setattr(api_router, "_rankers", None)
-    monkeypatch.setattr(api_router.settings, "RANKER_TIER", "judge_baseline")
+    monkeypatch.setattr(
+        api_router.settings,
+        "RANKER_TIER",
+        "bootstrap_baseline",
+    )
     monkeypatch.setattr(
         api_router,
-        "load_judge_baseline_rankers",
+        "load_bootstrap_baseline_rankers",
         lambda: {profile: object() for profile in (
             "general", "elderly", "child", "youth", "disabled", "pregnant"
         )},
     )
     monkeypatch.setattr(
         api_router,
-        "load_judge_baseline_metadata",
+        "load_bootstrap_baseline_metadata",
         lambda: {
-            "model_tier": "judge_baseline",
-            "model_version": "judge-test",
-            "label_origin": "llm_judge",
+            "model_tier": "bootstrap_baseline",
+            "model_version": "bootstrap-test",
+            "label_origin": "bootstrap_evaluation",
             "metrics": {},
         },
     )
@@ -173,8 +179,8 @@ def test_model_status_loads_judge_only_when_explicitly_configured(monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["ready"] is True
-    assert body["configured_tier"] == "judge_baseline"
-    assert body["model_tier"] == "judge_baseline"
+    assert body["configured_tier"] == "bootstrap_baseline"
+    assert body["model_tier"] == "bootstrap_baseline"
     assert len(body["profiles"]) == 6
 
 
@@ -240,9 +246,9 @@ def test_rank_candidates_uses_backend_enriched_complete_features(monkeypatch):
 
     monkeypatch.setattr(api_router, "_rankers", {"general": Ranker()})
     monkeypatch.setattr(api_router, "_get_model_metadata", lambda: {
-        "model_version": "judge-test",
-        "model_tier": "judge_baseline",
-        "label_origin": "llm_judge",
+        "model_version": "bootstrap-test",
+        "model_tier": "bootstrap_baseline",
+        "label_origin": "bootstrap_evaluation",
     })
     base = {name: None for name in FEATURE_COLS}
     response = client.post("/rank/candidates", json={
@@ -276,7 +282,7 @@ def test_rank_candidates_uses_backend_enriched_complete_features(monkeypatch):
         "route-a",
     ]
     assert body["ranked"][0]["relative_fit_score"] == 1.0
-    assert body["metadata"]["model_tier"] == "judge_baseline"
+    assert body["metadata"]["model_tier"] == "bootstrap_baseline"
 
 
 def test_rank_candidates_rejects_incomplete_features(monkeypatch):

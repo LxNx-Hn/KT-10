@@ -24,9 +24,9 @@ from features.elevation import extract_elevation_features_for_parts
 from labeling.route_traits import generate_route_traits
 from merger.route_merger import merge_route_candidates, sample_path_by_distance
 from preprocessing.load_layers import load_all_layers
-from scoring.judge_baseline import (
-    load_judge_baseline_metadata,
-    load_judge_baseline_rankers,
+from scoring.bootstrap_baseline import (
+    load_bootstrap_baseline_metadata,
+    load_bootstrap_baseline_rankers,
 )
 from scoring.predict import predict_and_rank
 from scoring.schema import validate_feature_values
@@ -55,8 +55,8 @@ def _get_rankers():
     global _rankers
     if _rankers is None:
         _rankers = (
-            load_judge_baseline_rankers()
-            if settings.RANKER_TIER == "judge_baseline"
+            load_bootstrap_baseline_rankers()
+            if settings.RANKER_TIER == "bootstrap_baseline"
             else load_rankers()
         )
     return _rankers
@@ -64,8 +64,8 @@ def _get_rankers():
 
 def _get_model_metadata() -> dict:
     return (
-        load_judge_baseline_metadata()
-        if settings.RANKER_TIER == "judge_baseline"
+        load_bootstrap_baseline_metadata()
+        if settings.RANKER_TIER == "bootstrap_baseline"
         else load_model_metadata()
     )
 

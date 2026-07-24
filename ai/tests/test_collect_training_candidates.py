@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from labeling.collect_judge_candidates import (
+from labeling.collect_training_candidates import (
     CandidateCollectionError,
     _validate_candidate_payload,
     collect,
@@ -87,7 +87,7 @@ def _candidate_record(row):
             "feature_snapshot": snapshot,
         })
     return {
-        "schema_version": "judge-candidate-collection-v1",
+        "schema_version": "training-candidate-collection-v1",
         "od_id": row["od_id"],
         "request_fingerprint": "",
         "collected_at": "2026-07-25T02:00:00+00:00",
@@ -105,7 +105,7 @@ def test_collection_checkpoints_and_resume_without_refetch(tmp_path):
     calls = []
 
     def fake_fetcher(**kwargs):
-        from labeling.collect_judge_candidates import _request_fingerprint
+        from labeling.collect_training_candidates import _request_fingerprint
 
         row = kwargs["row"]
         calls.append(row["od_id"])
@@ -153,7 +153,7 @@ def test_collection_checkpoints_and_resume_without_refetch(tmp_path):
     assert sorted(calls) == ["od-0", "od-1"]
     assert first["completed_od_count"] == 2
     assert first["candidate_count"] == 4
-    assert first["ready_for_judge"] is True
+    assert first["ready_for_evaluation"] is True
     assert second["remaining_od_count"] == 0
     features = [
         json.loads(line)
@@ -195,7 +195,7 @@ def test_collection_failure_is_not_marked_ready(tmp_path):
 
     assert report["completed_od_count"] == 0
     assert report["remaining_od_count"] == 2
-    assert report["ready_for_judge"] is False
+    assert report["ready_for_evaluation"] is False
     failures = (output_dir / "failures.jsonl").read_text(encoding="utf-8")
     assert failures.count("provider unavailable") == 2
 

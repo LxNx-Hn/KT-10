@@ -66,7 +66,7 @@ def validate_live_feature_snapshot(
     snapshot: dict[str, Any],
     feature_columns: list[str],
 ) -> None:
-    """Judge baseline에 사용할 수 있는 실제 후보 스냅샷인지 검증한다."""
+    """초기 평가 baseline에 사용할 수 있는 실제 후보 스냅샷인지 검증한다."""
     if snapshot.get("snapshot_schema_version") != SNAPSHOT_SCHEMA_VERSION:
         raise ValueError(
             f"snapshot_schema_version은 {SNAPSHOT_SCHEMA_VERSION}이어야 합니다."

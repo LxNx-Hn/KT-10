@@ -44,9 +44,12 @@ class Settings(BaseSettings):
     OSMNX_OVERPASS_URL: AnyHttpUrl = "https://lambert.openstreetmap.de/api"
     OSMNX_REQUEST_TIMEOUT_SECONDS: int = Field(default=12, ge=3, le=60)
     OSMNX_WALK_GEOMETRY_TIMEOUT_SECONDS: int = Field(default=15, ge=3, le=60)
-    # Judge baseline은 명시적으로 선택한 환경에서만 제공한다.
+    # 초기 평가 baseline은 명시적으로 선택한 환경에서만 제공한다.
     # 기본값은 실제 사용자 라벨로 검증된 운영 모델이다.
-    RANKER_TIER: Literal["human_validated", "judge_baseline"] = "human_validated"
+    RANKER_TIER: Literal[
+        "human_validated",
+        "bootstrap_baseline",
+    ] = "human_validated"
 
 
 settings = Settings()

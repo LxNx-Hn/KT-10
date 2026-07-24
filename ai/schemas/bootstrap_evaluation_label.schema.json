@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "judge-label-v1",
-  "title": "LLM judge route relevance label",
+  "$id": "bootstrap-evaluation-label-v1",
+  "title": "Bootstrap route relevance evaluation",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
     "label_kind",
-    "judge_run_id",
-    "judge_source",
+    "evaluation_run_id",
+    "evaluation_source",
     "rubric_version",
     "prompt_hash",
     "evaluated_at",
@@ -20,10 +20,10 @@
     "rationale"
   ],
   "properties": {
-    "schema_version": {"const": "judge-label-v1"},
-    "label_kind": {"const": "llm_judge"},
-    "judge_run_id": {"type": "string", "minLength": 1},
-    "judge_source": {
+    "schema_version": {"const": "bootstrap-evaluation-label-v1"},
+    "label_kind": {"const": "bootstrap_evaluation"},
+    "evaluation_run_id": {"type": "string", "minLength": 1},
+    "evaluation_source": {
       "type": "string",
       "pattern": "^(?!human:|user:|reviewer:)[^:]+:[^:]+$"
     },

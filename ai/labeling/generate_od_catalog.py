@@ -574,12 +574,12 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("ai/data/training/od_800.csv"),
+        default=Path("ai/data/training/od_catalog.csv"),
     )
     parser.add_argument(
         "--metadata",
         type=Path,
-        default=Path("ai/data/training/od_800.metadata.json"),
+        default=Path("ai/data/training/od_catalog.metadata.json"),
     )
     parser.add_argument("--count", type=int, default=800)
     parser.add_argument("--seed", type=int, default=20260725)

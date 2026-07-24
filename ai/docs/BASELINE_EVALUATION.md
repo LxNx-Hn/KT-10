@@ -1,4 +1,4 @@
-# LLM judge baseline
+# 초기 평가 baseline
 
 ## 목적과 경계
 
@@ -9,11 +9,11 @@ LLM이 경로·시설·그늘 값을 새로 만들거나 결측을 0으로 추�
 
 - 관리자 검토 전 사람 모델: `ai/data/rankers.human-candidate.zip`
 - 승인된 운영 모델: `ai/data/rankers.human-validated.zip`
-- LLM judge 모델: `ai/data/rankers.judge-baseline.zip`
+- 초기 평가 모델: `ai/data/rankers.bootstrap-baseline.zip`
 - 동의 후기 혼합 후보: `ai/data/rankers.review-mixed-candidate.zip`
 - 운영 모델 tier: `human_validated`
-- LLM judge tier: `judge_baseline`
-- LLM judge 모델은 운영 경로에서 자동 로드·승격되지 않는다.
+- 초기 평가 tier: `bootstrap_baseline`
+- 초기 평가 모델은 운영 경로에서 자동 로드·승격되지 않는다.
 - 후기 혼합 후보도 `human_reviewers` 전용 승격 절차를 통과할 수 없다.
 - 실제 사용자 모델은 기존과 동일하게 모든 OD·경로·프로필에 최소 9명의
   서로 다른 평가자가 필요하다.
@@ -21,19 +21,20 @@ LLM이 경로·시설·그늘 값을 새로 만들거나 결측을 0으로 추�
 모델 artifact는 pickle이 아니다. ZIP 내부의 manifest와 프로필별
 XGBoost JSON만 허용하고 파일 경로·크기·SHA-256을 검증한 뒤 로드한다.
 
-2026-07-24 기준 저장소에는 다음 비운영 기술 베이스라인이 있다.
+2026-07-24에 다음 범위의 비운영 기술 검증을 수행했습니다.
 
 - 부산 OD 3개, 실제 후보 9개
 - Codex judge 1회, 6개 프로필의 평가 54개
 - `judge_source=openai:codex-gpt-5`
-- `rankers.judge-baseline.zip`
+- 당시 생성한 `rankers.judge-baseline.zip`
 - 모델 SHA-256:
   `26392d4dd080e43969784e5e048b19ab7161843eae0da4364deeb9807c358451`
 
-프로필별 holdout 검증 OD가 1개뿐이어서 지표는 모델 파일·로딩·순위화
-계약을 확인하는 스모크 결과다. 실제 사용자 일반화 성능이나 접근성
-품질을 주장하는 근거로 사용하지 않는다. 사람 평가용 후보와 승인 운영
-모델은 여전히 없다.
+이 아티팩트와 평가 원문은 확대 학습용 입력으로 오인되지 않도록 현재
+배포 저장소에서는 제외했습니다. 프로필별 holdout 검증 OD가 1개뿐이어서
+당시 지표는 모델 파일·로딩·순위화 계약을 확인하는 스모크 결과일 뿐입니다.
+실제 사용자 일반화 성능이나 접근성 품질을 주장하는 근거로 사용하지
+않습니다. 사람 평가용 후보와 승인 운영 모델은 여전히 없습니다.
 
 ## 두 단계의 AI 역할
 
@@ -107,20 +108,22 @@ Judge 라벨은 반드시 이 해시를 포함한다. 평가 후 피처나 prove
 미확인 값만으로 0점을 주지 않는다. Judge는 후보 공급자 이름과 기존
 순위를 선호 근거로 사용하지 않고, 각 점수의 근거를 `rationale`에 남긴다.
 
-한 `judge_run_id`에서는 judge source, rubric version, prompt hash가
+한 `evaluation_run_id`에서는 evaluation source, rubric version,
+prompt hash가
 동일해야 하며, 모든 실제 후보와 6개 프로필을 빠짐없이 평가해야 한다.
 여러 run이 있으면 경로·프로필별 중앙값을 사용한다.
 
 ## 라벨 provenance
 
-`ai/schemas/judge_label.schema.json` 계약의 주요 필드는 다음과 같다.
+`ai/schemas/bootstrap_evaluation_label.schema.json` 계약의 주요 필드는
+다음과 같습니다.
 
 ```json
 {
-  "schema_version": "judge-label-v1",
-  "label_kind": "llm_judge",
-  "judge_run_id": "judge-20260724-a",
-  "judge_source": "openai:model-name",
+  "schema_version": "bootstrap-evaluation-label-v1",
+  "label_kind": "bootstrap_evaluation",
+  "evaluation_run_id": "evaluation-20260724-a",
+  "evaluation_source": "provider:evaluator",
   "rubric_version": "route-profile-rubric-v1",
   "prompt_hash": "64자리 sha256 hex",
   "evaluated_at": "2026-07-24T12:00:00+09:00",
@@ -186,40 +189,42 @@ Judge 라벨은 반드시 이 해시를 포함한다. 평가 후 피처나 prove
 $env:LABELING_API_TOKEN='<backend/.env와 같은 32자 이상 내부 토큰>'
 $env:PYTHONPATH='ai'
 .\.venv\Scripts\python.exe -m labeling.generate_batch `
-  --od-file ai\data\training\judge_baseline_od.csv `
-  --output-dir ai\data\training\judge_baseline
+  --od-file ai\data\training\od_catalog.csv `
+  --output-dir ai\data\training\generated\candidate_collection
 ```
 
-평가 prompt 파일의 SHA-256을 고정한 빈 judge 평가표를 만든다.
+평가 지침 파일의 SHA-256을 고정한 빈 초기 평가표를 만듭니다.
 
 ```powershell
-.\.venv\Scripts\python.exe -m labeling.prepare_judge_baseline `
-  --features ai\data\training\judge_baseline\route_features.jsonl `
-  --output ai\data\training\judge_baseline\judge_labels.jsonl `
-  --judge-run-id judge-20260724-a `
-  --judge-source openai:model-name `
+.\.venv\Scripts\python.exe -m labeling.prepare_bootstrap_baseline `
+  --features ai\data\training\generated\candidate_collection\route_features.jsonl `
+  --output ai\data\training\generated\bootstrap_baseline\evaluation_labels.jsonl `
+  --evaluation-run-id evaluation-20260724-a `
+  --evaluation-source provider:evaluator `
   --rubric-version route-profile-rubric-v1 `
-  --prompt-file ai\data\training\judge_prompt.txt
+  --prompt-file ai\data\training\generated\evaluation_rubric.txt
 ```
 
 이 명령은 평가를 실행하지 않고 `ready_for_training=false`인 빈 JSONL을
-만든다. 현재 추적된 `judge_labels.jsonl`은 이 템플릿의 고정 필드를
-유지하고 Codex 평가가 모든 실제 후보와 6개 프로필에 대해
-`evaluated_at`, `relevance`, `rationale`를 채운 결과다. 새 평가를
-재생성하면 기존 라벨을 덮어쓰므로 별도 run ID와 출력 파일에서 검토한
-뒤 교체한다. 누락·stale 해시·불완전한 후보군·프롬프트 provenance가
-섞인 입력은 학습기가 거부한다.
+만듭니다. 평가 지침과 평가 결과는 `generated/` 아래의 로컬 산출물로
+관리하며 완성·검증된 모델 아티팩트만 별도 승인합니다. 새 평가를
+재생성하면 기존 라벨을 덮어쓸 수 있으므로 별도 실행 ID와 출력 파일에서
+검토한 뒤 교체합니다. 누락·stale 해시·불완전한 후보군·평가 지침
+provenance가 섞인 입력은 학습기가 거부합니다.
 
-평가가 끝난 뒤 별도 baseline을 학습한다.
+평가가 끝난 뒤 별도 baseline을 학습합니다.
 
 ```powershell
-.\.venv\Scripts\python.exe -m scoring.judge_baseline
+.\.venv\Scripts\python.exe -m scoring.bootstrap_baseline `
+  --labels ai\data\training\generated\bootstrap_baseline\evaluation_labels.jsonl `
+  --features ai\data\training\generated\candidate_collection\route_features.jsonl `
+  --output ai\data\rankers.bootstrap-baseline.zip
 ```
 
 학습기는 프로필별 최소 3개 OD를 요구하고, OD 전체를 단위로 결정적
 holdout을 만들어 NDCG@3와 pairwise accuracy를 기록한다.
-`rankers.judge-baseline.zip`의 manifest와 같은 위치의
-`rankers.judge-baseline.metadata.json`에는 model tier, judge source,
+`rankers.bootstrap-baseline.zip`의 manifest와 같은 위치의
+`rankers.bootstrap-baseline.metadata.json`에는 model tier, 평가 출처,
 rubric version, prompt hash, 평가 시각, 검증 지표가 남는다. 이 결과는
 기술 baseline이며 실제 사용자 검증 모델로 표현하거나
 `rankers.human-validated.zip`으로 자동 승격하지 않는다.

@@ -1,4 +1,4 @@
-"""대규모 Judge 학습용 실제 경로 후보를 체크포인트 방식으로 수집한다.
+"""대규모 초기 학습용 실제 경로 후보를 체크포인트 방식으로 수집한다.
 
 성공한 OD는 즉시 JSONL에 추가하므로 프로세스나 외부 API가 중단되어도
 다음 실행에서 완료 항목을 건너뛴다. 최종 피처 파일은 성공 체크포인트에서
@@ -22,7 +22,7 @@ import httpx
 from scoring.snapshots import validate_live_feature_snapshot
 from scoring.train import FEATURE_COLS
 
-COLLECTION_SCHEMA_VERSION = "judge-candidate-collection-v1"
+COLLECTION_SCHEMA_VERSION = "training-candidate-collection-v1"
 RETRIABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
 REQUIRED_OD_COLUMNS = {
     "origin_name",
@@ -330,7 +330,7 @@ def _fetch_candidate_group(
                 else:
                     try:
                         data = response.json()
-                    except json.JSONDecodeError as exc:
+                    except json.JSONDecodeError:
                         last_error = CandidateCollectionError(
                             "후보 API 응답이 유효한 JSON이 아닙니다.",
                             retriable=True,
@@ -459,7 +459,7 @@ def materialize_collection(
     output_dir: Path,
     expected_od_count: int,
 ) -> dict[str, Any]:
-    """검증된 체크포인트에서 중복 없는 피처·Judge 문맥 파일을 만든다."""
+    """검증된 체크포인트에서 중복 없는 피처·평가 문맥 파일을 만든다."""
     records = _load_checkpoint(checkpoint_path)
     feature_rows: list[dict[str, Any]] = []
     context_rows: list[dict[str, Any]] = []
@@ -510,7 +510,7 @@ def materialize_collection(
         encoding="utf-8",
     )
     report = {
-        "schema_version": "judge-candidate-materialization-v1",
+        "schema_version": "training-candidate-materialization-v1",
         "expected_od_count": expected_od_count,
         "completed_od_count": len(records),
         "candidate_count": len(feature_rows),
@@ -522,7 +522,7 @@ def materialize_collection(
             (len(record["candidates"]) for record in records.values()),
             default=0,
         ),
-        "ready_for_judge": len(records) == expected_od_count,
+        "ready_for_evaluation": len(records) == expected_od_count,
         "route_features": str(feature_path),
         "candidate_context": str(context_path),
     }
@@ -542,12 +542,12 @@ def collect(
     api_token: str,
     workers: int = 2,
     timeout_seconds: float = 180.0,
-    max_attempts: int = 4,
+    max_attempts: int = 1,
     minimum_candidates: int = 2,
     minimum_known_slope_candidates: int = 2,
     minimum_known_shade_candidates: int = 2,
     quality_retry_delay_seconds: float = 45.0,
-    provider_unique_od_budget: int = 900,
+    provider_unique_od_budget: int = 800,
     limit: int | None = None,
     fetcher: FetchFunction = _fetch_candidate_group,
     on_progress: ProgressFunction | None = None,
@@ -595,7 +595,7 @@ def collect(
 
     def progress_payload() -> dict[str, Any]:
         return {
-            "schema_version": "judge-candidate-progress-v1",
+            "schema_version": "training-candidate-progress-v1",
             "updated_at": _utc_now(),
             "catalog_od_count": len(all_rows),
             "selected_od_count": len(selected_rows),
@@ -696,17 +696,17 @@ def collect(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="중단·재개 가능한 Judge 후보 수집"
+        description="중단·재개 가능한 학습 후보 수집"
     )
     parser.add_argument(
         "--od-file",
         type=Path,
-        default=Path("ai/data/training/od_800.csv"),
+        default=Path("ai/data/training/od_catalog.csv"),
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("ai/data/training/generated/judge_800_collection"),
+        default=Path("ai/data/training/generated/candidate_collection"),
     )
     parser.add_argument("--server-url", default="http://127.0.0.1:8003")
     parser.add_argument(
@@ -716,7 +716,7 @@ def main() -> None:
     )
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--timeout-seconds", type=float, default=180.0)
-    parser.add_argument("--max-attempts", type=int, default=4)
+    parser.add_argument("--max-attempts", type=int, default=1)
     parser.add_argument("--minimum-candidates", type=int, default=2)
     parser.add_argument(
         "--minimum-known-slope-candidates",
@@ -736,7 +736,7 @@ def main() -> None:
     parser.add_argument(
         "--provider-unique-od-budget",
         type=int,
-        default=900,
+        default=800,
     )
     parser.add_argument("--limit", type=int)
     parser.add_argument("--progress-every", type=int, default=25)

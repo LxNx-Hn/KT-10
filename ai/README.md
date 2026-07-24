@@ -74,13 +74,13 @@ opt-in된 OSMnx를 시도합니다. 둘 다 사용할 수 없으면 화면 연�
 
 - `ai/data/rankers.human-candidate.zip`: 사람 평가 학습 결과, 관리자 검토 전
 - `ai/data/rankers.human-validated.zip`: checksum을 고정해 수동 승인한 운영 모델
-- `ai/data/rankers.judge-baseline.zip`: 외부 LLM 평가 기반 비운영 baseline
+- `ai/data/rankers.bootstrap-baseline.zip`: 초기 평가 기반 비운영 baseline
 - `ai/data/rankers.review-mixed-candidate.zip`: 동의 후기를 제한적으로 혼합한 후보
 
 기본 `RANKER_TIER=human_validated`는
-`rankers.human-validated.zip`만 로드합니다. `judge_baseline`은 명시적으로
-설정한 환경에서만 별도 artifact를 로드합니다. 후기 혼합 후보와 judge
-baseline은 운영 모델로 자동 승격되지 않습니다.
+`rankers.human-validated.zip`만 로드합니다. `bootstrap_baseline`은
+명시적으로 설정한 환경에서만 별도 artifact를 로드합니다. 후기 혼합
+후보와 초기 평가 baseline은 운영 모델로 자동 승격되지 않습니다.
 
 ## 실행과 초기 사람 평가
 
@@ -133,11 +133,11 @@ $candidateSha = (Get-FileHash ai\data\rankers.human-candidate.zip -Algorithm SHA
   --approval-note '<검증 결과와 승인 근거>'
 ```
 
-Judge baseline의 빈 평가표 생성, 평가 입력 계약과 학습 명령은
-[LLM judge baseline](docs/JUDGE_BASELINE.md)에 있습니다. 현재 저장소에는
-부산 OD 3개·실제 후보 9개에 대한 Codex 평가 54개와
-`rankers.judge-baseline.zip`이 있습니다. 이는 로컬 비교용 기술
-베이스라인이며 사람 평가나 운영 승인 모델을 대신하지 않습니다.
+초기 평가 baseline의 빈 평가표 생성, 평가 입력 계약과 학습 명령은
+[초기 평가 baseline](docs/BASELINE_EVALUATION.md)에 있습니다. 2026-07-24의
+부산 OD 3개·실제 후보 9개·평가 54개는 계약 확인 기록으로만 남기고 당시
+평가 원문과 모델 아티팩트는 확대 학습 입력과 혼동하지 않도록 배포
+저장소에서 제외했습니다.
 
 동의 후기 기반 전역 후보는
 `backend/ml/export_consented_reviews.py`와
