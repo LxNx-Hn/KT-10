@@ -19,6 +19,7 @@ import type {
   TripCondition,
 } from '@/voice/intents';
 import { speak, stopSpeaking } from '@/voice/synthesis';
+import { serverRankedRecommendations } from '@/utils/routes';
 
 const ORD_WORD = ['첫 번째', '두 번째', '세 번째'];
 const ordWord = (i: number) => ORD_WORD[i] ?? `${i + 1}번째`;
@@ -132,7 +133,8 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
 
   handleUserInput: async (raw) => {
     const text = raw.trim();
-    if (!text) return;
+    if (!text || get().status === 'thinking') return;
+    stopSpeaking();
     const chat = get();
     chat.pushMessage('user', text);
     set({ status: 'thinking', interim: '' });
@@ -146,8 +148,9 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
       if (!ok) set({ status: 'idle' });
     };
 
-    const parse = parseVoiceCommand(text);
-    const app = useAppStore.getState();
+    try {
+      const parse = parseVoiceCommand(text);
+      const app = useAppStore.getState();
 
     // 계단 회피 / 승강기 우선 수식어
     if (parse.avoidStairs || parse.elevatorPriority) app.enableStairAvoidance();
@@ -175,7 +178,12 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
           const place = await app.setDestinationFromVoice(cmd.destination);
           if (!place) notFound = cmd.destination;
           else didDestination = true;
-          if (cmd.origin) await app.setOriginFromVoice(cmd.origin);
+          if (cmd.origin) {
+            const origin = await app.setOriginFromVoice(cmd.origin);
+            if (!origin) notFound = cmd.origin;
+          } else if (place && !useAppStore.getState().origin) {
+            app.ensureOrigin();
+          }
           break;
         }
         case 'SET_LOW_FLOOR_BUS_PRIORITY':
@@ -221,7 +229,7 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
 
     // 3) 경로 설명
     if (explainIdx !== null) {
-      const recs = useAppStore.getState().recommendations;
+      const recs = serverRankedRecommendations(useAppStore.getState().recommendations);
       const rec = recs[explainIdx];
       if (!rec) {
         respond(`${ordWord(explainIdx)} 경로가 아직 없습니다. 먼저 목적지를 검색해 주세요.`, 'UNKNOWN');
@@ -230,20 +238,21 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
       app.selectRoute(rec.route.id);
       const reasons = rec.score.reasons.map((r) => r.replace(/[.]\s*$/, '')).join(', ');
       const caution = rec.score.cautions[0] ? ` 주의할 점은 ${rec.score.cautions[0]}` : '';
-      respond(`${ordWord(explainIdx)} 경로는 ${reasons}.${caution}`, 'EXPLAIN_ROUTE');
+      const explanation = reasons || rec.score.voiceSummary;
+      respond(`${ordWord(explainIdx)} 경로는 ${explanation}.${caution}`, 'EXPLAIN_ROUTE');
       return;
     }
 
-    // 4) 경로 선택/안내 시작
+    // 4) 경로 선택(이 앱은 턴바이턴 안내를 시작하지 않는다)
     if (selectIdx !== null) {
-      const recs = useAppStore.getState().recommendations;
+      const recs = serverRankedRecommendations(useAppStore.getState().recommendations);
       const rec = recs[selectIdx];
       if (!rec) {
         respond(`${ordWord(selectIdx)} 경로가 아직 없습니다. 먼저 목적지를 검색해 주세요.`, 'UNKNOWN');
         return;
       }
       app.selectRoute(rec.route.id);
-      respond(`${ordWord(selectIdx)} 경로로 안내를 시작하겠습니다. ${rec.score.voiceSummary}`, 'SELECT_ROUTE');
+      respond(`${ordWord(selectIdx)} 경로를 선택했습니다. ${rec.score.voiceSummary}`, 'SELECT_ROUTE');
       return;
     }
 
@@ -271,10 +280,17 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
     // 8) 결과 산출 (조건이 하나라도 바뀐 경우)
     if (didProfile || didDestination || didOption) {
       await app.recalculateRoutes();
-      const top = useAppStore.getState().recommendations[0];
+      const routeState = useAppStore.getState();
+      if (routeState.error) {
+        respond(routeState.error, 'UNKNOWN');
+        return;
+      }
+      const top = serverRankedRecommendations(routeState.recommendations)[0];
       const parts: string[] = [];
       if (profileApplied) parts.push(profilePhrase(profileApplied));
-      if (lowFloorApplied) parts.push('저상버스 도착 정보를 확인해 경로를 다시 정렬했습니다.');
+      if (lowFloorApplied) {
+        parts.push('경로 후보에 포함된 저상버스 확인 정보를 우선 반영했습니다.');
+      }
       if (weatherApplied) parts.push(weatherPhrase(weatherApplied));
       tripConditionsApplied.forEach((condition) => parts.push(TRIP_CONDITION_PHRASE[condition]));
       if (parts.length === 0 && didDestination) parts.push('경로를 찾았습니다.');
@@ -296,6 +312,12 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
 
     // 9) 해석 불가
     respond('명령을 이해하지 못했습니다. 목적지나 이동 기준을 말씀해 주세요.', 'UNKNOWN');
+    } catch {
+      respond(
+        '요청을 처리하지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도해 주세요.',
+        'UNKNOWN',
+      );
+    }
   },
 }));
 

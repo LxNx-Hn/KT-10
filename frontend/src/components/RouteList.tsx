@@ -6,6 +6,8 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { useAppStore } from '@/store/appStore';
+import { preferredScrollBehavior } from '@/utils/motion';
+import { serverRankedRecommendations } from '@/utils/routes';
 import RouteCard from './RouteCard';
 
 /** 점수순 경로를 한 장씩 탐색하고, 활성 카드와 지도 선택 경로를 동기화한다. */
@@ -39,14 +41,7 @@ export default function RouteList() {
   }, []);
 
   const ranked = useMemo(
-    () => recommendations
-      .map((item, sourceIndex) => ({ item, sourceIndex }))
-      .sort((a, b) => (
-        b.item.score.finalScore - a.item.score.finalScore
-        || a.item.route.totalDurationMin - b.item.route.totalDurationMin
-        || a.sourceIndex - b.sourceIndex
-      ))
-      .map(({ item }) => item),
+    () => serverRankedRecommendations(recommendations),
     [recommendations],
   );
 
@@ -55,7 +50,10 @@ export default function RouteList() {
     ranked.findIndex(({ route }) => route.id === selectedRouteId),
   );
 
-  const moveTo = useCallback((index: number, behavior: ScrollBehavior = 'smooth') => {
+  const moveTo = useCallback((
+    index: number,
+    behavior: ScrollBehavior = preferredScrollBehavior(),
+  ) => {
     const targetIndex = Math.min(Math.max(index, 0), ranked.length - 1);
     const route = ranked[targetIndex];
     if (!route) return;
@@ -70,7 +68,7 @@ export default function RouteList() {
       return;
     }
     if (programmaticTargetRef.current !== selectedRouteId) {
-      scrollCardIntoView(selectedRouteId, 'smooth');
+      scrollCardIntoView(selectedRouteId, preferredScrollBehavior());
     }
   }, [ranked, scrollCardIntoView, selectRoute, selectedRouteId]);
 
@@ -107,6 +105,13 @@ export default function RouteList() {
   };
 
   const handleKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (
+      target !== event.currentTarget
+      && !target.classList.contains('route-card')
+    ) {
+      return;
+    }
     if (event.key === 'ArrowRight') {
       event.preventDefault();
       moveTo(activeIndex + 1);

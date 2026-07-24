@@ -290,6 +290,57 @@ describe('UI 상태 — 검색 중심 구조', () => {
       container.querySelector(`[data-route-id="${ranked[0].route.id}"]`)
         ?.classList.contains('route-card--selected'),
     ).toBe(true);
+
+    const listenButton = container.querySelector<HTMLButtonElement>('.route-card .btn--listen')!;
+    fireEvent.keyDown(listenButton, { key: 'ArrowRight' });
+    expect(useAppStore.getState().selectedRouteId).toBe(ranked[0].route.id);
+  });
+
+  it('출발지나 도착지가 바뀌면 이전 OD의 경로·지도 결과를 즉시 폐기한다', () => {
+    const { container } = render(<App />);
+    act(() => seedResults());
+    expect(container.querySelectorAll('.route-card')).not.toHaveLength(0);
+
+    act(() => useAppStore.getState().setDestination(null));
+
+    expect(useAppStore.getState()).toMatchObject({
+      candidates: [],
+      recommendations: [],
+      selectedRouteId: null,
+      loading: false,
+      error: null,
+    });
+    expect(container.querySelector('.route-card')).toBeNull();
+    expect(container.querySelector('.map')).toBeNull();
+  });
+
+  it('지도 데이터 출처는 응답에 실제 포함된 공급자만 표시한다', () => {
+    vi.stubEnv('VITE_KAKAO_MAP_KEY', '');
+    const { container } = render(<App />);
+    act(() => {
+      seedResults();
+      const [first, ...rest] = useAppStore.getState().recommendations;
+      const updated = {
+        ...first,
+        route: {
+          ...first.route,
+          sources: ['odsay'],
+          geometryQuality: 'mixed' as const,
+          terrain: { status: 'unavailable' as const },
+        },
+      };
+      useAppStore.setState({
+        recommendations: [updated, ...rest],
+        candidates: [updated.route, ...rest.map((item) => item.route)],
+      });
+    });
+
+    const note = container.querySelector('.map .map__note:last-child')?.textContent ?? '';
+    expect(note).toContain('경로: odsay');
+    expect(note).toContain('지도: 내장 경로 약도');
+    expect(note).not.toContain('Copernicus');
+    expect(note).not.toContain('Open-Meteo');
+    expect(note).not.toContain('OpenStreetMap');
   });
 
   it('AI 평가 베이스라인 점수 종류를 구분해서 표시한다', () => {
@@ -371,6 +422,63 @@ describe('UI 상태 — 검색 중심 구조', () => {
     await previousRequest;
     expect(useAppStore.getState()).toMatchObject({
       recommendations: latestRecommendations,
+      loading: false,
+      error: null,
+    });
+  });
+
+  it('검색 중 목적지가 바뀌면 이전 OD 응답을 화면에 반영하지 않는다', async () => {
+    seedResults();
+    const previous = deferred<ScoredRoute[]>();
+    const previousRecommendations = useAppStore.getState().recommendations;
+    vi.spyOn(adapters.routes, 'recommend').mockImplementationOnce(() => previous.promise);
+
+    const request = useAppStore.getState().search();
+    useAppStore.getState().setDestination(null);
+    previous.resolve(previousRecommendations);
+    await request;
+
+    expect(useAppStore.getState()).toMatchObject({
+      destination: null,
+      candidates: [],
+      recommendations: [],
+      selectedRouteId: null,
+      loading: false,
+      error: null,
+    });
+  });
+
+  it('초기 검색 중 날씨 조건이 바뀌면 이전 검색을 취소하고 새 조건으로 다시 검색한다', async () => {
+    seedResults();
+    const baseline = useAppStore.getState().recommendations;
+    const previous = deferred<ScoredRoute[]>();
+    const rainRecommendations = baseline.map((item) => ({
+      ...item,
+      score: { ...item.score, finalScore: item.score.finalScore + 0.5 },
+    }));
+    useAppStore.setState({
+      candidates: [],
+      recommendations: [],
+      selectedRouteId: null,
+      loading: false,
+    });
+    const routes = vi.spyOn(adapters.routes, 'recommend')
+      .mockImplementationOnce(() => previous.promise)
+      .mockResolvedValueOnce(rainRecommendations);
+    vi.spyOn(adapters.weather, 'getCurrent')
+      .mockResolvedValue(WEATHER_SCENARIOS.rain);
+
+    const initialSearch = useAppStore.getState().search();
+    await useAppStore.getState().setWeatherScenario('rain');
+    previous.resolve(baseline);
+    await initialSearch;
+
+    expect(routes).toHaveBeenCalledTimes(2);
+    expect(routes.mock.calls[1][3]).toBe('rain');
+    expect(useAppStore.getState()).toMatchObject({
+      weatherScenario: 'rain',
+      weather: WEATHER_SCENARIOS.rain,
+      recommendations: rainRecommendations,
       loading: false,
       error: null,
     });

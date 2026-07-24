@@ -12,6 +12,7 @@ import MapPreviewSection from './MapPreviewSection';
  */
 export default function RouteResultSection() {
   const recommendations = useAppStore((s) => s.recommendations);
+  const selectedRouteId = useAppStore((s) => s.selectedRouteId);
   const loading = useAppStore((s) => s.loading);
   const error = useAppStore((s) => s.error);
   const hasResults = recommendations.length > 0;
@@ -27,7 +28,7 @@ export default function RouteResultSection() {
         <>
           <WeatherWarning />
           <BusArrivalCard />
-          <RouteFeedback />
+          <RouteFeedback key={selectedRouteId ?? 'no-route'} />
           <FacilityReport />
         </>
       )}

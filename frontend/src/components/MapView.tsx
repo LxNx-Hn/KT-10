@@ -3,6 +3,7 @@ import { useAppStore } from '@/store/appStore';
 import { DISTRICT } from '@/config/district';
 import { hasKakaoKey, loadKakaoMaps } from '@/map/kakaoLoader';
 import type { LatLng } from '@/types';
+import { serverRankedRecommendations } from '@/utils/routes';
 
 const SHADOW_FILL = '#8290a8';
 const SHADOW_STROKE = '#64748b';
@@ -238,7 +239,7 @@ export default function MapView() {
           showShade={showShade}
           onToggle={() => setShowShade((value) => !value)}
         />
-        <MapDataNotice quality={selectedRoute?.geometryQuality} sources={selectedRoute?.sources} />
+        <MapDataNotice route={selectedRoute} mapSource="Kakao Maps" />
       </div>
     );
   }
@@ -285,7 +286,7 @@ export default function MapView() {
       points: project(route.path!, W, H, 24, mapBounds),
     }));
   return (
-    <div className="map" role="region" aria-label="경로 약도(데모)">
+    <div className="map" role="region" aria-label="경로 약도">
       <div className="map__fallback">
         <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="100%" aria-hidden="true">
           <rect x="0" y="0" width={W} height={H} fill="#eef2f7" rx="12" />
@@ -356,7 +357,7 @@ export default function MapView() {
           })}
         </svg>
         <p className="map__note">
-          데모 약도 · {mapLoadFailed
+          내장 경로 약도 · {mapLoadFailed
             ? 'Kakao 지도 키 인증 또는 허용 도메인을 확인해 주세요.'
             : <><code>.env</code>에 <code>VITE_KAKAO_MAP_KEY</code>를 설정하면 실제 지도가 표시됩니다.</>}
         </p>
@@ -370,7 +371,7 @@ export default function MapView() {
           showShade={showShade}
           onToggle={() => setShowShade((value) => !value)}
         />
-        <MapDataNotice quality={selectedRoute?.geometryQuality} sources={selectedRoute?.sources} />
+        <MapDataNotice route={selectedRoute} mapSource="내장 경로 약도" />
       </div>
     </div>
   );
@@ -386,10 +387,7 @@ function MapRoutePicker({
   onSelect: (routeId: string) => void;
 }) {
   if (recommendations.length < 2) return null;
-  const ranked = [...recommendations].sort(
-    (a, b) => b.score.finalScore - a.score.finalScore
-      || a.route.totalDurationMin - b.route.totalDurationMin,
-  );
+  const ranked = serverRankedRecommendations(recommendations);
   return (
     <div className="map__route-picker" role="group" aria-label="지도에 표시할 경로">
       {ranked.map(({ route }, index) => (
@@ -450,12 +448,32 @@ function ShadeControls({
   );
 }
 
-function MapDataNotice({ quality, sources = [] }: { quality?: 'exact' | 'mixed' | 'estimated'; sources?: string[] }) {
+function MapDataNotice({
+  route,
+  mapSource,
+}: {
+  route?: import('@/types').RouteCandidate;
+  mapSource: string;
+}) {
+  const sources = route?.sources ?? [];
+  const terrain = route?.terrain;
+  const sourceFacts = [
+    `경로: ${sources.length ? sources.join(' · ') : '응답에 출처 없음'}`,
+    `지도: ${mapSource}`,
+  ];
+  if (terrain?.status === 'estimated_90m' && terrain.source) {
+    sourceFacts.push(`지형: ${terrain.source}`);
+  }
+  if (sources.some((source) => /(?:^|[^a-z])(osm|osmnx|openstreetmap)/i.test(source))) {
+    sourceFacts.push('보행망: OpenStreetMap contributors');
+  }
+
   return (
     <p className="map__note" role="note">
-      {quality === 'mixed' && '실선은 확인된 geometry, 점선은 상세 보행 geometry 미확인 구간입니다. '}
-      {quality === 'estimated' && '이 경로 geometry는 추정값입니다. '}
-      경로: {sources.length ? sources.join(' · ') : '데모 데이터'} · 지도: Kakao Maps · 지형: Copernicus DEM/Open-Meteo · 보행망: OpenStreetMap contributors
+      {route?.geometryQuality === 'mixed'
+        && '실선은 확인된 geometry, 점선은 상세 보행 geometry 미확인 구간입니다. '}
+      {route?.geometryQuality === 'estimated' && '이 경로 geometry는 추정값입니다. '}
+      {sourceFacts.join(' · ')}
     </p>
   );
 }
