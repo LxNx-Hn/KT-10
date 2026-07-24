@@ -24,14 +24,17 @@
 - 지도 그늘 오버레이와 점수순 수평 경로 카드의 양방향 선택 동기화
 - 로그인 사용자 후기의 즉시 개인화와 관리자 수동 전역 모델 절차
 - 출처가 분리된 judge/사람/후기혼합/운영 모델 아티팩트
+- 제공 만족도 원본 감사와 설문 기반 직접 후기 관측 항목
 - PostgreSQL, PWA, 운영 Compose, readiness와 배포 검증 스크립트
 
 하지만 아직 **모든 실데이터까지 검증된 운영 완료 상태는 아닙니다**.
-Kakao JavaScript Places와 ODsay 실제 후보·`loadLane`, GLO-90 경사,
-규칙 기반 `live` 추천의 로컬 종단은 통과했습니다. VWorld 건물,
-OpenWeather, Kakao 로그인, 실제 평가 데이터와 운영 모델은 외부 입력이
-남아 있습니다. 현재 임의 OD의 그늘은 합성 데이터 검증 범위 밖이면
-0%로 만들지 않고 `unavailable`로 반환합니다.
+Kakao JavaScript Places와 ODsay 실제 후보·`loadLane`, 규칙 기반 `live`
+추천의 로컬 종단은 통과했습니다. GLO-90 계산과 건물 그늘 알고리즘은
+데모·계약 테스트를 통과했지만, 현재 live 구성에는 실제 보행 geometry와
+VWorld 키가 없습니다. 따라서 추정 직선 연결선으로 경사·주변 시설을
+계산하지 않고, 합성 데이터 범위 밖 그늘도 0%로 만들지 않습니다.
+OpenWeather, Kakao 로그인, 실제 평가 데이터와 운영 모델도 외부 입력이
+남아 있습니다.
 
 ## 3. 현재 구현 계약
 
@@ -80,6 +83,9 @@ AI 서버의 직접 `POST /recommend`는 건물 그늘 결합을 우회하므로
 계단, 승강기, 저상버스, 혼잡, 건물 높이, geometry와 공급자 실패를
 숫자 0 또는 `없음`으로 바꾸지 않습니다. 확인되지 않은 값은
 `null`/미확인으로 남기고 UI에는 `확인 필요`로 표시합니다.
+ODsay 역·정류장 양 끝점을 이은 추정 직선은 지도 연결선으로만 사용하며
+GLO-90 경사, CCTV·시설 밀도와 건물 그늘의 분석 geometry로 사용하지
+않습니다.
 
 ## 4. 모델·라벨 상태
 
@@ -134,10 +140,22 @@ Judge 템플릿·검증·학습 코드는 구현되어 있지만 LLM을 실제�
 `export_report.json`에 제외 수와 사유를 남기며, 실제 후기의 연속 0~4
 relevance를 사람 직접 평가의 정수 라벨 계약과 구분합니다.
 
+제공된 2023~2025 대중교통 만족도 압축파일은 161개 시군의 지역·집단별
+평균으로 감사했습니다. OD, 후보 경로, 좌표, 실제 선택 순위가 없어
+XGBRanker relevance나 프로필 가중치로 변환하지 않았습니다. 대신 앱
+후기에 혼잡, 환승 안내·정보, 교통약자 시설 이용 불편의 nullable 1~5
+직접 관측 항목을 추가했습니다. 이 항목은 현재 개인화·전역 relevance를
+자동 변경하지 않으며 상세 근거는
+`TRANSIT_SATISFACTION_DATA_AUDIT_2026-07-24.md`와
+`data/audits/public_transport_satisfaction_2023_2025.audit.json`에
+보존합니다.
+
 ## 6. 경사·그늘의 사실성 경계
 
 - GLO-90은 약 90m 격자의 실제 DEM 기반 지형 추정이며 보도 실측 구배가
   아닙니다.
+- GLO-90과 주변 시설 계산은 공급자가 확인한 실제 보행 geometry에만
+  적용합니다. 지도용 추정 직선은 분석에서 제외합니다.
 - 서비스의 `그늘`은 현재 건물 그늘입니다. 나무 그늘과 지형 그림자는
   신뢰할 수 있는 입력·검증자료가 없어 계산하지 않습니다.
 - 합성 건물은 `estimated_demo`, VWorld 공공 건물은
@@ -154,7 +172,8 @@ relevance를 사람 직접 평가의 정수 라벨 계약과 구분합니다.
 `searchPubTransPathT`와 `loadLane` 실호출이 모두 통과했습니다.
 `북구청→부산역`은 원시 후보 20개, 상위 후보 3개를 반환했고 최종
 collector는 약 1.2초였습니다. 대중교통 geometry는 `exact`, TMAP 키가
-없는 도보 연결선은 `estimated`, 전체는 `mixed`입니다.
+없는 도보 연결선은 `estimated`, 전체는 `mixed`입니다. 이 연결선은
+지도 표시에는 남지만 경사·공간 피처에는 들어가지 않습니다.
 
 운영에서는 배포 서버/NAT의 별도 고정 egress 공인 IP를 ODsay Server
 허용 IP에 등록해야 합니다. `localhost`, 사설 IP, Docker 내부 IP 또는
@@ -166,12 +185,17 @@ collector는 약 1.2초였습니다. 대중교통 geometry는 `exact`, TMAP 키�
 - `KAKAO_OAUTH_CLIENT_SECRET`
 - `VWORLD_API_KEY`
 - `OPENWEATHER_API_KEY`
+- `TMAP_API_KEY` 또는 명시적인
+  `OSMNX_WALK_GEOMETRY_ENABLED=true`
 
 `LABELING_API_TOKEN`은 준비 스크립트가 생성하도록 추가되어 있으므로 기존
 `.env.production`은 스크립트를 다시 실행한 뒤 `--check`해야 합니다.
 Kakao JavaScript 도메인·OAuth Redirect URI, VWorld 사용 도메인도 운영
 origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 `PUBLIC_ORIGIN`은 실제 운영 HTTPS origin으로 교체해야 합니다.
+운영 Compose는 앱 포트를 기본 `127.0.0.1`에만 열며, Caddy/Nginx 또는
+관리형 Load Balancer가 TLS를 종료하고 `Host`와
+`X-Forwarded-Proto=https`를 덮어써야 합니다.
 
 ## 8. 이번 작업본에서 완료된 코드 범위
 
@@ -191,6 +215,10 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
   공급자 출처가 확인되지 않은 demo 응답 차단
 - ODsay 축약 `mapObj`의 `loadLane` 정규화와 보행 geometry 공급자
   지연 제어
+- 추정 직선 보행선의 DEM·공간 피처 제외와 CCTV `카메라대수` 합산
+- 만족도 원본 감사, 기계 판독 감사 JSON, 선택형 직접 후기 관측값
+- 공급자 입력·페이지 무결성·모델 아티팩트·OD holdout 계약 강화
+- 비루트·read-only·capability 제거 운영 컨테이너와 HTTPS handoff
 - 게스트 로그인 상태 조회의 정상 204 계약과 실제 브라우저 E2E
 
 ## 9. 아직 완료되지 않은 범위
@@ -198,10 +226,11 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 ### 외부 입력이 있어야 가능한 항목
 
 1. Kakao REST/OAuth, VWorld, OpenWeather 키와 콘솔 설정
-2. 부산 층화 OD의 실제 VWorld 그늘 스냅샷 생성
-3. 외부 LLM judge 평가 또는 최소 9명 사람 평가
-4. VWorld 높이 단위·결측률과 현장 건물 그늘 오차 표본 검증
-5. 운영 HTTPS origin과 고정 egress IP 확정·등록
+2. TMAP 키 또는 운영에서 허용할 OSMnx 실제 보행 geometry
+3. 부산 층화 OD의 실제 VWorld 그늘 스냅샷 생성
+4. 외부 LLM judge 평가 또는 최소 9명 사람 평가
+5. VWorld 높이 단위·결측률과 현장 건물 그늘 오차 표본 검증
+6. 운영 HTTPS origin과 고정 egress IP 확정·등록
 
 ### 최종 로컬 검증 결과
 
@@ -209,22 +238,25 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 
 | 검증 | 최종 상태 |
 | --- | --- |
-| Backend pytest | `109 passed, 1 skipped` |
+| Backend pytest | `173 passed, 1 skipped` |
 | PostgreSQL opt-in E2E | `1 passed`; 중복후기 409 포함 |
-| AI pytest | `64 passed, 1 skipped` |
-| Frontend Vitest | `63 passed` |
+| AI pytest | `144 passed, 2 skipped` |
+| Frontend Vitest | `76 passed` |
+| 만족도 실제 원본 감사 | `5 passed`; archive checksum·3개 workbook·감사 JSON 재현 |
+| Playwright 접근성 | `3 passed, 1 expected desktop skip` |
 | TypeScript/Vite PWA build | 통과; service worker·manifest 생성 |
-| Python compileall / pip check | 통과 / broken requirement 0건 |
-| Alembic PostgreSQL | `20260724_0002 (head)`; `check` 통과 |
+| Python compileall / Ruff / Bandit / pip check | 모두 통과 / broken requirement 0건 |
+| Alembic PostgreSQL | `20260724_0003 (head)`; `check` 통과 |
 | UTF-8/JSON 계약 | 통과 |
 | npm audit | 취약점 0건 |
-| Production Compose / Docker build | 비밀 아닌 검증값으로 config 통과; AI·백엔드·프론트 이미지 빌드 통과 |
-| 현재 `.env.production --check` | 외부 키 4개 누락을 정상 차단; 아래 입력 전에는 배포 불가 |
-| 실제 브라우저 QA | Playwright `1 passed`; Kakao `북구청`·`부산역` 선택, ODsay 추천 3개 표시, 콘솔 오류·경고 0건 |
+| Production Compose / Docker runtime | 4개 서비스 healthy; 비루트 UID, capability 0, no-new-privileges, read-only root 확인 |
+| AI 운영 이미지 | 약 1.01GB→250MB; CPU XGBoost import와 9개 공간 레이어 로드 통과 |
+| 현재 `.env.production --check` | 외부 키 4개와 exact walking geometry 누락을 정상 차단 |
+| 실제 브라우저 QA | Playwright `1 passed`; Kakao `북구청`·`부산역`, ODsay 경로 3개, 카드·지도·후기 선택 동기화, 콘솔 오류·경고 0건 |
 | ODsay live E2E | 개발 IP 인증, search/loadLane, 부산진구청·북구청 OD 통과 |
-| Kakao Places live E2E | 모바일 Chromium에서 두 검색어 모두 실제 결과 선택 통과 |
+| Kakao Places live E2E | 등록 origin `http://localhost:5173`에서 두 검색어 통과; `127.0.0.1`은 별도 도메인 등록 전 명시적 실패 |
 | 다른 실제 공급자 E2E | VWorld·OpenWeather·Kakao OAuth 외부 키 대기 |
-| 원격 CI | 기능 HEAD `f863908`의 5개 job 전체 성공; 최종 문서 커밋도 같은 workflow로 확인 |
+| 원격 CI | 기능 HEAD `31c3169`의 5개 job 전체 성공; hardened runtime smoke 포함 |
 
 ## 10. 배포 완료 기준
 
@@ -237,8 +269,10 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 - [x] 모델 tier·label origin·checksum 승격 분리
 - [x] ODsay 개발 egress IP 등록과 실호출 통과
 - [ ] ODsay 운영 서버의 고정 egress IP 등록
+- [ ] 운영 exact walking geometry용 TMAP 또는 OSMnx 결정·설정
 - [ ] VWorld 건물 높이·좌표·결측률 실응답 검증
 - [ ] Kakao Local/OAuth, OpenWeather 운영 설정
+- [ ] 운영 도메인 TLS 종료와 외부 443·내부 loopback handoff
 - [ ] 실제 후보와 Judge 또는 사람 평가 데이터
 - [ ] 선택한 tier의 검증 모델과 오프라인 비교 보고서
 - [x] 최종 전체 로컬 테스트·생산 빌드·Docker 이미지 빌드

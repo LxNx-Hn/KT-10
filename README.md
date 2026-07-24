@@ -56,22 +56,25 @@ JSON과 manifest checksum을 검증한 뒤 로드하며 역할은 다음과 같�
 
 ## 2026-07-24 상태
 
-- 로컬 최종 회귀는 AI `64 passed, 1 skipped`, 백엔드
-  `109 passed, 1 skipped`, PostgreSQL opt-in E2E `1 passed`,
-  프론트 `63 passed`입니다. TypeScript/PWA build, Python compileall,
-  Alembic `20260724_0002 (head)`와 schema check, `pip check`,
-  `npm audit`(취약점 0건), production Compose 해석과 AI·백엔드·프론트
-  이미지 빌드도 통과했습니다.
+- 로컬 최종 회귀는 AI `144 passed, 2 skipped`, 백엔드
+  `173 passed, 1 skipped`, PostgreSQL opt-in E2E `1 passed`,
+  프론트 `76 passed`, 실제 만족도 원본 감사 `5 passed`입니다.
+  TypeScript/PWA build, 접근성 Playwright `3 passed, 1 expected skip`,
+  Python compileall·Ruff·Bandit·pip check, Alembic
+  `20260724_0003 (head)`와 schema check, `npm audit`(취약점 0건)도
+  통과했습니다.
 - 모바일 Chromium 실제 브라우저 E2E에서 Kakao Places의 `북구청`·`부산역`
   검색과 선택, ODsay 실경로 3개 표시, 콘솔 오류 0건을 확인했습니다.
-  기존 430px 모바일·1280px 데스크톱 지도-카드 동기화 검증도 유지합니다.
+  실제 결과에서도 2순위 카드 선택, 지도 활성 경로, 후기 대상 경로가
+  함께 바뀌는 것을 재확인했습니다.
 - 마지막으로 확인한 개발 런타임은 브라우저 장소검색 `kakao-js(live)`,
   날씨 `mock`, 버스 `live`, 경로 `ai-candidates(live)`, 건물
   `synthetic-demo`, AI 모델 `inactive`입니다.
-- 같은 런타임의 `북구청→부산역` 종단 재검증은 경로 3개,
-  `geometry=mixed`, `terrain=estimated_90m`,
-  `shade=unavailable(null)`, `scoreKind=rule_baseline`을 반환했습니다.
-  합성 건물 범위 밖의 그늘을 0%로 만들지 않습니다.
+- 같은 런타임의 `북구청→부산역` 종단 재검증은 규칙 베이스라인 경로
+  3개를 반환했습니다. TMAP 키가 없고 OSMnx가 비활성화된 현재 구성에서는
+  추정 직선 보행 연결선을 지도에만 표시하며 경사·주변 시설 분석에서
+  제외합니다. 따라서 해당 구간의 지형과 합성 건물 범위 밖 그늘은
+  `미확인`으로 남고 0이나 실측값처럼 표시되지 않습니다.
 - `route_features.jsonl`은 0바이트, `route_labels.csv`는 헤더만 있고
   위 네 종류의 ranker artifact가 아직 없습니다. 따라서 기본
   `RANKER_TIER=human_validated`의 `/model/status`는 `ready=false`입니다.
@@ -79,13 +82,22 @@ JSON과 manifest checksum을 검증한 뒤 로드하며 역할은 다음과 같�
   `북구청→부산역` 검색은 원시 후보 20개, 최종 상위 3개를 반환했으며
   기준점 없는 `mapObj`의 `loadLane` 형식도 보정했습니다. TMAP이 없을
   때 보행 상세선은 `estimated`, 대중교통 선은 `exact`, 전체는
-  `mixed`로 표시하며 첫 수집은 약 1.2초였습니다.
+  `mixed`로 표시하며 첫 수집은 약 1.2초였습니다. 다만 `estimated`
+  연결선은 DEM·공간 피처 입력이 아닙니다.
+- 제공된 2023~2025 대중교통 만족도 압축파일은 161개 시군의 집단 평균
+  데이터로 감사했습니다. OD·후보 경로·좌표·선택 순위가 없어 경로
+  학습 라벨로 사용하지 않았고, 혼잡·환승 안내·교통약자 시설의 선택형
+  직접 후기 항목과 데이터 감사 산출물로 반영했습니다.
 - 실제 후보 스냅샷과 LLM 평가 결과가 없고 저장소에는 빈 judge 평가표를
   만드는 도구만 있습니다. 외부 LLM 평가를 실행해 모든 후보·6개
   프로필의 점수와 근거를 채우기 전에는 judge baseline 모델도 생성되지
   않습니다.
 - GLO-90 경사는 실제 DEM 조회 기반의 약 90m 지형 추정입니다. 그늘은
   건물만 계산하며 나무·지형 그늘을 포함하지 않습니다.
+- 운영 이미지는 비루트·read-only root filesystem·capability 제거로
+  실제 기동 검증했습니다. CPU 전용 XGBoost 패키지로 AI 이미지는 약
+  1.01GB에서 250MB로 줄였고, 앱 포트는 loopback에만 바인딩해 외부
+  TLS 종료 계층을 필수로 둡니다.
 
 ## 구조
 
