@@ -3,6 +3,12 @@
   "source": "검증용 데모 건물 높이 데이터",
   "dataQuality": "demo",
   "description": "부산진구청-서면역 고정 데모 OD의 태양·그림자 계산을 검증하기 위한 합성 건물 외곽선과 높이입니다. 공공데이터 또는 실측 건물 높이로 해석하지 않습니다.",
+  "applicableBounds": {
+    "minLat": 35.1570,
+    "maxLat": 35.1640,
+    "minLng": 129.0520,
+    "maxLng": 129.0620
+  },
   "buildings": [
     {
       "id": "demo-building-01",

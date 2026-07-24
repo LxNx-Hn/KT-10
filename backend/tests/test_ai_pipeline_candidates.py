@@ -1,4 +1,4 @@
-from app.models import Place, ScoringOptions
+from app.models import LatLng, Place, ScoringOptions
 import json
 import asyncio
 from datetime import datetime
@@ -282,6 +282,11 @@ def test_ai_personalization_score_preserves_personalized_order_for_frontend(
 
 def test_backend_shade_is_enriched_before_ai_ranking(monkeypatch):
     route = _to_route_candidate(_candidate_payload(), ORIGIN, DESTINATION, 1)
+    route.path = [
+        LatLng(lat=35.1626, lng=129.0530),
+        LatLng(lat=35.1600, lng=129.0560),
+        LatLng(lat=35.1578, lng=129.0594),
+    ]
     add_demo_shade(
         [route],
         datetime(2026, 7, 24, 14, 0, tzinfo=ZoneInfo("Asia/Seoul")),
@@ -291,6 +296,11 @@ def test_backend_shade_is_enriched_before_ai_ranking(monkeypatch):
     async def fake_post(path, payload):
         if path == "/labeling/enriched-snapshots":
             row = payload["candidates"][0]
+            # AI의 학습 스키마는 경로 표시용 지형 메타데이터를 스냅샷에서
+            # 제외할 수 있다. 남은 값은 백엔드가 보낸 값과 같아야 한다.
+            snapshot_features = ai_pipeline._expected_enriched_snapshot_features(
+                row["features"]
+            )
             snapshot = {
                 "snapshot_schema_version": "route-feature-snapshot-v2",
                 "snapshot_kind": "live_route_candidate",
@@ -301,7 +311,7 @@ def test_backend_shade_is_enriched_before_ai_ranking(monkeypatch):
                 "route_id": row["route_id"],
                 "sources": row["sources"],
                 "geometry_quality": row["geometry_quality"],
-                "features": row["features"],
+                "features": snapshot_features,
             }
             snapshot["feature_snapshot_hash"] = (
                 ai_pipeline._canonical_snapshot_hash(snapshot)
@@ -358,5 +368,6 @@ def test_backend_shade_is_enriched_before_ai_ranking(monkeypatch):
         route.shade.building_height_coverage
     )
     assert sent["shade_priority_unshaded_walk_m"] is not None
+    assert "elevation_source" not in sent
     assert results[0].route.shade.status == "estimated_demo"
     assert results[0].score.score_kind == "judge_baseline"

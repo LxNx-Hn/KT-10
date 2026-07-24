@@ -191,7 +191,17 @@ export default function RouteCard({
           {route.shade?.status === 'not_daylight' && (
             <Badge tone="neutral">야간 · 주간 그늘 계산 안 함</Badge>
           )}
+          {route.shade?.status === 'unavailable' && (
+            <Badge tone="warn">건물 그늘 정보 없음</Badge>
+          )}
         </div>
+
+        {route.shade?.status === 'unavailable' && (
+          <div className="route-card__unavailable">
+            <h4>그늘 계산 상태</h4>
+            <p>{route.shade.calculationNote}</p>
+          </div>
+        )}
 
         {score.reasons.length > 0 && (
           <div className="route-card__reasons">

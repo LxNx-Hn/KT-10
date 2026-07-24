@@ -284,6 +284,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .route-card__reasons li { color: #14532d; font-size: 0.92rem; }
 .route-card__cautions li { color: #7c2d12; font-size: 0.92rem; }
 .route-card__unavailable li { color: var(--ink-soft); font-size: .88rem; }
+.route-card__unavailable p { margin: 0; color: var(--ink-soft); font-size: .88rem; line-height: 1.5; }
 .route-card .btn--listen { min-height: 42px; margin-top: 10px; font-size: .9rem; }
 
 /* 배지 + 점수막대 */

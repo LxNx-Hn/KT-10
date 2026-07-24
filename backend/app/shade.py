@@ -258,6 +258,43 @@ def calculate_shade(
                 "그늘 비율을 계산하지 않았습니다."
             ),
         )
+    applicable_bounds = building_data.get("applicableBounds")
+    if applicable_bounds is not None:
+        try:
+            min_lat = float(applicable_bounds["minLat"])
+            max_lat = float(applicable_bounds["maxLat"])
+            min_lng = float(applicable_bounds["minLng"])
+            max_lng = float(applicable_bounds["maxLng"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("건물 데이터 적용 범위가 올바르지 않습니다.") from exc
+        if (
+            not all(math.isfinite(value) for value in (
+                min_lat, max_lat, min_lng, max_lng
+            ))
+            or min_lat >= max_lat
+            or min_lng >= max_lng
+        ):
+            raise ValueError("건물 데이터 적용 범위가 올바르지 않습니다.")
+        if any(
+            not (
+                min_lat <= point.lat <= max_lat
+                and min_lng <= point.lng <= max_lng
+            )
+            for walking_path in walking_paths
+            for point in walking_path
+        ):
+            return ShadeSummary(
+                status="unavailable",
+                evaluated_at=evaluated_at,
+                total_walk_m=analyzed_walk_m,
+                source=source,
+                data_quality=data_quality,
+                walking_geometry_quality=walking_quality,
+                calculation_note=(
+                    "선택한 경로가 건물 데이터의 검증 범위를 벗어나 "
+                    "그늘 비율을 계산하지 않았습니다."
+                ),
+            )
     path = [point for walking_path in walking_paths for point in walking_path]
     ref_lat = sum(point.lat for point in path) / len(path)
     ref_lng = sum(point.lng for point in path) / len(path)

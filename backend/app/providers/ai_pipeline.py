@@ -50,6 +50,16 @@ _WEATHER_TO_AI = {
     "rain": "rain", "dust": "bad_air",
 }
 
+_DISPLAY_ONLY_TERRAIN_FEATURES = frozenset({
+    "uphill_distance_m",
+    "downhill_distance_m",
+    "elevation_gain_m",
+    "elevation_loss_m",
+    "elevation_source",
+    "elevation_resolution_m",
+    "elevation_status",
+})
+
 
 def _pipeline_payload(
     origin: Place,
@@ -217,6 +227,17 @@ def _canonical_snapshot_hash(snapshot: dict) -> str:
     ).hexdigest()
 
 
+def _expected_enriched_snapshot_features(
+    sent_features: dict[str, float | int | bool | None],
+) -> dict[str, float | int | bool | None]:
+    """AI 학습 스키마에 속하지 않는 표시용 지형 메타데이터만 제외한다."""
+    return {
+        key: value
+        for key, value in sent_features.items()
+        if key not in _DISPLAY_ONLY_TERRAIN_FEATURES
+    }
+
+
 async def enrich_ai_pipeline_candidates(
     candidates: list[RouteCandidate],
     options: ScoringOptions,
@@ -316,12 +337,20 @@ async def enrich_ai_pipeline_candidates(
         ):
             raise AIProviderError(502, "AI enriched snapshot identity is invalid.")
         snapshot_hash = str(snapshot.get("feature_snapshot_hash") or "")
+        snapshot_features = snapshot.get("features")
+        sent_features = features_by_id[route_id]
+        expected_snapshot_features = _expected_enriched_snapshot_features(
+            sent_features
+        )
         if (
             str(snapshot.get("group_id") or "") != group_id
             or str(snapshot.get("holdout_group_id") or "")
             != next(iter(holdout_group_ids))
             or str(snapshot.get("route_id") or "") != route_id
-            or snapshot.get("features") != features_by_id[route_id]
+            or not isinstance(snapshot_features, dict)
+            # AI 서버는 표시용 지형 메타데이터만 제거할 수 있다.
+            # 학습 피처의 누락·추가·변경은 허용하지 않는다.
+            or snapshot_features != expected_snapshot_features
             or snapshot_hash != _canonical_snapshot_hash(snapshot)
         ):
             raise AIProviderError(502, "AI enriched feature snapshot is invalid.")
