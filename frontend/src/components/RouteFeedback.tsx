@@ -118,7 +118,7 @@ export default function RouteFeedback() {
         </button>
       </div>
       <label>만족도 <select value={rating} onChange={(event) => setRating(Number(event.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}점</option>)}</select></label>
-      <label>가장 불편했던 요소 <select value={issueType} onChange={(event) => setIssueType(event.target.value)}><option value="">선택 안 함</option><option value="stairs">계단</option><option value="slope">경사</option><option value="elevator">승강기</option><option value="low_floor_bus">저상버스</option><option value="walking_distance">도보거리</option><option value="transfer">환승</option><option value="duration">이동시간</option><option value="safety">안전</option><option value="weather">날씨</option><option value="other">기타</option></select></label>
+      <label>가장 불편했던 요소 <select value={issueType} onChange={(event) => setIssueType(event.target.value)}><option value="">선택 안 함</option><option value="stairs">계단</option><option value="slope">경사</option><option value="elevator">승강기</option><option value="low_floor_bus">저상버스</option><option value="walking_distance">도보거리</option><option value="transfer">환승</option><option value="crowding">혼잡</option><option value="transfer_information">환승 안내·정보</option><option value="accessibility_facility">교통약자 시설</option><option value="duration">이동시간</option><option value="safety">안전</option><option value="weather">날씨</option><option value="other">기타</option></select></label>
       <div className="route-feedback__details">
         <DifficultySelect label="계단 불편" value={stairsDifficulty} onChange={setStairsDifficulty} />
         <DifficultySelect label="경사 불편" value={slopeDifficulty} onChange={setSlopeDifficulty} />

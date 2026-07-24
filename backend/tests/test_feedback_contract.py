@@ -64,6 +64,21 @@ def test_review_observation_dimensions_are_optional_and_bounded():
             ReviewInput.model_validate({**minimal, field: 6})
 
 
+@pytest.mark.parametrize(
+    "issue_type",
+    ["crowding", "transfer_information", "accessibility_facility"],
+)
+def test_review_accepts_survey_informed_issue_taxonomy(issue_type):
+    review = ReviewInput.model_validate({
+        "routeId": "route-1",
+        "impressionId": "impression-1",
+        "wasUsable": False,
+        "rating": 2,
+        "issueType": issue_type,
+    })
+    assert review.issue_type == issue_type
+
+
 def test_facility_report_accepts_frontend_camel_case():
     payload = FacilityReportInput.model_validate({
         "facilityName": "부산역 승강기",

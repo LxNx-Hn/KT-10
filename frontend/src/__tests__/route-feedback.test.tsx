@@ -46,6 +46,9 @@ describe('실제 경로 이용 후기', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const { getByLabelText, getByRole } = render(<RouteFeedback />);
+    fireEvent.change(getByLabelText('가장 불편했던 요소'), {
+      target: { value: 'crowding' },
+    });
     fireEvent.change(getByLabelText('혼잡으로 인한 이용 불편'), {
       target: { value: '4' },
     });
@@ -61,6 +64,7 @@ describe('실제 경로 이용 후기', () => {
     const request = fetchMock.mock.calls[1]?.[1] as RequestInit;
     const payload = JSON.parse(String(request.body)) as Record<string, unknown>;
     expect(payload).toMatchObject({
+      issueType: 'crowding',
       crowdingDifficulty: 4,
       transferInformationDifficulty: 3,
       accessibilityFacilityDifficulty: 2,

@@ -30,7 +30,21 @@ Profile = Literal[
 PROFILE_IDS = {
     "general", "elderly", "child", "youth", "disabled", "pregnant"
 }
-IssueType = Literal["stairs", "slope", "elevator", "low_floor_bus", "walking_distance", "transfer", "duration", "safety", "weather", "other"]
+IssueType = Literal[
+    "stairs",
+    "slope",
+    "elevator",
+    "low_floor_bus",
+    "walking_distance",
+    "transfer",
+    "crowding",
+    "transfer_information",
+    "accessibility_facility",
+    "duration",
+    "safety",
+    "weather",
+    "other",
+]
 FacilityIssueType = Literal["missing", "relocated", "closed", "inaccessible", "information_incorrect", "other"]
 
 
