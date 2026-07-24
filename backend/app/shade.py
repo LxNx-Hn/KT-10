@@ -262,6 +262,32 @@ def calculate_shade(
                 "그늘 비율을 계산하지 않았습니다."
             ),
         )
+    if not is_demo and walking_quality != "exact":
+        return ShadeSummary(
+            status="unavailable",
+            evaluated_at=evaluated_at,
+            total_walk_m=analyzed_walk_m,
+            source=source,
+            data_quality=data_quality,
+            walking_geometry_quality=walking_quality,
+            calculation_note=(
+                "실외 보행 동선이 실제 도로 geometry로 확인되지 않아 "
+                "공공 건물 그늘 비율을 계산하지 않았습니다."
+            ),
+        )
+    if not is_demo and building_data.get("cacheComplete") is False:
+        return ShadeSummary(
+            status="unavailable",
+            evaluated_at=evaluated_at,
+            total_walk_m=analyzed_walk_m,
+            source=source,
+            data_quality=data_quality,
+            walking_geometry_quality=walking_quality,
+            calculation_note=(
+                "경로 주변 공공 건물 데이터를 사전계산 중이어서 "
+                "일부 데이터만으로 그늘 비율을 계산하지 않았습니다."
+            ),
+        )
     path = [point for walking_path in walking_paths for point in walking_path]
     ref_lat = sum(point.lat for point in path) / len(path)
     ref_lng = sum(point.lng for point in path) / len(path)

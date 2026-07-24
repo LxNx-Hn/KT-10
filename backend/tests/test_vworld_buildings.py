@@ -6,11 +6,31 @@ import httpx
 import pytest
 
 from app.data.routes import demo_candidates
-from app.providers.vworld_buildings import get_vworld_buildings
+from app.models import LatLng
+from app.providers.vworld_buildings import (
+    _path_query_boxes,
+    get_vworld_buildings,
+)
 from app.settings import settings
 from app.shade import calculate_shade
 
 KST = ZoneInfo("Asia/Seoul")
+
+
+def _exact_route():
+    route = demo_candidates()[0].model_copy(deep=True)
+    points = [
+        LatLng(lat=35.1600, lng=129.0500),
+        LatLng(lat=35.1610, lng=129.0510),
+        LatLng(lat=35.1620, lng=129.0520),
+        LatLng(lat=35.1630, lng=129.0530),
+    ]
+    route.path = points
+    route.geometry_quality = "exact"
+    for index, segment in enumerate(route.segments):
+        segment.path = points[index:index + 2]
+        segment.geometry_quality = "exact"
+    return route
 
 
 def _feature_collection() -> dict:
@@ -56,24 +76,40 @@ def _feature_collection() -> dict:
     }
 
 
-def test_vworld_provider_keeps_unknown_height_as_none(monkeypatch):
+def test_vworld_provider_keeps_unknown_height_as_none_and_reuses_cache(
+    monkeypatch,
+    tmp_path,
+):
     monkeypatch.setattr(settings, "vworld_api_key", "test-secret")
     monkeypatch.setattr(settings, "vworld_api_domain", "http://localhost:8002")
+    monkeypatch.setattr(settings, "vworld_cache_dir", str(tmp_path))
     seen_request: httpx.Request | None = None
+    request_count = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal seen_request
+        nonlocal request_count, seen_request
+        request_count += 1
         seen_request = request
         return httpx.Response(200, json=_feature_collection())
 
     result = asyncio.run(
         get_vworld_buildings(
-            demo_candidates()[:1],
+            [_exact_route()],
+            transport=httpx.MockTransport(handler),
+        )
+    )
+    first_request_count = request_count
+    cached_result = asyncio.run(
+        get_vworld_buildings(
+            [_exact_route()],
             transport=httpx.MockTransport(handler),
         )
     )
 
     assert result["dataQuality"] == "public"
+    assert result["cacheComplete"] is True
+    assert cached_result == result
+    assert request_count == first_request_count
     assert result["featureCount"] == 2
     assert result["buildings"][0]["heightM"] == 12.5
     assert result["buildings"][1]["heightM"] is None
@@ -94,7 +130,7 @@ def test_vworld_http_error_does_not_expose_api_key(monkeypatch):
     with pytest.raises(RuntimeError) as captured:
         asyncio.run(
             get_vworld_buildings(
-                demo_candidates()[:1],
+                [_exact_route()],
                 transport=httpx.MockTransport(handler),
             )
         )
@@ -105,7 +141,7 @@ def test_vworld_http_error_does_not_expose_api_key(monkeypatch):
 def test_vworld_provider_requires_key(monkeypatch):
     monkeypatch.setattr(settings, "vworld_api_key", "")
     with pytest.raises(RuntimeError, match="VWORLD_API_KEY"):
-        asyncio.run(get_vworld_buildings(demo_candidates()[:1]))
+        asyncio.run(get_vworld_buildings([_exact_route()]))
 
 
 def test_vworld_provider_rejects_invalid_total_count(monkeypatch):
@@ -119,7 +155,7 @@ def test_vworld_provider_rejects_invalid_total_count(monkeypatch):
     with pytest.raises(RuntimeError, match="전체 건수"):
         asyncio.run(
             get_vworld_buildings(
-                demo_candidates()[:1],
+                [_exact_route()],
                 transport=httpx.MockTransport(handler),
             )
         )
@@ -150,7 +186,7 @@ def test_vworld_provider_rejects_early_pagination_end(monkeypatch):
     with pytest.raises(RuntimeError, match="먼저 종료"):
         asyncio.run(
             get_vworld_buildings(
-                demo_candidates()[:1],
+                [_exact_route()],
                 transport=httpx.MockTransport(handler),
             )
         )
@@ -171,10 +207,20 @@ def test_vworld_provider_rejects_duplicate_feature_across_pages(monkeypatch):
     with pytest.raises(RuntimeError, match="중복 feature ID"):
         asyncio.run(
             get_vworld_buildings(
-                demo_candidates()[:1],
+                [_exact_route()],
                 transport=httpx.MockTransport(handler),
             )
         )
+
+
+def test_long_walk_is_split_into_local_corridor_boxes():
+    boxes = _path_query_boxes([
+        LatLng(lat=35.1000, lng=129.0000),
+        LatLng(lat=35.1500, lng=129.0000),
+    ])
+
+    assert len(boxes) > 5
+    assert all(max_lat - min_lat < 0.01 for _, min_lat, _, max_lat in boxes)
 
 
 def test_public_shade_reports_height_coverage_without_zero_fill():
@@ -207,7 +253,7 @@ def test_public_shade_reports_height_coverage_without_zero_fill():
         ],
     }
     shade = calculate_shade(
-        demo_candidates()[0],
+        _exact_route(),
         datetime(2026, 7, 23, 14, 0, tzinfo=KST),
         buildings,
     )
@@ -219,6 +265,43 @@ def test_public_shade_reports_height_coverage_without_zero_fill():
     assert shade.building_count == 2
     assert shade.includes_tree_shade is False
     assert shade.shadow_polygons
+
+
+def test_public_shade_does_not_use_estimated_straight_walk_geometry():
+    route = _exact_route()
+    route.geometry_quality = "estimated"
+    for segment in route.segments:
+        segment.geometry_quality = "estimated"
+    shade = calculate_shade(
+        route,
+        datetime(2026, 7, 23, 14, 0, tzinfo=KST),
+        {
+            "source": "VWorld LT_C_BLDGINFO WFS",
+            "dataQuality": "public",
+            "buildings": [],
+        },
+    )
+
+    assert shade.status == "unavailable"
+    assert shade.shade_ratio is None
+    assert "실제 도로 geometry" in shade.calculation_note
+
+
+def test_public_shade_waits_for_complete_building_corridor_cache():
+    shade = calculate_shade(
+        _exact_route(),
+        datetime(2026, 7, 23, 14, 0, tzinfo=KST),
+        {
+            "source": "VWorld LT_C_BLDGINFO WFS",
+            "dataQuality": "public",
+            "cacheComplete": False,
+            "buildings": [],
+        },
+    )
+
+    assert shade.status == "unavailable"
+    assert shade.shade_ratio is None
+    assert "사전계산 중" in shade.calculation_note
 
 
 def test_public_transit_route_without_walking_geometry_is_unavailable():
