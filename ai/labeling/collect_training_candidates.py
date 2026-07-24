@@ -547,7 +547,6 @@ def collect(
     minimum_known_slope_candidates: int = 2,
     minimum_known_shade_candidates: int = 2,
     quality_retry_delay_seconds: float = 45.0,
-    provider_unique_od_budget: int = 800,
     limit: int | None = None,
     fetcher: FetchFunction = _fetch_candidate_group,
     on_progress: ProgressFunction | None = None,
@@ -565,18 +564,12 @@ def collect(
         or minimum_known_slope_candidates > minimum_candidates
         or minimum_known_shade_candidates > minimum_candidates
         or quality_retry_delay_seconds < 0
-        or provider_unique_od_budget < 1
     ):
         raise ValueError("timeout, max_attempts, minimum_candidates 설정이 올바르지 않습니다.")
     all_rows = _read_od_rows(od_path)
     selected_rows = all_rows[:limit] if limit is not None else all_rows
     if not selected_rows:
         raise ValueError("수집할 OD가 없습니다.")
-    if len(selected_rows) > provider_unique_od_budget:
-        raise ValueError(
-            "선택한 고유 OD 수가 공급자 호출 예산을 초과합니다: "
-            f"{len(selected_rows)} > {provider_unique_od_budget}"
-        )
     rows_by_id = {row["od_id"]: row for row in selected_rows}
     checkpoint_path = output_dir / "candidate_groups.jsonl"
     failure_path = output_dir / "failures.jsonl"
@@ -599,7 +592,6 @@ def collect(
             "updated_at": _utc_now(),
             "catalog_od_count": len(all_rows),
             "selected_od_count": len(selected_rows),
-            "provider_unique_od_budget": provider_unique_od_budget,
             "completed_od_count": len(completed),
             "failed_od_count_this_run": len(failed_ids),
             "remaining_od_count": len(selected_rows) - len(completed),
@@ -684,7 +676,6 @@ def collect(
     report.update({
         "catalog_od_count": len(all_rows),
         "selected_od_count": len(selected_rows),
-        "provider_unique_od_budget": provider_unique_od_budget,
         "failed_od_count_this_run": len(failed_ids),
         "remaining_od_count": len(selected_rows) - len(completed),
         "checkpoint": str(checkpoint_path),
@@ -733,11 +724,6 @@ def main() -> None:
         type=float,
         default=45.0,
     )
-    parser.add_argument(
-        "--provider-unique-od-budget",
-        type=int,
-        default=800,
-    )
     parser.add_argument("--limit", type=int)
     parser.add_argument("--progress-every", type=int, default=25)
     args = parser.parse_args()
@@ -766,7 +752,6 @@ def main() -> None:
         minimum_known_slope_candidates=args.minimum_known_slope_candidates,
         minimum_known_shade_candidates=args.minimum_known_shade_candidates,
         quality_retry_delay_seconds=args.quality_retry_delay_seconds,
-        provider_unique_od_budget=args.provider_unique_od_budget,
         limit=args.limit,
         on_progress=print_progress,
     )

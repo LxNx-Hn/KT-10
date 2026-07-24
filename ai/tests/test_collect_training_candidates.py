@@ -200,20 +200,6 @@ def test_collection_failure_is_not_marked_ready(tmp_path):
     assert failures.count("provider unavailable") == 2
 
 
-def test_collection_rejects_catalog_over_provider_budget(tmp_path):
-    od_path = tmp_path / "od.csv"
-    _write_od_catalog(od_path)
-
-    with pytest.raises(ValueError, match="공급자 호출 예산"):
-        collect(
-            od_path=od_path,
-            output_dir=tmp_path / "collection",
-            server_url="http://unused",
-            api_token="x" * 32,
-            provider_unique_od_budget=1,
-        )
-
-
 def test_candidate_quality_gate_does_not_replace_unknown_with_zero():
     row = {
         "od_id": "od-quality",
