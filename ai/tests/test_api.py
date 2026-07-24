@@ -58,7 +58,8 @@ def test_lifespan_preloads_regional_walk_graph_when_enabled(monkeypatch):
     monkeypatch.setattr(
         ai_main,
         "prepare_regional_graph",
-        lambda: calls.append(True) or {"nodes": 10, "edges": 20},
+        lambda: calls.append(True)
+        or {"nodes": 10, "edges": 20, "routable_nodes": 9},
     )
 
     async def run():

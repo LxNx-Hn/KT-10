@@ -5,13 +5,36 @@ import json
 
 import pytest
 
+import labeling.collect_training_candidates as collector_module
 from labeling.collect_training_candidates import (
     CandidateCollectionError,
+    _write_json,
     _validate_candidate_payload,
     collect,
 )
 from scoring.snapshots import build_live_feature_snapshot
 from scoring.train import FEATURE_COLS
+
+
+def test_atomic_json_write_retries_transient_windows_lock(monkeypatch, tmp_path):
+    target = tmp_path / "progress.json"
+    real_replace = collector_module.os.replace
+    attempts = 0
+
+    def replace_once_locked(source, destination):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise PermissionError("temporarily locked")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(collector_module.os, "replace", replace_once_locked)
+
+    _write_json(target, {"completed": 3})
+
+    assert json.loads(target.read_text(encoding="utf-8")) == {"completed": 3}
+    assert attempts == 2
+    assert list(tmp_path.glob("*.tmp")) == []
 
 
 def _write_od_catalog(path) -> None:

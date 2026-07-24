@@ -122,14 +122,14 @@ def _load_regional_graph():
 
 
 def _routing_index(digraph):
-    """연결된 보행망과 최근접 노드 인덱스를 그래프별로 한 번만 만든다."""
+    """양방향 도달 가능한 보행망과 최근접 노드 인덱스를 한 번만 만든다."""
     graph_identity = id(digraph)
     with _graph_lock(f"routing-index-{graph_identity}"):
         cached = _routing_indexes.get(digraph)
         if cached is not None:
             return cached
         connected_nodes = max(
-            nx.weakly_connected_components(digraph),
+            nx.strongly_connected_components(digraph),
             key=len,
             default=set(),
         )
@@ -247,10 +247,11 @@ def prepare_regional_graph() -> dict[str, int] | None:
     if not _regional_graph_path().exists():
         return None
     graph = _load_regional_graph()
-    _routing_index(graph)
+    index = _routing_index(graph)
     return {
         "nodes": graph.number_of_nodes(),
         "edges": graph.number_of_edges(),
+        "routable_nodes": len(index.node_ids),
     }
 
 

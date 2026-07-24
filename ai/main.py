@@ -37,9 +37,13 @@ async def lifespan(_app: FastAPI):
             graph_status = await asyncio.to_thread(prepare_regional_graph)
             if graph_status is not None:
                 logger.info(
-                    "부산 오프라인 보행 그래프 준비 완료: nodes=%s edges=%s",
+                    (
+                        "부산 오프라인 보행 그래프 준비 완료: "
+                        "nodes=%s edges=%s routable_nodes=%s"
+                    ),
                     graph_status["nodes"],
                     graph_status["edges"],
+                    graph_status["routable_nodes"],
                 )
         except Exception:
             logger.exception("부산 오프라인 보행 그래프 준비 실패")

@@ -273,6 +273,8 @@ def test_osmnx_handles_multidigraph_parallel_edges(monkeypatch):
     G.add_edge(1, 2, length=100.0)
     G.add_edge(1, 2, length=90.0)  # 병렬 간선
     G.add_edge(2, 3, length=150.0)
+    G.add_edge(2, 1, length=90.0)
+    G.add_edge(3, 2, length=150.0)
     G.graph["crs"] = "EPSG:4326"
 
     monkeypatch.setattr(osmnx_collector, "_get_graph", lambda *_: G)
@@ -296,6 +298,32 @@ def test_osmnx_resnaps_away_from_disconnected_nearest_nodes(monkeypatch):
     graph.add_edge(2, 1, length=250.0)
     graph.add_node(3, x=ORIGIN.lng, y=ORIGIN.lat)
     graph.add_node(4, x=DEST.lng, y=DEST.lat)
+    graph.graph["crs"] = "EPSG:4326"
+
+    monkeypatch.setattr(osmnx_collector, "_get_graph", lambda *_: graph)
+
+    result = asyncio.run(OsmnxRouteCollector().collect(ORIGIN, DEST))
+
+    assert result[0].path == [
+        Coordinate(lat=ORIGIN.lat + 0.0001, lng=ORIGIN.lng + 0.0001),
+        Coordinate(lat=DEST.lat - 0.0001, lng=DEST.lng - 0.0001),
+    ]
+    assert result[0].distance_m == 250.0
+
+
+def test_osmnx_resnaps_to_strongly_connected_walking_core(monkeypatch):
+    import networkx as nx
+    import collectors.osmnx_collector as osmnx_collector
+
+    graph = nx.MultiDiGraph()
+    graph.add_node(1, x=ORIGIN.lng + 0.0001, y=ORIGIN.lat + 0.0001)
+    graph.add_node(2, x=DEST.lng - 0.0001, y=DEST.lat - 0.0001)
+    graph.add_edge(1, 2, length=250.0)
+    graph.add_edge(2, 1, length=250.0)
+    graph.add_node(3, x=ORIGIN.lng, y=ORIGIN.lat)
+    graph.add_node(4, x=DEST.lng, y=DEST.lat)
+    graph.add_edge(1, 3, length=10.0)
+    graph.add_edge(4, 2, length=10.0)
     graph.graph["crs"] = "EPSG:4326"
 
     monkeypatch.setattr(osmnx_collector, "_get_graph", lambda *_: graph)
