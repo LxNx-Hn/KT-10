@@ -55,6 +55,7 @@ python scripts\prepare_deployment_env.py --import-existing
 `KAKAO_JAVASCRIPT_KEY` 이름으로 전달된 값은 준비 스크립트가
 `VITE_KAKAO_MAP_KEY`로만 변환합니다. JavaScript 키를 REST 키로 복사하면
 Local API가 HTTP 401을 반환하므로 두 키를 혼용하지 않습니다.
+전달 파일의 `KAKAO_REST_API` 이름은 `KAKAO_REST_API_KEY`로 정규화합니다.
 `--import-env`로 명시한 파일의 비어 있지 않은 공급자 키는 기존 하위
 `.env`와 `.env.production`보다 우선하므로 키 회전에도 사용할 수 있습니다.
 명시 파일에 없는 키는 기존 값을 보존합니다.
@@ -119,6 +120,43 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 ```
 
 마이그레이션은 백엔드 시작 시 Alembic head까지 자동 적용됩니다. 최초 실행 후 모든 컨테이너가 `healthy`인지 확인합니다.
+
+### 6.1 공간 인덱스와 우선 OD 사전 준비
+
+AI 서버는 시작 시 정적 GeoPackage 레이어 9개를 EPSG:5179로 한 번
+투영하고 각 GeoDataFrame의 Shapely STRtree를 즉시 생성합니다. 이후
+요청은 경로 buffer와 교차할 가능성이 있는 인덱스 후보만 검사하므로
+레이어 전체 재투영이나 전수 `intersects`를 수행하지 않습니다.
+
+동적·외부 입력은 다음 Docker named volume에 분리해 보존합니다.
+
+| 볼륨 | 보존 입력 | 기본 만료 |
+| --- | --- | --- |
+| `odsay-cache` | 경로 검색·`loadLane` 원시 응답 | 30분 |
+| `osmnx-cache` | OD 보행 그래프와 OSM HTTP cache | 그래프 파일 보존 |
+| `elevation-cache` | 경로 표본별 GLO-90 계산 결과 | 30일 |
+| `vworld-cache` | 500m 건물 corridor box 응답 | 7일 |
+
+컨테이너가 healthy가 된 뒤 우선 OD를 준비합니다.
+
+```powershell
+$env:PYTHONUTF8='1'
+python scripts\prewarm_route_cache.py `
+  --base http://localhost:8080 `
+  --od-file data\precompute\priority_od_pairs.json `
+  --max-cached-seconds 3
+```
+
+스크립트는 Kakao Local 검색 결과가 `kakao(live)`인지 확인하고, 각 OD의
+상위 3개 후보가 실제 보행 geometry와 90m 지형 상태를 가질 때까지
+공급자 캐시를 채운 뒤 한 번 더 요청해 응답시간 상한을 검사합니다.
+일시적인 공급자 503은 제한적으로 재시도하지만 미확인 값이나 오류를
+0으로 바꾸지 않습니다.
+
+그늘은 완전히 정적인 값이 아닙니다. VWorld 건물 도형·높이와 공간
+인덱스는 사전 준비하지만, 태양 위치와 경로-그늘 교차는 요청
+출발시각으로 로컬 계산합니다. 야간은 0%가 아니라 `not_daylight`,
+건물 corridor가 덜 준비된 동안은 `unavailable`로 유지합니다.
 
 ## 7. 실제 데이터 종단 검증
 

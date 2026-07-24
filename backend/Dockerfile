@@ -13,6 +13,7 @@ ENV HOME=/home/app
 
 COPY --chown=app:app backend/ backend/
 COPY --chown=app:app data/ data/
+RUN mkdir -p /var/cache/kt10/vworld && chown -R app:app /var/cache/kt10
 
 USER app
 

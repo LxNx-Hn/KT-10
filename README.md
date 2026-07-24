@@ -29,10 +29,14 @@
 ## 현재 구현
 
 - ODsay 대중교통 후보와 공식 `loadLane` geometry, TMAP 보행 후보,
-  opt-in OSMnx 보행 geometry 복구 결과의 구간별 지도 오버레이
+  OSMnx 보행 geometry의 영구 그래프 캐시와 구간별 지도 오버레이
 - 부산 전역 공간 레이어 결합: 쉼터, CCTV, AED, 휠체어 충전기, 스마트쉘터, 도시철도 접근성, 횡단보도, 정류장 등
+- 정적 공간 레이어를 시작 시 EPSG:5179로 한 번 투영하고 Shapely
+  STRtree를 선생성하여 요청마다 전체 레이어를 재투영·전수 검사하지 않음
 - Open-Meteo Copernicus GLO-90 고도 기반 오르막·내리막·누적 상승량 추정(90m 해상도임을 UI에 명시)
 - 태양 위치와 합성 건물 높이로 계산한 검증용 그늘 비율·지도 오버레이, VWorld 공공 건물 도형·높이 공급자(품질 상태 분리)
+- ODsay 원시 응답, OSMnx 보행 그래프, GLO-90 경로 표본, VWorld 건물
+  corridor의 Docker 영구 캐시와 우선 OD 사전 준비 스크립트
 - `ROUTE_MODE=demo|live|ai` 공급자 선택과 실패 시 무단 폴백 금지
 - 프로필별 XGBRanker 학습·검증 파이프라인, 초기 라벨링 후보 생성기와 모델 준비 상태 게이트
 - 카카오 로그인 사용자만 PostgreSQL 프로필·후기·개인화 저장; 게스트는 개인화하지 않음
@@ -61,34 +65,32 @@ JSON과 manifest checksum을 검증한 뒤 로드하며 역할은 다음과 같�
 
 ## 2026-07-24 상태
 
-- 로컬 최종 회귀는 AI `144 passed, 2 skipped`, 백엔드
-  `173 passed, 1 skipped`, PostgreSQL opt-in E2E `1 passed`,
-  프론트 `90 passed`(14개 파일), 실제 만족도 원본 감사 `5 passed`입니다.
+- 로컬 최종 회귀는 AI `153 passed, 2 skipped`, 백엔드
+  `183 passed, 1 skipped`, 프론트 `92 passed`(15개 파일)입니다.
   TypeScript/PWA build, 접근성 Playwright `5 passed, 1 expected skip`,
-  Python compileall·Ruff·Bandit·pip check, Alembic
-  `20260724_0003 (head)`와 schema check, `npm audit`(취약점 0건)도
+  Python compileall·Ruff·Bandit·pip check와 `npm audit`(취약점 0건)도
   통과했습니다.
-- 모바일 Chromium 실제 브라우저 E2E에서 Kakao Places의 `북구청`·`부산역`
-  검색과 선택, ODsay 실경로 3개 표시, 콘솔 오류 0건을 확인했습니다.
-  실제 결과에서도 2순위 카드 선택, 지도 활성 경로, 후기 대상 경로가
-  함께 바뀌는 것을 재확인했습니다.
-- 마지막으로 확인한 개발 런타임은 브라우저 장소검색 `kakao-js(live)`,
-  날씨 `mock`, 버스 `live`, 경로 `ai-candidates(live)`, 건물
-  `synthetic-demo`, AI 모델 `inactive`입니다.
-- 같은 런타임의 `북구청→부산역` 종단 재검증은 규칙 베이스라인 경로
-  3개를 반환했습니다. TMAP 키가 없고 OSMnx가 비활성화된 현재 구성에서는
-  추정 직선 보행 연결선을 지도에만 표시하며 경사·주변 시설 분석에서
-  제외합니다. 따라서 해당 구간의 지형과 합성 건물 범위 밖 그늘은
-  `미확인`으로 남고 0이나 실측값처럼 표시되지 않습니다.
+- 프로덕션 Compose의 PostgreSQL·AI·백엔드·프론트 4개 서비스가 모두
+  `healthy`이며, 실제 공급자는 Kakao Local, OpenWeather, 부산 버스,
+  ODsay, VWorld가 `live`입니다. 현재 readiness에서 남은 항목은 로컬
+  HTTP로는 충족할 수 없는 운영 HTTPS origin과 Kakao OAuth 콘솔 등록뿐입니다.
+- 실제 브라우저에서 Kakao Places의 `북구청`·`부산역` 검색·선택, ODsay
+  실경로 3개, GLO-90 경사 특성, 수평 카드의 다음 경로 `2/3`, Kakao 지도
+  렌더링을 확인했고 콘솔 오류는 0건이었습니다.
+- 정적 공간 레이어 9개는 AI 시작 시 EPSG:5179로 고정하고 STRtree를
+  선생성합니다. ODsay·OSMnx·GLO-90·VWorld 입력은 영구 캐시에 보존해
+  요청 경로에서 외부 전체 계산을 반복하지 않습니다.
+- 우선 OD 3개(`북구청→부산역`, `부산진구청→서면역`,
+  `부산역→서면역`)를 사전 준비한 뒤 캐시 응답은 각각 2.02초, 1.57초,
+  1.71초였고 모든 후보가 실제 보행 geometry와 90m 지형 상태를
+  갖췄습니다. 야간에는 그늘을 0%로 만들지 않고 `not_daylight`로
+  명시합니다.
 - `route_features.jsonl`은 0바이트, `route_labels.csv`는 헤더만 있고
   위 네 종류의 ranker artifact가 아직 없습니다. 따라서 기본
   `RANKER_TIER=human_validated`의 `/model/status`는 `ready=false`입니다.
-- ODsay Server Key의 개발 IP 등록 후 인증과 실제 호출이 통과했습니다.
-  `북구청→부산역` 검색은 원시 후보 20개, 최종 상위 3개를 반환했으며
-  기준점 없는 `mapObj`의 `loadLane` 형식도 보정했습니다. TMAP이 없을
-  때 보행 상세선은 `estimated`, 대중교통 선은 `exact`, 전체는
-  `mixed`로 표시하며 첫 수집은 약 1.2초였습니다. 다만 `estimated`
-  연결선은 DEM·공간 피처 입력이 아닙니다.
+- `ROUTE_MODE=live` 규칙 베이스라인은 모델 없이 동작합니다. 학습 모델이
+  필요한 `ROUTE_MODE=ai`만 실제 후보 라벨과 관리자 승인 모델이
+  준비되기 전까지 비활성 상태입니다.
 - 제공된 2023~2025 대중교통 만족도 압축파일은 161개 시군의 집단 평균
   데이터로 감사했습니다. OD·후보 경로·좌표·선택 순위가 없어 경로
   학습 라벨로 사용하지 않았고, 혼잡·환승 안내·교통약자 시설의 선택형
@@ -154,6 +156,10 @@ python scripts\prepare_deployment_env.py --import-existing
 # .env.production의 외부 키와 PUBLIC_ORIGIN 입력
 python scripts\prepare_deployment_env.py --check
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+python scripts\prewarm_route_cache.py `
+  --base http://localhost:8080 `
+  --od-file data\precompute\priority_od_pairs.json `
+  --max-cached-seconds 3
 python scripts\verify_deployment.py --base https://your-domain.example
 ```
 
@@ -163,6 +169,10 @@ python scripts\verify_deployment.py --base https://your-domain.example
 실제 보행 geometry용 TMAP 키가 없고 OSMnx 복구도 비활성화된 경우,
 정류장·역 양 끝점을 이은 직선은 지도 연결선으로만 쓰며 경사나 주변
 시설 피처를 만들지 않습니다.
+우선 OD 사전 준비는 공급자 전체 원본을 복제하지 않고 실제 요청 가능성이
+높은 OD의 ODsay 응답·보행 그래프·고도 표본·건물 corridor만 채웁니다.
+시간에 따라 달라지는 태양 위치와 경로-그늘 교차는 요청 시 로컬에서
+계산하므로 과거 시각의 그늘을 현재 값으로 재사용하지 않습니다.
 
 ## 초기 평가·학습
 

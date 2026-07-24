@@ -29,14 +29,18 @@
 - 제공 만족도 원본 감사와 설문 기반 직접 후기 관측 항목
 - PostgreSQL, PWA, 운영 Compose, readiness와 배포 검증 스크립트
 
-하지만 아직 **모든 실데이터까지 검증된 운영 완료 상태는 아닙니다**.
-Kakao JavaScript Places와 ODsay 실제 후보·`loadLane`, 규칙 기반 `live`
-추천의 로컬 종단은 통과했습니다. GLO-90 계산과 건물 그늘 알고리즘은
-데모·계약 테스트를 통과했지만, 현재 live 구성에는 실제 보행 geometry와
-VWorld 키가 없습니다. 따라서 추정 직선 연결선으로 경사·주변 시설을
-계산하지 않고, 합성 데이터 범위 밖 그늘도 0%로 만들지 않습니다.
-OpenWeather, Kakao 로그인, 실제 평가 데이터와 운영 모델도 외부 입력이
-남아 있습니다.
+규칙 기반 `live` 서비스는 현재 환경파일의 Kakao Local, ODsay, OSMnx,
+GLO-90, VWorld, OpenWeather, 부산 버스와 PostgreSQL을 실제로 연결해
+검증했습니다. 정적 공간 레이어는 AI 시작 시 EPSG:5179와 STRtree로
+준비하고, 외부 입력은 공급자별 영구 캐시에 저장합니다. 따라서 요청마다
+부산 전역을 다시 계산하지 않으며, 우선 OD 3개의 캐시 응답은 1.57~2.02초로
+확인했습니다.
+
+현재 배포 readiness에서 남은 항목은 실제 운영 HTTPS origin과 그 origin의
+Kakao 웹 플랫폼·OAuth Redirect URI 등록입니다. 학습 기반 `ai` 모드는
+별도입니다. 실제 경로 평가 라벨과 관리자 승인 모델이 없으므로
+`/model/status`는 계속 `ready=false`이며, 이를 규칙 기반 `live` 서비스의
+실행 실패로 표현하지 않습니다.
 
 ## 3. 현재 구현 계약
 
@@ -158,6 +162,10 @@ XGBRanker relevance나 프로필 가중치로 변환하지 않았습니다. 대�
   아닙니다.
 - GLO-90과 주변 시설 계산은 공급자가 확인한 실제 보행 geometry에만
   적용합니다. 지도용 추정 직선은 분석에서 제외합니다.
+- 정적 공간 레이어 9개는 시작 시 EPSG:5179로 한 번 변환하고 STRtree를
+  선생성합니다. 요청에서는 경로 buffer의 인덱스 후보만 검사합니다.
+- ODsay 원시 응답, OSMnx 보행 그래프, GLO-90 경로 표본, VWorld 건물
+  corridor는 Docker named volume에 영구 캐시합니다.
 - 서비스의 `그늘`은 현재 건물 그늘입니다. 나무 그늘과 지형 그림자는
   신뢰할 수 있는 입력·검증자료가 없어 계산하지 않습니다.
 - 합성 건물은 `estimated_demo`, VWorld 공공 건물은
@@ -165,6 +173,9 @@ XGBRanker relevance나 프로필 가중치로 변환하지 않았습니다. 대�
 - 건물 높이 결측·0은 0m 건물로 바꾸지 않습니다. 일부 높이만 있으면
   `lower_bound`, 확인된 높이가 없으면 `unavailable`입니다.
 - 야간과 geometry 미확인은 그늘 0%로 표시하지 않습니다.
+- 그늘은 태양 위치에 따라 변하므로 건물 입력은 사전 준비하되 태양 위치와
+  경로 교차는 요청 출발시각으로 로컬 계산합니다. 준비되지 않은 건물
+  corridor의 부분 결과는 공개 그늘 비율로 사용하지 않습니다.
 - 지도 폴리곤과 경로 구간 색상은 계산 결과의 시각화이며 현장 그늘을
   보장하지 않습니다.
 
@@ -181,20 +192,21 @@ collector는 약 1.2초였습니다. 대중교통 geometry는 `exact`, TMAP 키�
 허용 IP에 등록해야 합니다. `localhost`, 사설 IP, Docker 내부 IP 또는
 프론트 도메인은 등록 대상이 아닙니다.
 
-현재 운영 환경파일에서 추가로 필요한 외부 값은 다음과 같습니다.
+새 전달 환경파일을 반영한 `.env.production --check`는 통과했습니다.
+Kakao REST/OAuth secret, VWorld, OpenWeather 키가 있으며 TMAP 대신
+`OSMNX_WALK_GEOMETRY_ENABLED=true`인 실제 보행 geometry 계약도
+충족합니다. Kakao REST 키의 전달 별칭 `KAKAO_REST_API`도
+`KAKAO_REST_API_KEY`로 정규화합니다. 키 값은 문서와 Git에 기록하지
+않았습니다.
 
-- `KAKAO_REST_API_KEY`
-- `KAKAO_OAUTH_CLIENT_SECRET`
-- `VWORLD_API_KEY`
-- `OPENWEATHER_API_KEY`
-- `TMAP_API_KEY` 또는 명시적인
-  `OSMNX_WALK_GEOMETRY_ENABLED=true`
+실제 `/api/readiness`에서 경로, VWorld 건물 그늘, Kakao 장소검색,
+OpenWeather, 버스, PostgreSQL, session, 개인화, 라벨링 인증은
+통과했습니다. 현재 실패 항목은 로컬 HTTP origin 때문에 의도적으로
+실패하는 `origin_security`와 `kakao_login`뿐입니다. 배포 도메인을
+확정한 뒤 Kakao JavaScript 도메인과 OAuth Redirect URI
+`${PUBLIC_ORIGIN}/api/auth/kakao/callback`, VWorld 사용 도메인을 등록해야
+합니다.
 
-`LABELING_API_TOKEN`은 준비 스크립트가 생성하도록 추가되어 있으므로 기존
-`.env.production`은 스크립트를 다시 실행한 뒤 `--check`해야 합니다.
-Kakao JavaScript 도메인·OAuth Redirect URI, VWorld 사용 도메인도 운영
-origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
-`PUBLIC_ORIGIN`은 실제 운영 HTTPS origin으로 교체해야 합니다.
 운영 Compose는 앱 포트를 기본 `127.0.0.1`에만 열며, Caddy/Nginx 또는
 관리형 Load Balancer가 TLS를 종료하고 `Host`와
 `X-Forwarded-Proto=https`를 덮어써야 합니다.
@@ -219,6 +231,15 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
   공급자 출처가 확인되지 않은 demo 응답 차단
 - ODsay 축약 `mapObj`의 `loadLane` 정규화와 보행 geometry 공급자
   지연 제어
+- ODsay 검색·`loadLane`, OSMnx GraphML, GLO-90 경로 표본, VWorld
+  corridor의 Docker 영구 캐시
+- 요청을 막지 않는 OSMnx/VWorld cache-only 조회와 백그라운드 준비,
+  ODsay 전체 수집 시간 상한
+- 정적 9개 공간 레이어의 EPSG:5179 사전 투영과 STRtree 선생성
+- Kakao Local 검증, exact geometry·terrain·shade 상태와 캐시 응답시간을
+  함께 검사하는 우선 OD 사전 준비 스크립트
+- 기존 v2 UI를 바꾸지 않고 5·10·20·30초에 결과를 조용히 보강하는
+  enrichment 갱신과 의미 기반 선택 경로 유지
 - 추정 직선 보행선의 DEM·공간 피처 제외와 CCTV `카메라대수` 합산
 - 만족도 원본 감사, 기계 판독 감사 JSON, 선택형 직접 후기 관측값
 - 공급자 입력·페이지 무결성·모델 아티팩트·OD holdout 계약 강화
@@ -230,12 +251,11 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 
 ### 외부 입력이 있어야 가능한 항목
 
-1. Kakao REST/OAuth, VWorld, OpenWeather 키와 콘솔 설정
-2. TMAP 키 또는 운영에서 허용할 OSMnx 실제 보행 geometry
-3. 부산 층화 OD의 실제 VWorld 그늘 스냅샷 생성
-4. 외부 LLM judge 평가 또는 최소 9명 사람 평가
-5. VWorld 높이 단위·결측률과 현장 건물 그늘 오차 표본 검증
-6. 운영 HTTPS origin과 고정 egress IP 확정·등록
+1. 운영 HTTPS origin 확정, TLS 종료, Kakao 웹 도메인·OAuth Redirect URI
+   등록
+2. 배포 서버/NAT의 고정 egress IP 확정과 ODsay Server Key 등록
+3. 외부 LLM judge 평가 또는 최소 9명 사람 평가
+4. VWorld 높이 단위·결측률과 현장 건물 그늘 오차 표본 검증
 
 ### 최종 로컬 검증 결과
 
@@ -243,10 +263,10 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 
 | 검증 | 최종 상태 |
 | --- | --- |
-| Backend pytest | `173 passed, 1 skipped` |
+| Backend pytest | `183 passed, 1 skipped` |
 | PostgreSQL opt-in E2E | `1 passed`; 중복후기 409 포함 |
-| AI pytest | `144 passed, 2 skipped` |
-| Frontend Vitest | `90 passed` (14 files) |
+| AI pytest | `153 passed, 2 skipped` |
+| Frontend Vitest | `92 passed` (15 files) |
 | 만족도 실제 원본 감사 | `5 passed`; archive checksum·3개 workbook·감사 JSON 재현 |
 | Playwright 접근성 | `5 passed, 1 expected desktop skip` |
 | TypeScript/Vite PWA build | 통과; service worker·manifest 생성 |
@@ -256,12 +276,13 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 | npm audit | 취약점 0건 |
 | Production Compose / Docker runtime | 비밀 아닌 smoke 값으로 4개 서비스 healthy; AI·백엔드·프론트 비루트 UID·capability 0·no-new-privileges, 백엔드 read-only root 확인 |
 | AI 운영 이미지 | 약 1.01GB→250MB; CPU XGBoost import와 9개 공간 레이어 로드 통과 |
-| 현재 `.env.production --check` | 외부 키 4개와 exact walking geometry 누락을 정상 차단 |
-| 실제 브라우저 QA | v2 모바일·데스크톱에서 Kakao `북구청`·`부산역`, ODsay 경로 3개, 2순위 카드·지도 선택, 상세 4탭·프로필 6종 확인; live Playwright `1 passed`, 콘솔 오류·경고 0건 |
+| 현재 `.env.production --check` | 통과; 선택 TMAP만 미설정이며 OSMnx exact walking 계약 충족 |
+| 현재 운영 readiness | 경로·건물·장소·날씨·버스·DB·session·개인화·라벨링 인증 통과; 로컬 HTTP의 `origin_security`, `kakao_login`만 대기 |
+| 실제 브라우저 QA | Kakao 지도 v2에서 `북구청`·`부산역` 검색, ODsay 경로 3개, GLO-90 경사, 다음 카드 `2/3` 확인; 콘솔 오류 0건 |
 | ODsay live E2E | 개발 IP 인증, search/loadLane, 부산진구청·북구청 OD 통과 |
-| Kakao Places live E2E | 등록 origin `http://localhost:5173`에서 두 검색어 통과; `127.0.0.1`은 별도 도메인 등록 전 명시적 실패 |
-| 다른 실제 공급자 E2E | Kakao REST·OAuth, VWorld, OpenWeather 외부 키 대기 |
-| 원격 CI | v2 기능·문서 HEAD `dd2c2a6`의 5개 job 전체 성공; production 이미지와 hardened runtime 포함 ([run 30086352908](https://github.com/LxNx-Hn/KT-10/actions/runs/30086352908)) |
+| 우선 OD cache warm | 3/3 exact walking·terrain·shade 상태; 캐시 응답 2.02초, 1.57초, 1.71초 |
+| 실제 공급자 E2E | Kakao REST, ODsay, VWorld, OpenWeather, 부산 버스 live 확인; Kakao OAuth는 운영 HTTPS origin 등록 대기 |
+| 원격 CI | 아래 변경 커밋을 푸시한 뒤 최신 `main` GitHub Actions 결과로 갱신 |
 
 ## 10. 배포 완료 기준
 
@@ -274,16 +295,18 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 - [x] 모델 tier·label origin·checksum 승격 분리
 - [x] ODsay 개발 egress IP 등록과 실호출 통과
 - [ ] ODsay 운영 서버의 고정 egress IP 등록
-- [ ] 운영 exact walking geometry용 TMAP 또는 OSMnx 결정·설정
-- [ ] VWorld 건물 높이·좌표·결측률 실응답 검증
-- [ ] Kakao Local/OAuth, OpenWeather 운영 설정
+- [x] 운영 exact walking geometry용 OSMnx 설정·캐시 검증
+- [x] VWorld 건물 도형 실응답·corridor 캐시 검증
+- [ ] VWorld 건물 높이 단위·결측률과 현장 표본 검증
+- [x] Kakao Local, VWorld, OpenWeather 운영 키 실호출
+- [ ] Kakao OAuth 운영 origin·Redirect URI 등록
 - [ ] 운영 도메인 TLS 종료와 외부 443·내부 loopback handoff
 - [ ] 실제 후보와 Judge 또는 사람 평가 데이터
 - [ ] 선택한 tier의 검증 모델과 오프라인 비교 보고서
 - [x] 최종 전체 로컬 테스트·생산 빌드·Docker 이미지 빌드
 - [x] 모바일·데스크톱 브라우저 지도-카드 동기화 검증
 - [x] 작업 단위별 커밋·푸시
-- [x] v2 기능·문서 통합 `main` 원격 CI 5개 job 통과
+- [ ] 최신 `main` 원격 CI 통과
 
 모든 미완료 항목을 통과하기 전에는 “키만 넣으면 배포 완료” 또는
 “실사용자 검증 AI”라고 표현하지 않습니다. 외부 모델 없이도 동작하는

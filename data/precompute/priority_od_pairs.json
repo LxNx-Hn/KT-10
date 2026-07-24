@@ -1,0 +1,14 @@
+[
+  {
+    "originQuery": "북구청",
+    "destinationQuery": "부산역"
+  },
+  {
+    "originQuery": "부산진구청",
+    "destinationQuery": "서면역"
+  },
+  {
+    "originQuery": "부산역",
+    "destinationQuery": "서면역"
+  }
+]

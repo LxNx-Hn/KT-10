@@ -27,10 +27,22 @@ services:
       - ALL
     environment:
       ODSAY_API_KEY: ${ODSAY_API_KEY:?ODSAY_API_KEY is required}
+      ODSAY_CACHE_DIR: /app/ai/data/cache/odsay
+      ODSAY_CACHE_TTL_SECONDS: ${ODSAY_CACHE_TTL_SECONDS:-1800}
+      ODSAY_TIMEOUT_SECONDS: ${ODSAY_TIMEOUT_SECONDS:-20}
+      ELEVATION_CACHE_DIR: /app/ai/data/cache/elevation
+      ELEVATION_CACHE_TTL_SECONDS: ${ELEVATION_CACHE_TTL_SECONDS:-2592000}
       TMAP_API_KEY: ${TMAP_API_KEY:-}
       OSMNX_WALK_GEOMETRY_ENABLED: ${OSMNX_WALK_GEOMETRY_ENABLED:-false}
+      OSMNX_OVERPASS_URL: ${OSMNX_OVERPASS_URL:-https://lambert.openstreetmap.de/api}
+      OSMNX_REQUEST_TIMEOUT_SECONDS: ${OSMNX_REQUEST_TIMEOUT_SECONDS:-12}
+      OSMNX_WALK_GEOMETRY_TIMEOUT_SECONDS: ${OSMNX_WALK_GEOMETRY_TIMEOUT_SECONDS:-15}
       RANKER_TIER: ${RANKER_TIER:-human_validated}
       PYTHONUTF8: "1"
+    volumes:
+      - osmnx-cache:/app/ai/data/cache/osmnx
+      - odsay-cache:/app/ai/data/cache/odsay
+      - elevation-cache:/app/ai/data/cache/elevation
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/ready', timeout=3)"]
       interval: 10s
@@ -58,6 +70,8 @@ services:
       ODSAY_API_KEY: ${ODSAY_API_KEY:?ODSAY_API_KEY is required}
       VWORLD_API_KEY: ${VWORLD_API_KEY:?VWORLD_API_KEY is required}
       VWORLD_API_DOMAIN: ${PUBLIC_ORIGIN:?PUBLIC_ORIGIN is required}
+      VWORLD_CACHE_DIR: /var/cache/kt10/vworld
+      VWORLD_CACHE_TTL_HOURS: ${VWORLD_CACHE_TTL_HOURS:-168}
       KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:?KAKAO_REST_API_KEY is required}
       KAKAO_OAUTH_CLIENT_SECRET: ${KAKAO_OAUTH_CLIENT_SECRET:?KAKAO_OAUTH_CLIENT_SECRET is required}
       KAKAO_OAUTH_REDIRECT_URI: ${PUBLIC_ORIGIN}/api/auth/kakao/callback
@@ -78,6 +92,8 @@ services:
       PERSONALIZATION_RATING_WEIGHT: "0.35"
       PERSONALIZATION_REUSE_WEIGHT: "0.20"
       PYTHONUTF8: "1"
+    volumes:
+      - vworld-cache:/var/cache/kt10/vworld
     command:
       - uvicorn
       - backend.app.main:app
@@ -126,3 +142,7 @@ services:
 
 volumes:
   postgres-data:
+  osmnx-cache:
+  odsay-cache:
+  elevation-cache:
+  vworld-cache:
