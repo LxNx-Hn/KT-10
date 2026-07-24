@@ -56,6 +56,9 @@ from .shade import KST, add_demo_shade, add_shade, assign_characteristics
 from .settings import settings
 
 logging.basicConfig(level=logging.INFO)
+# httpx의 INFO 요청 로그에는 공급자 키가 포함된 query string이 기록될 수 있다.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 log = logging.getLogger("app")
 
 
