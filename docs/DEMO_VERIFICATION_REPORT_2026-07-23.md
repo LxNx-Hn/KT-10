@@ -39,7 +39,7 @@ PostgreSQL을 사용한 추천→노출 기록→후기→사용자별 상태 �
 
 | 항목 | 결과 |
 |---|---|
-| ODsay | 값 존재, 스모크 테스트 `ApiKeyAuthFailed`; 개발 Server 허용 IP `119.202.222.84` 등록 필요 |
+| ODsay | 당시 값 존재, 스모크 테스트 `ApiKeyAuthFailed`; 당시 개발 Server 허용 IP 등록 필요 |
 | Kakao JavaScript | 값 존재, 로컬 도메인 Referer를 포함한 SDK 요청 HTTP 401 |
 | 부산버스 | 값 존재, 백엔드 검색 API HTTP 200 |
 | TAGO 지하철 | 값 존재, 현재 앱에서 소비하는 설정/수집기 없음 |
@@ -107,11 +107,12 @@ PostgreSQL을 사용한 추천→노출 기록→후기→사용자별 상태 �
 AI 테스트는 캐시 없는 전국 버스정류장·CCTV 공간 레이어 로딩을 포함해
 확인했습니다. 기본 묶음의 ODsay 라이브 모듈은 명시 실행이 아니어서
 스킵됐고, `RUN_LIVE_TESTS=1`로 별도 실행한 3개 테스트는 모두
-`ApiKeyAuthFailed`로 실패해 현재 키가 유효하지 않음을 재확인했습니다.
+`ApiKeyAuthFailed`로 실패해 당시 설정에서 키 인증이 되지 않음을
+재확인했습니다.
 
-## 남은 외부 작업
+## 당시 남아 있던 외부 작업
 
-1. ODsay 애플리케이션의 Server 허용 IP에 개발 공인 IPv4
+1. 당시 ODsay 애플리케이션의 Server 허용 IP에 개발 공인 IPv4
    `119.202.222.84` 등록 후 인증 재검증
 2. Kakao JavaScript 키와 `http://127.0.0.1:5173`/운영 도메인 등록 확인
 3. Kakao REST/OAuth client secret, 세션 비밀키, 후기 익명화 salt 설정

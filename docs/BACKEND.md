@@ -48,7 +48,10 @@
 적합 점수순이며 특정 특성 배지를 보여 주기 위한 강제 재정렬은 하지
 않습니다.
 
-`GET /api/readiness`는 키 값 없이 운영 필수 설정의 충족 여부와 누락 항목을 반환합니다. 공급자 키의 실제 유효성은 `scripts/verify_deployment.py`로 종단 검증합니다.
+`GET /api/readiness`는 키 값을 노출하지 않고 백엔드가 직접 관리하는
+운영 설정의 충족 여부와 누락 항목을 반환합니다. AI의 후보 생성·실제
+보행 geometry capability는 AI `/ready`, 공급자 키의 실제 유효성은
+`scripts/verify_deployment.py`로 각각 종단 검증합니다.
 
 그늘 건물 공급자는 `BUILDING_SOURCE=demo|vworld`로 별도 선택합니다.
 `vworld`에는 `VWORLD_API_KEY`가 필요하며 `LT_C_BLDGINFO`의 도형과 높이를
@@ -72,7 +75,13 @@ Docker Compose는 PostgreSQL 16과 healthcheck를 포함합니다.
 
 ## 카카오 로그인
 
-등록 Redirect URI는 `http://localhost:8002/api/auth/kakao/callback`입니다. REST API 키, 활성화된 Client secret, 무작위 `SESSION_SECRET`, PostgreSQL이 모두 있어야 로그인 API가 활성화됩니다. OAuth `state`는 10분 HttpOnly 쿠키로 검증하며 서비스 세션은 14일 HttpOnly SameSite=Lax 쿠키입니다.
+로컬 개발 기본 Redirect URI는
+`http://localhost:8002/api/auth/kakao/callback`입니다. 운영에서는
+`${PUBLIC_ORIGIN}/api/auth/kakao/callback`의 HTTPS URI를 Kakao 콘솔에
+등록합니다. REST API 키, 활성화된 Client secret, 무작위
+`SESSION_SECRET`, PostgreSQL이 모두 있어야 로그인 API가 활성화됩니다.
+OAuth `state`는 10분 HttpOnly 쿠키로 검증하며 서비스 세션은 14일
+HttpOnly SameSite=Lax 쿠키입니다.
 
 ## 후기 보안
 

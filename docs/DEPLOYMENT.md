@@ -106,7 +106,10 @@ docker compose --env-file .env.production -f docker-compose.prod.yml config --qu
 docker compose --env-file .env.production -f docker-compose.prod.yml build
 ```
 
-`--check`는 비밀값을 출력하지 않으며 필수 키, 내부 비밀값, HTTPS origin만 검사합니다. 실제 키 유효성은 마지막 스모크 검증에서 확인합니다.
+`--check`는 비밀값을 출력하지 않으며 필수 키·내부 비밀값, HTTPS origin과
+loopback bind, PostgreSQL URL, 공급자·모델 tier, 개인화 범위,
+TMAP/OSMnx 실제 보행 geometry 조건을 검사합니다. 실제 외부 키 유효성은
+마지막 스모크 검증에서 확인합니다.
 
 ## 6. 실행
 

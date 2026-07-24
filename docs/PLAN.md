@@ -97,13 +97,15 @@ AI 서버의 이전 직접 `POST /recommend`는 정식 그늘 결합 흐름을 �
    `searchPubTransPathT`·`loadLane` 라이브 smoke
 2. 완료: Kakao JavaScript Places의 `북구청`·`부산역` 브라우저 E2E
 3. 남음: Kakao REST/OAuth, VWorld, OpenWeather 키와 콘솔 도메인 설정
-4. 남음: 운영 HTTPS origin과 고정 egress IP 확정·등록
+4. 남음: TMAP 키 또는 운영에서 허용할 OSMnx로 실제 보행 geometry 확보
+5. 남음: 운영 HTTPS origin과 고정 egress IP 확정·등록
 
 ### P1. 실제 후보 스냅샷
 
 1. 부산의 평지·급경사·해안·버스·도시철도·환승 중심 OD 층화
 2. 32자 이상의 `LABELING_API_TOKEN`으로 보호된 백엔드 배치 실행
-3. 경로 geometry, GLO-90 지형, 건물 그늘 피처 스냅샷 동결
+3. 확인된 실제 보행 geometry 구간에만 GLO-90 지형·공간·건물 그늘
+   피처를 계산하고 스냅샷 동결
 4. 수집시각과 그늘 평가시각, 공급자·품질·미확인 값을 보존
 5. VWorld 높이 단위·결측률과 현장 그늘 오차 표본 검증
 

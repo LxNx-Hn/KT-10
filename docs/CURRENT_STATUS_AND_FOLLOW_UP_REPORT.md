@@ -218,7 +218,8 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 - 추정 직선 보행선의 DEM·공간 피처 제외와 CCTV `카메라대수` 합산
 - 만족도 원본 감사, 기계 판독 감사 JSON, 선택형 직접 후기 관측값
 - 공급자 입력·페이지 무결성·모델 아티팩트·OD holdout 계약 강화
-- 비루트·read-only·capability 제거 운영 컨테이너와 HTTPS handoff
+- AI·백엔드·프론트 비루트·capability 제거·no-new-privileges, 백엔드
+  read-only root filesystem과 HTTPS handoff
 - 게스트 로그인 상태 조회의 정상 204 계약과 실제 브라우저 E2E
 
 ## 9. 아직 완료되지 않은 범위
@@ -249,13 +250,13 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 | Alembic PostgreSQL | `20260724_0003 (head)`; `check` 통과 |
 | UTF-8/JSON 계약 | 통과 |
 | npm audit | 취약점 0건 |
-| Production Compose / Docker runtime | 4개 서비스 healthy; 비루트 UID, capability 0, no-new-privileges, read-only root 확인 |
+| Production Compose / Docker runtime | 비밀 아닌 smoke 값으로 4개 서비스 healthy; AI·백엔드·프론트 비루트 UID·capability 0·no-new-privileges, 백엔드 read-only root 확인 |
 | AI 운영 이미지 | 약 1.01GB→250MB; CPU XGBoost import와 9개 공간 레이어 로드 통과 |
 | 현재 `.env.production --check` | 외부 키 4개와 exact walking geometry 누락을 정상 차단 |
 | 실제 브라우저 QA | Playwright `1 passed`; Kakao `북구청`·`부산역`, ODsay 경로 3개, 카드·지도·후기 선택 동기화, 콘솔 오류·경고 0건 |
 | ODsay live E2E | 개발 IP 인증, search/loadLane, 부산진구청·북구청 OD 통과 |
 | Kakao Places live E2E | 등록 origin `http://localhost:5173`에서 두 검색어 통과; `127.0.0.1`은 별도 도메인 등록 전 명시적 실패 |
-| 다른 실제 공급자 E2E | VWorld·OpenWeather·Kakao OAuth 외부 키 대기 |
+| 다른 실제 공급자 E2E | Kakao REST·OAuth, VWorld, OpenWeather 외부 키 대기 |
 | 원격 CI | 기능 HEAD `31c3169`의 5개 job 전체 성공; hardened runtime smoke 포함 |
 
 ## 10. 배포 완료 기준

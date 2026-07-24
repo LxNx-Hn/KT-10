@@ -94,10 +94,11 @@ JSON과 manifest checksum을 검증한 뒤 로드하며 역할은 다음과 같�
   않습니다.
 - GLO-90 경사는 실제 DEM 조회 기반의 약 90m 지형 추정입니다. 그늘은
   건물만 계산하며 나무·지형 그늘을 포함하지 않습니다.
-- 운영 이미지는 비루트·read-only root filesystem·capability 제거로
-  실제 기동 검증했습니다. CPU 전용 XGBoost 패키지로 AI 이미지는 약
-  1.01GB에서 250MB로 줄였고, 앱 포트는 loopback에만 바인딩해 외부
-  TLS 종료 계층을 필수로 둡니다.
+- AI·백엔드·프론트 운영 이미지는 비루트·capability 제거·
+  no-new-privileges로 실제 기동 검증했고, 백엔드 root filesystem은
+  read-only 쓰기 차단까지 확인했습니다. CPU 전용 XGBoost 패키지로 AI
+  이미지는 약 1.01GB에서 250MB로 줄였고, 앱 포트는 loopback에만
+  바인딩해 외부 TLS 종료 계층을 필수로 둡니다.
 
 ## 구조
 
