@@ -1,0 +1,119 @@
+{
+  "schemaVersion": "transit-satisfaction-audit-v1",
+  "auditDate": "2026-07-24",
+  "sourceArchive": {
+    "fileName": "(점수TABLE)_23_25년_대중교통_환승실태_및_이용자_만족도_조사_161개_시군_점수_250721.zip",
+    "bytes": 2776628,
+    "sha256": "24f6634560867063001da25b1cd5a639e4542e2d0b2b7a8f6158321c08e9de12",
+    "retainedInRepository": false
+  },
+  "scope": {
+    "years": [
+      2023,
+      2024,
+      2025
+    ],
+    "regionsPerYear": 161,
+    "geographicLevel": "시군 집계이며 부산은 광역시 전체 1개 블록",
+    "observationLevel": "지역·성별·연령·주 이용 교통수단·이용횟수별 평균",
+    "routeOrOdFieldsPresent": false,
+    "respondentLevelRowsPresent": false
+  },
+  "workbooks": [
+    {
+      "year": 2023,
+      "sha256": "209adc4a238e7fcea903d0e42ca8fc2acfe4913851a608aadf667df9449a6d1d",
+      "tableRows": 3256,
+      "tableColumns": 31,
+      "metricCount": 29,
+      "aggregateRowCount": 2452,
+      "numericScoreCount": 70501,
+      "missingCommaCount": 607,
+      "observedMin": 0.954964931709118,
+      "observedMax": 8.1334196891192,
+      "outsideOneToSevenCount": 55
+    },
+    {
+      "year": 2024,
+      "sha256": "c07c31597e6e3febd1a69e03c92c87724d034dceb32a3077554bbfc29f5bcafb",
+      "tableRows": 3256,
+      "tableColumns": 23,
+      "metricCount": 21,
+      "aggregateRowCount": 2452,
+      "numericScoreCount": 51018,
+      "missingCommaCount": 474,
+      "observedMin": 1.0,
+      "observedMax": 7.000000000000001,
+      "outsideOneToSevenCount": 0
+    },
+    {
+      "year": 2025,
+      "sha256": "8546788689fb4d02fae3d4cfcdc9382567c46e205fa3e3906cf52082ec41a797",
+      "tableRows": 3229,
+      "tableColumns": 25,
+      "metricCount": 23,
+      "aggregateRowCount": 2425,
+      "numericScoreCount": 52098,
+      "missingCommaCount": 3677,
+      "observedMin": 1.0,
+      "observedMax": 7.000000000000001,
+      "outsideOneToSevenCount": 0
+    }
+  ],
+  "rowCoverage": {
+    "genderRowsPerYear": 322,
+    "ageRowsPerYear": 966,
+    "primaryModeRowsPerYear": 204,
+    "subwayRegionsPerYear": 43,
+    "usageFrequencyRows": {
+      "2023": 799,
+      "2024": 799,
+      "2025": 772
+    },
+    "twentyOneOrMoreUseRegions": {
+      "2023": 156,
+      "2024": 156,
+      "2025": 128
+    }
+  },
+  "qualityPolicy": {
+    "missingComma": "null과 원문 토큰을 함께 보존하며 0으로 변환하지 않음",
+    "absentAggregateRow": "부재 상태로 보존하며 행을 생성하지 않음",
+    "floatingPointTolerance": 1e-09,
+    "yearSchema": "연도별 독립 스키마와 지표 해시를 사용",
+    "crossYearAutoMapping": false,
+    "scoreClippingOrRescaling": false
+  },
+  "profileCoverage": {
+    "general": "전체 집계는 도시 맥락으로만 사용 가능",
+    "elderly": "60대 이상 집계는 도시 맥락으로만 사용 가능",
+    "youth": "10대·20대는 존재하지만 앱 youth 매핑 기준 없음",
+    "child": "직접 대응 집단 없음",
+    "disabled": "직접 대응 집단 없음; 교통약자 시설은 서비스 문항",
+    "pregnant": "직접 대응 집단 없음",
+    "carryLuggage": "직접 대응 집단·문항 없음"
+  },
+  "modelUsePolicy": {
+    "routeRankingLabel": "prohibited",
+    "globalOrProfileWeight": "requires_methodology_and_policy_review",
+    "currentAllowedUse": [
+      "data_quality_audit",
+      "coverage_gap_analysis",
+      "future_external_validity_comparison"
+    ]
+  },
+  "provenanceStatus": {
+    "sourceUrl": null,
+    "surveyOrganization": null,
+    "license": null,
+    "methodology": null,
+    "sampleSize": null,
+    "weighting": null,
+    "standardErrorOrConfidenceInterval": null,
+    "redistributionAllowed": null
+  },
+  "reproduction": {
+    "module": "data_tools.transit_satisfaction",
+    "realArchiveGoldenTest": "ai/tests/test_transit_satisfaction.py"
+  }
+}

@@ -36,7 +36,17 @@
     }
   ],
   "pendingExternal": [
-    { "layer": "public_transport_satisfaction_2023_2025", "status": "pending_receipt", "plannedUse": "초기 기준 검토와 외부 타당도 비교; 경로 선택 Y 라벨로 간주하지 않음" },
+    {
+      "layer": "public_transport_satisfaction_2023_2025",
+      "status": "received_audited_not_redistributed",
+      "sourceArchiveSha256": "24f6634560867063001da25b1cd5a639e4542e2d0b2b7a8f6158321c08e9de12",
+      "auditPath": "audits/public_transport_satisfaction_2023_2025.audit.json",
+      "sourceUrl": null,
+      "license": null,
+      "methodology": null,
+      "retainedInRepository": false,
+      "plannedUse": "이용조건 확인 후 도시 수준 맥락과 외적 타당도 비교에만 사용; 경로 선택 Y 라벨과 프로필 가중치로 간주하지 않음"
+    },
     { "layer": "busan_transit_card_2025_04", "status": "pending_receipt", "plannedUse": "시간대별 수요와 첨두시간 보조 피처; 개인 경로 선호 Y 라벨로 간주하지 않음" },
     { "layer": "drt_service_area", "status": "pending_confirmation", "plannedUse": "DRT 가능 권역 표시와 후보 교통수단 확장" },
     { "layer": "station_elevator_escalator_coordinates_status", "status": "requested", "plannedUse": "역사 출입구와 수직이동 시설의 위치 및 운영상태 확인" },
