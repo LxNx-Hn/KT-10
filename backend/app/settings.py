@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     building_source: Literal["demo", "vworld"] = "demo"
     vworld_api_key: str = ""
     vworld_api_domain: str = "http://localhost:8002"
+    vworld_cache_dir: str = ""
+    vworld_cache_ttl_hours: int = Field(default=168, ge=1, le=24 * 365)
 
     # ai/ 파이프라인 서버(경로 수집+XGB 순위화). 설정 시 /api/routes/recommend가
     # 자체 scoring 엔진 대신 이 서버로 위임한다.

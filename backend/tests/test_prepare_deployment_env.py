@@ -30,6 +30,7 @@ def test_import_env_maps_known_aliases_without_using_js_key_as_rest_key(
     supplied.write_text(
         "\n".join((
             "KAKAO_JAVASCRIPT_KEY=javascript-secret",
+            "KAKAO_REST_API=rest-secret",
             "ODSAY_API_KEY=odsay-secret",
             "BUSAN_BUS_API_KEY=bus-secret",
         )) + "\n",
@@ -50,11 +51,12 @@ def test_import_env_maps_known_aliases_without_using_js_key_as_rest_key(
 
     values = prepare_deployment_env._values(target)
     assert values["VITE_KAKAO_MAP_KEY"] == "javascript-secret"
-    assert values["KAKAO_REST_API_KEY"] == "existing-rest-secret"
+    assert values["KAKAO_REST_API_KEY"] == "rest-secret"
     assert values["ODSAY_API_KEY"] == "odsay-secret"
     assert values["BUS_SERVICE_KEY"] == "bus-secret"
     output = capsys.readouterr().out
     assert "javascript-secret" not in output
+    assert "rest-secret" not in output
     assert "odsay-secret" not in output
     assert "bus-secret" not in output
 
@@ -72,6 +74,7 @@ def _valid_production_env() -> str:
         "ODSAY_API_KEY=odsay-key",
         "TMAP_API_KEY=tmap-key",
         "VWORLD_API_KEY=vworld-key",
+        "VWORLD_CACHE_TTL_HOURS=168",
         "OPENWEATHER_API_KEY=weather-key",
         "BUS_SERVICE_KEY=bus-key",
         "POSTGRES_PASSWORD=" + "p" * 24,
@@ -81,6 +84,9 @@ def _valid_production_env() -> str:
         "REQUEST_TIMEOUT=8",
         "RANKER_TIER=human_validated",
         "OSMNX_WALK_GEOMETRY_ENABLED=false",
+        "OSMNX_OVERPASS_URL=https://lambert.openstreetmap.de/api",
+        "OSMNX_REQUEST_TIMEOUT_SECONDS=12",
+        "OSMNX_WALK_GEOMETRY_TIMEOUT_SECONDS=15",
     )) + "\n"
 
 
@@ -151,6 +157,21 @@ def test_check_accepts_explicit_osmnx_when_tmap_is_absent(
             "TMAP_API_KEY=tmap-key",
             "TMAP_API_KEY=",
             "exact walking geometry",
+        ),
+        (
+            "OSMNX_REQUEST_TIMEOUT_SECONDS=12",
+            "OSMNX_REQUEST_TIMEOUT_SECONDS=120",
+            "OSMNX_REQUEST_TIMEOUT_SECONDS",
+        ),
+        (
+            "OSMNX_OVERPASS_URL=https://lambert.openstreetmap.de/api",
+            "OSMNX_OVERPASS_URL=http://localhost:9999/api",
+            "OSMNX_OVERPASS_URL",
+        ),
+        (
+            "VWORLD_CACHE_TTL_HOURS=168",
+            "VWORLD_CACHE_TTL_HOURS=0",
+            "VWORLD_CACHE_TTL_HOURS",
         ),
     ],
 )

@@ -48,7 +48,7 @@ IMPORT_SOURCES = {
 # REST 키는 서로 대체할 수 없으므로 의도적으로 별도 항목으로 유지한다.
 IMPORT_ALIASES = {
     "VITE_KAKAO_MAP_KEY": ("VITE_KAKAO_MAP_KEY", "KAKAO_JAVASCRIPT_KEY"),
-    "KAKAO_REST_API_KEY": ("KAKAO_REST_API_KEY",),
+    "KAKAO_REST_API_KEY": ("KAKAO_REST_API_KEY", "KAKAO_REST_API"),
     "KAKAO_OAUTH_CLIENT_SECRET": ("KAKAO_OAUTH_CLIENT_SECRET",),
     "ODSAY_API_KEY": ("ODSAY_API_KEY",),
     "TMAP_API_KEY": ("TMAP_API_KEY",),
@@ -194,6 +194,33 @@ def check() -> None:
         "false",
     }:
         missing.append("OSMNX_WALK_GEOMETRY_ENABLED(boolean)")
+    for key in (
+        "OSMNX_REQUEST_TIMEOUT_SECONDS",
+        "OSMNX_WALK_GEOMETRY_TIMEOUT_SECONDS",
+    ):
+        try:
+            timeout_seconds = int(values.get(key, ""))
+        except ValueError:
+            timeout_seconds = 0
+        if not 3 <= timeout_seconds <= 60:
+            missing.append(f"{key}(3..60)")
+    overpass_url = urlparse(values.get("OSMNX_OVERPASS_URL", ""))
+    if (
+        overpass_url.scheme != "https"
+        or not overpass_url.hostname
+        or overpass_url.username is not None
+        or overpass_url.password is not None
+        or overpass_url.params
+        or overpass_url.query
+        or overpass_url.fragment
+    ):
+        missing.append("OSMNX_OVERPASS_URL(valid HTTPS URL)")
+    try:
+        vworld_cache_ttl = int(values.get("VWORLD_CACHE_TTL_HOURS", ""))
+    except ValueError:
+        vworld_cache_ttl = 0
+    if not 1 <= vworld_cache_ttl <= 24 * 365:
+        missing.append("VWORLD_CACHE_TTL_HOURS(1..8760)")
     if (
         not values.get("TMAP_API_KEY")
         and values.get("OSMNX_WALK_GEOMETRY_ENABLED", "").lower() != "true"
