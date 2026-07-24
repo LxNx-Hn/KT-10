@@ -5,6 +5,7 @@ ai/.env 에 실제 키가 설정돼 있어도 결과가 흔들리지 않도록,
 settings의 키 값은 monkeypatch로 강제 고정한다 (환경 비의존).
 """
 import asyncio
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -22,6 +23,41 @@ DEST = Coordinate(lat=35.1578, lng=129.0594)
 def test_odsay_fails_explicitly_without_api_key(monkeypatch):
     monkeypatch.setattr(settings, "ODSAY_API_KEY", "")
     with pytest.raises(CollectorNotConfigured):
+        asyncio.run(OdsayRouteCollector().collect(ORIGIN, DEST))
+
+
+def test_odsay_persistent_cache_round_trip(monkeypatch, tmp_path):
+    import collectors.odsay_collector as module
+
+    monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "ODSAY_CACHE_TTL_SECONDS", 1800)
+    identity = {
+        "origin": [ORIGIN.lat, ORIGIN.lng],
+        "destination": [DEST.lat, DEST.lng],
+    }
+    payload = {"result": {"path": [{"info": {"totalTime": 10}}]}}
+
+    module._write_cache("search", identity, payload)
+
+    assert module._read_cache("search", identity) == payload
+    cache_text = next(tmp_path.glob("*.json")).read_text(encoding="utf-8")
+    assert "ODSAY_API_KEY" not in cache_text
+
+
+def test_odsay_has_hard_service_timeout(monkeypatch):
+    async def slow_collect(_self, _origin, _destination):
+        await asyncio.sleep(0.05)
+        return []
+
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "ODSAY_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(
+        OdsayRouteCollector,
+        "_collect_live_or_cached",
+        slow_collect,
+    )
+
+    with pytest.raises(CollectorError, match="시간 제한"):
         asyncio.run(OdsayRouteCollector().collect(ORIGIN, DEST))
 
 
@@ -65,7 +101,11 @@ def test_odsay_walk_geometry_uses_osmnx_only_when_enabled(monkeypatch):
 
     monkeypatch.setattr(settings, "TMAP_API_KEY", "")
     monkeypatch.setattr(settings, "OSMNX_WALK_GEOMETRY_ENABLED", True)
-    monkeypatch.setattr(OsmnxRouteCollector, "collect", osmnx_collect)
+    monkeypatch.setattr(
+        OsmnxRouteCollector,
+        "collect_cached_or_schedule",
+        osmnx_collect,
+    )
 
     path, quality = asyncio.run(OdsayRouteCollector._walk_geometry(ORIGIN, DEST))
 
@@ -80,12 +120,67 @@ def test_odsay_walk_geometry_falls_back_when_enabled_providers_fail(monkeypatch)
     monkeypatch.setattr(settings, "TMAP_API_KEY", "test-key")
     monkeypatch.setattr(settings, "OSMNX_WALK_GEOMETRY_ENABLED", True)
     monkeypatch.setattr(TmapRouteCollector, "collect", fail_collect)
-    monkeypatch.setattr(OsmnxRouteCollector, "collect", fail_collect)
+    monkeypatch.setattr(
+        OsmnxRouteCollector,
+        "collect_cached_or_schedule",
+        fail_collect,
+    )
 
     path, quality = asyncio.run(OdsayRouteCollector._walk_geometry(ORIGIN, DEST))
 
     assert path == [ORIGIN, DEST]
     assert quality == "estimated"
+
+
+def test_odsay_walk_geometry_returns_immediately_while_cache_warms(
+    monkeypatch,
+    tmp_path,
+):
+    import collectors.osmnx_collector as osmnx_collector
+
+    warmed = False
+
+    def slow_graph(_origin, _destination):
+        nonlocal warmed
+        time.sleep(0.05)
+        warmed = True
+        return object()
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "")
+    monkeypatch.setattr(settings, "OSMNX_WALK_GEOMETRY_ENABLED", True)
+    monkeypatch.setattr(osmnx_collector, "GRAPH_CACHE_DIR", tmp_path)
+    osmnx_collector._graphs.clear()
+    osmnx_collector._warming_keys.clear()
+    monkeypatch.setattr(osmnx_collector, "_get_graph", slow_graph)
+
+    async def run():
+        started = time.perf_counter()
+        path, quality = await OdsayRouteCollector._walk_geometry(ORIGIN, DEST)
+        elapsed = time.perf_counter() - started
+        tasks = tuple(osmnx_collector._warm_tasks)
+        if tasks:
+            await asyncio.gather(*tasks)
+        return path, quality, elapsed
+
+    path, quality, elapsed = asyncio.run(run())
+
+    assert path == [ORIGIN, DEST]
+    assert quality == "estimated"
+    assert elapsed < 0.04
+    assert warmed is True
+
+
+def test_osmnx_uses_writable_app_cache_without_status_rate_limit():
+    import collectors.osmnx_collector as osmnx_collector
+
+    assert osmnx_collector.ox.settings.overpass_rate_limit is False
+    assert osmnx_collector.ox.settings.cache_folder == (
+        osmnx_collector.GRAPH_CACHE_DIR / "http"
+    )
+    assert osmnx_collector.ox.settings.http_user_agent.startswith("KT-10-")
+    assert osmnx_collector.ox.settings.overpass_url == str(
+        settings.OSMNX_OVERPASS_URL
+    ).rstrip("/")
 
 
 def test_osmnx_fails_explicitly_when_graph_unavailable(monkeypatch):
@@ -126,6 +221,53 @@ def test_osmnx_handles_multidigraph_parallel_edges(monkeypatch):
     assert result[0].raw_response is None
     assert result[0].distance_m == 240.0  # 90(최단 병렬 간선) + 150
     assert result[0].duration_min is None
+
+
+def test_osmnx_resnaps_away_from_disconnected_nearest_nodes(monkeypatch):
+    import networkx as nx
+    import collectors.osmnx_collector as osmnx_collector
+
+    graph = nx.MultiDiGraph()
+    graph.add_node(1, x=ORIGIN.lng + 0.0001, y=ORIGIN.lat + 0.0001)
+    graph.add_node(2, x=DEST.lng - 0.0001, y=DEST.lat - 0.0001)
+    graph.add_edge(1, 2, length=250.0)
+    graph.add_edge(2, 1, length=250.0)
+    graph.add_node(3, x=ORIGIN.lng, y=ORIGIN.lat)
+    graph.add_node(4, x=DEST.lng, y=DEST.lat)
+    graph.graph["crs"] = "EPSG:4326"
+
+    monkeypatch.setattr(osmnx_collector, "_get_graph", lambda *_: graph)
+
+    result = asyncio.run(OsmnxRouteCollector().collect(ORIGIN, DEST))
+
+    assert result[0].path == [
+        Coordinate(lat=ORIGIN.lat + 0.0001, lng=ORIGIN.lng + 0.0001),
+        Coordinate(lat=DEST.lat - 0.0001, lng=DEST.lng - 0.0001),
+    ]
+    assert result[0].distance_m == 250.0
+
+
+def test_osmnx_uses_distinct_connected_nodes_for_short_walk(monkeypatch):
+    import networkx as nx
+    import collectors.osmnx_collector as osmnx_collector
+
+    graph = nx.MultiDiGraph()
+    graph.add_node(1, x=ORIGIN.lng, y=ORIGIN.lat)
+    graph.add_node(2, x=ORIGIN.lng + 0.0001, y=ORIGIN.lat + 0.0001)
+    graph.add_edge(1, 2, length=15.0)
+    graph.add_edge(2, 1, length=15.0)
+    graph.graph["crs"] = "EPSG:4326"
+    very_close = Coordinate(
+        lat=ORIGIN.lat + 0.000001,
+        lng=ORIGIN.lng + 0.000001,
+    )
+
+    monkeypatch.setattr(osmnx_collector, "_get_graph", lambda *_: graph)
+
+    result = asyncio.run(OsmnxRouteCollector().collect(ORIGIN, very_close))
+
+    assert len(result[0].path) == 2
+    assert result[0].distance_m == 15.0
 
 
 def test_odsay_load_lane_restores_map_base():
@@ -206,6 +348,54 @@ def test_odsay_collect_uses_search_and_load_lane_contract(monkeypatch):
     assert result[0].geometry_quality == "exact"
     assert result[0].segments[0]["mode"] == "bus"
     assert len(result[0].segments[0]["path"]) == 2
+
+
+def test_odsay_builds_three_independent_candidates_concurrently(monkeypatch):
+    import collectors.odsay_collector as module
+
+    search_payload = {
+        "result": {"path": [{"candidate": index} for index in range(3)]}
+    }
+    active = 0
+    max_active = 0
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return search_payload
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            return Response()
+
+    async def fake_build(_client, path, _origin, _destination):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return SimpleNamespace(candidate=path["candidate"])
+
+    collector = OdsayRouteCollector()
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "test-key")
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+    monkeypatch.setattr(collector, "_build_candidate", fake_build)
+
+    result = asyncio.run(collector.collect(ORIGIN, DEST))
+
+    assert [item.candidate for item in result] == [0, 1, 2]
+    assert max_active == 3
 
 
 def test_odsay_rejects_malformed_map_object_tokens():

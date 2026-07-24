@@ -16,7 +16,10 @@ from collectors.base import Coordinate
 from collectors.odsay_collector import OdsayRouteCollector
 from collectors.tmap_collector import TmapRouteCollector
 from config import settings
-from features.extractor import extract_route_features_for_parts
+from features.extractor import (
+    extract_route_features_for_parts,
+    prepare_spatial_layers,
+)
 from features.elevation import extract_elevation_features_for_parts
 from labeling.route_traits import generate_route_traits
 from merger.route_merger import merge_route_candidates, sample_path_by_distance
@@ -42,7 +45,9 @@ def _get_layers():
     if _layers is None:
         with _layers_lock:
             if _layers is None:
-                _layers = load_all_layers(use_cache=True)
+                _layers = prepare_spatial_layers(
+                    load_all_layers(use_cache=True)
+                )
     return _layers
 
 

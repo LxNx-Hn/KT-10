@@ -7,7 +7,14 @@ ODsay Lab API로 대중교통 경로 후보를 수집한다.
 
 API 문서: https://lab.odsay.com/guide/service
 """
+import asyncio
+from hashlib import sha256
+import json
+import logging
 from math import isfinite
+from pathlib import Path
+import time
+from uuid import uuid4
 
 import httpx
 
@@ -19,6 +26,77 @@ from collectors.base import (
     RouteCandidate,
 )
 from config import settings
+
+CACHE_SCHEMA_VERSION = 1
+log = logging.getLogger("collectors.odsay")
+
+
+def _cache_path(kind: str, identity: dict) -> Path | None:
+    cache_dir = settings.ODSAY_CACHE_DIR.strip()
+    if not cache_dir:
+        return None
+    digest = sha256(
+        json.dumps(
+            {"kind": kind, **identity},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return Path(cache_dir) / f"{kind}-{digest}.json"
+
+
+def _read_cache(kind: str, identity: dict) -> dict | None:
+    path = _cache_path(kind, identity)
+    if path is None or not path.is_file():
+        return None
+    try:
+        wrapper = json.loads(path.read_text(encoding="utf-8"))
+        cached_at = float(wrapper["cachedAtEpoch"])
+        payload = wrapper["payload"]
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return None
+    if (
+        wrapper.get("schemaVersion") != CACHE_SCHEMA_VERSION
+        or not isinstance(payload, dict)
+        or time.time() - cached_at > settings.ODSAY_CACHE_TTL_SECONDS
+    ):
+        return None
+    return payload
+
+
+def _write_cache(kind: str, identity: dict, payload: dict) -> None:
+    path = _cache_path(kind, identity)
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": CACHE_SCHEMA_VERSION,
+                    "cachedAtEpoch": time.time(),
+                    "payload": payload,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+async def _cached_payload(kind: str, identity: dict) -> dict | None:
+    return await asyncio.to_thread(_read_cache, kind, identity)
+
+
+async def _store_payload(kind: str, identity: dict, payload: dict) -> None:
+    try:
+        await asyncio.to_thread(_write_cache, kind, identity, payload)
+    except OSError as exc:
+        log.warning("ODsay 캐시 저장 실패 (%s)", type(exc).__name__)
 
 
 class OdsayRouteCollector(BaseRouteCollector):
@@ -113,20 +191,31 @@ class OdsayRouteCollector(BaseRouteCollector):
     ) -> list[list[Coordinate]]:
         margin = 0.02
         load_lane_map_object = self._load_lane_map_object(map_object)
-        response = await client.get(
-            self.LANE_URL,
-            params={
-                "mapObject": load_lane_map_object,
-                "left": min(origin.lng, destination.lng) - margin,
-                "top": max(origin.lat, destination.lat) + margin,
-                "right": max(origin.lng, destination.lng) + margin,
-                "bottom": min(origin.lat, destination.lat) - margin,
-                "apiKey": settings.ODSAY_API_KEY,
-            },
-            timeout=15.0,
-        )
-        response.raise_for_status()
-        data = response.json()
+        request_params = {
+            "mapObject": load_lane_map_object,
+            "left": min(origin.lng, destination.lng) - margin,
+            "top": max(origin.lat, destination.lat) + margin,
+            "right": max(origin.lng, destination.lng) + margin,
+            "bottom": min(origin.lat, destination.lat) - margin,
+            "apiKey": settings.ODSAY_API_KEY,
+        }
+        cache_identity = {
+            "mapObject": load_lane_map_object,
+            "left": round(float(request_params["left"]), 5),
+            "top": round(float(request_params["top"]), 5),
+            "right": round(float(request_params["right"]), 5),
+            "bottom": round(float(request_params["bottom"]), 5),
+        }
+        data = await _cached_payload("lane", cache_identity)
+        cache_hit = data is not None
+        if not cache_hit:
+            response = await client.get(
+                self.LANE_URL,
+                params=request_params,
+                timeout=8.0,
+            )
+            response.raise_for_status()
+            data = response.json()
         if not isinstance(data, dict):
             raise CollectorError(
                 "ODsay loadLane 응답 본문이 JSON 객체가 아닙니다."
@@ -134,6 +223,8 @@ class OdsayRouteCollector(BaseRouteCollector):
         api_error = self._api_error(data)
         if api_error:
             raise CollectorError(f"ODsay loadLane 실패: {api_error}")
+        if not cache_hit:
+            await _store_payload("lane", cache_identity, data)
         paths = self._lane_paths(data, load_lane_map_object)
         if not paths or not any(paths):
             raise CollectorError("ODsay loadLane 응답에 유효한 경로 좌표가 없습니다.")
@@ -214,8 +305,14 @@ class OdsayRouteCollector(BaseRouteCollector):
             collectors.append(OsmnxRouteCollector())
         for collector in collectors:
             try:
-                candidates = await collector.collect(start, end)
-            except CollectorError:
+                if isinstance(collector, OsmnxRouteCollector):
+                    candidates = await collector.collect_cached_or_schedule(
+                        start,
+                        end,
+                    )
+                else:
+                    candidates = await collector.collect(start, end)
+            except (CollectorError, TimeoutError):
                 continue
             if candidates and len(candidates[0].path) >= 2:
                 return candidates[0].path, "exact"
@@ -342,20 +439,34 @@ class OdsayRouteCollector(BaseRouteCollector):
             geometry_quality=geometry_quality,
         )
 
-    async def collect(self, origin: Coordinate, destination: Coordinate) -> list:
-        if not settings.ODSAY_API_KEY or settings.ODSAY_API_KEY.startswith("YOUR_"):
-            raise CollectorNotConfigured("ODSAY_API_KEY가 설정되지 않았습니다.")
-
+    async def _collect_live_or_cached(
+        self,
+        origin: Coordinate,
+        destination: Coordinate,
+    ) -> list:
         try:
-            async with httpx.AsyncClient(follow_redirects=True) as client:
-                resp = await client.get(self.BASE_URL, params={
-                    "SX": origin.lng, "SY": origin.lat,
-                    "EX": destination.lng, "EY": destination.lat,
-                    "apiKey": settings.ODSAY_API_KEY,
-                    "OPT": 0, "SearchType": 0, "SearchPathType": 0,
-                }, timeout=15.0)
-                resp.raise_for_status()
-            data = resp.json()
+            search_identity = {
+                "origin": [
+                    round(float(origin.lat), 5),
+                    round(float(origin.lng), 5),
+                ],
+                "destination": [
+                    round(float(destination.lat), 5),
+                    round(float(destination.lng), 5),
+                ],
+            }
+            data = await _cached_payload("search", search_identity)
+            cache_hit = data is not None
+            if not cache_hit:
+                async with httpx.AsyncClient(follow_redirects=True) as client:
+                    resp = await client.get(self.BASE_URL, params={
+                        "SX": origin.lng, "SY": origin.lat,
+                        "EX": destination.lng, "EY": destination.lat,
+                        "apiKey": settings.ODSAY_API_KEY,
+                        "OPT": 0, "SearchType": 0, "SearchPathType": 0,
+                    }, timeout=8.0)
+                    resp.raise_for_status()
+                data = resp.json()
             if not isinstance(data, dict):
                 raise CollectorError("ODsay 응답 본문이 JSON 객체가 아닙니다.")
             api_error = self._api_error(data)
@@ -370,25 +481,48 @@ class OdsayRouteCollector(BaseRouteCollector):
                 paths = []
             elif not isinstance(paths, list):
                 raise CollectorError("ODsay 응답의 result.path가 배열이 아닙니다.")
+            if not cache_hit:
+                await _store_payload("search", search_identity, data)
 
             candidates = []
             rejected: list[str] = []
             async with httpx.AsyncClient(follow_redirects=True) as lane_client:
-                for index, path in enumerate(paths):
+                # 후보별 OSM 보행 구간은 서로 독립적이다. 세 후보를 한 묶음으로
+                # 조립해 공급자 지연이 직렬로 누적되지 않게 하되, OSM 수집기
+                # 내부 동시성 상한으로 공개 Overpass에 과도한 요청을 보내지 않는다.
+                for batch_start in range(0, len(paths), 3):
+                    batch: list[tuple[int, dict]] = []
+                    for index, path in enumerate(
+                        paths[batch_start:batch_start + 3],
+                        start=batch_start,
+                    ):
+                        if not isinstance(path, dict):
+                            rejected.append(f"{index + 1}번 후보: 객체 아님")
+                            continue
+                        batch.append((index, path))
+                    results = await asyncio.gather(
+                        *(
+                            self._build_candidate(
+                                lane_client,
+                                path,
+                                origin,
+                                destination,
+                            )
+                            for _, path in batch
+                        ),
+                        return_exceptions=True,
+                    )
+                    for (index, _), result in zip(batch, results):
+                        if isinstance(result, CollectorError):
+                            rejected.append(f"{index + 1}번 후보: {result}")
+                        elif isinstance(result, BaseException):
+                            raise result
+                        else:
+                            candidates.append(result)
+                            if len(candidates) >= 3:
+                                break
                     if len(candidates) >= 3:
                         break
-                    if not isinstance(path, dict):
-                        rejected.append(f"{index + 1}번 후보: 객체 아님")
-                        continue
-                    try:
-                        candidates.append(await self._build_candidate(
-                            lane_client,
-                            path,
-                            origin,
-                            destination,
-                        ))
-                    except CollectorError as exc:
-                        rejected.append(f"{index + 1}번 후보: {exc}")
             if not candidates:
                 suffix = f" ({'; '.join(rejected[:3])})" if rejected else ""
                 raise CollectorError(
@@ -400,3 +534,16 @@ class OdsayRouteCollector(BaseRouteCollector):
             raise
         except (httpx.HTTPError, ValueError, TypeError) as exc:
             raise CollectorError(f"ODsay 호출 또는 응답 처리 실패: {type(exc).__name__}") from exc
+
+    async def collect(self, origin: Coordinate, destination: Coordinate) -> list:
+        if not settings.ODSAY_API_KEY or settings.ODSAY_API_KEY.startswith("YOUR_"):
+            raise CollectorNotConfigured("ODSAY_API_KEY가 설정되지 않았습니다.")
+        try:
+            return await asyncio.wait_for(
+                self._collect_live_or_cached(origin, destination),
+                timeout=settings.ODSAY_TIMEOUT_SECONDS,
+            )
+        except TimeoutError as exc:
+            raise CollectorError(
+                "ODsay 경로 수집이 서비스 시간 제한을 초과했습니다."
+            ) from exc

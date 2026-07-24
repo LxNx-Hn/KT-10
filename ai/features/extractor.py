@@ -26,11 +26,27 @@ def _metric_layer(gdf: gpd.GeoDataFrame | None) -> gpd.GeoDataFrame | None:
     return gdf if str(gdf.crs).upper() == METRIC_CRS else gdf.to_crs(METRIC_CRS)
 
 
+def prepare_spatial_layers(data_layers: dict) -> dict:
+    """정적 레이어를 EPSG:5179로 한 번 투영하고 STRtree를 미리 만든다."""
+    prepared = {}
+    for name, gdf in data_layers.items():
+        metric = _metric_layer(gdf)
+        if metric is None:
+            prepared[name] = gdf
+            continue
+        # GeoPandas의 spatial index는 Shapely STRtree이며 최초 접근 시
+        # 생성된다. 요청마다 전체 레이어를 재투영·전수검사하지 않는다.
+        _ = metric.sindex
+        prepared[name] = metric
+    return prepared
+
+
 def _nearby(gdf: gpd.GeoDataFrame | None, buffer) -> gpd.GeoDataFrame | None:
     layer = _metric_layer(gdf)
     if layer is None:
         return None
-    return layer[layer.geometry.intersects(buffer)]
+    indexes = layer.sindex.query(buffer, predicate="intersects")
+    return layer.iloc[indexes]
 
 
 def _count(gdf: gpd.GeoDataFrame | None, buffer) -> int | None:

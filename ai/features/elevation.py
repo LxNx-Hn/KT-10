@@ -5,15 +5,93 @@ Open-Meteo Elevation API는 최대 100개 WGS84 좌표를 받으며 90m 해상�
 """
 from __future__ import annotations
 
+import asyncio
+from hashlib import sha256
+import json
+import logging
 from math import asin, ceil, cos, isfinite, radians, sin, sqrt
+from pathlib import Path
+import time
+from uuid import uuid4
 
 import httpx
 import numpy as np
+
+from config import settings
 
 ELEVATION_URL = "https://api.open-meteo.com/v1/elevation"
 MAX_POINTS = 100
 SAMPLE_SPACING_M = 90.0
 SOURCE = "Copernicus DEM GLO-90 via Open-Meteo"
+CACHE_SCHEMA_VERSION = 1
+log = logging.getLogger("features.elevation")
+
+
+def _cache_path(
+    sampled_parts: list[list[tuple[float, float]]],
+) -> Path | None:
+    cache_dir = settings.ELEVATION_CACHE_DIR.strip()
+    if not cache_dir:
+        return None
+    digest = sha256(
+        json.dumps(
+            [
+                [[round(lat, 7), round(lng, 7)] for lat, lng in part]
+                for part in sampled_parts
+            ],
+            separators=(",", ":"),
+        ).encode("ascii")
+    ).hexdigest()
+    return Path(cache_dir) / f"{digest}.json"
+
+
+def _read_cache(
+    sampled_parts: list[list[tuple[float, float]]],
+) -> dict | None:
+    path = _cache_path(sampled_parts)
+    if path is None or not path.is_file():
+        return None
+    try:
+        wrapper = json.loads(path.read_text(encoding="utf-8"))
+        cached_at = float(wrapper["cachedAtEpoch"])
+        result = wrapper["result"]
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return None
+    if (
+        wrapper.get("schemaVersion") != CACHE_SCHEMA_VERSION
+        or not isinstance(result, dict)
+        or result.get("elevation_status") != "estimated_90m"
+        or time.time() - cached_at > settings.ELEVATION_CACHE_TTL_SECONDS
+    ):
+        return None
+    return result
+
+
+def _write_cache(
+    sampled_parts: list[list[tuple[float, float]]],
+    result: dict,
+) -> None:
+    path = _cache_path(sampled_parts)
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": CACHE_SCHEMA_VERSION,
+                    "cachedAtEpoch": time.time(),
+                    "result": result,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _haversine_m(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -197,6 +275,9 @@ async def extract_elevation_features_for_parts(
     sampled_parts = [_sample(part) for part in route_parts]
     if not sampled_parts or any(len(part) < 2 for part in sampled_parts):
         return _empty("unavailable")
+    cached = await asyncio.to_thread(_read_cache, sampled_parts)
+    if cached is not None:
+        return cached
     sampled = [point for part in sampled_parts for point in part]
     owns_client = client is None
     client = client or httpx.AsyncClient(follow_redirects=True)
@@ -229,10 +310,19 @@ async def extract_elevation_features_for_parts(
         for part in sampled_parts:
             elevation_parts.append(elevations[offset:offset + len(part)])
             offset += len(part)
-        return calculate_slope_features_for_parts(
+        result = calculate_slope_features_for_parts(
             sampled_parts,
             elevation_parts,
         )
+        if result["elevation_status"] == "estimated_90m":
+            try:
+                await asyncio.to_thread(_write_cache, sampled_parts, result)
+            except OSError as exc:
+                log.warning(
+                    "고도 캐시 저장 실패 (%s)",
+                    type(exc).__name__,
+                )
+        return result
     except (httpx.HTTPError, ValueError, TypeError):
         return _empty("unavailable")
     finally:

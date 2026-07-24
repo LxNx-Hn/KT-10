@@ -5,6 +5,7 @@ import httpx
 import math
 import pytest
 
+from config import settings
 from features.elevation import (
     _sample,
     calculate_slope_features,
@@ -41,6 +42,38 @@ def test_extract_elevation_contract_with_mock_transport():
     result = asyncio.run(run())
     assert result["elevation_status"] == "estimated_90m"
     assert result["elevation_source"].startswith("Copernicus")
+
+
+def test_elevation_cache_avoids_repeated_provider_call(monkeypatch, tmp_path):
+    requests = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        return httpx.Response(200, json={"elevation": [10.0, 11.0, 12.0]})
+
+    monkeypatch.setattr(settings, "ELEVATION_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "ELEVATION_CACHE_TTL_SECONDS", 3600)
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            first = await extract_elevation_features(
+                [(35.115, 129.04), (35.116, 129.04)],
+                client,
+            )
+            second = await extract_elevation_features(
+                [(35.115, 129.04), (35.116, 129.04)],
+                client,
+            )
+            return first, second
+
+    first, second = asyncio.run(run())
+
+    assert requests == 1
+    assert second == first
+    assert next(tmp_path.glob("*.json")).is_file()
 
 
 def test_elevation_failure_is_explicitly_unavailable():

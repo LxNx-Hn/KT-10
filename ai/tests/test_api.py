@@ -132,6 +132,11 @@ def test_spatial_layer_initialization_is_single_flight(monkeypatch):
 
     monkeypatch.setattr(api_router, "_layers", None)
     monkeypatch.setattr(api_router, "load_all_layers", slow_load)
+    monkeypatch.setattr(
+        api_router,
+        "prepare_spatial_layers",
+        lambda layers: layers,
+    )
     with ThreadPoolExecutor(max_workers=4) as executor:
         results = list(executor.map(
             lambda _: api_router._get_layers(),

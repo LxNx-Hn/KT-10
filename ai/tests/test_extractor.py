@@ -4,9 +4,11 @@ import geopandas as gpd
 from shapely.geometry import Point
 from preprocessing.load_layers import load_all_layers
 from features.extractor import (
+    METRIC_CRS,
     _zero_features,
     extract_route_features,
     extract_route_features_for_parts,
+    prepare_spatial_layers,
 )
 
 
@@ -21,6 +23,19 @@ def test_extract_returns_all_keys(layers):
     feats = extract_route_features(route, layers)
     for key in _zero_features():
         assert key in feats, f"피처 키 누락: {key}"
+
+
+def test_prepare_spatial_layers_fixes_crs_and_builds_strtree():
+    raw = gpd.GeoDataFrame(
+        {"name": ["one"]},
+        geometry=[Point(129.04, 35.115)],
+        crs="EPSG:4326",
+    )
+
+    prepared = prepare_spatial_layers({"sample": raw})["sample"]
+
+    assert prepared.crs.to_string().upper() == METRIC_CRS
+    assert prepared.has_sindex is True
 
 
 def test_extract_value_types(layers):
