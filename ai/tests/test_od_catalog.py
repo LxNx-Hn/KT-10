@@ -25,7 +25,7 @@ def _poi_grid() -> pd.DataFrame:
 
 def test_allocate_counts_is_exact_and_stable():
     assert _allocate_counts(10, [0.35, 0.45, 0.20]) == [4, 4, 2]
-    assert sum(_allocate_counts(5000, [1.0] * 8)) == 5000
+    assert _allocate_counts(800, [1.0] * 8) == [100] * 8
 
 
 def test_catalog_is_deterministic_balanced_and_unique():
