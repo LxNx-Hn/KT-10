@@ -13,6 +13,7 @@ from uuid import uuid4
 from fastapi import HTTPException, status
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -86,6 +87,20 @@ class RouteReview(Base):
             "impression_id",
             name="uq_route_reviews_user_impression",
         ),
+        CheckConstraint(
+            "crowding_difficulty IS NULL OR crowding_difficulty BETWEEN 1 AND 5",
+            name="ck_route_reviews_crowding_difficulty_range",
+        ),
+        CheckConstraint(
+            "transfer_information_difficulty IS NULL "
+            "OR transfer_information_difficulty BETWEEN 1 AND 5",
+            name="ck_route_reviews_transfer_information_difficulty_range",
+        ),
+        CheckConstraint(
+            "accessibility_facility_difficulty IS NULL "
+            "OR accessibility_facility_difficulty BETWEEN 1 AND 5",
+            name="ck_route_reviews_accessibility_facility_difficulty_range",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
@@ -98,6 +113,15 @@ class RouteReview(Base):
     stairs_difficulty: Mapped[int | None] = mapped_column(Integer, nullable=True)
     slope_difficulty: Mapped[int | None] = mapped_column(Integer, nullable=True)
     transfer_difficulty: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    crowding_difficulty: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    transfer_information_difficulty: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    accessibility_facility_difficulty: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
     actual_duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     would_reuse: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     information_accurate: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

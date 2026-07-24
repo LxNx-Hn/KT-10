@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from ai.scoring.schema import FEATURE_COLS
 from ai.scoring.snapshots import build_live_feature_snapshot
 from backend.app.database import Base, RouteImpression, RouteReview
-from backend.ml.export_consented_reviews import export
+from backend.ml.export_consented_reviews import _relevance, export
 
 
 def _flat_live_features(route_id: str = "route-live") -> dict:
@@ -34,6 +34,37 @@ def _flat_live_features(route_id: str = "route-live") -> dict:
         "training_eligible": True,
         "profile": "general",
     }
+
+
+def test_observation_dimensions_do_not_infer_current_relevance_weights():
+    common = {
+        "user_id": "reviewer",
+        "route_id": "route",
+        "was_usable": True,
+        "rating": 4,
+        "would_reuse": True,
+    }
+    low_difficulty = RouteReview(
+        **common,
+        crowding_difficulty=1,
+        transfer_information_difficulty=1,
+        accessibility_facility_difficulty=1,
+    )
+    high_difficulty = RouteReview(
+        **common,
+        crowding_difficulty=5,
+        transfer_information_difficulty=5,
+        accessibility_facility_difficulty=5,
+    )
+    weights = {
+        "usable_weight": 0.4,
+        "rating_weight": 0.4,
+        "reuse_weight": 0.2,
+    }
+    assert _relevance(low_difficulty, **weights) == _relevance(
+        high_difficulty,
+        **weights,
+    )
 
 
 def _database(

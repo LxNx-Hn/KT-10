@@ -26,13 +26,42 @@ def test_review_and_impression_accept_frontend_camel_case():
         "wasUsable": True,
         "rating": 4,
         "stairsDifficulty": 2,
+        "crowdingDifficulty": 4,
+        "transferInformationDifficulty": 3,
+        "accessibilityFacilityDifficulty": 1,
         "wouldReuse": True,
         "trainingConsent": True,
     })
     assert impression.feedback_token == "x" * 20
     assert review.was_usable is True
     assert review.stairs_difficulty == 2
+    assert review.crowding_difficulty == 4
+    assert review.transfer_information_difficulty == 3
+    assert review.accessibility_facility_difficulty == 1
     assert review.training_consent is True
+
+
+def test_review_observation_dimensions_are_optional_and_bounded():
+    minimal = {
+        "routeId": "route-1",
+        "impressionId": "impression-1",
+        "wasUsable": True,
+        "rating": 4,
+    }
+    review = ReviewInput.model_validate(minimal)
+    assert review.crowding_difficulty is None
+    assert review.transfer_information_difficulty is None
+    assert review.accessibility_facility_difficulty is None
+
+    for field in (
+        "crowdingDifficulty",
+        "transferInformationDifficulty",
+        "accessibilityFacilityDifficulty",
+    ):
+        with pytest.raises(ValidationError):
+            ReviewInput.model_validate({**minimal, field: 0})
+        with pytest.raises(ValidationError):
+            ReviewInput.model_validate({**minimal, field: 6})
 
 
 def test_facility_report_accepts_frontend_camel_case():

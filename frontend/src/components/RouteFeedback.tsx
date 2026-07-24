@@ -14,6 +14,9 @@ export default function RouteFeedback() {
   const [stairsDifficulty, setStairsDifficulty] = useState('');
   const [slopeDifficulty, setSlopeDifficulty] = useState('');
   const [transferDifficulty, setTransferDifficulty] = useState('');
+  const [crowdingDifficulty, setCrowdingDifficulty] = useState('');
+  const [transferInformationDifficulty, setTransferInformationDifficulty] = useState('');
+  const [accessibilityFacilityDifficulty, setAccessibilityFacilityDifficulty] = useState('');
   const [actualDuration, setActualDuration] = useState('');
   const [wouldReuse, setWouldReuse] = useState<boolean | null>(null);
   const [informationAccurate, setInformationAccurate] = useState<boolean | null>(null);
@@ -65,6 +68,13 @@ export default function RouteFeedback() {
           stairsDifficulty: stairsDifficulty ? Number(stairsDifficulty) : undefined,
           slopeDifficulty: slopeDifficulty ? Number(slopeDifficulty) : undefined,
           transferDifficulty: transferDifficulty ? Number(transferDifficulty) : undefined,
+          crowdingDifficulty: crowdingDifficulty ? Number(crowdingDifficulty) : undefined,
+          transferInformationDifficulty: transferInformationDifficulty
+            ? Number(transferInformationDifficulty)
+            : undefined,
+          accessibilityFacilityDifficulty: accessibilityFacilityDifficulty
+            ? Number(accessibilityFacilityDifficulty)
+            : undefined,
           actualDurationMin: actualDuration ? Number(actualDuration) : undefined,
           wouldReuse: wouldReuse ?? undefined,
           informationAccurate: informationAccurate ?? undefined,
@@ -113,6 +123,21 @@ export default function RouteFeedback() {
         <DifficultySelect label="계단 불편" value={stairsDifficulty} onChange={setStairsDifficulty} />
         <DifficultySelect label="경사 불편" value={slopeDifficulty} onChange={setSlopeDifficulty} />
         <DifficultySelect label="환승 불편" value={transferDifficulty} onChange={setTransferDifficulty} />
+        <DifficultySelect
+          label="혼잡으로 인한 이용 불편"
+          value={crowdingDifficulty}
+          onChange={setCrowdingDifficulty}
+        />
+        <DifficultySelect
+          label="환승 안내·정보 이용 불편"
+          value={transferInformationDifficulty}
+          onChange={setTransferInformationDifficulty}
+        />
+        <DifficultySelect
+          label="교통약자 시설 이용 불편"
+          value={accessibilityFacilityDifficulty}
+          onChange={setAccessibilityFacilityDifficulty}
+        />
       </div>
       <label>실제 이동시간(분) <input type="number" min="1" max="1440" value={actualDuration} onChange={(event) => setActualDuration(event.target.value)} /></label>
       <fieldset><legend>다시 이용하시겠어요?</legend><button type="button" className={`chip ${wouldReuse === true ? 'chip--active' : ''}`} aria-pressed={wouldReuse === true} onClick={() => setWouldReuse(true)}>예</button><button type="button" className={`chip ${wouldReuse === false ? 'chip--active' : ''}`} aria-pressed={wouldReuse === false} onClick={() => setWouldReuse(false)}>아니요</button></fieldset>
@@ -125,5 +150,24 @@ export default function RouteFeedback() {
 }
 
 function DifficultySelect({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label>{label} <select value={value} onChange={(event) => onChange(event.target.value)}><option value="">해당 없음/미응답</option>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}점</option>)}</select></label>;
+  const options = [
+    '전혀 어렵지 않음',
+    '조금 어려움',
+    '보통',
+    '어려움',
+    '매우 어려움',
+  ];
+  return (
+    <label>
+      {label}{' '}
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">해당 없음/미응답</option>
+        {options.map((description, index) => (
+          <option key={description} value={index + 1}>
+            {index + 1}점 · {description}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }

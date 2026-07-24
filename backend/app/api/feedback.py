@@ -64,6 +64,13 @@ class ReviewInput(ApiInput):
     stairs_difficulty: int | None = Field(default=None, ge=1, le=5)
     slope_difficulty: int | None = Field(default=None, ge=1, le=5)
     transfer_difficulty: int | None = Field(default=None, ge=1, le=5)
+    crowding_difficulty: int | None = Field(default=None, ge=1, le=5)
+    transfer_information_difficulty: int | None = Field(default=None, ge=1, le=5)
+    accessibility_facility_difficulty: int | None = Field(
+        default=None,
+        ge=1,
+        le=5,
+    )
     actual_duration_min: int | None = Field(default=None, ge=1, le=1440)
     would_reuse: bool | None = None
     information_accurate: bool | None = None

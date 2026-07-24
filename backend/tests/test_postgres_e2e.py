@@ -110,6 +110,9 @@ def test_postgres_review_updates_user_personalization(monkeypatch):
                     "impressionId": impression_id,
                     "wasUsable": True,
                     "rating": 5,
+                    "crowdingDifficulty": 2,
+                    "transferInformationDifficulty": 3,
+                    "accessibilityFacilityDifficulty": 1,
                     "wouldReuse": True,
                     "trainingConsent": False,
                 },
@@ -136,6 +139,9 @@ def test_postgres_review_updates_user_personalization(monkeypatch):
             preference = db.get(UserPreference, user_id)
             assert saved_review is not None
             assert preference is not None
+            assert saved_review.crowding_difficulty == 2
+            assert saved_review.transfer_information_difficulty == 3
+            assert saved_review.accessibility_facility_difficulty == 1
             state = json.loads(preference.personalization_state)
             assert state["updates"] == 1
             assert state["weights"]
