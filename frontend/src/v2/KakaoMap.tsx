@@ -1,25 +1,43 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { hasKakaoKey, loadKakaoMaps } from '@/map/kakaoLoader';
 import {
-  DEMO_ORIGIN,
-  DEMO_ROUTES,
-  INITIAL_CENTER,
-  getDemoPath,
-  type LngLatTuple,
-  type MapProfileId,
-} from './mapDemoData';
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
+import { DISTRICT } from '@/config/district';
+import { hasKakaoKey, loadKakaoMaps } from '@/map/kakaoLoader';
+import type {
+  LatLng,
+  Place,
+  RouteCandidate,
+  ScoredRoute,
+  SegmentMode,
+} from '@/types';
 
-/** Imperative map API shared with MapFirstPrototype via ref */
+export type LngLatTuple = [number, number];
+
+/** Imperative map API used by the map-first current-location control. */
 export type KakaoMapHandle = {
   flyToUserLocation: (coords: LngLatTuple) => void;
-  flyToDemoOrigin: () => void;
+  clearUserLocation: () => void;
 };
 
-type KakaoMapProps = {
-  profile: MapProfileId;
-  showFacilities: boolean;
-  reversed: boolean;
-  routeCoordinates?: LngLatTuple[] | null;
+export type KakaoMapProps = {
+  origin: Place | null;
+  destination: Place | null;
+  recommendations: ScoredRoute[];
+  selectedRouteId: string | null;
+  onSelectRoute: (routeId: string) => void;
+  showShade: boolean;
+};
+
+type GeometryQuality = NonNullable<RouteCandidate['geometryQuality']>;
+
+type RoutePathPart = {
+  path: LatLng[];
+  mode?: SegmentMode;
+  quality?: GeometryQuality;
 };
 
 type KakaoLatLng = {
@@ -43,36 +61,23 @@ type KakaoMapInstance = {
   setLevel: (level: number) => void;
   relayout: () => void;
   setDraggable: (draggable: boolean) => void;
-  getDraggable: () => boolean;
   setZoomable: (zoomable: boolean) => void;
-  getZoomable: () => boolean;
 };
 
-type KakaoPolyline = {
+type KakaoMapGraphic = {
   setMap: (map: KakaoMapInstance | null) => void;
-  setPath: (path: KakaoLatLng[]) => void;
 };
 
-type KakaoCustomOverlay = {
-  setMap: (map: KakaoMapInstance | null) => void;
+type KakaoPolyline = KakaoMapGraphic;
+type KakaoPolygon = KakaoMapGraphic;
+
+type KakaoCustomOverlay = KakaoMapGraphic & {
   setPosition: (latlng: KakaoLatLng) => void;
 };
 
-type KakaoMarker = {
-  setMap: (map: KakaoMapInstance | null) => void;
-  setClickable: (clickable: boolean) => void;
-};
-
-type KakaoInfoWindow = {
-  open: (map: KakaoMapInstance, marker: KakaoMarker) => void;
-  close: () => void;
-  setContent: (content: string | HTMLElement) => void;
-  setZIndex: (zIndex: number) => void;
-};
-
 type KakaoEventApi = {
-  addListener: (target: KakaoMarker, type: 'click', handler: () => void) => void;
-  removeListener: (target: KakaoMarker, type: 'click', handler: () => void) => void;
+  addListener: (target: object, type: 'click', handler: () => void) => void;
+  removeListener: (target: object, type: 'click', handler: () => void) => void;
 };
 
 type KakaoMapsApi = {
@@ -93,26 +98,25 @@ type KakaoMapsApi = {
     strokeColor: string;
     strokeOpacity: number;
     strokeStyle?: string;
+    clickable?: boolean;
     zIndex?: number;
   }) => KakaoPolyline;
+  Polygon: new (options: {
+    path: KakaoLatLng[];
+    strokeWeight: number;
+    strokeColor: string;
+    strokeOpacity: number;
+    fillColor: string;
+    fillOpacity: number;
+    zIndex?: number;
+  }) => KakaoPolygon;
   CustomOverlay: new (options: {
     position: KakaoLatLng;
-    content: HTMLElement | string;
+    content: HTMLElement;
     xAnchor?: number;
     yAnchor?: number;
     zIndex?: number;
   }) => KakaoCustomOverlay;
-  Marker: new (options: {
-    map?: KakaoMapInstance;
-    position: KakaoLatLng;
-    title?: string;
-    clickable?: boolean;
-    zIndex?: number;
-  }) => KakaoMarker;
-  InfoWindow: new (options: {
-    content?: string | HTMLElement;
-    removable?: boolean;
-  }) => KakaoInfoWindow;
   event: KakaoEventApi;
 };
 
@@ -120,10 +124,24 @@ type KakaoNamespace = {
   maps: KakaoMapsApi;
 };
 
-type FacilityMarkerEntry = {
-  marker: KakaoMarker;
+type MapListener = {
+  target: object;
   handler: () => void;
 };
+
+const MODE_COLOR: Record<SegmentMode, string> = {
+  walk: '#16a34a',
+  bus: '#3182f6',
+  subway: '#7c3aed',
+  transfer: '#64748b',
+};
+
+const DEFAULT_ROUTE_COLOR = '#3182f6';
+const ALTERNATIVE_ROUTE_COLOR = '#64748b';
+const SHADOW_FILL = '#8290a8';
+const SHADOW_STROKE = '#64748b';
+const SHADED_ROUTE_COLOR = '#00b84a';
+const SUN_EXPOSED_ROUTE_COLOR = '#ff5a1f';
 
 function isKakaoNamespace(value: unknown): value is KakaoNamespace {
   if (!value || typeof value !== 'object') return false;
@@ -131,174 +149,144 @@ function isKakaoNamespace(value: unknown): value is KakaoNamespace {
   if (!maps || typeof maps !== 'object') return false;
   const api = maps as Record<string, unknown>;
   return (
-    typeof api.LatLng === 'function' &&
-    typeof api.LatLngBounds === 'function' &&
-    typeof api.Map === 'function' &&
-    typeof api.Polyline === 'function' &&
-    typeof api.CustomOverlay === 'function' &&
-    typeof api.Marker === 'function' &&
-    typeof api.InfoWindow === 'function' &&
-    typeof api.event === 'object' &&
-    api.event !== null &&
-    typeof (api.event as KakaoEventApi).addListener === 'function' &&
-    typeof (api.event as KakaoEventApi).removeListener === 'function'
+    typeof api.LatLng === 'function'
+    && typeof api.LatLngBounds === 'function'
+    && typeof api.Map === 'function'
+    && typeof api.Polyline === 'function'
+    && typeof api.Polygon === 'function'
+    && typeof api.CustomOverlay === 'function'
+    && typeof api.event === 'object'
+    && api.event !== null
+    && typeof (api.event as KakaoEventApi).addListener === 'function'
+    && typeof (api.event as KakaoEventApi).removeListener === 'function'
   );
 }
 
-function toKakaoLatLng(maps: KakaoMapsApi, coord: LngLatTuple): KakaoLatLng {
-  return new maps.LatLng(coord[1], coord[0]);
+function isValidPoint(point: LatLng): boolean {
+  return (
+    Number.isFinite(point.lat)
+    && Number.isFinite(point.lng)
+    && point.lat >= -90
+    && point.lat <= 90
+    && point.lng >= -180
+    && point.lng <= 180
+  );
 }
 
-/** Prefer mock recommendation coords; otherwise profile demo path. Apply reverse last. */
-function resolveDisplayPath(
-  profile: MapProfileId,
-  reversed: boolean,
-  routeCoordinates?: LngLatTuple[] | null,
-): LngLatTuple[] {
-  const fromStore =
-    routeCoordinates && routeCoordinates.length >= 2 ? [...routeCoordinates] : null;
-  const base = fromStore ?? getDemoPath(profile, false);
-  return reversed ? [...base].reverse() : base;
+function validPath(path: LatLng[] | undefined, minimumLength = 2): LatLng[] | null {
+  if (!path || path.length < minimumLength || !path.every(isValidPoint)) {
+    return null;
+  }
+  return path;
 }
 
-function createEndpointContent(kind: 'origin' | 'dest', label: string): HTMLDivElement {
-  const el = document.createElement('div');
-  el.className = `map-first__kakao-marker map-first__kakao-marker--${kind}`;
-  el.innerHTML = `
-    <span class="map-first__kakao-marker-pin" aria-hidden="true"></span>
-    <span class="map-first__kakao-marker-label">${label}</span>
-  `;
-  return el;
+function segmentPathParts(route: RouteCandidate): RoutePathPart[] {
+  return route.segments.flatMap<RoutePathPart>((segment) => {
+    const path = validPath(segment.path);
+    if (!path) return [];
+    return [{
+      path,
+      mode: segment.mode,
+      quality: segment.geometryQuality ?? route.geometryQuality,
+    }];
+  });
+}
+
+function alternativeRoutePathParts(route: RouteCandidate): RoutePathPart[] {
+  const routePath = validPath(route.path);
+  return routePath
+    ? [{ path: routePath, quality: route.geometryQuality }]
+    : segmentPathParts(route);
+}
+
+function toKakaoLatLng(maps: KakaoMapsApi, point: LatLng): KakaoLatLng {
+  return new maps.LatLng(point.lat, point.lng);
+}
+
+function tupleToPoint(coords: LngLatTuple): LatLng | null {
+  const point = { lat: coords[1], lng: coords[0] };
+  return isValidPoint(point) ? point : null;
+}
+
+function createEndpointContent(
+  kind: 'origin' | 'dest',
+  prefix: string,
+  placeName: string,
+): HTMLDivElement {
+  const root = document.createElement('div');
+  root.className = `map-first__kakao-marker map-first__kakao-marker--${kind}`;
+  root.setAttribute('aria-label', `${prefix} ${placeName}`);
+
+  const pin = document.createElement('span');
+  pin.className = 'map-first__kakao-marker-pin';
+  pin.setAttribute('aria-hidden', 'true');
+
+  const label = document.createElement('span');
+  label.className = 'map-first__kakao-marker-label';
+  label.textContent = `${prefix} · ${placeName}`;
+
+  root.append(pin, label);
+  return root;
 }
 
 function createUserContent(): HTMLDivElement {
-  const el = document.createElement('div');
-  el.className = 'map-first__kakao-user';
-  el.setAttribute('aria-label', '현재 위치');
-  el.innerHTML = `<span class="map-first__kakao-user-dot" aria-hidden="true"></span>`;
-  return el;
+  const root = document.createElement('div');
+  root.className = 'map-first__kakao-user';
+  root.setAttribute('aria-label', '현재 위치');
+
+  const dot = document.createElement('span');
+  dot.className = 'map-first__kakao-user-dot';
+  dot.setAttribute('aria-hidden', 'true');
+  root.append(dot);
+  return root;
 }
 
-function createFacilityInfoContent(name: string): HTMLDivElement {
-  const el = document.createElement('div');
-  el.className = 'map-first__kakao-popup';
-
-  const title = document.createElement('strong');
-  title.className = 'map-first__kakao-popup-title';
-  title.textContent = name;
-
-  const note = document.createElement('p');
-  note.className = 'map-first__kakao-popup-note';
-  note.textContent = '데모 데이터';
-
-  el.append(title, note);
-  return el;
+function strokeStyle(quality: GeometryQuality | undefined): string {
+  return quality === 'exact' ? 'solid' : 'shortdash';
 }
 
 /**
- * Kakao Maps surface for the map-first prototype.
- * Renders routes, markers, and facilities via the Kakao Maps JavaScript SDK.
+ * Production-data-only Kakao map surface.
+ * Every route, marker, shadow, and shade segment comes from the supplied domain data.
  */
 const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
-  { profile, showFacilities, reversed, routeCoordinates = null },
+  {
+    origin,
+    destination,
+    recommendations,
+    selectedRouteId,
+    onSelectRoute,
+    showShade,
+  },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapsRef = useRef<KakaoMapsApi | null>(null);
   const mapRef = useRef<KakaoMapInstance | null>(null);
   const readyRef = useRef(false);
-  const pendingUserLocationRef = useRef<LngLatTuple | null>(null);
-
-  const casingRef = useRef<KakaoPolyline | null>(null);
-  const lineRef = useRef<KakaoPolyline | null>(null);
-  const originRef = useRef<KakaoCustomOverlay | null>(null);
-  const destRef = useRef<KakaoCustomOverlay | null>(null);
-  const facilityMarkersRef = useRef<FacilityMarkerEntry[]>([]);
-  const facilityInfoWindowRef = useRef<KakaoInfoWindow | null>(null);
+  const graphicsRef = useRef<KakaoMapGraphic[]>([]);
+  const listenersRef = useRef<MapListener[]>([]);
   const userRef = useRef<KakaoCustomOverlay | null>(null);
+  const pendingUserLocationRef = useRef<LngLatTuple | null>(null);
   const locationRafRef = useRef<number | null>(null);
-
-  const propsRef = useRef({ profile, reversed, routeCoordinates, showFacilities });
-  propsRef.current = { profile, reversed, routeCoordinates, showFacilities };
+  const propsRef = useRef({
+    origin,
+    destination,
+    recommendations,
+    selectedRouteId,
+    onSelectRoute,
+    showShade,
+  });
+  propsRef.current = {
+    origin,
+    destination,
+    recommendations,
+    selectedRouteId,
+    onSelectRoute,
+    showShade,
+  };
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-
-  const fitRoute = (path: LngLatTuple[]) => {
-    const maps = mapsRef.current;
-    const map = mapRef.current;
-    if (!maps || !map || path.length === 0) return;
-
-    const bounds = new maps.LatLngBounds();
-    path.forEach((coord) => bounds.extend(toKakaoLatLng(maps, coord)));
-    map.setBounds(bounds, 180, 64, 260, 48);
-  };
-
-  const ensureRouteGraphics = (maps: KakaoMapsApi, map: KakaoMapInstance) => {
-    if (!casingRef.current) {
-      casingRef.current = new maps.Polyline({
-        path: [],
-        strokeWeight: 12,
-        strokeColor: '#ffffff',
-        strokeOpacity: 0.9,
-        strokeStyle: 'solid',
-        zIndex: 1,
-      });
-      casingRef.current.setMap(map);
-    }
-
-    if (!lineRef.current) {
-      lineRef.current = new maps.Polyline({
-        path: [],
-        strokeWeight: 6,
-        strokeColor: '#3182F6',
-        strokeOpacity: 1,
-        strokeStyle: 'solid',
-        zIndex: 2,
-      });
-      lineRef.current.setMap(map);
-    }
-
-    if (!originRef.current) {
-      originRef.current = new maps.CustomOverlay({
-        position: toKakaoLatLng(maps, INITIAL_CENTER),
-        content: createEndpointContent('origin', '출발'),
-        xAnchor: 0.5,
-        yAnchor: 1,
-        zIndex: 3,
-      });
-      originRef.current.setMap(map);
-    }
-
-    if (!destRef.current) {
-      destRef.current = new maps.CustomOverlay({
-        position: toKakaoLatLng(maps, INITIAL_CENTER),
-        content: createEndpointContent('dest', '도착'),
-        xAnchor: 0.5,
-        yAnchor: 1,
-        zIndex: 3,
-      });
-      destRef.current.setMap(map);
-    }
-  };
-
-  const updateRoute = (path: LngLatTuple[], maps: KakaoMapsApi, map: KakaoMapInstance) => {
-    ensureRouteGraphics(maps, map);
-
-    if (path.length < 2) {
-      casingRef.current?.setPath([]);
-      lineRef.current?.setPath([]);
-      return;
-    }
-
-    const kakaoPath = path.map((coord) => toKakaoLatLng(maps, coord));
-    casingRef.current?.setPath(kakaoPath);
-    lineRef.current?.setPath(kakaoPath);
-
-    originRef.current?.setPosition(toKakaoLatLng(maps, path[0]));
-    destRef.current?.setPosition(toKakaoLatLng(maps, path[path.length - 1]));
-
-    fitRoute(path);
-  };
 
   const cancelLocationRaf = () => {
     if (locationRafRef.current !== null) {
@@ -307,70 +295,220 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     }
   };
 
-  const ensureFacilityInfoWindow = (maps: KakaoMapsApi): KakaoInfoWindow => {
-    if (!facilityInfoWindowRef.current) {
-      facilityInfoWindowRef.current = new maps.InfoWindow({ removable: true });
-    }
-    return facilityInfoWindowRef.current;
-  };
-
-  const openFacilityInfo = (
-    maps: KakaoMapsApi,
-    map: KakaoMapInstance,
-    marker: KakaoMarker,
-    name: string,
-  ) => {
-    const infoWindow = ensureFacilityInfoWindow(maps);
-    infoWindow.close();
-    infoWindow.setContent(createFacilityInfoContent(name));
-    infoWindow.setZIndex(100);
-    infoWindow.open(map, marker);
-  };
-
-  const clearFacilityMarkers = () => {
+  const clearRouteGraphics = () => {
     const maps = mapsRef.current;
-    facilityMarkersRef.current.forEach(({ marker, handler }) => {
-      if (maps) {
-        maps.event.removeListener(marker, 'click', handler);
-      }
-      marker.setMap(null);
-    });
-    facilityMarkersRef.current = [];
-    facilityInfoWindowRef.current?.close();
-    facilityInfoWindowRef.current = null;
+    if (maps) {
+      listenersRef.current.forEach(({ target, handler }) => {
+        maps.event.removeListener(target, 'click', handler);
+      });
+    }
+    listenersRef.current = [];
+    graphicsRef.current.forEach((graphic) => graphic.setMap(null));
+    graphicsRef.current = [];
   };
 
-  const renderFacilities = (
-    nextProfile: MapProfileId,
+  const addGraphic = <T extends KakaoMapGraphic>(graphic: T): T => {
+    graphic.setMap(mapRef.current);
+    graphicsRef.current.push(graphic);
+    return graphic;
+  };
+
+  const addEndpoint = (
+    maps: KakaoMapsApi,
+    place: Place | null,
+    kind: 'origin' | 'dest',
+  ) => {
+    if (!place || !isValidPoint(place)) return;
+    const prefix = kind === 'origin' ? '출발' : '도착';
+    addGraphic(new maps.CustomOverlay({
+      position: toKakaoLatLng(maps, place),
+      content: createEndpointContent(kind, prefix, place.name),
+      xAnchor: 0.5,
+      yAnchor: 1,
+      zIndex: 7,
+    }));
+  };
+
+  const addAlternativeRoutes = (
+    maps: KakaoMapsApi,
+    routes: ScoredRoute[],
+    selectedId: string | null,
+    selectRoute: (routeId: string) => void,
+    boundsPoints: LatLng[],
+  ) => {
+    routes.forEach(({ route }) => {
+      const parts = alternativeRoutePathParts(route);
+      parts.forEach(({ path, quality }) => {
+        boundsPoints.push(...path);
+        if (route.id === selectedId) return;
+
+        const line = addGraphic(new maps.Polyline({
+          path: path.map((point) => toKakaoLatLng(maps, point)),
+          strokeWeight: 6,
+          strokeColor: ALTERNATIVE_ROUTE_COLOR,
+          strokeOpacity: 0.38,
+          strokeStyle: strokeStyle(quality),
+          clickable: true,
+          zIndex: 2,
+        }));
+        const handler = () => selectRoute(route.id);
+        maps.event.addListener(line, 'click', handler);
+        listenersRef.current.push({ target: line, handler });
+      });
+    });
+  };
+
+  const addSelectedRoute = (
+    maps: KakaoMapsApi,
+    route: RouteCandidate | undefined,
+  ) => {
+    if (!route) return;
+    const routePath = validPath(route.path);
+    const segmentParts = segmentPathParts(route);
+
+    const addRoutePart = (
+      { path, mode, quality }: RoutePathPart,
+      includeOutline: boolean,
+    ) => {
+      const kakaoPath = path.map((point) => toKakaoLatLng(maps, point));
+      const style = strokeStyle(quality);
+      if (includeOutline) {
+        addGraphic(new maps.Polyline({
+          path: kakaoPath,
+          strokeWeight: 11,
+          strokeColor: '#ffffff',
+          strokeOpacity: 0.88,
+          strokeStyle: style,
+          zIndex: 3,
+        }));
+      }
+      addGraphic(new maps.Polyline({
+        path: kakaoPath,
+        strokeWeight: 6,
+        strokeColor: mode ? MODE_COLOR[mode] ?? DEFAULT_ROUTE_COLOR : DEFAULT_ROUTE_COLOR,
+        strokeOpacity: 0.96,
+        strokeStyle: style,
+        zIndex: 4,
+      }));
+    };
+
+    if (routePath) {
+      addRoutePart(
+        { path: routePath, quality: route.geometryQuality },
+        true,
+      );
+      segmentParts.forEach((part) => addRoutePart(part, false));
+      return;
+    }
+    segmentParts.forEach((part) => addRoutePart(part, true));
+  };
+
+  const addShadeOverlay = (
+    maps: KakaoMapsApi,
+    route: RouteCandidate | undefined,
     visible: boolean,
+    boundsPoints: LatLng[],
+  ) => {
+    if (!visible || !route?.shade) return;
+    if (
+      route.shade.status !== 'estimated_demo'
+      && route.shade.status !== 'estimated_public'
+    ) return;
+
+    route.shade.shadowPolygons.forEach((rawPolygon) => {
+      const polygon = validPath(rawPolygon, 3);
+      if (!polygon) return;
+      boundsPoints.push(...polygon);
+      addGraphic(new maps.Polygon({
+        path: polygon.map((point) => toKakaoLatLng(maps, point)),
+        strokeWeight: 1,
+        strokeColor: SHADOW_STROKE,
+        strokeOpacity: 0.35,
+        fillColor: SHADOW_FILL,
+        fillOpacity: 0.3,
+        zIndex: 1,
+      }));
+    });
+
+    route.shade.pathSegments.forEach((segment) => {
+      if (!isValidPoint(segment.start) || !isValidPoint(segment.end)) return;
+      addGraphic(new maps.Polyline({
+        path: [
+          toKakaoLatLng(maps, segment.start),
+          toKakaoLatLng(maps, segment.end),
+        ],
+        strokeWeight: 8,
+        strokeColor: segment.shaded
+          ? SHADED_ROUTE_COLOR
+          : SUN_EXPOSED_ROUTE_COLOR,
+        strokeOpacity: 0.95,
+        strokeStyle: 'solid',
+        zIndex: 5,
+      }));
+    });
+  };
+
+  const fitDataBounds = (
     maps: KakaoMapsApi,
     map: KakaoMapInstance,
+    points: LatLng[],
   ) => {
-    clearFacilityMarkers();
-    if (!visible) return;
+    if (points.length === 0) {
+      map.setCenter(new maps.LatLng(DISTRICT.center.lat, DISTRICT.center.lng));
+      map.setLevel(DISTRICT.defaultZoom);
+      return;
+    }
+    if (points.length === 1) {
+      map.setCenter(toKakaoLatLng(maps, points[0]));
+      map.setLevel(4);
+      return;
+    }
 
-    const facilities = DEMO_ROUTES[nextProfile].facilities;
-    facilityMarkersRef.current = facilities.map((facility) => {
-      const position = toKakaoLatLng(maps, facility.coordinates);
-      const marker = new maps.Marker({
-        position,
-        title: facility.name,
-        clickable: true,
-        zIndex: 10,
-      });
-      marker.setMap(map);
-      marker.setClickable(true);
-
-      const handler = () => {
-        openFacilityInfo(maps, map, marker, facility.name);
-      };
-
-      maps.event.addListener(marker, 'click', handler);
-      return { marker, handler };
-    });
+    const bounds = new maps.LatLngBounds();
+    points.forEach((point) => bounds.extend(toKakaoLatLng(maps, point)));
+    const height = containerRef.current?.clientHeight ?? 0;
+    let paddingTop = height > 0
+      ? Math.min(270, Math.max(120, Math.round(height * 0.34)))
+      : 240;
+    let paddingBottom = height > 0
+      ? Math.min(320, Math.max(120, Math.round(height * 0.4)))
+      : 280;
+    const maximumCombinedPadding = Math.max(80, height - 120);
+    if (height > 0 && paddingTop + paddingBottom > maximumCombinedPadding) {
+      const scale = maximumCombinedPadding / (paddingTop + paddingBottom);
+      paddingTop = Math.round(paddingTop * scale);
+      paddingBottom = Math.round(paddingBottom * scale);
+    }
+    map.setBounds(bounds, paddingTop, 48, paddingBottom, 48);
   };
 
-  const clearUserOverlay = () => {
+  const renderMapData = (
+    nextOrigin: Place | null,
+    nextDestination: Place | null,
+    routes: ScoredRoute[],
+    selectedId: string | null,
+    selectRoute: (routeId: string) => void,
+    shadeVisible: boolean,
+  ) => {
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!maps || !map) return;
+
+    clearRouteGraphics();
+    const boundsPoints: LatLng[] = [];
+    if (nextOrigin && isValidPoint(nextOrigin)) boundsPoints.push(nextOrigin);
+    if (nextDestination && isValidPoint(nextDestination)) boundsPoints.push(nextDestination);
+
+    const selectedRoute = routes.find(({ route }) => route.id === selectedId)?.route;
+    addShadeOverlay(maps, selectedRoute, shadeVisible, boundsPoints);
+    addAlternativeRoutes(maps, routes, selectedId, selectRoute, boundsPoints);
+    addSelectedRoute(maps, selectedRoute);
+    addEndpoint(maps, nextOrigin, 'origin');
+    addEndpoint(maps, nextDestination, 'dest');
+    fitDataBounds(maps, map, boundsPoints);
+  };
+
+  const removeUserOverlay = () => {
     userRef.current?.setMap(null);
     userRef.current = null;
   };
@@ -390,12 +528,13 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     });
   };
 
-  const applyUserLocation = (coords: LngLatTuple) => {
+  const applyUserLocation = (coords: LngLatTuple): boolean => {
+    const point = tupleToPoint(coords);
     const maps = mapsRef.current;
     const map = mapRef.current;
-    if (!maps || !map) return false;
+    if (!point || !maps || !map) return false;
 
-    const position = toKakaoLatLng(maps, coords);
+    const position = toKakaoLatLng(maps, point);
     if (userRef.current) {
       userRef.current.setPosition(position);
     } else {
@@ -404,55 +543,32 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
         content: createUserContent(),
         xAnchor: 0.5,
         yAnchor: 0.5,
-        zIndex: 6,
+        zIndex: 8,
       });
       userRef.current.setMap(map);
     }
-
     centerMapOn(map, position);
     return true;
   };
 
-  const clearRouteGraphics = () => {
-    casingRef.current?.setMap(null);
-    lineRef.current?.setMap(null);
-    originRef.current?.setMap(null);
-    destRef.current?.setMap(null);
-    casingRef.current = null;
-    lineRef.current = null;
-    originRef.current = null;
-    destRef.current = null;
-  };
-
-  const clearAllMapObjects = () => {
-    clearRouteGraphics();
-    clearFacilityMarkers();
-    clearUserOverlay();
-  };
-
   useImperativeHandle(ref, () => ({
     flyToUserLocation(coords) {
-      pendingUserLocationRef.current = coords;
-      if (!readyRef.current || !mapRef.current || !mapsRef.current) {
+      if (!tupleToPoint(coords)) {
+        pendingUserLocationRef.current = null;
         return;
       }
-      applyUserLocation(coords);
-      pendingUserLocationRef.current = null;
+      pendingUserLocationRef.current = coords;
+      if (!readyRef.current) return;
+      if (applyUserLocation(coords)) {
+        pendingUserLocationRef.current = null;
+      }
     },
-    flyToDemoOrigin() {
+    clearUserLocation() {
       pendingUserLocationRef.current = null;
-      cancelLocationRaf();
-
-      const maps = mapsRef.current;
-      const map = mapRef.current;
-      if (!maps || !map) return;
-
-      clearUserOverlay();
-      centerMapOn(map, toKakaoLatLng(maps, DEMO_ORIGIN));
+      removeUserOverlay();
     },
   }));
 
-  // Initialize Kakao map once (StrictMode-safe via effect-local cancelled flag)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -473,18 +589,16 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
 
     void loadKakaoMaps()
       .then((loaded: unknown) => {
-        if (cancelled || !containerRef.current) return;
-        if (!isKakaoNamespace(loaded)) {
-          fail();
+        if (cancelled || !containerRef.current || !isKakaoNamespace(loaded)) {
+          if (!cancelled) fail();
           return;
         }
 
         const maps = loaded.maps;
         mapsRef.current = maps;
-
         const map = new maps.Map(containerRef.current, {
-          center: toKakaoLatLng(maps, INITIAL_CENTER),
-          level: 4,
+          center: new maps.LatLng(DISTRICT.center.lat, DISTRICT.center.lng),
+          level: DISTRICT.defaultZoom,
           draggable: true,
           scrollwheel: true,
         });
@@ -493,25 +607,25 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
         mapRef.current = map;
         readyRef.current = true;
 
-        const {
-          profile: p,
-          reversed: r,
-          routeCoordinates: coords,
-          showFacilities: facilitiesOn,
-        } = propsRef.current;
-        const path = resolveDisplayPath(p, r, coords);
-        updateRoute(path, maps, map);
-        renderFacilities(p, facilitiesOn, maps, map);
+        const current = propsRef.current;
+        renderMapData(
+          current.origin,
+          current.destination,
+          current.recommendations,
+          current.selectedRouteId,
+          current.onSelectRoute,
+          current.showShade,
+        );
+        const pending = pendingUserLocationRef.current;
+        if (pending && applyUserLocation(pending)) {
+          pendingUserLocationRef.current = null;
+        }
         setStatus('ready');
 
-        resizeObserver = new ResizeObserver(() => {
-          map.relayout();
-        });
+        resizeObserver = new ResizeObserver(() => map.relayout());
         resizeObserver.observe(containerRef.current);
       })
-      .catch(() => {
-        fail();
-      });
+      .catch(fail);
 
     return () => {
       cancelled = true;
@@ -519,51 +633,44 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       cancelLocationRaf();
       readyRef.current = false;
       pendingUserLocationRef.current = null;
-      clearAllMapObjects();
+      clearRouteGraphics();
+      removeUserOverlay();
       mapRef.current = null;
       mapsRef.current = null;
-      container.innerHTML = '';
+      container.replaceChildren();
     };
-    // Mount once — route/facility updates handled below
+    // Map creation is intentionally mount-only; the data effect below owns updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update route when profile / reverse / mock path changes
   useEffect(() => {
-    const maps = mapsRef.current;
-    const map = mapRef.current;
-    if (!maps || !map || !readyRef.current || status !== 'ready') return;
-
-    const path = resolveDisplayPath(profile, reversed, routeCoordinates);
-    updateRoute(path, maps, map);
-
-    const pending = pendingUserLocationRef.current;
-    if (pending) {
-      const coords = pending;
-      pendingUserLocationRef.current = null;
-      requestAnimationFrame(() => {
-        if (!mapRef.current) return;
-        applyUserLocation(coords);
-      });
-    }
+    if (!readyRef.current || status !== 'ready') return;
+    renderMapData(
+      origin,
+      destination,
+      recommendations,
+      selectedRouteId,
+      onSelectRoute,
+      showShade,
+    );
+    // Map data helpers use refs and are intentionally recreated with the latest props.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, reversed, routeCoordinates, status]);
-
-  // Facility markers — rebuild when layer or profile changes
-  useEffect(() => {
-    const maps = mapsRef.current;
-    const map = mapRef.current;
-    if (!maps || !map || !readyRef.current || status !== 'ready') return;
-
-    renderFacilities(profile, showFacilities, maps, map);
-    return () => {
-      clearFacilityMarkers();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, showFacilities, status]);
+  }, [
+    origin,
+    destination,
+    recommendations,
+    selectedRouteId,
+    onSelectRoute,
+    showShade,
+    status,
+  ]);
 
   return (
-    <div className="map-first__map map-first__map--kakao">
+    <div
+      className="map-first__map map-first__map--kakao"
+      role="region"
+      aria-label="지도"
+    >
       <div ref={containerRef} className="map-first__map-canvas map-first__kakao-canvas" />
       {status === 'loading' && (
         <div className="map-first__map-status" role="status">

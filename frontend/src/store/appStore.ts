@@ -97,6 +97,7 @@ interface AppState {
   toggleMinimizeTransfers: () => void;
   setDepartureAt: (value: string) => void;
   toggleLargeUi: () => void;
+  clearError: () => void;
   selectRoute: (id: string | null) => void;
   setLastSpoken: (s: string) => void;
   loadDemoOd: () => void;
@@ -232,6 +233,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   toggleLargeUi: () => set((s) => ({ largeUi: !s.largeUi })),
+  clearError: () => set({ error: null }),
   selectRoute: (selectedRouteId) => set({ selectedRouteId }),
   setLastSpoken: (lastSpoken) => set({ lastSpoken }),
 
