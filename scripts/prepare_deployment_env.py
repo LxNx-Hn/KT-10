@@ -102,8 +102,12 @@ def prepare(import_existing: bool, import_env: Path | None = None) -> None:
     if import_env is not None:
         imported = _values(import_env)
         for key, aliases in IMPORT_ALIASES.items():
-            if not values.get(key):
-                values[key] = _first_present(imported, aliases)
+            imported_value = _first_present(imported, aliases)
+            if imported_value:
+                # 사용자가 명시한 파일의 비어 있지 않은 값은 기존
+                # 하위 .env와 이전 production 값을 덮어써 키 회전을
+                # 가능하게 한다. 없는 키는 기존 값을 보존한다.
+                values[key] = imported_value
     for key, size in GENERATED.items():
         if not values.get(key):
             values[key] = secrets.token_urlsafe(size)

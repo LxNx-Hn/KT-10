@@ -33,6 +33,14 @@ def test_import_env_maps_known_aliases_without_using_js_key_as_rest_key(
         )) + "\n",
         encoding="utf-8",
     )
+    target.write_text(
+        "\n".join((
+            "VITE_KAKAO_MAP_KEY=old-javascript-secret",
+            "KAKAO_REST_API_KEY=existing-rest-secret",
+            "ODSAY_API_KEY=old-odsay-secret",
+        )) + "\n",
+        encoding="utf-8",
+    )
     monkeypatch.setattr(prepare_deployment_env, "EXAMPLE", example)
     monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
 
@@ -40,7 +48,7 @@ def test_import_env_maps_known_aliases_without_using_js_key_as_rest_key(
 
     values = prepare_deployment_env._values(target)
     assert values["VITE_KAKAO_MAP_KEY"] == "javascript-secret"
-    assert values["KAKAO_REST_API_KEY"] == ""
+    assert values["KAKAO_REST_API_KEY"] == "existing-rest-secret"
     assert values["ODSAY_API_KEY"] == "odsay-secret"
     assert values["BUS_SERVICE_KEY"] == "bus-secret"
     output = capsys.readouterr().out
