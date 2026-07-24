@@ -17,6 +17,8 @@
 
 현재 작업본에는 다음 배포 후보 기능이 구현되어 있습니다.
 
+- `feature/frontend-map-first-v2` 디자인을 프로덕션 진입점으로 사용한
+  Kakao 지도 중심 PWA와 모바일 바텀시트·상세 drawer
 - 일반·고령자·아동·청소년·장애인·임산부 6개 기본 프로필
 - 짐 많음·유아차·계단 회피·그늘 우선·저상버스 우선·환승 최소 조건
 - 실제 경로 후보 수집, GLO-90 지형 추정, 시간별 건물 그늘
@@ -209,6 +211,8 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 - Judge/사람/동의 후기 라벨 출처 분리
 - 후기 중복 방지 DB migration과 API 충돌 처리
 - 수평 카드, 지도 선택 동기화, 버튼·키보드·스크린리더 대체 조작
+- v2 지도 중심 UI의 Kakao Places 검색, 실제 추천, 프로필·이동 조건,
+  음성·후기·신고·설정 기능 연결과 가짜 초기 경로 제거
 - 느린 이전 검색·재채점 응답이 최신 결과를 덮지 않는 요청 세대 제어
 - 라벨링 후보 API 내부 토큰 보호
 - Kakao JavaScript Places 기반 `북구청`·`부산역` 실제 검색과
@@ -242,9 +246,9 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 | Backend pytest | `173 passed, 1 skipped` |
 | PostgreSQL opt-in E2E | `1 passed`; 중복후기 409 포함 |
 | AI pytest | `144 passed, 2 skipped` |
-| Frontend Vitest | `76 passed` |
+| Frontend Vitest | `90 passed` (14 files) |
 | 만족도 실제 원본 감사 | `5 passed`; archive checksum·3개 workbook·감사 JSON 재현 |
-| Playwright 접근성 | `3 passed, 1 expected desktop skip` |
+| Playwright 접근성 | `5 passed, 1 expected desktop skip` |
 | TypeScript/Vite PWA build | 통과; service worker·manifest 생성 |
 | Python compileall / Ruff / Bandit / pip check | 모두 통과 / broken requirement 0건 |
 | Alembic PostgreSQL | `20260724_0003 (head)`; `check` 통과 |
@@ -253,11 +257,11 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 | Production Compose / Docker runtime | 비밀 아닌 smoke 값으로 4개 서비스 healthy; AI·백엔드·프론트 비루트 UID·capability 0·no-new-privileges, 백엔드 read-only root 확인 |
 | AI 운영 이미지 | 약 1.01GB→250MB; CPU XGBoost import와 9개 공간 레이어 로드 통과 |
 | 현재 `.env.production --check` | 외부 키 4개와 exact walking geometry 누락을 정상 차단 |
-| 실제 브라우저 QA | Playwright `1 passed`; Kakao `북구청`·`부산역`, ODsay 경로 3개, 카드·지도·후기 선택 동기화, 콘솔 오류·경고 0건 |
+| 실제 브라우저 QA | v2 모바일·데스크톱에서 Kakao `북구청`·`부산역`, ODsay 경로 3개, 2순위 카드·지도 선택, 상세 4탭·프로필 6종 확인; live Playwright `1 passed`, 콘솔 오류·경고 0건 |
 | ODsay live E2E | 개발 IP 인증, search/loadLane, 부산진구청·북구청 OD 통과 |
 | Kakao Places live E2E | 등록 origin `http://localhost:5173`에서 두 검색어 통과; `127.0.0.1`은 별도 도메인 등록 전 명시적 실패 |
 | 다른 실제 공급자 E2E | Kakao REST·OAuth, VWorld, OpenWeather 외부 키 대기 |
-| 원격 CI | 기능 HEAD `31c3169`의 5개 job 전체 성공; hardened runtime smoke 포함 |
+| 원격 CI | 마지막 확인 성공은 `31c3169`의 5개 job; v2 통합 HEAD는 최종 문서 커밋 후 재확인 예정 |
 
 ## 10. 배포 완료 기준
 
@@ -279,7 +283,7 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 - [x] 최종 전체 로컬 테스트·생산 빌드·Docker 이미지 빌드
 - [x] 모바일·데스크톱 브라우저 지도-카드 동기화 검증
 - [x] 작업 단위별 커밋·푸시
-- [x] 기능·문서 통합 `main` 원격 CI 5개 job 통과
+- [ ] v2 기능·문서 통합 `main` 원격 CI 5개 job 통과
 
 모든 미완료 항목을 통과하기 전에는 “키만 넣으면 배포 완료” 또는
 “실사용자 검증 AI”라고 표현하지 않습니다. 외부 모델 없이도 동작하는

@@ -5,12 +5,15 @@
 부산광역시의 보행·대중교통 후보를 `경로 사실·특성 생성`과
 `프로필·상황 적합도 산정`의 두 단계로 비교하는 PWA입니다. 결과는 적합
 점수순으로 정렬하고, `빠른 길`, `경사가 완만한 길`, `그늘 많은 길`,
-`환승이 단순한 길` 같은 사실 배지로 이유를 설명합니다.
+`환승이 단순한 길` 같은 사실 배지로 이유를 설명합니다. 프론트의 현재
+단일 진입점은 `feature/frontend-map-first-v2` 디자인을 통합한 Kakao 지도
+중심 UI이며, 고정 데모 경로나 자동 가짜 검색 없이 실제 상태를 표시합니다.
 
 최신 제품·모델·UI 기준은 [제품 의사결정 기준](docs/PRODUCT_DECISIONS.md),
 현재 구현과 차단사항은
 [현재 상태 보고서](docs/CURRENT_STATUS_AND_FOLLOW_UP_REPORT.md)를
-기준으로 합니다.
+기준으로 합니다. 활성 프론트 구조와 실행 계약은
+[Map-first UI v2](frontend/src/v2/README.md)에 정리되어 있습니다.
 
 ## 확정된 추천 계약
 
@@ -36,6 +39,8 @@
 - 후기 기반 개인 온라인 모델과 동의 후기의 팀 승인 비중 제한 전역 후보 재학습(운영 모델 자동 교체 없음)
 - 시설물 위치·운영상태 오류 신고와 관리자 검토 대기열
 - 자주 바뀌는 상황 조건은 검색 UI에, 장기 이동지원 정보는 로그인 프로필에 분리
+- Kakao 지도 중심 모바일 UI, 수평 스와이프 경로 비교, 프로필·조건 drawer,
+  경로·날씨·후기·설정 상세 drawer와 실제 음성 챗봇 진입점
 
 `data/ai/`는 데모·회귀검증 픽스처이고 임의 OD의 실제 경로가 아닙니다.
 운영 `live` 모드는 실제 외부 공급자 경로를 규칙으로 비교하므로 학습
@@ -58,8 +63,8 @@ JSON과 manifest checksum을 검증한 뒤 로드하며 역할은 다음과 같�
 
 - 로컬 최종 회귀는 AI `144 passed, 2 skipped`, 백엔드
   `173 passed, 1 skipped`, PostgreSQL opt-in E2E `1 passed`,
-  프론트 `76 passed`, 실제 만족도 원본 감사 `5 passed`입니다.
-  TypeScript/PWA build, 접근성 Playwright `3 passed, 1 expected skip`,
+  프론트 `90 passed`(14개 파일), 실제 만족도 원본 감사 `5 passed`입니다.
+  TypeScript/PWA build, 접근성 Playwright `5 passed, 1 expected skip`,
   Python compileall·Ruff·Bandit·pip check, Alembic
   `20260724_0003 (head)`와 schema check, `npm audit`(취약점 0건)도
   통과했습니다.
@@ -104,7 +109,7 @@ JSON과 manifest checksum을 검증한 뒤 로드하며 역할은 다음과 같�
 
 ```text
 KT-10/
-├─ frontend/   React + Vite + TypeScript PWA
+├─ frontend/   React + Vite + TypeScript PWA (src/v2가 현재 지도 중심 shell)
 ├─ backend/    FastAPI + Kakao OAuth + PostgreSQL/Alembic + 후기 개인화
 ├─ ai/         실제 경로 수집 + 공간/지형 피처 + XGBRanker
 ├─ data/       앱 픽스처, 공간 원본/가공본, 데이터 카탈로그
