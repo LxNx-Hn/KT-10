@@ -145,7 +145,7 @@ def test_check_accepts_explicit_osmnx_when_tmap_is_absent(
         ),
         (
             "RANKER_TIER=human_validated",
-            "RANKER_TIER=judge_baseline",
+            "RANKER_TIER=bootstrap_baseline",
             "human_validated",
         ),
         (

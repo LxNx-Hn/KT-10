@@ -426,8 +426,8 @@ def test_backend_shade_is_enriched_before_ai_ranking(monkeypatch):
                 "selection_probability": 1.0,
             }],
             "metadata": {
-                "model_tier": "judge_baseline",
-                "model_version": "judge-test",
+                "model_tier": "bootstrap_baseline",
+                "model_version": "bootstrap-test",
             },
         }
 
@@ -457,4 +457,4 @@ def test_backend_shade_is_enriched_before_ai_ranking(monkeypatch):
     assert sent["shade_priority_unshaded_walk_m"] is not None
     assert "elevation_source" not in sent
     assert results[0].route.shade.status == "estimated_demo"
-    assert results[0].score.score_kind == "judge_baseline"
+    assert results[0].score.score_kind == "bootstrap_baseline"

@@ -309,7 +309,7 @@ class RouteScore(CamelModel):
     voice_summary: str
     feedback_token: Optional[str] = None
     score_kind: Literal[
-        "rule_baseline", "judge_baseline", "human_model"
+        "rule_baseline", "bootstrap_baseline", "human_model"
     ] = "rule_baseline"
 
 

@@ -437,8 +437,8 @@ def _score_existing_ai_candidate(
         cautions=[],
         voice_summary=voice_summary,
         score_kind=(
-            "judge_baseline"
-            if model_tier == "judge_baseline"
+            "bootstrap_baseline"
+            if model_tier == "bootstrap_baseline"
             else "human_model"
         ),
         feedback_token=create_feedback_token(
@@ -512,7 +512,7 @@ async def rank_ai_pipeline_candidates(
 
     metadata = data.get("metadata") or {}
     model_tier = str(metadata.get("model_tier") or "")
-    if model_tier not in {"human_validated", "judge_baseline"}:
+    if model_tier not in {"human_validated", "bootstrap_baseline"}:
         raise AIProviderError(502, "AI rank endpoint returned an invalid model tier.")
     model_version = str(metadata.get("model_version") or "")
     if not model_version:
