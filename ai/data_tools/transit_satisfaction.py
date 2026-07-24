@@ -557,6 +557,7 @@ def audit_archive(
                 "data_quality_audit",
                 "coverage_gap_analysis",
                 "city_level_context_after_license_confirmation",
+                "feedback_question_taxonomy_non_model",
                 "future_external_validity_comparison",
             ],
         },

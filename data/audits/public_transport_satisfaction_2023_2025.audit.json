@@ -99,6 +99,7 @@
     "currentAllowedUse": [
       "data_quality_audit",
       "coverage_gap_analysis",
+      "feedback_question_taxonomy_non_model",
       "future_external_validity_comparison"
     ]
   },

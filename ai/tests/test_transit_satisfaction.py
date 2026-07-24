@@ -72,6 +72,10 @@ def test_audit_preserves_missing_values_and_prohibits_route_label_use(
 
     assert result["metric_count_by_year"] == {2023: 2, 2024: 2, 2025: 2}
     assert result["model_use_policy"]["route_ranking_label"] == "prohibited"
+    assert (
+        "feedback_question_taxonomy_non_model"
+        in result["model_use_policy"]["current_allowed_use"]
+    )
     assert result["provenance_status"]["license"] is None
     first_year = result["workbooks"][0]
     assert first_year["missing_score_count"] == 2
@@ -170,4 +174,8 @@ def test_committed_audit_summary_matches_golden_contract():
         (2025, 23, 52098, 3677),
     ]
     assert summary["modelUsePolicy"]["routeRankingLabel"] == "prohibited"
+    assert (
+        "feedback_question_taxonomy_non_model"
+        in summary["modelUsePolicy"]["currentAllowedUse"]
+    )
     assert summary["provenanceStatus"]["license"] is None
