@@ -1,0 +1,222 @@
+{
+  "model_tier": "judge_baseline",
+  "label_origin": "llm_judge",
+  "model_version": "xgboost-judge-baseline-20260724T141253Z",
+  "trained_at": "2026-07-24T14:12:53.447076+00:00",
+  "feature_columns": [
+    "avg_slope_percent",
+    "max_slope_percent",
+    "min_slope_percent",
+    "slope_iqr",
+    "stair_count",
+    "elevator_ratio",
+    "transfer_count",
+    "walk_distance_m",
+    "total_duration_min",
+    "is_low_floor_bus",
+    "shade_ratio",
+    "shaded_walk_m",
+    "shade_building_height_coverage",
+    "cctv_density_50m",
+    "crosswalk_count",
+    "crosswalk_signal_ratio",
+    "shelter_nearby",
+    "aed_nearby",
+    "wheelchair_charger_nearby",
+    "smart_shelter_nearby",
+    "smart_shelter_has_ac",
+    "dongbaekjeon_store_count_200m",
+    "bus_stop_count_200m",
+    "crowd_level",
+    "temp_c",
+    "feels_like_c",
+    "precipitation_mm",
+    "wind_ms",
+    "pm10",
+    "weather_heatwave",
+    "weather_coldwave",
+    "weather_rain",
+    "weather_bad_air",
+    "stair_avoidance_burden",
+    "luggage_walk_burden",
+    "luggage_stair_burden",
+    "low_floor_priority_mismatch",
+    "wheelchair_stair_burden",
+    "wheelchair_elevator_gap",
+    "walking_aid_walk_burden",
+    "max_walk_excess_m",
+    "weather_priority_walk_burden",
+    "stroller_walk_burden",
+    "stroller_stair_burden",
+    "stroller_elevator_gap",
+    "shade_priority_unshaded_walk_m",
+    "minimize_transfers_burden"
+  ],
+  "metrics": {
+    "general": {
+      "route_count": 9,
+      "od_count": 3,
+      "query_group_count": 3,
+      "judge_evaluation_count_min": 1,
+      "group_holdout": {
+        "status": "evaluated",
+        "train_od_count": 2,
+        "validation_od_count": 1,
+        "train_query_group_count": 2,
+        "validation_query_group_count": 1,
+        "ndcg_at_3": 1.0,
+        "pairwise_accuracy": 1.0,
+        "compared_pairs": 3
+      }
+    },
+    "elderly": {
+      "route_count": 9,
+      "od_count": 3,
+      "query_group_count": 3,
+      "judge_evaluation_count_min": 1,
+      "group_holdout": {
+        "status": "evaluated",
+        "train_od_count": 2,
+        "validation_od_count": 1,
+        "train_query_group_count": 2,
+        "validation_query_group_count": 1,
+        "ndcg_at_3": 0.92746,
+        "pairwise_accuracy": 0.0,
+        "compared_pairs": 3
+      }
+    },
+    "child": {
+      "route_count": 9,
+      "od_count": 3,
+      "query_group_count": 3,
+      "judge_evaluation_count_min": 1,
+      "group_holdout": {
+        "status": "evaluated",
+        "train_od_count": 2,
+        "validation_od_count": 1,
+        "train_query_group_count": 2,
+        "validation_query_group_count": 1,
+        "ndcg_at_3": 0.92746,
+        "pairwise_accuracy": 0.0,
+        "compared_pairs": 3
+      }
+    },
+    "youth": {
+      "route_count": 9,
+      "od_count": 3,
+      "query_group_count": 3,
+      "judge_evaluation_count_min": 1,
+      "group_holdout": {
+        "status": "evaluated",
+        "train_od_count": 2,
+        "validation_od_count": 1,
+        "train_query_group_count": 2,
+        "validation_query_group_count": 1,
+        "ndcg_at_3": 0.946456,
+        "pairwise_accuracy": 0.666667,
+        "compared_pairs": 3
+      }
+    },
+    "disabled": {
+      "route_count": 9,
+      "od_count": 3,
+      "query_group_count": 3,
+      "judge_evaluation_count_min": 1,
+      "group_holdout": {
+        "status": "evaluated",
+        "train_od_count": 2,
+        "validation_od_count": 1,
+        "train_query_group_count": 2,
+        "validation_query_group_count": 1,
+        "ndcg_at_3": 0.894999,
+        "pairwise_accuracy": 0.0,
+        "compared_pairs": 3
+      }
+    },
+    "pregnant": {
+      "route_count": 9,
+      "od_count": 3,
+      "query_group_count": 3,
+      "judge_evaluation_count_min": 1,
+      "group_holdout": {
+        "status": "evaluated",
+        "train_od_count": 2,
+        "validation_od_count": 1,
+        "train_query_group_count": 2,
+        "validation_query_group_count": 1,
+        "ndcg_at_3": 0.881693,
+        "pairwise_accuracy": 0.0,
+        "compared_pairs": 3
+      }
+    }
+  },
+  "training_provenance": {
+    "label_origin": "llm_judge",
+    "judge_run_count": 1,
+    "judge_sources": [
+      "openai:codex-gpt-5"
+    ],
+    "rubric_versions": [
+      "route-profile-rubric-v1"
+    ],
+    "prompt_hashes": [
+      "3ff86aa97db1661c3998e07b595cafb0e9fd78e919f77cf273b54e1229d8a143"
+    ],
+    "runs": [
+      {
+        "judge_run_id": "judge-20260724-codex-v1",
+        "judge_source": "openai:codex-gpt-5",
+        "rubric_version": "route-profile-rubric-v1",
+        "prompt_hash": "3ff86aa97db1661c3998e07b595cafb0e9fd78e919f77cf273b54e1229d8a143",
+        "evaluated_from": "2026-07-24 14:07:37.589284+00:00",
+        "evaluated_to": "2026-07-24 14:07:37.589284+00:00",
+        "label_count": 54
+      }
+    ]
+  },
+  "promotion": {
+    "auto_promoted": false,
+    "production_model_path": "ai\\data\\rankers.human-validated.zip"
+  },
+  "artifact_schema_version": "xgboost-ranker-archive-v1",
+  "profiles": [
+    "child",
+    "disabled",
+    "elderly",
+    "general",
+    "pregnant",
+    "youth"
+  ],
+  "models": {
+    "child": {
+      "path": "models/child.json",
+      "sha256": "1787ad2351a33dd871910de69e733b5ac82ace7a9420d56e038761c698f3091d",
+      "bytes": 129257
+    },
+    "disabled": {
+      "path": "models/disabled.json",
+      "sha256": "eb30bfbdeac9fc23da53297e506f70db6edad0a26cfef25921b33d196eebe563",
+      "bytes": 125279
+    },
+    "elderly": {
+      "path": "models/elderly.json",
+      "sha256": "eb30bfbdeac9fc23da53297e506f70db6edad0a26cfef25921b33d196eebe563",
+      "bytes": 125279
+    },
+    "general": {
+      "path": "models/general.json",
+      "sha256": "4d2ed99cf713343b14c9a4fd1e69a4ac56f7d90327e512dc21993b0883cdc8cb",
+      "bytes": 130159
+    },
+    "pregnant": {
+      "path": "models/pregnant.json",
+      "sha256": "81077fb4ce9828df15a2aafc7b30ddc97c2532d34e2acf8464947f8ac2c9bf4f",
+      "bytes": 128145
+    },
+    "youth": {
+      "path": "models/youth.json",
+      "sha256": "46cf01e8cb8c4aa49da8c81b81bfb4dd9f6c944ca81a920cab8d81c364e754b9",
+      "bytes": 133982
+    }
+  }
+}
