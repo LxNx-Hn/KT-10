@@ -8,6 +8,7 @@
     "snapshot_kind",
     "captured_at",
     "group_id",
+    "holdout_group_id",
     "route_id",
     "sources",
     "geometry_quality",
@@ -25,10 +26,11 @@
     "sources": {
       "type": "array",
       "minItems": 1,
+      "uniqueItems": true,
       "items": {"type": "string", "minLength": 1}
     },
     "geometry_quality": {
-      "type": ["string", "null"]
+      "enum": ["exact", "mixed", "estimated"]
     },
     "features": {"type": "object"},
     "feature_snapshot_hash": {

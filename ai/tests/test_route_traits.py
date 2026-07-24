@@ -1,6 +1,6 @@
 """경로 특성 라벨이 관측된 사실만 사용하는지 검증한다."""
-from scoring.snapshots import build_live_feature_snapshot
 from labeling.route_traits import generate_route_traits
+from scoring.snapshots import build_live_feature_snapshot
 
 
 def _snapshot(route_id: str, **features):
@@ -10,6 +10,7 @@ def _snapshot(route_id: str, **features):
         features=features,
         sources=["odsay"],
         geometry_quality="mixed",
+        holdout_group_id="od-g1",
         captured_at="2026-07-24T12:00:00+09:00",
     )
 

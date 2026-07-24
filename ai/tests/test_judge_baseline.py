@@ -23,15 +23,14 @@ def _snapshot_rows() -> list[dict]:
     rows = []
     for group_index in range(3):
         for route_index in range(2):
-            features = {
-                name: float((group_index + route_index) % 3)
-                for name in FEATURE_COLS
-            }
+            features = {name: 0.0 for name in FEATURE_COLS}
             features.update({
+                "total_duration_min": 20.0 + route_index,
                 "walk_distance_m": 1000.0 + route_index * 200,
                 "shade_ratio": 0.2 + route_index * 0.4,
                 "shaded_walk_m": 200.0 + route_index * 520,
                 "shade_building_height_coverage": 0.8,
+                "is_low_floor_bus": route_index == 0,
             })
             rows.append(build_live_feature_snapshot(
                 group_id=f"g{group_index}",
@@ -39,6 +38,7 @@ def _snapshot_rows() -> list[dict]:
                 features=features,
                 sources=["odsay"],
                 geometry_quality="mixed",
+                holdout_group_id=f"od-g{group_index}",
                 captured_at="2026-07-24T12:00:00+09:00",
             ))
     return rows
@@ -171,6 +171,7 @@ def test_judge_loader_preserves_provenance_and_nulls(tmp_path):
         features=snapshots[0]["features"],
         sources=snapshots[0]["sources"],
         geometry_quality=snapshots[0]["geometry_quality"],
+        holdout_group_id=snapshots[0]["holdout_group_id"],
         captured_at=snapshots[0]["captured_at"],
     )["feature_snapshot_hash"]
     _write_jsonl(features_path, snapshots)

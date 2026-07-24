@@ -1,7 +1,7 @@
 """9명 이상의 실제 라벨로 프로필별 XGBRanker를 학습한다.
 
 운영 코드에는 합성 라벨 생성 경로가 없다. 라벨과 당시 경로 피처 스냅샷을
-분리 보관하고, 동일 OD(group_id)는 항상 같은 평가 분할에 남도록 한다.
+분리 보관하고, 동일 실제 OD(holdout_group_id)는 항상 같은 평가 분할에 남도록 한다.
 """
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-from xgboost import XGBRanker
 from sklearn.metrics import ndcg_score
+from xgboost import XGBRanker
 
 from .artifacts import ArtifactError, read_ranker_artifact, write_ranker_artifact
 from .schema import FEATURE_COLS, MIN_REVIEWERS
@@ -59,9 +59,7 @@ def _read_feature_snapshots(path: Path) -> pd.DataFrame:
         features = row.get("features") or {}
         flat_rows.append({
             "group_id": str(row["group_id"]),
-            "holdout_group_id": str(
-                row.get("holdout_group_id") or row["group_id"]
-            ),
+            "holdout_group_id": str(row["holdout_group_id"]),
             "route_id": str(row["route_id"]),
             "feature_snapshot_hash": str(row["feature_snapshot_hash"]),
             **{name: features.get(name) for name in FEATURE_COLS},
@@ -69,6 +67,7 @@ def _read_feature_snapshots(path: Path) -> pd.DataFrame:
     result = pd.DataFrame(flat_rows).drop_duplicates(["group_id", "route_id"], keep=False)
     if len(result) != len(flat_rows):
         raise ValueError("group_id와 route_id가 중복된 피처 스냅샷이 있습니다.")
+    _validate_holdout_group_mapping(result)
     return result
 
 
@@ -231,9 +230,48 @@ def load_consented_review_training_data(
     )
 
 
+def _validate_holdout_group_mapping(frame: pd.DataFrame) -> None:
+    """각 query group이 하나의 실제 OD holdout 그룹에만 속하는지 검증한다."""
+    required = {"group_id", "holdout_group_id"}
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError(
+            "학습 데이터 컬럼 누락: " + ", ".join(sorted(missing))
+        )
+    for column in ("group_id", "holdout_group_id"):
+        invalid = frame[column].map(
+            lambda value: not isinstance(value, str) or not value.strip()
+        )
+        if invalid.any():
+            raise ValueError(f"학습 데이터의 {column}가 비어 있습니다.")
+    mappings = frame.groupby(
+        "group_id",
+        sort=False,
+    )["holdout_group_id"].nunique(dropna=False)
+    inconsistent = mappings[mappings != 1]
+    if not inconsistent.empty:
+        group_id = str(inconsistent.index[0])
+        values = sorted(
+            frame.loc[
+                frame["group_id"] == inconsistent.index[0],
+                "holdout_group_id",
+            ].unique()
+        )
+        raise ValueError(
+            "같은 group_id는 정확히 하나의 holdout_group_id에 매핑되어야 "
+            f"합니다: {group_id} -> {', '.join(values)}"
+        )
+
+
 def _validate_profile_frame(profile: str, frame: pd.DataFrame) -> None:
+    _validate_holdout_group_mapping(frame)
     if frame["group_id"].nunique() < 2:
         raise ModelNotReady(f"{profile}: 서로 다른 OD가 최소 2개 필요합니다.")
+    holdout_groups = frame["holdout_group_id"]
+    if holdout_groups.nunique() < 3:
+        raise ModelNotReady(
+            f"{profile}: OD-group holdout에는 서로 다른 실제 OD가 최소 3개 필요합니다."
+        )
     invalid_groups = frame.groupby("group_id").size()
     if (invalid_groups < 2).any():
         ids = ", ".join(map(str, invalid_groups[invalid_groups < 2].index[:5]))
@@ -260,11 +298,8 @@ def _new_ranker() -> XGBRanker:
 
 def _group_holdout_metrics(profile: str, frame: pd.DataFrame) -> dict:
     """OD 그룹을 분리한 결정적 20% holdout 진단. 최종 모델은 이후 전체 자료로 재학습한다."""
-    holdout_column = (
-        "holdout_group_id"
-        if "holdout_group_id" in frame.columns
-        else "group_id"
-    )
+    _validate_holdout_group_mapping(frame)
+    holdout_column = "holdout_group_id"
     groups = sorted(
         frame[holdout_column].unique(),
         key=lambda value: hashlib.sha256(
@@ -342,9 +377,16 @@ def train_rankers(
             "review_mixed_candidate tier에는 사람 라벨과 동의 후기 혼합 출처가 필요합니다."
         )
     frame = load_human_training_data() if df is None else df.copy()
-    missing = {"group_id", "profile", "relevance", *FEATURE_COLS}.difference(frame.columns)
+    missing = {
+        "group_id",
+        "holdout_group_id",
+        "profile",
+        "relevance",
+        *FEATURE_COLS,
+    }.difference(frame.columns)
     if missing:
         raise ValueError(f"학습 데이터 컬럼 누락: {', '.join(sorted(missing))}")
+    _validate_holdout_group_mapping(frame)
     invalid_profiles = sorted(set(frame["profile"]) - set(PROFILES))
     if invalid_profiles:
         raise ValueError(f"지원하지 않는 프로필 라벨: {', '.join(invalid_profiles)}")
@@ -366,17 +408,16 @@ def train_rankers(
         y = profile_df["relevance"].astype(float)
         groups = profile_df.groupby("group_id", sort=False).size().to_numpy()
         validation = _group_holdout_metrics(profile, profile_df)
+        if validation.get("status") != "evaluated":
+            raise ModelNotReady(
+                f"{profile}: OD-group holdout을 계산하지 못했습니다."
+            )
         ranker = _new_ranker()
         ranker.fit(X, y, group=groups, verbose=False)
         rankers[profile] = ranker
         metrics[profile] = {
             "route_count": int(len(profile_df)),
-            "od_count": int(
-                profile_df.get(
-                    "holdout_group_id",
-                    profile_df["group_id"],
-                ).nunique()
-            ),
+            "od_count": int(profile_df["holdout_group_id"].nunique()),
             "query_group_count": int(profile_df["group_id"].nunique()),
             "reviewer_count_min": int(profile_df.get("reviewer_count", pd.Series([0])).min()),
             "group_holdout": validation,

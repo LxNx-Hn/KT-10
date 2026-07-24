@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 from datetime import UTC, datetime
 from typing import Any
+
+from .schema import GEOMETRY_QUALITIES, validate_feature_values
 
 SNAPSHOT_SCHEMA_VERSION = "route-feature-snapshot-v2"
 LIVE_SNAPSHOT_KIND = "live_route_candidate"
@@ -35,21 +36,23 @@ def build_live_feature_snapshot(
     features: dict[str, Any],
     sources: list[str],
     geometry_quality: str | None,
+    holdout_group_id: str,
     captured_at: str | None = None,
-    holdout_group_id: str | None = None,
     shade_evaluated_at: str | None = None,
 ) -> dict[str, Any]:
     """라이브 후보 API 응답만 받아 해시가 포함된 불변 스냅샷을 만든다."""
     if not sources or any(not isinstance(source, str) or not source.strip() for source in sources):
         raise ValueError("실제 경로 후보 스냅샷에는 비어 있지 않은 sources가 필요합니다.")
+    if not isinstance(holdout_group_id, str) or not holdout_group_id.strip():
+        raise ValueError("스냅샷의 holdout_group_id가 비어 있습니다.")
     snapshot: dict[str, Any] = {
         "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
         "snapshot_kind": LIVE_SNAPSHOT_KIND,
         "captured_at": captured_at or datetime.now(UTC).isoformat(),
         "group_id": str(group_id),
-        "holdout_group_id": str(holdout_group_id or group_id),
+        "holdout_group_id": holdout_group_id,
         "route_id": str(route_id),
-        "sources": list(sources),
+        "sources": sorted(set(sources)),
         "geometry_quality": geometry_quality,
         "features": dict(features),
     }
@@ -70,17 +73,15 @@ def validate_live_feature_snapshot(
         )
     if snapshot.get("snapshot_kind") != LIVE_SNAPSHOT_KIND:
         raise ValueError(f"snapshot_kind는 {LIVE_SNAPSHOT_KIND}이어야 합니다.")
-    for field in ("group_id", "route_id", "captured_at", "feature_snapshot_hash"):
+    for field in (
+        "group_id",
+        "holdout_group_id",
+        "route_id",
+        "captured_at",
+        "feature_snapshot_hash",
+    ):
         if not isinstance(snapshot.get(field), str) or not snapshot[field].strip():
             raise ValueError(f"스냅샷의 {field}가 비어 있습니다.")
-    if (
-        "holdout_group_id" in snapshot
-        and (
-            not isinstance(snapshot["holdout_group_id"], str)
-            or not snapshot["holdout_group_id"].strip()
-        )
-    ):
-        raise ValueError("스냅샷의 holdout_group_id가 비어 있습니다.")
 
     captured_at = datetime.fromisoformat(snapshot["captured_at"].replace("Z", "+00:00"))
     if captured_at.tzinfo is None:
@@ -97,6 +98,12 @@ def validate_live_feature_snapshot(
         raise ValueError("실제 경로 후보 스냅샷에는 sources가 필요합니다.")
     if any(not isinstance(source, str) or not source.strip() for source in sources):
         raise ValueError("sources에는 비어 있지 않은 문자열만 허용됩니다.")
+    if len(sources) != len(set(sources)):
+        raise ValueError("sources에는 중복 값을 넣을 수 없습니다.")
+    if snapshot.get("geometry_quality") not in GEOMETRY_QUALITIES:
+        raise ValueError(
+            "geometry_quality는 exact, mixed, estimated 중 하나여야 합니다."
+        )
 
     features = snapshot.get("features")
     if not isinstance(features, dict):
@@ -106,29 +113,7 @@ def validate_live_feature_snapshot(
         raise ValueError(
             "스냅샷 피처 컬럼 누락: " + ", ".join(sorted(missing))
         )
-    for name in feature_columns:
-        value = features[name]
-        if value is None:
-            continue
-        if isinstance(value, bool):
-            continue
-        if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
-            raise ValueError(f"{name}은 유한한 숫자 또는 null이어야 합니다.")
-
-    for name in ("shade_ratio", "shade_building_height_coverage"):
-        value = features.get(name)
-        if value is not None and not 0 <= float(value) <= 1:
-            raise ValueError(f"{name}은 0~1 범위여야 합니다.")
-    shaded_walk = features.get("shaded_walk_m")
-    if shaded_walk is not None and float(shaded_walk) < 0:
-        raise ValueError("shaded_walk_m은 0 이상이어야 합니다.")
-    walk_distance = features.get("walk_distance_m")
-    if (
-        shaded_walk is not None
-        and walk_distance is not None
-        and float(shaded_walk) > float(walk_distance) + 0.01
-    ):
-        raise ValueError("shaded_walk_m은 walk_distance_m보다 클 수 없습니다.")
+    validate_feature_values(features, feature_columns)
 
     expected_hash = feature_snapshot_hash(snapshot)
     if snapshot["feature_snapshot_hash"] != expected_hash:

@@ -24,6 +24,7 @@ from scoring.train import (
     ModelNotReady,
     _group_holdout_metrics,
     _new_ranker,
+    _validate_holdout_group_mapping,
     _validate_profile_frame,
 )
 
@@ -181,15 +182,14 @@ def load_judge_training_data(
         seen_routes.add(route_key)
         flat_snapshots.append({
             "group_id": route_key[0],
-            "holdout_group_id": str(
-                snapshot.get("holdout_group_id") or route_key[0]
-            ),
+            "holdout_group_id": str(snapshot["holdout_group_id"]),
             "route_id": route_key[1],
             "feature_snapshot_hash": str(snapshot["feature_snapshot_hash"]),
             "snapshot_captured_at": str(snapshot["captured_at"]),
             **{name: snapshot["features"][name] for name in FEATURE_COLS},
         })
     snapshots = pd.DataFrame(flat_snapshots)
+    _validate_holdout_group_mapping(snapshots)
 
     label_rows = _read_jsonl(labels_path, "judge 라벨")
     for line_number, row in enumerate(label_rows, start=1):
