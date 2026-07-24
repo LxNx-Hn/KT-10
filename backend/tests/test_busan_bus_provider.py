@@ -1,4 +1,4 @@
-from xml.etree import ElementTree
+from defusedxml import ElementTree
 
 import pytest
 
@@ -32,6 +32,28 @@ def test_preserves_non_numeric_arrival_status_and_unknown_low_floor():
     assert result.is_low_floor is None
 
 
+def test_rejects_negative_arrival_metrics_instead_of_exposing_them():
+    item = ElementTree.fromstring("""
+      <item><lineno>81</lineno><carno1>5217</carno1><min1>-1</min1>
+      <station1>2</station1><lowplate1>1</lowplate1></item>
+    """)
+    with pytest.raises(RuntimeError, match="음수 도착 지표"):
+        _arrival(item, "1")
+
+
 def test_rejects_bims_error_response():
     with pytest.raises(RuntimeError, match="SERVICE_KEY_IS_NOT_REGISTERED_ERROR"):
         _parse_root(b"<response><header><resultCode>30</resultCode><resultMsg>SERVICE_KEY_IS_NOT_REGISTERED_ERROR</resultMsg></header></response>")
+
+
+def test_rejects_xml_external_entity_payload():
+    payload = b"""<?xml version="1.0"?>
+    <!DOCTYPE response [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+    <response>
+      <header>
+        <resultCode>00</resultCode>
+        <resultMsg>&xxe;</resultMsg>
+      </header>
+    </response>"""
+    with pytest.raises(RuntimeError, match="안전한 형식"):
+        _parse_root(payload)

@@ -6,8 +6,10 @@
 from __future__ import annotations
 
 import logging
-from xml.etree import ElementTree
+from typing import Any
 
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 import httpx
 
 from ..models import BusArrival, BusStopArrivals
@@ -17,7 +19,7 @@ log = logging.getLogger("providers.busan_bus")
 _BASE_URL = "https://apis.data.go.kr/6260000/BusanBIMS"
 
 
-def _text(item: ElementTree.Element, name: str) -> str | None:
+def _text(item: Any, name: str) -> str | None:
     value = item.findtext(name)
     return value.strip() if value and value.strip() else None
 
@@ -26,9 +28,14 @@ def _integer(value: str | None) -> int | None:
     if value is None:
         return None
     try:
-        return int(value)
+        number = int(value)
     except ValueError:
         return None
+    if number < 0:
+        raise RuntimeError(
+            "부산 BIMS 응답에 음수 도착 지표가 포함됐습니다."
+        )
+    return number
 
 
 def _low_floor(value: str | None) -> bool | None:
@@ -39,8 +46,11 @@ def _low_floor(value: str | None) -> bool | None:
     return None
 
 
-def _parse_root(content: bytes) -> ElementTree.Element:
-    root = ElementTree.fromstring(content)
+def _parse_root(content: bytes) -> Any:
+    try:
+        root = ElementTree.fromstring(content)
+    except (ElementTree.ParseError, DefusedXmlException) as exc:
+        raise RuntimeError("부산 BIMS XML 응답이 안전한 형식이 아닙니다.") from exc
     result_code = root.findtext(".//resultCode")
     if result_code != "00":
         message = root.findtext(".//resultMsg") or "응답 코드 미확인"
@@ -48,7 +58,7 @@ def _parse_root(content: bytes) -> ElementTree.Element:
     return root
 
 
-async def _request(path: str, params: dict[str, str | int]) -> ElementTree.Element:
+async def _request(path: str, params: dict[str, str | int]) -> Any:
     if not settings.live_bus:
         raise RuntimeError("부산 BIMS 서비스 키가 설정되지 않았습니다.")
     query = {"serviceKey": settings.bus_service_key, **params}
@@ -59,7 +69,7 @@ async def _request(path: str, params: dict[str, str | int]) -> ElementTree.Eleme
         return _parse_root(response.content)
     except RuntimeError:
         raise
-    except (httpx.HTTPError, ElementTree.ParseError) as exc:
+    except httpx.HTTPError as exc:
         log.warning("부산 BIMS 호출 실패 (%s)", type(exc).__name__)
         raise RuntimeError("부산 BIMS 호출에 실패했습니다.") from exc
 
@@ -83,7 +93,7 @@ async def search_bus_stops(query: str) -> list[BusStopArrivals]:
     return result
 
 
-def _arrival(item: ElementTree.Element, suffix: str) -> BusArrival | None:
+def _arrival(item: Any, suffix: str) -> BusArrival | None:
     vehicle_no = _text(item, f"carno{suffix}")
     route_name = _text(item, "lineno")
     if not vehicle_no or not route_name:

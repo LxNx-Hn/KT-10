@@ -86,6 +86,20 @@ def test_places_search():
     assert "서면역" in names
 
 
+def test_external_lookup_inputs_have_bounded_lengths():
+    assert client.get(
+        "/api/places/search",
+        params={"q": "가" * 101},
+    ).status_code == 422
+    assert client.get(
+        "/api/bus/stops",
+        params={"q": "가" * 101},
+    ).status_code == 422
+    assert client.get(
+        "/api/bus/arrivals/" + "1" * 65,
+    ).status_code == 422
+
+
 def test_weather_scenario_camel_case():
     r = client.get("/api/weather", params={"scenario": "heatwave"})
     assert r.status_code == 200

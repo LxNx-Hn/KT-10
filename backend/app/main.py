@@ -11,7 +11,15 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
+from fastapi import (
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Path as ApiPath,
+    Query,
+    Response,
+)
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.auth import optional_current_user, router as auth_router
@@ -124,7 +132,11 @@ def readiness() -> dict:
 @app.get("/api/places/search", response_model=list[Place])
 async def places_search(
     response: Response,
-    q: str = Query("", description="장소 이름/주소 검색"),
+    q: str = Query(
+        "",
+        max_length=100,
+        description="장소 이름/주소 검색",
+    ),
 ) -> list[Place]:
     response.headers["X-Place-Search-Source"] = (
         "kakao-rest" if settings.live_places else "demo"
@@ -147,7 +159,13 @@ async def weather(scenario: str = Query("normal")) -> WeatherCondition:
 
 
 @app.get("/api/bus/stops", response_model=list[BusStopArrivals], response_model_exclude_none=True)
-async def bus_stops(q: str = Query("", description="정류소명 또는 5자리 ARS 번호")) -> list[BusStopArrivals]:
+async def bus_stops(
+    q: str = Query(
+        "",
+        max_length=100,
+        description="정류소명 또는 5자리 ARS 번호",
+    ),
+) -> list[BusStopArrivals]:
     if settings.live_bus:
         try:
             return await search_bus_stops(q)
@@ -161,7 +179,9 @@ async def bus_stops(q: str = Query("", description="정류소명 또는 5자리 
     response_model=BusStopArrivals,
     response_model_exclude_none=True,
 )
-async def bus_arrivals(stop_id: str) -> BusStopArrivals:
+async def bus_arrivals(
+    stop_id: str = ApiPath(min_length=1, max_length=64),
+) -> BusStopArrivals:
     if settings.live_bus:
         try:
             return await get_bus_arrivals(stop_id)
