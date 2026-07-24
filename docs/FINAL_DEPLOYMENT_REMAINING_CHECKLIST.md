@@ -77,7 +77,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 
 ```powershell
 python scripts\prewarm_route_cache.py `
-  --base http://localhost:8080 `
+  --base-url http://localhost:8080 `
   --od-file data\precompute\priority_od_pairs.json `
   --max-cached-seconds 3
 ```

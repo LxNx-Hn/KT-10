@@ -142,7 +142,7 @@ AI 서버는 시작 시 정적 GeoPackage 레이어 9개를 EPSG:5179로 한 번
 ```powershell
 $env:PYTHONUTF8='1'
 python scripts\prewarm_route_cache.py `
-  --base http://localhost:8080 `
+  --base-url http://localhost:8080 `
   --od-file data\precompute\priority_od_pairs.json `
   --max-cached-seconds 3
 ```

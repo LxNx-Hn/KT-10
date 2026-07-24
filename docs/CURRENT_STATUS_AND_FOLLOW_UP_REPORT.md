@@ -35,14 +35,16 @@
 GLO-90, VWorld, OpenWeather, 부산 버스와 PostgreSQL을 실제로 연결해
 검증했습니다. 정적 공간 레이어는 AI 시작 시 EPSG:5179와 STRtree로
 준비하고, 외부 입력은 공급자별 영구 캐시에 저장합니다. 따라서 요청마다
-부산 전역을 다시 계산하지 않으며, 우선 OD 3개의 캐시 응답은 1.57~2.02초로
+부산 전역을 다시 계산하지 않으며, 우선 OD 3개의 캐시 응답은 1.72~2.07초로
 확인했습니다.
 
 현재 배포 readiness에서 남은 항목은 실제 운영 HTTPS origin과 그 origin의
 Kakao 웹 플랫폼·OAuth Redirect URI 등록입니다. 학습 기반 `ai` 모드는
-별도입니다. 실제 경로 평가 라벨과 관리자 승인 모델이 없으므로
-`/model/status`는 계속 `ready=false`이며, 이를 규칙 기반 `live` 서비스의
-실행 실패로 표현하지 않습니다.
+별도입니다. Codex judge 기술 베이스라인은 명시적 `judge_baseline`에서
+`ready=true`와 실제 순위 응답을 확인했지만, 사람 평가와 관리자 승인
+모델은 없습니다. 따라서 기본 `human_validated`의 `/model/status`는
+`ready=false`이며, 이를 규칙 기반 `live` 서비스의 실행 실패로 표현하지
+않습니다.
 
 ## 3. 현재 구현 계약
 
@@ -103,12 +105,13 @@ GLO-90 경사, CCTV·시설 밀도와 건물 그늘의 분석 geometry로 사용
 | --- | --- |
 | `ai/data/training/route_features.jsonl` | 실제 후보 0건 |
 | `ai/data/training/route_labels.csv` | 헤더만 존재 |
-| Judge 완성 평가 JSONL | 없음 |
-| `rankers.judge-baseline.zip` | 없음 |
+| `ai/data/training/judge_baseline/route_features.jsonl` | 부산 OD 3개·실제 후보 9개 |
+| Judge 완성 평가 JSONL | Codex 1회·6개 프로필·54개 |
+| `rankers.judge-baseline.zip` | 생성 완료, 비운영 기술 베이스라인 |
 | `rankers.human-candidate.zip` | 없음 |
 | `rankers.review-mixed-candidate.zip` | 없음 |
 | `rankers.human-validated.zip` | 없음 |
-| AI `/model/status` | 모델 준비 전에는 `ready=false` |
+| AI `/model/status` | 기본 `human_validated`는 `ready=false`; 명시적 `judge_baseline`은 `ready=true` |
 
 모델 파일은 실행 가능한 pickle이 아니라 checksum manifest와 프로필별
 XGBoost JSON을 담은 ZIP입니다.
@@ -120,10 +123,12 @@ XGBoost JSON을 담은 ZIP입니다.
 | `rankers.review-mixed-candidate.zip` | 동의 후기를 제한적으로 섞은 후보 | 금지 |
 | `rankers.human-validated.zip` | SHA-256과 승인 근거를 확인한 운영 모델 | 해당 없음, 관리자 수동 생성 |
 
-Judge 템플릿·검증·학습 코드는 구현되어 있지만 LLM을 실제로 호출해
-평가행을 채우는 실행기는 없습니다. 실제 후보를 먼저 동결하고 외부 LLM
-평가 결과의 `evaluated_at`, 0~4 relevance와 rationale을 받아야 judge
-모델을 만들 수 있습니다. 이를 사람 검증 모델로 표현하면 안 됩니다.
+Judge 템플릿·검증·학습 코드로 실제 후보를 동결한 뒤 Codex가 입력 피처만
+보고 0~4 relevance와 rationale을 작성했습니다. 프롬프트 해시, 평가시각,
+피처 해시와 모델 SHA-256을 보존합니다. 다만 OD 3개·후보 9개이고
+프로필별 holdout 검증 OD도 1개뿐이므로 로딩·순위화 계약을 확인하는 기술
+베이스라인입니다. 이를 실제 사용자 또는 사람 검증 모델로 표현하면 안
+됩니다.
 
 ## 5. 라벨링·개인화 상태
 
@@ -256,7 +261,7 @@ OpenWeather, 버스, PostgreSQL, session, 개인화, 라벨링 인증은
 1. 운영 HTTPS origin 확정, TLS 종료, Kakao 웹 도메인·OAuth Redirect URI
    등록
 2. 배포 서버/NAT의 고정 egress IP 확정과 ODsay Server Key 등록
-3. 외부 LLM judge 평가 또는 최소 9명 사람 평가
+3. 최소 9명 사람·전문가 평가와 관리자 검토
 4. VWorld 높이 단위·결측률과 현장 건물 그늘 오차 표본 검증
 
 ### 최종 로컬 검증 결과
@@ -265,7 +270,7 @@ OpenWeather, 버스, PostgreSQL, session, 개인화, 라벨링 인증은
 
 | 검증 | 최종 상태 |
 | --- | --- |
-| Backend pytest | `183 passed, 1 skipped` |
+| Backend pytest | `185 passed, 1 skipped` |
 | PostgreSQL opt-in E2E | `1 passed`; 중복후기 409 포함 |
 | AI pytest | `153 passed, 2 skipped` |
 | Frontend Vitest | `92 passed` (15 files) |
@@ -282,7 +287,8 @@ OpenWeather, 버스, PostgreSQL, session, 개인화, 라벨링 인증은
 | 현재 운영 readiness | 경로·건물·장소·날씨·버스·DB·session·개인화·라벨링 인증 통과; 로컬 HTTP의 `origin_security`, `kakao_login`만 대기 |
 | 실제 브라우저 QA | Kakao 지도 v2에서 `북구청`·`부산역` 검색, ODsay 경로 3개, GLO-90 경사, 다음 카드 `2/3` 확인; 콘솔 오류 0건 |
 | ODsay live E2E | 개발 IP 인증, search/loadLane, 부산진구청·북구청 OD 통과 |
-| 우선 OD cache warm | 3/3 exact walking·terrain·shade 상태; 캐시 응답 2.02초, 1.57초, 1.71초 |
+| 우선 OD cache warm | 3/3 exact walking·terrain·shade 상태; 캐시 응답 2.07초, 1.72초, 1.88초 |
+| Judge baseline runtime | 9개 실제 후보·54개 Codex 라벨, 6개 프로필 artifact 로드 `ready=true`, 실제 추천 `scoreKind=judge_baseline` |
 | 실제 공급자 E2E | Kakao REST, ODsay, VWorld, OpenWeather, 부산 버스 live 확인; Kakao OAuth는 운영 HTTPS origin 등록 대기 |
 | 원격 CI | 기능·운영 HEAD `7835b68`의 5개 job 전체 성공; production 이미지와 hardened runtime 포함 ([run 30096395012](https://github.com/LxNx-Hn/KT-10/actions/runs/30096395012)) |
 
@@ -303,7 +309,7 @@ OpenWeather, 버스, PostgreSQL, session, 개인화, 라벨링 인증은
 - [x] Kakao Local, VWorld, OpenWeather 운영 키 실호출
 - [ ] Kakao OAuth 운영 origin·Redirect URI 등록
 - [ ] 운영 도메인 TLS 종료와 외부 443·내부 loopback handoff
-- [ ] 실제 후보와 Judge 또는 사람 평가 데이터
+- [x] 실제 후보와 Codex judge 평가 데이터
 - [ ] 선택한 tier의 검증 모델과 오프라인 비교 보고서
 - [x] 최종 전체 로컬 테스트·생산 빌드·Docker 이미지 빌드
 - [x] 모바일·데스크톱 브라우저 지도-카드 동기화 검증

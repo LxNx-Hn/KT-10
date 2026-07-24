@@ -21,9 +21,19 @@ LLM이 경로·시설·그늘 값을 새로 만들거나 결측을 0으로 추�
 모델 artifact는 pickle이 아니다. ZIP 내부의 manifest와 프로필별
 XGBoost JSON만 허용하고 파일 경로·크기·SHA-256을 검증한 뒤 로드한다.
 
-현재 실제 후보 스냅샷과 LLM 평가 결과가 없으므로
-`rankers.judge-baseline.zip`은 생성되지 않았다. 저장소는 빈 평가표
-생성기와 검증·학습기만 제공하며 실제 LLM 평가 실행은 외부 입력이다.
+2026-07-24 기준 저장소에는 다음 비운영 기술 베이스라인이 있다.
+
+- 부산 OD 3개, 실제 후보 9개
+- Codex judge 1회, 6개 프로필의 평가 54개
+- `judge_source=openai:codex-gpt-5`
+- `rankers.judge-baseline.zip`
+- 모델 SHA-256:
+  `26392d4dd080e43969784e5e048b19ab7161843eae0da4364deeb9807c358451`
+
+프로필별 holdout 검증 OD가 1개뿐이어서 지표는 모델 파일·로딩·순위화
+계약을 확인하는 스모크 결과다. 실제 사용자 일반화 성능이나 접근성
+품질을 주장하는 근거로 사용하지 않는다. 사람 평가용 후보와 승인 운영
+모델은 여전히 없다.
 
 ## 두 단계의 AI 역할
 
@@ -176,7 +186,7 @@ Judge 라벨은 반드시 이 해시를 포함한다. 평가 후 피처나 prove
 $env:LABELING_API_TOKEN='<backend/.env와 같은 32자 이상 내부 토큰>'
 $env:PYTHONPATH='ai'
 .\.venv\Scripts\python.exe -m labeling.generate_batch `
-  --od-file ai\data\training\od_template.csv `
+  --od-file ai\data\training\judge_baseline_od.csv `
   --output-dir ai\data\training\judge_baseline
 ```
 
@@ -193,10 +203,12 @@ $env:PYTHONPATH='ai'
 ```
 
 이 명령은 평가를 실행하지 않고 `ready_for_training=false`인 빈 JSONL을
-만든다. 외부 LLM 평가 절차가 모든 실제 후보와 6개 프로필에 대해
-`evaluated_at`, `relevance`, `rationale`를 명시적으로 채워야 한다.
-저장소에는 이 외부 평가 실행기가 없으며, 누락·stale 해시·불완전한
-후보군·프롬프트 provenance가 섞인 입력은 학습기가 거부한다.
+만든다. 현재 추적된 `judge_labels.jsonl`은 이 템플릿의 고정 필드를
+유지하고 Codex 평가가 모든 실제 후보와 6개 프로필에 대해
+`evaluated_at`, `relevance`, `rationale`를 채운 결과다. 새 평가를
+재생성하면 기존 라벨을 덮어쓰므로 별도 run ID와 출력 파일에서 검토한
+뒤 교체한다. 누락·stale 해시·불완전한 후보군·프롬프트 provenance가
+섞인 입력은 학습기가 거부한다.
 
 평가가 끝난 뒤 별도 baseline을 학습한다.
 

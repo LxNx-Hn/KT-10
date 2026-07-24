@@ -133,10 +133,11 @@ $candidateSha = (Get-FileHash ai\data\rankers.human-candidate.zip -Algorithm SHA
   --approval-note '<검증 결과와 승인 근거>'
 ```
 
-Judge baseline의 빈 평가표 생성, 외부 평가 입력 계약과 학습 명령은
-[LLM judge baseline](docs/JUDGE_BASELINE.md)에 있습니다. 저장소에는
-실제 LLM 평가 실행기가 없으므로 외부 평가 결과 없이는
-`rankers.judge-baseline.zip`이 만들어지지 않습니다.
+Judge baseline의 빈 평가표 생성, 평가 입력 계약과 학습 명령은
+[LLM judge baseline](docs/JUDGE_BASELINE.md)에 있습니다. 현재 저장소에는
+부산 OD 3개·실제 후보 9개에 대한 Codex 평가 54개와
+`rankers.judge-baseline.zip`이 있습니다. 이는 로컬 비교용 기술
+베이스라인이며 사람 평가나 운영 승인 모델을 대신하지 않습니다.
 
 동의 후기 기반 전역 후보는
 `backend/ml/export_consented_reviews.py`와

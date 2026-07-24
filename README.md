@@ -17,6 +17,9 @@
 실제 공개 전에 필요한 도메인·공급자 콘솔·검증 순서는
 [최종 배포 잔여 작업 체크리스트](docs/FINAL_DEPLOYMENT_REMAINING_CHECKLIST.md)를
 따릅니다.
+Windows에서 키 확인부터 실제 장소검색·경로·경사·건물 그늘과 비운영
+Judge 모델까지 점검하는 명령은 [로컬 테스트 가이드](docs/LOCAL_TESTING.md)에
+분리했습니다.
 
 ## 확정된 추천 계약
 
@@ -69,7 +72,7 @@ JSON과 manifest checksum을 검증한 뒤 로드하며 역할은 다음과 같�
 ## 2026-07-24 상태
 
 - 로컬 최종 회귀는 AI `153 passed, 2 skipped`, 백엔드
-  `183 passed, 1 skipped`, 프론트 `92 passed`(15개 파일)입니다.
+  `185 passed, 1 skipped`, 프론트 `92 passed`(15개 파일)입니다.
   TypeScript/PWA build, 접근성 Playwright `5 passed, 1 expected skip`,
   Python compileall·Ruff·Bandit·pip check와 `npm audit`(취약점 0건)도
   통과했습니다.
@@ -84,24 +87,28 @@ JSON과 manifest checksum을 검증한 뒤 로드하며 역할은 다음과 같�
   선생성합니다. ODsay·OSMnx·GLO-90·VWorld 입력은 영구 캐시에 보존해
   요청 경로에서 외부 전체 계산을 반복하지 않습니다.
 - 우선 OD 3개(`북구청→부산역`, `부산진구청→서면역`,
-  `부산역→서면역`)를 사전 준비한 뒤 캐시 응답은 각각 2.02초, 1.57초,
-  1.71초였고 모든 후보가 실제 보행 geometry와 90m 지형 상태를
+  `부산역→서면역`)를 사전 준비한 뒤 캐시 응답은 각각 2.07초, 1.72초,
+  1.88초였고 모든 후보가 실제 보행 geometry와 90m 지형 상태를
   갖췄습니다. 야간에는 그늘을 0%로 만들지 않고 `not_daylight`로
   명시합니다.
-- `route_features.jsonl`은 0바이트, `route_labels.csv`는 헤더만 있고
-  위 네 종류의 ranker artifact가 아직 없습니다. 따라서 기본
-  `RANKER_TIER=human_validated`의 `/model/status`는 `ready=false`입니다.
-- `ROUTE_MODE=live` 규칙 베이스라인은 모델 없이 동작합니다. 학습 모델이
-  필요한 `ROUTE_MODE=ai`만 실제 후보 라벨과 관리자 승인 모델이
-  준비되기 전까지 비활성 상태입니다.
+- 사람 평가용 `route_features.jsonl`은 0바이트,
+  `route_labels.csv`는 헤더만이며 사람 후보·승인 모델은 아직 없습니다.
+  별도 Judge 배치는 실제 부산 OD 3개·후보 9개와 Codex 평가 54개를
+  보존하고 `rankers.judge-baseline.zip`까지 생성했습니다. 기본
+  `RANKER_TIER=human_validated`의 `/model/status`는 계속 `ready=false`이고,
+  로컬 비교에서 `judge_baseline`을 명시한 경우에만 준비됩니다.
+- `ROUTE_MODE=live` 규칙 베이스라인은 모델 없이 동작합니다. 운영
+  `ROUTE_MODE=ai`, `RANKER_TIER=human_validated`는 사람 라벨과 관리자
+  승인 모델이 준비되기 전까지 비활성입니다. 비운영 Judge 비교는
+  `RANKER_TIER=judge_baseline`을 명시한 로컬 환경에서만 사용할 수 있습니다.
 - 제공된 2023~2025 대중교통 만족도 압축파일은 161개 시군의 집단 평균
   데이터로 감사했습니다. OD·후보 경로·좌표·선택 순위가 없어 경로
   학습 라벨로 사용하지 않았고, 혼잡·환승 안내·교통약자 시설의 선택형
   직접 후기 항목과 데이터 감사 산출물로 반영했습니다.
-- 실제 후보 스냅샷과 LLM 평가 결과가 없고 저장소에는 빈 judge 평가표를
-  만드는 도구만 있습니다. 외부 LLM 평가를 실행해 모든 후보·6개
-  프로필의 점수와 근거를 채우기 전에는 judge baseline 모델도 생성되지
-  않습니다.
+- 실제 후보 9개에 대해 6개 프로필의 54개 `llm_judge` 평가와 근거,
+  프롬프트 해시·평가시각·피처 해시를 고정했습니다. 이 결과는 부산
+  OD 3개뿐인 기술 베이스라인이며 실제 사용자 검증이나 장애인 접근성
+  보장으로 표현하지 않습니다.
 - GLO-90 경사는 실제 DEM 조회 기반의 약 90m 지형 추정입니다. 그늘은
   건물만 계산하며 나무·지형 그늘을 포함하지 않습니다.
 - AI·백엔드·프론트 운영 이미지는 비루트·capability 제거·
@@ -160,7 +167,7 @@ python scripts\prepare_deployment_env.py --import-existing
 python scripts\prepare_deployment_env.py --check
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
 python scripts\prewarm_route_cache.py `
-  --base http://localhost:8080 `
+  --base-url http://localhost:8080 `
   --od-file data\precompute\priority_od_pairs.json `
   --max-cached-seconds 3
 python scripts\verify_deployment.py --base https://your-domain.example
@@ -202,11 +209,11 @@ $env:PYTHONPATH='ai'
 `captured_at`은 실제 후보 수집시각, `shade_evaluated_at`은 태양·건물
 그늘을 계산한 출발시각으로 분리되며 둘 다 스냅샷에 보존됩니다.
 
-초기에는 동결된 경로 사실을 블라인드 입력으로 사용하는 외부 LLM judge
-평가를 별도 baseline으로 만들 수 있습니다. 저장소는 빈 평가표 생성과
-검증·학습을 제공하지만 LLM 평가 실행 자체는 포함하지 않습니다.
-`evaluated_at`, `relevance`, `rationale`를 실제 평가 결과로 채우기 전에는
-학습할 수 없으며, 생성되더라도 `rankers.judge-baseline.zip`을
+동결된 경로 사실을 블라인드 입력으로 사용하는 LLM judge 평가는 별도
+baseline입니다. 현재 저장소에는 실제 후보 9개와 Codex가 입력 피처만 보고
+평가한 54개 라벨, 학습된 `rankers.judge-baseline.zip`이 있습니다.
+새 배치를 만들 때는 빈 평가표의 `evaluated_at`, `relevance`,
+`rationale`를 실제 평가 결과로 모두 채워야 합니다. 기존·새 결과 모두
 실사용자 검증 모델로 표현하거나 자동 승격하지 않습니다.
 
 기존 사람 라벨 절차는 생성된 `labeling_sheet.csv`를 9명이 0~4
