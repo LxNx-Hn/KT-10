@@ -1,15 +1,21 @@
 # 운영 배포 가이드
 
-운영 배포는 `docker-compose.prod.yml` 하나로 PostgreSQL, 실제 경로 수집 AI, FastAPI 백엔드, Nginx 정적 PWA를 함께 실행합니다. 프론트와 API를 같은 origin으로 제공하므로 OAuth 세션 쿠키와 CORS 구성이 단순하고 안전합니다.
+운영 Compose는 PostgreSQL, 실제 경로 수집 AI, FastAPI 백엔드와 Nginx
+정적 PWA를 함께 실행합니다. 앱 내부는 같은 origin으로 제공하지만
+**TLS 인증서 발급·종료는 Compose에 포함하지 않습니다.** 같은 호스트의
+Caddy/Nginx 또는 관리형 Load Balancer가 HTTPS를 종료한 뒤
+`127.0.0.1:8080`으로 전달해야 합니다.
 
 ## 1. 서버 준비
 
 - Docker Engine과 Docker Compose v2
-- HTTPS가 적용된 도메인
+- HTTPS 도메인과 TLS 종료용 reverse proxy 또는 관리형 Load Balancer
 - 영구 볼륨을 보존할 디스크
 - 최소 2 CPU, 4 GB RAM 권장
 
-방화벽에는 외부용 `PORT`만 열고 PostgreSQL, AI, 백엔드 포트는 공개하지 않습니다.
+기본 `BIND_ADDRESS=127.0.0.1`을 유지하면 앱 포트 8080도 인터넷에 직접
+노출되지 않습니다. 외부 방화벽에는 TLS 종료 계층의 443만 열고
+PostgreSQL, AI, 백엔드 포트는 공개하지 않습니다.
 
 ## 2. 키 등록
 
@@ -32,7 +38,10 @@ python scripts\prepare_deployment_env.py --import-existing
 - `VWORLD_API_KEY`: 건물 도형·높이와 그늘
 - `OPENWEATHER_API_KEY`: 실시간 날씨·대기
 - `BUS_SERVICE_KEY`: 부산 버스 도착 정보
-- 선택: `TMAP_API_KEY`: 보행 상세 보강
+- `TMAP_API_KEY` 또는 `OSMNX_WALK_GEOMETRY_ENABLED=true`: 실제 보행
+  geometry 기반 경사·주변 시설 분석. 둘 다 없으면 직선 추정 보행선을
+  분석에 쓰지 않으므로 해당 값은 미확인으로 남고 배포 환경 검사를
+  통과하지 않습니다. 운영에서는 응답시간이 안정적인 TMAP을 권장합니다.
 - 선택: `OSMNX_WALK_GEOMETRY_ENABLED`: 느린 OSM 보행망 복구를 허용할
   때만 `true`; 운영 기본값은 `false`
 - `RANKER_TIER`: 기본 `human_validated`, 비운영 비교 데모에서만
@@ -68,7 +77,27 @@ Local API가 HTTP 401을 반환하므로 두 키를 혼용하지 않습니다.
 아닙니다. 이 개발 IP는 바뀔 수 있으므로 운영 배포에서는 고정 egress IP를
 확보해 별도 등록해야 합니다.
 
-## 4. 정적 설정과 이미지 빌드 검증
+## 4. HTTPS 종료와 비공개 앱 포트
+
+같은 서버에서 Caddy를 사용하는 최소 예시는 다음과 같습니다. 도메인을
+실제 값으로 바꾸고 DNS가 서버를 가리킨 상태에서 실행합니다.
+
+```caddyfile
+route.example.kr {
+    reverse_proxy 127.0.0.1:8080 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+    }
+}
+```
+
+TLS 계층은 `Host`와 `X-Forwarded-Proto`를 직접 덮어써야 하며 외부
+클라이언트가 보낸 값을 그대로 신뢰하면 안 됩니다. 관리형 Load Balancer가
+컨테이너 호스트에 직접 접속해야 할 때만 `.env.production`의
+`BIND_ADDRESS=0.0.0.0`을 명시하고, 8080은 사설망·보안그룹에서 해당
+Load Balancer에만 허용합니다.
+
+## 5. 정적 설정과 이미지 빌드 검증
 
 ```powershell
 $env:PYTHONUTF8='1'
@@ -79,7 +108,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml build
 
 `--check`는 비밀값을 출력하지 않으며 필수 키, 내부 비밀값, HTTPS origin만 검사합니다. 실제 키 유효성은 마지막 스모크 검증에서 확인합니다.
 
-## 5. 실행
+## 6. 실행
 
 ```powershell
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d
@@ -88,7 +117,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 
 마이그레이션은 백엔드 시작 시 Alembic head까지 자동 적용됩니다. 최초 실행 후 모든 컨테이너가 `healthy`인지 확인합니다.
 
-## 6. 실제 데이터 종단 검증
+## 7. 실제 데이터 종단 검증
 
 ```powershell
 $env:PYTHONUTF8='1'
@@ -106,6 +135,9 @@ python scripts\verify_deployment.py --base https://route.example.kr
 - VWorld 건물 기반 주간 그늘 계산
 
 모든 항목이 통과하기 전에는 실제 서비스 완료로 간주하지 않습니다. 공급자 오류 때 데모나 0값으로 자동 대체하지 않습니다.
+공인 호스트에 `http://`를 넘기면 검증기는 즉시 실패합니다. 로컬
+`localhost`/`127.0.0.1` 스모크에서만 HTTP를 허용하며, HSTS는 실제
+HTTPS 요청에서만 필수로 검사합니다.
 
 Python 검증은 서버의 Kakao REST 공급자를 검사합니다. 사용자가 실제로
 쓰는 JavaScript Places 키와 웹 플랫폼 허용 도메인은 브라우저에서만
@@ -127,7 +159,7 @@ npm run test:e2e:places
 선택 상태가 동기화되는지 확인합니다. 점수는 `베이스라인 적합 점수`로
 표시하고 안전도·성공확률이 아니라는 설명을 포함해야 합니다.
 
-## 7. 운영 점검
+## 8. 운영 점검
 
 ```powershell
 docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail 200 backend ai frontend

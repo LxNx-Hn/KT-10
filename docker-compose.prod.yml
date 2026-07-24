@@ -21,6 +21,10 @@ services:
       context: .
       dockerfile: ai/Dockerfile
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       ODSAY_API_KEY: ${ODSAY_API_KEY:?ODSAY_API_KEY is required}
       TMAP_API_KEY: ${TMAP_API_KEY:-}
@@ -28,7 +32,7 @@ services:
       RANKER_TIER: ${RANKER_TIER:-human_validated}
       PYTHONUTF8: "1"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=3)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/ready', timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 15
@@ -39,6 +43,13 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
     environment:
       APP_ENV: production
       ROUTE_MODE: ${ROUTE_MODE:-live}
@@ -93,17 +104,21 @@ services:
       context: .
       dockerfile: frontend/Dockerfile.prod
       args:
-        VITE_KAKAO_MAP_KEY: ${VITE_KAKAO_MAP_KEY:?VITE_KAKAO_MAP_KEY is required}
+        KAKAO_BROWSER_APP_ID: ${VITE_KAKAO_MAP_KEY:?VITE_KAKAO_MAP_KEY is required}
         VITE_DATA_SOURCE: live
         VITE_API_BASE: ""
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     ports:
-      - "${PORT:-8080}:80"
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:8080"
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
       interval: 10s
       timeout: 5s
       retries: 15

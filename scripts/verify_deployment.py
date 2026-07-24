@@ -2,23 +2,67 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
+from datetime import UTC, datetime
 import json
+import math
 import sys
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 
+def _url_origin(url: str) -> tuple[str, str, int | None]:
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise RuntimeError(
+            "HTTP(S) origin 형식의 배포 URL만 검증할 수 있습니다."
+        )
+    if (
+        parsed.scheme == "http"
+        and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+    ):
+        raise RuntimeError("공개 배포 URL은 HTTPS여야 합니다.")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise RuntimeError("배포 URL 포트가 올바르지 않습니다.") from exc
+    return parsed.scheme, parsed.hostname, port
+
+
+def _validated_base(base: str) -> tuple[str, str, int | None]:
+    parsed = urlsplit(base)
+    if (
+        parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeError(
+            "HTTP(S) origin 형식의 배포 URL만 검증할 수 있습니다."
+        )
+    return _url_origin(base)
+
+
 def request(base: str, path: str, body: dict | None = None) -> tuple[dict | str, dict[str, str]]:
+    expected_origin = _validated_base(base)
     data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
     headers = {"Accept": "application/json"}
     if data is not None:
         headers["Content-Type"] = "application/json"
-    req = Request(f"{base}{path}", data=data, headers=headers, method="POST" if data else "GET")
+    url = f"{base}{path}"
+    req = Request(url, data=data, headers=headers, method="POST" if data else "GET")
     try:
-        with urlopen(req, timeout=30) as response:
+        # URL scheme/host/credentials를 위에서 제한한 배포 검증 전용 요청이다.
+        with urlopen(req, timeout=30) as response:  # nosec B310
+            if _url_origin(response.geturl()) != expected_origin:
+                raise RuntimeError(
+                    f"{path}: 다른 origin 또는 protocol로 redirect됐습니다."
+                )
             raw = response.read().decode("utf-8")
             response_headers = {key.lower(): value for key, value in response.headers.items()}
     except HTTPError as exc:
@@ -53,14 +97,59 @@ def verify_places(base: str) -> None:
             raise RuntimeError("Kakao 장소 검색이 demo 공급자로 대체되었습니다.")
 
 
+def _fresh_observation(value: object, label: str) -> None:
+    if not isinstance(value, str):
+        raise RuntimeError(f"{label} 관측시각이 없습니다.")
+    try:
+        observed_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise RuntimeError(f"{label} 관측시각 형식이 올바르지 않습니다.") from exc
+    if observed_at.tzinfo is None:
+        raise RuntimeError(f"{label} 관측시각에 시간대가 없습니다.")
+    age_seconds = (
+        datetime.now(UTC) - observed_at.astimezone(UTC)
+    ).total_seconds()
+    if age_seconds < -300:
+        raise RuntimeError(f"{label} 관측시각이 현재보다 미래입니다.")
+    if age_seconds > 3 * 60 * 60:
+        raise RuntimeError(f"{label} 관측값이 3시간보다 오래됐습니다.")
+
+
+def verify_weather(weather: object) -> None:
+    if not isinstance(weather, dict):
+        raise RuntimeError("실시간 날씨 응답 계약이 올바르지 않습니다.")
+    _fresh_observation(weather.get("observedAt"), "실시간 날씨")
+    _fresh_observation(
+        weather.get("airQualityObservedAt"),
+        "실시간 대기질",
+    )
+
+
+def verify_homepage_security(
+    headers: dict[str, str],
+    *,
+    require_hsts: bool = True,
+) -> None:
+    if headers.get("x-content-type-options") != "nosniff":
+        raise RuntimeError("/: Nginx 보안 헤더가 적용되지 않았습니다.")
+    hsts = headers.get("strict-transport-security", "")
+    if require_hsts and "max-age=" not in hsts.lower():
+        raise RuntimeError("/: HSTS 보안 헤더가 적용되지 않았습니다.")
+    if "nginx/" in headers.get("server", "").lower():
+        raise RuntimeError("/: Server 헤더가 Nginx 버전을 노출합니다.")
+
+
 def verify(base: str) -> None:
+    scheme, _, _ = _validated_base(base)
     homepage, homepage_headers = request(base, "/")
     if not isinstance(homepage, str) or "부산 접근성 길찾기" not in homepage:
         raise RuntimeError("/: 운영 프론트 문서를 확인할 수 없습니다.")
     if f'{base}/og-route-preview.png' not in homepage:
         raise RuntimeError("/: 소셜 미리보기 URL이 배포 origin으로 치환되지 않았습니다.")
-    if homepage_headers.get("x-content-type-options") != "nosniff":
-        raise RuntimeError("/: Nginx 보안 헤더가 적용되지 않았습니다.")
+    verify_homepage_security(
+        homepage_headers,
+        require_hsts=scheme == "https",
+    )
 
     manifest, _ = request(base, "/manifest.webmanifest")
     if not isinstance(manifest, dict) or manifest.get("display") != "standalone":
@@ -77,12 +166,19 @@ def verify(base: str) -> None:
     verify_places(base)
 
     weather, _ = request(base, "/api/weather")
-    if not isinstance(weather, dict) or "observedAt" not in weather:
-        raise RuntimeError("실시간 날씨 응답 계약이 올바르지 않습니다.")
+    verify_weather(weather)
 
     stops, _ = request(base, f"/api/bus/stops?{urlencode({'q': '서면'})}")
-    if not isinstance(stops, list):
-        raise RuntimeError("부산 버스 정류장 응답 계약이 올바르지 않습니다.")
+    if (
+        not isinstance(stops, list)
+        or not stops
+        or not any(
+            isinstance(stop, dict)
+            and "서면" in str(stop.get("stopName") or "")
+            for stop in stops
+        )
+    ):
+        raise RuntimeError("부산 버스 정류장 실검색 결과가 올바르지 않습니다.")
 
     departure = datetime.now(ZoneInfo("Asia/Seoul")).replace(
         hour=13, minute=0, second=0, microsecond=0
@@ -109,16 +205,61 @@ def verify(base: str) -> None:
             "topN": 3,
         },
     )
-    if not isinstance(routes, list) or not routes:
-        raise RuntimeError("실경로 추천이 비어 있습니다.")
+    if not isinstance(routes, list) or len(routes) != 3:
+        raise RuntimeError("실경로 추천이 3개 경로를 반환하지 않았습니다.")
+    route_ids = [
+        str(item.get("route", {}).get("id") or "")
+        for item in routes
+        if isinstance(item, dict)
+    ]
+    if len(route_ids) != 3 or "" in route_ids or len(set(route_ids)) != 3:
+        raise RuntimeError("실경로 추천 ID가 없거나 중복됐습니다.")
+    scores = [
+        item.get("score", {}).get("finalScore")
+        for item in routes
+        if isinstance(item, dict)
+    ]
+    if (
+        len(scores) != 3
+        or any(
+            isinstance(score, bool)
+            or not isinstance(score, (int, float))
+            or not math.isfinite(score)
+            or not 0 <= score <= 100
+            for score in scores
+        )
+        or scores != sorted(scores, reverse=True)
+    ):
+        raise RuntimeError("실경로 추천 점수가 내림차순이 아닙니다.")
     for item in routes:
         route = item.get("route", {})
-        if len(route.get("path", [])) < 2:
+        path = route.get("path")
+        if not isinstance(path, list) or len(path) < 2:
             raise RuntimeError("실경로 geometry가 없습니다.")
-        if route.get("terrain", {}).get("status") == "unavailable":
-            raise RuntimeError("경사도 계산 결과가 unavailable입니다.")
-        if route.get("shade", {}).get("status") != "estimated_public":
+        if route.get("geometryQuality") not in {"exact", "mixed"}:
+            raise RuntimeError("실경로 geometry 품질이 실측 경로 계약과 다릅니다.")
+        terrain = route.get("terrain")
+        if (
+            not isinstance(terrain, dict)
+            or terrain.get("status") != "estimated_90m"
+        ):
+            raise RuntimeError("90m DEM 경사도 계산 결과가 없습니다.")
+        shade = route.get("shade", {})
+        if not isinstance(shade, dict):
             raise RuntimeError("VWorld 건물 기반 주간 그늘 계산이 완료되지 않았습니다.")
+        shade_ratio = shade.get("shadeRatio")
+        if (
+            shade.get("status") != "estimated_public"
+            or shade.get("dataQuality") != "public"
+            or isinstance(shade_ratio, bool)
+            or not isinstance(shade_ratio, (int, float))
+            or not math.isfinite(shade_ratio)
+            or not 0 <= shade_ratio <= 1
+        ):
+            raise RuntimeError("VWorld 건물 기반 주간 그늘 계산이 완료되지 않았습니다.")
+        score_kind = item.get("score", {}).get("scoreKind")
+        if score_kind not in {"rule_baseline", "human_model"}:
+            raise RuntimeError("검증되지 않은 추천 모델 tier가 운영 응답에 포함됐습니다.")
 
     print("배포 스모크 검증 완료: PWA, 보안 헤더, 장소, 날씨, 버스, 실경로, 경사도, 그늘")
 

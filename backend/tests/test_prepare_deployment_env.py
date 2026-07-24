@@ -62,6 +62,7 @@ def test_import_env_maps_known_aliases_without_using_js_key_as_rest_key(
 def _valid_production_env() -> str:
     return "\n".join((
         "PUBLIC_ORIGIN=https://route.example.kr",
+        "BIND_ADDRESS=127.0.0.1",
         "PORT=8080",
         "ROUTE_MODE=live",
         "BUILDING_SOURCE=vworld",
@@ -69,6 +70,7 @@ def _valid_production_env() -> str:
         "KAKAO_REST_API_KEY=rest-key",
         "KAKAO_OAUTH_CLIENT_SECRET=oauth-secret",
         "ODSAY_API_KEY=odsay-key",
+        "TMAP_API_KEY=tmap-key",
         "VWORLD_API_KEY=vworld-key",
         "OPENWEATHER_API_KEY=weather-key",
         "BUS_SERVICE_KEY=bus-key",
@@ -88,6 +90,25 @@ def test_check_accepts_hardened_production_contract(
 ):
     target = tmp_path / ".env.production"
     target.write_text(_valid_production_env(), encoding="utf-8")
+    monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
+
+    prepare_deployment_env.check()
+
+
+def test_check_accepts_explicit_osmnx_when_tmap_is_absent(
+    tmp_path: Path,
+    monkeypatch,
+):
+    target = tmp_path / ".env.production"
+    target.write_text(
+        _valid_production_env()
+        .replace("TMAP_API_KEY=tmap-key", "TMAP_API_KEY=")
+        .replace(
+            "OSMNX_WALK_GEOMETRY_ENABLED=false",
+            "OSMNX_WALK_GEOMETRY_ENABLED=true",
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
 
     prepare_deployment_env.check()
@@ -120,6 +141,16 @@ def test_check_accepts_hardened_production_contract(
             "RANKER_TIER=human_validated",
             "RANKER_TIER=judge_baseline",
             "human_validated",
+        ),
+        (
+            "BIND_ADDRESS=127.0.0.1",
+            "BIND_ADDRESS=203.0.113.10",
+            "BIND_ADDRESS",
+        ),
+        (
+            "TMAP_API_KEY=tmap-key",
+            "TMAP_API_KEY=",
+            "exact walking geometry",
         ),
     ],
 )

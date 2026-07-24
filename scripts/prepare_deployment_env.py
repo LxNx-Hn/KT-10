@@ -174,6 +174,9 @@ def check() -> None:
         port = 0
     if not 1 <= port <= 65535:
         missing.append("PORT(1..65535)")
+    bind_address = values.get("BIND_ADDRESS", "127.0.0.1")
+    if bind_address not in {"127.0.0.1", "0.0.0.0"}:
+        missing.append("BIND_ADDRESS(127.0.0.1 or 0.0.0.0)")
     try:
         request_timeout = float(values.get("REQUEST_TIMEOUT", ""))
     except ValueError:
@@ -191,6 +194,13 @@ def check() -> None:
         "false",
     }:
         missing.append("OSMNX_WALK_GEOMETRY_ENABLED(boolean)")
+    if (
+        not values.get("TMAP_API_KEY")
+        and values.get("OSMNX_WALK_GEOMETRY_ENABLED", "").lower() != "true"
+    ):
+        missing.append(
+            "exact walking geometry(TMAP_API_KEY or OSMNX_WALK_GEOMETRY_ENABLED=true)"
+        )
     if missing:
         print("배포 준비 미완료: " + ", ".join(dict.fromkeys(missing)))
         raise SystemExit(1)

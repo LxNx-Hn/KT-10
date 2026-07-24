@@ -123,7 +123,10 @@ PostgreSQL까지 한 번에 실행하려면 저장소 루트에서 `docker compo
 
 ## 운영 배포
 
-운영용 구성은 개발 서버와 소스 마운트를 사용하지 않고, Nginx가 빌드된 PWA와 같은 origin의 `/api`를 제공합니다.
+운영용 구성은 개발 서버와 소스 마운트를 사용하지 않고, Nginx가 빌드된
+PWA와 같은 origin의 `/api`를 제공합니다. Compose의 앱 포트는 기본적으로
+`127.0.0.1:8080`에만 바인딩되며, 공인 배포에는 별도 Caddy/Load
+Balancer의 HTTPS 종료가 필수입니다.
 
 ```powershell
 $env:PYTHONUTF8='1'
@@ -139,6 +142,9 @@ python scripts\verify_deployment.py --base https://your-domain.example
 키별 콘솔 등록, HTTPS, 실제 데이터 종단 검증은 [운영 배포 가이드](docs/DEPLOYMENT.md)를 따릅니다.
 카카오 JavaScript 키는 지도와 브라우저 Places SDK용이며 서버의 REST API
 키를 대신하지 않습니다.
+실제 보행 geometry용 TMAP 키가 없고 OSMnx 복구도 비활성화된 경우,
+정류장·역 양 끝점을 이은 직선은 지도 연결선으로만 쓰며 경사나 주변
+시설 피처를 만들지 않습니다.
 
 ## 초기 평가·학습
 
