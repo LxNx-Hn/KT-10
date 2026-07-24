@@ -73,7 +73,9 @@ class DQNAgent:
         q_tgt  = r + self.gamma * self.target_net(ns).max(1)[0] * (1 - d)
 
         loss = self.loss_fn(q_curr, q_tgt.detach())
-        self.optimizer.zero_grad(); loss.backward(); self.optimizer.step()
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
         return float(loss)

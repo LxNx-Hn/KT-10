@@ -24,6 +24,8 @@ jobs:
         env:
           PYTHONPATH: ai
       - run: python -m compileall -q ai
+      - run: python -m ruff check ai --select E4,E7,E9,F
+      - run: python -m bandit -q -ll -r ai -x ai/tests
       - run: python -m pip_audit -r ai/requirements.txt --progress-spinner off
       - run: pip check
 
@@ -59,6 +61,8 @@ jobs:
         env:
           PYTHONPATH: backend
       - run: python -m compileall -q backend
+      - run: python -m ruff check backend scripts --select E4,E7,E9,F
+      - run: python -m bandit -q -ll -r backend/app backend/ml
       - run: alembic -c backend/alembic.ini upgrade head
       - run: alembic -c backend/alembic.ini check
       - run: python -m pip_audit -r backend/requirements.txt --progress-spinner off
@@ -79,6 +83,8 @@ jobs:
       - run: npm ci
       - run: npm test -- --run
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:a11y
       - run: npm audit --audit-level=moderate
 
   repository-contracts:
@@ -118,7 +124,14 @@ jobs:
   docker-build:
     runs-on: ubuntu-latest
     env:
-      PUBLIC_ORIGIN: http://localhost:8080
+      PUBLIC_ORIGIN: https://route-ci.example.invalid
+      BIND_ADDRESS: 127.0.0.1
+      PORT: "8080"
+      ROUTE_MODE: live
+      BUILDING_SOURCE: vworld
+      RANKER_TIER: human_validated
+      OSMNX_WALK_GEOMETRY_ENABLED: "false"
+      REQUEST_TIMEOUT: "8"
       POSTGRES_PASSWORD: ci-postgres-password
       SESSION_SECRET: ci-session-secret-at-least-32-characters
       TRAINING_ANONYMIZATION_SALT: ci-training-salt-at-least-32-characters
@@ -127,12 +140,63 @@ jobs:
       KAKAO_REST_API_KEY: ci-kakao-rest-key
       KAKAO_OAUTH_CLIENT_SECRET: ci-kakao-oauth-secret
       ODSAY_API_KEY: ci-odsay-key
+      TMAP_API_KEY: ci-tmap-key
       VWORLD_API_KEY: ci-vworld-key
       OPENWEATHER_API_KEY: ci-openweather-key
       BUS_SERVICE_KEY: ci-bus-service-key
     steps:
       - uses: actions/checkout@v7
+      - name: Validate production environment
+        run: |
+          python - <<'PY'
+          import os
+          from scripts.prepare_deployment_env import (
+              EXAMPLE,
+              TARGET,
+              _render,
+              _values,
+              check,
+          )
+
+          values = _values(EXAMPLE)
+          values.update({
+              key: os.environ[key]
+              for key in values
+              if os.environ.get(key)
+          })
+          TARGET.write_text(
+              _render(EXAMPLE.read_text(encoding="utf-8"), values),
+              encoding="utf-8",
+          )
+          check()
+          PY
       - name: Validate production compose
-        run: docker compose -f docker-compose.prod.yml config --quiet
+        run: docker compose --env-file .env.production -f docker-compose.prod.yml config --quiet
       - name: Build production images
-        run: docker compose -f docker-compose.prod.yml build
+        run: docker compose --env-file .env.production -f docker-compose.prod.yml build
+      - name: Verify hardened production runtime
+        run: |
+          set -euo pipefail
+          dc() {
+            docker compose --env-file .env.production -f docker-compose.prod.yml "$@"
+          }
+          trap 'dc down -v' EXIT
+          dc up -d --wait --wait-timeout 180
+          curl --fail --silent --show-error http://127.0.0.1:8080/healthz
+          curl --fail --silent --show-error http://127.0.0.1:8080/api/readiness |
+            python -c 'import json,sys; data=json.load(sys.stdin); assert data["ready"] is True'
+          if curl --silent --head http://127.0.0.1:8080/ |
+            grep --ignore-case --quiet '^strict-transport-security:'; then
+            echo "HSTS must not be asserted over direct HTTP" >&2
+            exit 1
+          fi
+          for service in ai backend frontend; do
+            dc exec -T "$service" sh -c 'test "$(id -u)" -ne 0'
+            dc exec -T "$service" sh -c \
+              'grep -Eq "^CapEff:[[:space:]]+0+$" /proc/1/status'
+            dc exec -T "$service" sh -c \
+              'grep -Eq "^NoNewPrivs:[[:space:]]+1$" /proc/1/status'
+          done
+          dc exec -T backend sh -c '! touch /read-only-root-check'
+          dc exec -T ai python -c \
+            'import json,urllib.request; data=json.load(urllib.request.urlopen("http://127.0.0.1:8001/ready")); assert data["ready"] is True'
