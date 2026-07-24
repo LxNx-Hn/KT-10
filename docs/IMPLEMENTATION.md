@@ -12,8 +12,9 @@
 2. 백엔드가 현재 날씨와 6개 기본 프로필 중 하나, 이번 이동 조건, 로그인
    사용자의 장기 설정을 모은다.
 3. 백엔드는 AI 서버의 `POST /labeling/candidates`를 호출한다. AI 서버는
-   ODsay와 TMAP 후보를 수집하고, OSMnx는 ODsay 보행 geometry 복구에만
-   사용한다. 실패 공급자는 메타데이터에 남긴다.
+   ODsay와 TMAP 후보를 수집한다. OSMnx는
+   `OSMNX_WALK_GEOMETRY_ENABLED=true`일 때만 ODsay 보행 geometry
+   복구에 사용한다. 실패 공급자는 메타데이터에 남긴다.
 4. AI 서버가 ODsay `mapObj`·`loadLane`과 보행 geometry를 결합하고
    EPSG:5179 공간 피처, Open-Meteo GLO-90 지형 피처, 실제 수집시각
    `captured_at`이 담긴 기본 스냅샷을 반환한다.
@@ -97,6 +98,10 @@ PostgreSQL만 지원하며 SQLite 자동 대체는 없습니다. Alembic
 
 ## UI
 
+- 장소 검색: live PWA는 `VITE_KAKAO_MAP_KEY`의 Kakao JavaScript
+  Places SDK와 부산 전역 bounds를 사용합니다. JavaScript 키가 없는
+  서버형 구성은 `X-Place-Search-Source=kakao-rest`가 확인된 응답만
+  사용하며 demo 목록을 실제 검색처럼 표시하지 않습니다.
 - 검색 전: 장소 검색, 실제 현재 위치, 6개 기본 프로필, 짐 많음·유아차·
   계단 회피·그늘 우선·저상버스 우선·환승 최소, 음성
 - 검색 후: 지도 중심 화면과 한 장씩 보이는 수평 경로 카드, 순위,
@@ -123,4 +128,7 @@ npm test -- --run
 npm run build
 ```
 
-외부 키가 없는 CI는 계약·실패경계·모델 학습·UI를 검증합니다. 실제 공급자 응답 검증은 키 입력 후 별도 smoke 단계로 실행해야 합니다.
+외부 키가 없는 CI는 계약·실패경계·모델 학습·UI를 검증합니다. 실제
+공급자 응답과 Kakao JavaScript Places 브라우저 E2E는 키가 적용된
+서버·배포 origin이 먼저 필요하므로 [DEPLOYMENT.md](DEPLOYMENT.md)의
+선행 조건과 명령으로 별도 실행합니다.

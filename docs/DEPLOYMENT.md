@@ -18,18 +18,23 @@
 ```powershell
 $env:PYTHONUTF8='1'
 python scripts\prepare_deployment_env.py --import-existing
+# 별도 전달 파일도 함께 가져오는 경우:
+# python scripts\prepare_deployment_env.py --import-existing --import-env C:\path\to\env
 ```
 
 생성된 `.env.production`에서 다음 값을 채웁니다.
 
 - `PUBLIC_ORIGIN`: 최종 HTTPS origin, 예: `https://route.example.kr`
-- `VITE_KAKAO_MAP_KEY`: 카카오 JavaScript 키
-- `KAKAO_REST_API_KEY`, `KAKAO_OAUTH_CLIENT_SECRET`: 장소 검색·로그인
+- `VITE_KAKAO_MAP_KEY`: 지도와 브라우저 Places SDK용 카카오 JavaScript 키
+- `KAKAO_REST_API_KEY`: 백엔드 Local API 장소검색과 로그인용 REST 키
+- `KAKAO_OAUTH_CLIENT_SECRET`: 카카오 로그인용 Client secret
 - `ODSAY_API_KEY`: 실제 경로 후보와 geometry
 - `VWORLD_API_KEY`: 건물 도형·높이와 그늘
 - `OPENWEATHER_API_KEY`: 실시간 날씨·대기
 - `BUS_SERVICE_KEY`: 부산 버스 도착 정보
 - 선택: `TMAP_API_KEY`: 보행 상세 보강
+- 선택: `OSMNX_WALK_GEOMETRY_ENABLED`: 느린 OSM 보행망 복구를 허용할
+  때만 `true`; 운영 기본값은 `false`
 - `RANKER_TIER`: 기본 `human_validated`, 비운영 비교 데모에서만
   `judge_baseline`
 
@@ -38,6 +43,12 @@ python scripts\prepare_deployment_env.py --import-existing
 `LABELING_API_TOKEN`은 비용이 큰 라벨링 후보 API에만 쓰는 32자 이상의
 내부 토큰이며 브라우저에 전달하지 않습니다. 키 값과
 `.env.production`은 Git에 커밋하지 않습니다.
+`KAKAO_JAVASCRIPT_KEY` 이름으로 전달된 값은 준비 스크립트가
+`VITE_KAKAO_MAP_KEY`로만 변환합니다. JavaScript 키를 REST 키로 복사하면
+Local API가 HTTP 401을 반환하므로 두 키를 혼용하지 않습니다.
+`--import-env`로 명시한 파일의 비어 있지 않은 공급자 키는 기존 하위
+`.env`와 `.env.production`보다 우선하므로 키 회전에도 사용할 수 있습니다.
+명시 파일에 없는 키는 기존 값을 보존합니다.
 
 ## 3. 공급자 콘솔 설정
 
@@ -50,9 +61,9 @@ python scripts\prepare_deployment_env.py --import-existing
 
 도메인 등록이 누락되면 키 문자열이 있어도 카카오 지도 401 또는 공급자 인증 오류가 발생합니다.
 
-2026-07-24 현재 로컬 개발 요청 출발지 공인 IPv4는
-`119.202.222.84`입니다. 로컬 smoke test에는 이 값을 ODsay Server 허용
-IP로 등록합니다. `localhost`, `127.0.0.1`, `192.168.x.x`, Docker
+2026-07-24 로컬 개발 요청의 공인 IPv4 등록 후 ODsay 실제
+`searchPubTransPathT`·`loadLane` 호출이 통과했습니다. `localhost`,
+`127.0.0.1`, `192.168.x.x`, Docker
 `172.x.x.x` 또는 프론트 도메인은 백엔드 Server Key의 허용 IP가
 아닙니다. 이 개발 IP는 바뀔 수 있으므로 운영 배포에서는 고정 egress IP를
 확보해 별도 등록해야 합니다.
@@ -95,6 +106,21 @@ python scripts\verify_deployment.py --base https://route.example.kr
 - VWorld 건물 기반 주간 그늘 계산
 
 모든 항목이 통과하기 전에는 실제 서비스 완료로 간주하지 않습니다. 공급자 오류 때 데모나 0값으로 자동 대체하지 않습니다.
+
+Python 검증은 서버의 Kakao REST 공급자를 검사합니다. 사용자가 실제로
+쓰는 JavaScript Places 키와 웹 플랫폼 허용 도메인은 브라우저에서만
+검증할 수 있으므로 배포 origin을 대상으로 다음 E2E도 실행합니다.
+
+```powershell
+cd frontend
+npm ci
+npx playwright install chromium
+$env:E2E_BASE_URL='https://route.example.kr'
+npm run test:e2e:places
+```
+
+이 테스트는 모바일 Chromium에서 `북구청`과 `부산역`을 실제
+검색·선택하고, 추천 경로 3개가 표시되며 콘솔 오류가 없는지 확인합니다.
 
 추가로 6개 프로필과 짐 많음·유아차·계단 회피·그늘 우선·저상버스 우선·
 환승 최소 조건이 동일 API 계약으로 처리되는지, 지도와 수평 경로 카드의

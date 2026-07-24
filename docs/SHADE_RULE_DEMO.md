@@ -19,7 +19,12 @@
 
 ## 사실성 경계
 
-`data/ai/buildings.demo.json`은 기능 검증용 합성 건물입니다. 따라서 API는 `dataQuality=demo`, `status=estimated_demo`를 반환하고 UI는 `데모 건물 높이`를 함께 표시합니다. 야간은 그늘 0%로 바꾸지 않고 `not_daylight`, 경로 geometry가 없으면 `unavailable`로 반환합니다.
+`data/ai/buildings.demo.json`은 기능 검증용 합성 건물입니다. 따라서 API는
+`dataQuality=demo`, `status=estimated_demo`를 반환하고 UI는
+`데모 건물 높이`를 함께 표시합니다. 파일의 `applicableBounds`는 고정
+데모 OD만 포함하며, 임의 실제 경로가 이 범위를 벗어나면 그늘 0%로
+간주하지 않고 `unavailable`로 반환합니다. 야간은 `not_daylight`, 경로
+geometry가 없으면 `unavailable`입니다.
 
 합성 건물은 `BUILDING_SOURCE=demo`를 명시한 기능 검증에만 사용합니다.
 응답과 UI가 `estimated_demo`/`데모 건물 높이`를 유지하므로 실제 공공
@@ -91,8 +96,10 @@ LLM/Codex judge로 만든 초기 모델은
 1. 유효 VWorld 키로 부산 실제 응답·이용조건·높이 단위 검증
 2. 보행로 정밀 geometry와 건물 footprint 좌표 정합 검증
 3. 현장 표본으로 시간대별 그늘 비율 오차 측정
-4. ODsay Server 허용 IP에 개발 공인 IPv4 `119.202.222.84` 등록 후
-   인증 재검증
-5. Kakao REST/OAuth 키, PostgreSQL, 세션 비밀키 설정
-6. 실제 사용자 후기 파일럿으로 승인된 개인화 최대 영향 35% 재검토
-7. 관리자 후보 학습 결과의 오프라인 비교 보고서와 운영 승인을 위한 절차
+4. Kakao REST/OAuth 키와 운영 Redirect URI 설정
+5. 실제 사용자 후기 파일럿으로 승인된 개인화 최대 영향 35% 재검토
+6. 관리자 후보 학습 결과의 오프라인 비교 보고서와 운영 승인을 위한 절차
+
+ODsay 개발 IP 인증과 실제 후보·`loadLane` 호출은 2026-07-24
+재검증에서 통과했습니다. 운영 서버의 고정 egress IP는 배포 시 별도로
+등록해야 합니다.

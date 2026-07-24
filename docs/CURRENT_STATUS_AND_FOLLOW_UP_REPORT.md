@@ -26,11 +26,12 @@
 - 출처가 분리된 judge/사람/후기혼합/운영 모델 아티팩트
 - PostgreSQL, PWA, 운영 Compose, readiness와 배포 검증 스크립트
 
-하지만 아직 **실데이터까지 검증된 운영 완료 상태는 아닙니다**. 로컬
-코드·DB·PWA·컨테이너 회귀는 통과했지만 외부 공급자 인증, 실제
-후보·평가 데이터와 운영 모델이 남아 있습니다. 따라서 현재 검증 완료
-범위는 고정 데모와 모델 없이 동작하는 규칙 기반 코드이며, 실제 `live`
-종단 성공은 ODsay·VWorld 등 외부 설정 뒤 별도 확인해야 합니다.
+하지만 아직 **모든 실데이터까지 검증된 운영 완료 상태는 아닙니다**.
+Kakao JavaScript Places와 ODsay 실제 후보·`loadLane`, GLO-90 경사,
+규칙 기반 `live` 추천의 로컬 종단은 통과했습니다. VWorld 건물,
+OpenWeather, Kakao 로그인, 실제 평가 데이터와 운영 모델은 외부 입력이
+남아 있습니다. 현재 임의 OD의 그늘은 합성 데이터 검증 범위 밖이면
+0%로 만들지 않고 `unavailable`로 반환합니다.
 
 ## 3. 현재 구현 계약
 
@@ -149,17 +150,15 @@ relevance를 사람 직접 평가의 정수 라벨 계약과 구분합니다.
 
 ## 7. 외부 환경 차단사항
 
-2026-07-24 현재 ODsay Server Key 실호출은 다음 오류로 실패했습니다.
+2026-07-24 ODsay Server Key에 개발 egress IP를 등록한 뒤
+`searchPubTransPathT`와 `loadLane` 실호출이 모두 통과했습니다.
+`북구청→부산역`은 원시 후보 20개, 상위 후보 3개를 반환했고 최종
+collector는 약 1.2초였습니다. 대중교통 geometry는 `exact`, TMAP 키가
+없는 도보 연결선은 `estimated`, 전체는 `mixed`입니다.
 
-```text
-[ApiKeyAuthFailed] ApiKey authentication failed.
-```
-
-개발 요청의 공인 egress IPv4는 `119.202.222.84`입니다. ODsay
-애플리케이션 Server 허용 IP에 이 값을 등록해야 합니다. 운영에서는
-배포 서버/NAT의 별도 고정 egress 공인 IP를 등록해야 하며
-`localhost`, 사설 IP, Docker 내부 IP 또는 프론트 도메인을 등록하지
-않습니다.
+운영에서는 배포 서버/NAT의 별도 고정 egress 공인 IP를 ODsay Server
+허용 IP에 등록해야 합니다. `localhost`, 사설 IP, Docker 내부 IP 또는
+프론트 도메인은 등록 대상이 아닙니다.
 
 현재 운영 환경파일에서 추가로 필요한 외부 값은 다음과 같습니다.
 
@@ -188,17 +187,21 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 - 수평 카드, 지도 선택 동기화, 버튼·키보드·스크린리더 대체 조작
 - 느린 이전 검색·재채점 응답이 최신 결과를 덮지 않는 요청 세대 제어
 - 라벨링 후보 API 내부 토큰 보호
+- Kakao JavaScript Places 기반 `북구청`·`부산역` 실제 검색과
+  공급자 출처가 확인되지 않은 demo 응답 차단
+- ODsay 축약 `mapObj`의 `loadLane` 정규화와 보행 geometry 공급자
+  지연 제어
+- 게스트 로그인 상태 조회의 정상 204 계약과 실제 브라우저 E2E
 
 ## 9. 아직 완료되지 않은 범위
 
 ### 외부 입력이 있어야 가능한 항목
 
-1. ODsay 허용 IP 등록과 실제 `searchPubTransPathT`·`loadLane` 성공
-2. Kakao Local/OAuth, VWorld, OpenWeather 키와 콘솔 설정
-3. 부산 층화 OD의 실제 후보·그늘 스냅샷 생성
-4. 외부 LLM judge 평가 또는 최소 9명 사람 평가
-5. VWorld 높이 단위·결측률과 현장 건물 그늘 오차 표본 검증
-6. 운영 HTTPS origin과 고정 egress IP 확정
+1. Kakao REST/OAuth, VWorld, OpenWeather 키와 콘솔 설정
+2. 부산 층화 OD의 실제 VWorld 그늘 스냅샷 생성
+3. 외부 LLM judge 평가 또는 최소 9명 사람 평가
+4. VWorld 높이 단위·결측률과 현장 건물 그늘 오차 표본 검증
+5. 운영 HTTPS origin과 고정 egress IP 확정·등록
 
 ### 최종 로컬 검증 결과
 
@@ -206,20 +209,22 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 
 | 검증 | 최종 상태 |
 | --- | --- |
-| Backend pytest | `100 passed, 1 skipped` |
+| Backend pytest | `109 passed, 1 skipped` |
 | PostgreSQL opt-in E2E | `1 passed`; 중복후기 409 포함 |
-| AI pytest | `59 passed, 1 skipped` |
-| Frontend Vitest | `49 passed` |
+| AI pytest | `64 passed, 1 skipped` |
+| Frontend Vitest | `63 passed` |
 | TypeScript/Vite PWA build | 통과; service worker·manifest 생성 |
 | Python compileall / pip check | 통과 / broken requirement 0건 |
 | Alembic PostgreSQL | `20260724_0002 (head)`; `check` 통과 |
 | UTF-8/JSON 계약 | 통과 |
 | npm audit | 취약점 0건 |
-| Production Compose / Docker build | config 통과; AI·백엔드·프론트 이미지 빌드 통과 |
-| 실제 브라우저 QA | 430px/1280px 통과; 3번째 지도-카드 동기화 유지; 콘솔 오류·경고 0건 |
-| ODsay live E2E | 3건 모두 `ApiKeyAuthFailed`; 허용 IP 등록 대기 |
-| 다른 실제 공급자 E2E | Kakao·VWorld·OpenWeather 외부 키 대기 |
-| 원격 CI | 기능·문서 head `99494e5`의 5개 job 전체 성공; 최신 상태는 README CI 배지 참조 |
+| Production Compose / Docker build | 비밀 아닌 검증값으로 config 통과; AI·백엔드·프론트 이미지 빌드 통과 |
+| 현재 `.env.production --check` | 외부 키 4개 누락을 정상 차단; 아래 입력 전에는 배포 불가 |
+| 실제 브라우저 QA | Playwright `1 passed`; Kakao `북구청`·`부산역` 선택, ODsay 추천 3개 표시, 콘솔 오류·경고 0건 |
+| ODsay live E2E | 개발 IP 인증, search/loadLane, 부산진구청·북구청 OD 통과 |
+| Kakao Places live E2E | 모바일 Chromium에서 두 검색어 모두 실제 결과 선택 통과 |
+| 다른 실제 공급자 E2E | VWorld·OpenWeather·Kakao OAuth 외부 키 대기 |
+| 원격 CI | 기능 HEAD `f863908`의 5개 job 전체 성공; 최종 문서 커밋도 같은 workflow로 확인 |
 
 ## 10. 배포 완료 기준
 
@@ -230,7 +235,8 @@ origin에 맞춰 콘솔에서 등록해야 합니다. 현재 로컬 HTTP
 - [x] 건물 그늘 오버레이와 미확인 값 보존
 - [x] 사용자별 즉시 개인화와 관리자 수동 전역 모델 절차
 - [x] 모델 tier·label origin·checksum 승격 분리
-- [ ] ODsay 개발/운영 egress IP 등록과 실호출 통과
+- [x] ODsay 개발 egress IP 등록과 실호출 통과
+- [ ] ODsay 운영 서버의 고정 egress IP 등록
 - [ ] VWorld 건물 높이·좌표·결측률 실응답 검증
 - [ ] Kakao Local/OAuth, OpenWeather 운영 설정
 - [ ] 실제 후보와 Judge 또는 사람 평가 데이터

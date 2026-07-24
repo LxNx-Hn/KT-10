@@ -11,7 +11,8 @@
 - 범위: 부산 전역, 초기 검증은 평지·급경사·해안·버스·도시철도·환승을
   포함한 층화 OD
 - 지도: Kakao Maps 배경지도와 경로·시간별 건물 그늘 오버레이
-- 후보: ODsay 대중교통, TMAP 보행 후보, OSMnx 보행 geometry 복구
+- 후보: ODsay 대중교통, TMAP 보행 후보, 명시적 opt-in OSMnx 보행
+  geometry 복구
 - 1단계: 실제 경로 사실을 동결하고 결정적 규칙으로 특성 라벨 생성
 - 2단계: 프로필·상황·개인 설정의 상대 적합도를 계산해 점수순 순위화
 - 기본 프로필: 일반·고령자·아동·청소년·장애인·임산부 6개
@@ -92,10 +93,11 @@ AI 서버의 이전 직접 `POST /recommend`는 정식 그늘 결합 흐름을 �
 
 ### P0. 외부 공급자 해제
 
-1. ODsay Server 허용 IP에 개발 공인 IPv4 `119.202.222.84` 등록
-2. ODsay `searchPubTransPathT`·`loadLane` 라이브 smoke 통과
-3. Kakao Local/OAuth, VWorld, OpenWeather 키와 콘솔 도메인 설정
-4. 운영 HTTPS origin과 고정 egress IP 확정
+1. 완료: ODsay 개발 Server 허용 IP 등록과
+   `searchPubTransPathT`·`loadLane` 라이브 smoke
+2. 완료: Kakao JavaScript Places의 `북구청`·`부산역` 브라우저 E2E
+3. 남음: Kakao REST/OAuth, VWorld, OpenWeather 키와 콘솔 도메인 설정
+4. 남음: 운영 HTTPS origin과 고정 egress IP 확정·등록
 
 ### P1. 실제 후보 스냅샷
 

@@ -26,7 +26,7 @@
 ## 현재 구현
 
 - ODsay 대중교통 후보와 공식 `loadLane` geometry, TMAP 보행 후보,
-  OSMnx 보행 geometry 복구 결과의 구간별 지도 오버레이
+  opt-in OSMnx 보행 geometry 복구 결과의 구간별 지도 오버레이
 - 부산 전역 공간 레이어 결합: 쉼터, CCTV, AED, 휠체어 충전기, 스마트쉘터, 도시철도 접근성, 횡단보도, 정류장 등
 - Open-Meteo Copernicus GLO-90 고도 기반 오르막·내리막·누적 상승량 추정(90m 해상도임을 UI에 명시)
 - 태양 위치와 합성 건물 높이로 계산한 검증용 그늘 비율·지도 오버레이, VWorld 공공 건물 도형·높이 공급자(품질 상태 분리)
@@ -56,22 +56,30 @@ JSON과 manifest checksum을 검증한 뒤 로드하며 역할은 다음과 같�
 
 ## 2026-07-24 상태
 
-- 로컬 최종 회귀는 AI `59 passed, 1 skipped`, 백엔드
-  `100 passed, 1 skipped`, PostgreSQL opt-in E2E `1 passed`,
-  프론트 `49 passed`입니다. TypeScript/PWA build, Python compileall,
+- 로컬 최종 회귀는 AI `64 passed, 1 skipped`, 백엔드
+  `109 passed, 1 skipped`, PostgreSQL opt-in E2E `1 passed`,
+  프론트 `63 passed`입니다. TypeScript/PWA build, Python compileall,
   Alembic `20260724_0002 (head)`와 schema check, `pip check`,
   `npm audit`(취약점 0건), production Compose 해석과 AI·백엔드·프론트
   이미지 빌드도 통과했습니다.
-- 430px 모바일과 1280px 데스크톱 브라우저에서 경로 검색, 지도-카드
-  3번째 경로 동기화, 가로 overflow와 콘솔 경고·오류를 재검증했습니다.
-- 마지막으로 확인한 개발 런타임은 장소·날씨 `mock`, 버스 `live`, 경로
-  `verified-demo`, 건물 `synthetic-demo`, AI 모델 `inactive`입니다.
+- 모바일 Chromium 실제 브라우저 E2E에서 Kakao Places의 `북구청`·`부산역`
+  검색과 선택, ODsay 실경로 3개 표시, 콘솔 오류 0건을 확인했습니다.
+  기존 430px 모바일·1280px 데스크톱 지도-카드 동기화 검증도 유지합니다.
+- 마지막으로 확인한 개발 런타임은 브라우저 장소검색 `kakao-js(live)`,
+  날씨 `mock`, 버스 `live`, 경로 `ai-candidates(live)`, 건물
+  `synthetic-demo`, AI 모델 `inactive`입니다.
+- 같은 런타임의 `북구청→부산역` 종단 재검증은 경로 3개,
+  `geometry=mixed`, `terrain=estimated_90m`,
+  `shade=unavailable(null)`, `scoreKind=rule_baseline`을 반환했습니다.
+  합성 건물 범위 밖의 그늘을 0%로 만들지 않습니다.
 - `route_features.jsonl`은 0바이트, `route_labels.csv`는 헤더만 있고
   위 네 종류의 ranker artifact가 아직 없습니다. 따라서 기본
   `RANKER_TIER=human_validated`의 `/model/status`는 `ready=false`입니다.
-- ODsay 키 값은 있으나 `ApiKeyAuthFailed`가 확인됐습니다. 로컬 백엔드
-  Server Key 허용 IP에는 현재 공인 IPv4 `119.202.222.84`를 등록해야
-  합니다.
+- ODsay Server Key의 개발 IP 등록 후 인증과 실제 호출이 통과했습니다.
+  `북구청→부산역` 검색은 원시 후보 20개, 최종 상위 3개를 반환했으며
+  기준점 없는 `mapObj`의 `loadLane` 형식도 보정했습니다. TMAP이 없을
+  때 보행 상세선은 `estimated`, 대중교통 선은 `exact`, 전체는
+  `mixed`로 표시하며 첫 수집은 약 1.2초였습니다.
 - 실제 후보 스냅샷과 LLM 평가 결과가 없고 저장소에는 빈 judge 평가표를
   만드는 도구만 있습니다. 외부 LLM 평가를 실행해 모든 후보·6개
   프로필의 점수와 근거를 채우기 전에는 judge baseline 모델도 생성되지
@@ -120,6 +128,8 @@ PostgreSQL까지 한 번에 실행하려면 저장소 루트에서 `docker compo
 ```powershell
 $env:PYTHONUTF8='1'
 python scripts\prepare_deployment_env.py --import-existing
+# 별도 전달 환경파일이 있으면 함께 가져오기:
+# python scripts\prepare_deployment_env.py --import-existing --import-env C:\path\to\env
 # .env.production의 외부 키와 PUBLIC_ORIGIN 입력
 python scripts\prepare_deployment_env.py --check
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
@@ -127,6 +137,8 @@ python scripts\verify_deployment.py --base https://your-domain.example
 ```
 
 키별 콘솔 등록, HTTPS, 실제 데이터 종단 검증은 [운영 배포 가이드](docs/DEPLOYMENT.md)를 따릅니다.
+카카오 JavaScript 키는 지도와 브라우저 Places SDK용이며 서버의 REST API
+키를 대신하지 않습니다.
 
 ## 초기 평가·학습
 

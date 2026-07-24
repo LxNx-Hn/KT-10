@@ -92,8 +92,9 @@ Docker Compose는 PostgreSQL 16과 healthcheck를 포함합니다.
 ## ODsay 인증
 
 ODsay는 프론트 Web Key가 아니라 AI/백엔드에서 Server Key로 호출합니다.
-2026-07-24 현재 개발 요청 출발지 공인 IPv4는 `119.202.222.84`입니다.
-ODsay 애플리케이션의 Server 허용 IP에 이 값을 등록해야 하며
+2026-07-24 개발 요청 출발지 공인 IPv4 등록 후 실제
+`searchPubTransPathT`·`loadLane` 호출이 통과했습니다.
+ODsay 애플리케이션의 Server 허용 IP에는 API 요청을 보내는 공인 IP를 등록하며
 `localhost`, `127.0.0.1`, 사설 IP나 Docker 내부 IP를 등록하지 않습니다.
 배포 환경에서는 운영 서버/NAT의 고정 egress 공인 IP를 별도로
 등록합니다.
