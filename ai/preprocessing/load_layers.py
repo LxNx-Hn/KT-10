@@ -4,19 +4,43 @@
 데이터팀에서 위경도·부산 필터링·필요 컬럼만 정리된 파일을 제공하므로,
 이 모듈은 이상치 좌표 제거와 GeoDataFrame 변환만 담당한다.
 """
-import pickle
-import warnings
+import hashlib
+import json
 from pathlib import Path
+from uuid import uuid4
 
 import geopandas as gpd
 import pandas as pd
+from pyogrio.errors import (
+    CRSError,
+    DataLayerError,
+    DataSourceError,
+    FeatureError,
+    FieldError,
+    GeometryError,
+)
 from shapely.geometry import Point
-
-warnings.filterwarnings("ignore")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RAW_DIR   = REPO_ROOT / "data" / "raw"
 CACHE_DIR = REPO_ROOT / "ai" / "data" / "cache"
+CACHE_SCHEMA_VERSION = "spatial-layer-cache-v1"
+CACHE_GPKG_NAME = "all_layers.gpkg"
+CACHE_MANIFEST_NAME = "all_layers.manifest.json"
+
+SOURCE_FILES = (
+    "부산광역시_무더위_쉼터_20251119.csv",
+    "부산광역시_한파_쉼터_현황_20251119.csv",
+    "부산광역시_방범용_CCTV_정보_20251229.csv",
+    "CCTV정보_부산광역시.csv",
+    "부산_AED_위경도_결과.xlsx",
+    "부산전동휠체어급속충전기표준데이터.csv",
+    "동백전_가맹점_현황.csv",
+    "부산광역시_스마트_버스쉘터_설치_현황.csv",
+    "busan_subway_station_accessibility_processed.xlsx",
+    "busan_crosswalk_signal_shp_processed.xlsx",
+    "bus_stop_national_csv_processed.xlsx",
+)
 
 # 부산 좌표 유효 범위
 BUSAN_LAT = (34.8, 35.5)
@@ -42,12 +66,16 @@ def _to_gdf(df: pd.DataFrame, lat_col: str = "위도", lng_col: str = "경도") 
 
 def _read_csv(fname: str) -> pd.DataFrame:
     """인코딩 자동 감지로 CSV 로딩."""
+    errors: list[Exception] = []
     for enc in ["utf-8-sig", "cp949", "euc-kr"]:
         try:
             return pd.read_csv(RAW_DIR / fname, encoding=enc)
-        except Exception:
-            continue
-    raise ValueError(f"파일 로딩 실패: {fname}")
+        except (UnicodeError, pd.errors.ParserError) as exc:
+            errors.append(exc)
+    attempted = ", ".join(["utf-8-sig", "cp949", "euc-kr"])
+    raise ValueError(
+        f"CSV 파일을 지원 인코딩으로 읽지 못했습니다: {fname} ({attempted})"
+    ) from errors[-1]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -160,49 +188,201 @@ def load_bus_stop() -> gpd.GeoDataFrame:
 
 
 # ─────────────────────────────────────────────────────────────
-# 전체 레이어 로딩 (캐시 포함)
+# 전체 레이어 로딩 (안전한 GeoPackage 캐시 포함)
 # ─────────────────────────────────────────────────────────────
 
+LAYER_LOADERS = {
+    "shelter": load_shelter,
+    "cctv": load_cctv,
+    "aed": load_aed,
+    "wheelchair_charger": load_wheelchair_charger,
+    "dongbaekjeon": load_dongbaekjeon,
+    "smart_shelter": load_smart_shelter,
+    "subway": load_subway,
+    "crosswalk": load_crosswalk,
+    "bus_stop": load_bus_stop,
+}
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _source_state() -> list[dict[str, str | int]]:
+    state: list[dict[str, str | int]] = []
+    for name in SOURCE_FILES:
+        path = RAW_DIR / name
+        if not path.is_file():
+            raise FileNotFoundError(f"공간 레이어 원본 파일이 없습니다: {path}")
+        state.append({
+            "path": name,
+            "bytes": path.stat().st_size,
+            "sha256": _file_sha256(path),
+        })
+    return state
+
+
+def _validate_layer(
+    name: str,
+    layer: gpd.GeoDataFrame,
+    *,
+    expected_count: int | None = None,
+) -> None:
+    if not isinstance(layer, gpd.GeoDataFrame):
+        raise ValueError(f"{name}: GeoDataFrame이 아닙니다.")
+    if expected_count is not None and len(layer) != expected_count:
+        raise ValueError(
+            f"{name}: cache 행 수가 manifest와 다릅니다."
+        )
+    if layer.empty:
+        raise ValueError(f"{name}: 레이어가 비어 있습니다.")
+    if layer.crs is None or layer.crs.to_epsg() != 4326:
+        raise ValueError(f"{name}: 좌표계가 EPSG:4326이 아닙니다.")
+    if layer.geometry.isna().any() or not layer.geometry.is_valid.all():
+        raise ValueError(f"{name}: 비어 있거나 유효하지 않은 geometry가 있습니다.")
+    if not layer.geometry.geom_type.eq("Point").all():
+        raise ValueError(f"{name}: Point가 아닌 geometry가 있습니다.")
+    bounds = layer.total_bounds
+    if not (
+        BUSAN_LNG[0] <= bounds[0] <= bounds[2] <= BUSAN_LNG[1]
+        and BUSAN_LAT[0] <= bounds[1] <= bounds[3] <= BUSAN_LAT[1]
+    ):
+        raise ValueError(f"{name}: 부산 범위를 벗어난 geometry가 있습니다.")
+
+
+def _load_cache(
+    cache_path: Path,
+    manifest_path: Path,
+    source_state: list[dict[str, str | int]],
+) -> dict[str, gpd.GeoDataFrame] | None:
+    if not cache_path.is_file() or not manifest_path.is_file():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("cache_schema_version") != CACHE_SCHEMA_VERSION
+            or manifest.get("source_state") != source_state
+            or manifest.get("cache_sha256") != _file_sha256(cache_path)
+        ):
+            return None
+        layer_manifest = manifest.get("layers")
+        if not isinstance(layer_manifest, dict):
+            return None
+        expected_names = set(LAYER_LOADERS)
+        available_names = set(gpd.list_layers(cache_path)["name"])
+        if set(layer_manifest) != expected_names or available_names != expected_names:
+            return None
+
+        layers: dict[str, gpd.GeoDataFrame] = {}
+        for name in LAYER_LOADERS:
+            metadata = layer_manifest.get(name)
+            if not isinstance(metadata, dict):
+                return None
+            layer = gpd.read_file(cache_path, layer=name)
+            _validate_layer(
+                name,
+                layer,
+                expected_count=metadata.get("rows"),
+            )
+            layers[name] = layer
+        print("캐시에서 공간 레이어를 로딩했습니다.")
+        return layers
+    except (
+        CRSError,
+        DataLayerError,
+        DataSourceError,
+        FeatureError,
+        FieldError,
+        GeometryError,
+        json.JSONDecodeError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        print(f"공간 레이어 캐시를 무시하고 재생성합니다: {type(exc).__name__}")
+        return None
+
+
+def _write_cache(
+    layers: dict[str, gpd.GeoDataFrame],
+    cache_path: Path,
+    manifest_path: Path,
+    source_state: list[dict[str, str | int]],
+) -> None:
+    token = uuid4().hex
+    temporary_cache = CACHE_DIR / f".all_layers.{token}.tmp.gpkg"
+    temporary_manifest = CACHE_DIR / f".{CACHE_MANIFEST_NAME}.{token}.tmp"
+    try:
+        for index, (name, layer) in enumerate(layers.items()):
+            _validate_layer(name, layer)
+            layer.to_file(
+                temporary_cache,
+                layer=name,
+                driver="GPKG",
+                mode="w" if index == 0 else "a",
+                index=False,
+            )
+        manifest = {
+            "cache_schema_version": CACHE_SCHEMA_VERSION,
+            "source_state": source_state,
+            "cache_sha256": _file_sha256(temporary_cache),
+            "layers": {
+                name: {
+                    "rows": len(layer),
+                    "crs": "EPSG:4326",
+                    "geometry_type": "Point",
+                }
+                for name, layer in layers.items()
+            },
+        }
+        temporary_manifest.write_text(
+            json.dumps(
+                manifest,
+                ensure_ascii=False,
+                sort_keys=True,
+                indent=2,
+            ) + "\n",
+            encoding="utf-8",
+        )
+        temporary_cache.replace(cache_path)
+        temporary_manifest.replace(manifest_path)
+    finally:
+        temporary_cache.unlink(missing_ok=True)
+        temporary_manifest.unlink(missing_ok=True)
+
+
 def load_all_layers(use_cache: bool = True) -> dict:
-    """
-    모든 레이어를 로딩하여 dict로 반환한다.
-
-    Parameters
-    ----------
-    use_cache : bool
-        True이면 pickle 캐시 사용 (최초 1회만 실제 로딩).
-        데이터 파일이 변경되면 False로 설정하여 재로딩.
-
-    Returns
-    -------
-    dict
-        레이어명 → GeoDataFrame 딕셔너리.
-    """
+    """원본 변경을 검증한 GeoPackage cache 또는 원본에서 9개 레이어를 읽는다."""
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_path = CACHE_DIR / "all_layers.pkl"
+    cache_path = CACHE_DIR / CACHE_GPKG_NAME
+    manifest_path = CACHE_DIR / CACHE_MANIFEST_NAME
+    source_state = _source_state()
 
-    if use_cache and cache_path.exists():
-        with open(cache_path, "rb") as f:
-            print("✅ 캐시에서 레이어 로딩")
-            return pickle.load(f)
+    if use_cache:
+        cached = _load_cache(cache_path, manifest_path, source_state)
+        if cached is not None:
+            return cached
 
-    print("📦 데이터 레이어 로딩 중...")
+    print("데이터 공간 레이어를 원본에서 로딩합니다.")
     layers = {
-        "shelter":            load_shelter(),
-        "cctv":               load_cctv(),
-        "aed":                load_aed(),
-        "wheelchair_charger": load_wheelchair_charger(),
-        "dongbaekjeon":       load_dongbaekjeon(),
-        "smart_shelter":      load_smart_shelter(),
-        "subway":             load_subway(),
-        "crosswalk":          load_crosswalk(),
-        "bus_stop":           load_bus_stop(),
+        name: loader()
+        for name, loader in LAYER_LOADERS.items()
     }
+    for name, layer in layers.items():
+        _validate_layer(name, layer)
+        print(f"  {name}: {len(layer):,}행")
 
-    for name, gdf in layers.items():
-        print(f"  {name}: {len(gdf):,}행")
-
-    with open(cache_path, "wb") as f:
-        pickle.dump(layers, f)
-    print("✅ 캐시 저장 완료")
+    _write_cache(
+        layers,
+        cache_path,
+        manifest_path,
+        source_state,
+    )
+    print("GeoPackage 공간 레이어 캐시 저장을 완료했습니다.")
     return layers
