@@ -46,6 +46,34 @@ def promote(
         )
     if manifest.get("feature_columns") != FEATURE_COLS or set(rankers) != set(PROFILES):
         raise ValueError("candidate 피처 또는 6개 프로필 계약이 현재 코드와 다릅니다.")
+    metrics = manifest.get("metrics")
+    if not isinstance(metrics, dict) or set(metrics) != set(PROFILES):
+        raise ValueError("candidate에 6개 프로필 검증 지표가 없습니다.")
+    for profile in PROFILES:
+        profile_metrics = metrics.get(profile)
+        holdout = (
+            profile_metrics.get("group_holdout")
+            if isinstance(profile_metrics, dict)
+            else None
+        )
+        try:
+            od_count = int(profile_metrics.get("od_count", 0))
+            validation_od_count = int(
+                holdout.get("validation_od_count", 0)
+            )
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{profile}: OD-group holdout 지표 형식이 올바르지 않습니다."
+            ) from exc
+        if (
+            not isinstance(holdout, dict)
+            or holdout.get("status") != "evaluated"
+            or od_count < 3
+            or validation_od_count < 1
+        ):
+            raise ValueError(
+                f"{profile}: 검증된 OD-group holdout 지표가 없습니다."
+            )
 
     promoted_at = datetime.now(UTC).isoformat()
     metadata = {

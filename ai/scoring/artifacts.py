@@ -81,7 +81,12 @@ def read_ranker_artifact(
 ) -> tuple[dict[str, Any], dict[str, XGBRanker]]:
     try:
         with ZipFile(path, "r") as archive:
-            names = set(archive.namelist())
+            archive_names = archive.namelist()
+            names = set(archive_names)
+            if len(names) != len(archive_names):
+                raise ArtifactError(
+                    "ranker artifact에 중복된 archive 경로가 있습니다."
+                )
             if MANIFEST_NAME not in names:
                 raise ArtifactError("ranker artifact manifest가 없습니다.")
             manifest_info = archive.getinfo(MANIFEST_NAME)

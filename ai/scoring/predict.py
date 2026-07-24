@@ -57,6 +57,10 @@ def predict_and_rank(
     ranker = rankers.get(profile)
     if ranker is None:
         raise ValueError(f"프로필 '{profile}'에 대한 모델이 없습니다.")
+    if not route_features_list:
+        raise ValueError("순위화할 경로 후보가 없습니다.")
+    if not isinstance(top_k, int) or isinstance(top_k, bool) or top_k <= 0:
+        raise ValueError("top_k는 1 이상의 정수여야 합니다.")
 
     # XGBoost는 NaN을 자체 결측 분기로 처리한다.
     X = pd.DataFrame([
@@ -66,6 +70,10 @@ def predict_and_rank(
 
     # ① XGBoost 베이스 점수
     xgb_scores = np.asarray(ranker.predict(X), dtype=float)
+    if xgb_scores.ndim != 1 or len(xgb_scores) != len(route_features_list):
+        raise ValueError("모델 출력 개수가 경로 후보 수와 일치하지 않습니다.")
+    if not np.isfinite(xgb_scores).all():
+        raise ValueError("모델이 유한하지 않은 순위 점수를 반환했습니다.")
 
     # 별도 규칙 가중치를 덧씌우지 않는다. 프로필별 모델의 출력만 사용한다.
     adjusted = xgb_scores.astype(float).copy()
@@ -73,7 +81,8 @@ def predict_and_rank(
     # 후보 집합 내 상대 선택 확률이며 절대 품질 점수가 아니다.
     probs      = _softmax(adjusted)
     relative_fit = _relative_fit_scores(adjusted)
-    ranked_idx = np.argsort(probs)[::-1][:top_k]
+    # 동점은 입력 후보의 안정된 순서를 보존한다.
+    ranked_idx = np.argsort(-adjusted, kind="stable")[:top_k]
 
     return [
         {
