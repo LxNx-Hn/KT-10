@@ -32,6 +32,27 @@ def request(base: str, path: str, body: dict | None = None) -> tuple[dict | str,
     return raw, response_headers
 
 
+def verify_places(base: str) -> None:
+    for query in ("부산역", "북구청"):
+        places, place_headers = request(
+            base,
+            f"/api/places/search?{urlencode({'q': query})}",
+        )
+        if not isinstance(places, list) or not places:
+            raise RuntimeError(f"Kakao 장소 검색이 '{query}' 결과를 반환하지 않았습니다.")
+        names = [
+            str(place.get("name") or "")
+            for place in places
+            if isinstance(place, dict)
+        ]
+        if not any(query in name.replace(" ", "") for name in names):
+            raise RuntimeError(
+                f"Kakao 장소 검색 결과에 요청한 '{query}' 장소명이 없습니다."
+            )
+        if place_headers.get("x-place-search-source") != "kakao-rest":
+            raise RuntimeError("Kakao 장소 검색이 demo 공급자로 대체되었습니다.")
+
+
 def verify(base: str) -> None:
     homepage, homepage_headers = request(base, "/")
     if not isinstance(homepage, str) or "부산 접근성 길찾기" not in homepage:
@@ -53,9 +74,7 @@ def verify(base: str) -> None:
         missing = readiness.get("missing", []) if isinstance(readiness, dict) else []
         raise RuntimeError(f"/api/readiness: 운영 설정 미완료 ({', '.join(missing)})")
 
-    places, _ = request(base, f"/api/places/search?{urlencode({'q': '서면역'})}")
-    if not isinstance(places, list) or not places:
-        raise RuntimeError("Kakao 장소 검색이 결과를 반환하지 않았습니다.")
+    verify_places(base)
 
     weather, _ = request(base, "/api/weather")
     if not isinstance(weather, dict) or "observedAt" not in weather:
