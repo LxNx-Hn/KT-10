@@ -60,6 +60,22 @@ def test_demo_buildings_outside_verified_area_are_unavailable_not_zero():
     assert "검증 범위" in shade.calculation_note
 
 
+def test_night_outside_demo_bounds_stays_not_daylight():
+    route = demo_candidates()[0].model_copy(deep=True)
+    assert route.path is not None
+    for point in route.path:
+        point.lat += 0.1
+
+    shade = add_demo_shade(
+        [route],
+        datetime(2026, 7, 24, 1, 0, tzinfo=KST),
+    )[0].shade
+
+    assert shade is not None
+    assert shade.status == "not_daylight"
+    assert shade.shade_ratio is None
+
+
 def test_concave_building_shadow_is_not_inflated_to_convex_hull():
     footprint = Polygon([
         (0, 0), (4, 0), (4, 1), (1, 1), (1, 4), (0, 4), (0, 0),

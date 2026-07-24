@@ -258,6 +258,22 @@ def calculate_shade(
                 "그늘 비율을 계산하지 않았습니다."
             ),
         )
+    path = [point for walking_path in walking_paths for point in walking_path]
+    ref_lat = sum(point.lat for point in path) / len(path)
+    ref_lng = sum(point.lng for point in path) / len(path)
+    azimuth, elevation = solar_position(evaluated_at, ref_lat, ref_lng)
+    if elevation <= 0:
+        return ShadeSummary(
+            status="not_daylight",
+            evaluated_at=evaluated_at,
+            solar_azimuth_deg=round(azimuth, 2),
+            solar_elevation_deg=round(elevation, 2),
+            source=source,
+            data_quality=data_quality,
+            walking_geometry_quality=walking_quality,
+            calculation_note="태양이 지평선 아래에 있어 주간 건물 그림자를 계산하지 않았습니다.",
+        )
+
     applicable_bounds = building_data.get("applicableBounds")
     if applicable_bounds is not None:
         try:
@@ -287,6 +303,8 @@ def calculate_shade(
                 status="unavailable",
                 evaluated_at=evaluated_at,
                 total_walk_m=analyzed_walk_m,
+                solar_azimuth_deg=round(azimuth, 2),
+                solar_elevation_deg=round(elevation, 2),
                 source=source,
                 data_quality=data_quality,
                 walking_geometry_quality=walking_quality,
@@ -295,21 +313,6 @@ def calculate_shade(
                     "그늘 비율을 계산하지 않았습니다."
                 ),
             )
-    path = [point for walking_path in walking_paths for point in walking_path]
-    ref_lat = sum(point.lat for point in path) / len(path)
-    ref_lng = sum(point.lng for point in path) / len(path)
-    azimuth, elevation = solar_position(evaluated_at, ref_lat, ref_lng)
-    if elevation <= 0:
-        return ShadeSummary(
-            status="not_daylight",
-            evaluated_at=evaluated_at,
-            solar_azimuth_deg=round(azimuth, 2),
-            solar_elevation_deg=round(elevation, 2),
-            source=source,
-            data_quality=data_quality,
-            walking_geometry_quality=walking_quality,
-            calculation_note="태양이 지평선 아래에 있어 주간 건물 그림자를 계산하지 않았습니다.",
-        )
 
     projected_paths = [
         [_project(point, ref_lat, ref_lng) for point in walking_path]
