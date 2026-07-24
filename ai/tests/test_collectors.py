@@ -101,6 +101,7 @@ def test_odsay_walk_geometry_uses_osmnx_only_when_enabled(monkeypatch):
 
     monkeypatch.setattr(settings, "TMAP_API_KEY", "")
     monkeypatch.setattr(settings, "OSMNX_WALK_GEOMETRY_ENABLED", True)
+    monkeypatch.setattr(settings, "OSMNX_WALK_GEOMETRY_BLOCKING", False)
     monkeypatch.setattr(
         OsmnxRouteCollector,
         "collect_cached_or_schedule",
@@ -108,6 +109,31 @@ def test_odsay_walk_geometry_uses_osmnx_only_when_enabled(monkeypatch):
     )
 
     path, quality = asyncio.run(OdsayRouteCollector._walk_geometry(ORIGIN, DEST))
+
+    assert path == [ORIGIN, DEST]
+    assert quality == "exact"
+
+
+def test_odsay_walk_geometry_can_block_for_labeling_collection(monkeypatch):
+    async def osmnx_collect(_self, _start, _end):
+        return [SimpleNamespace(path=[ORIGIN, DEST])]
+
+    async def cached_collect(_self, _start, _end):
+        raise AssertionError("동기 수집 모드에서 캐시 전용 경로를 호출했습니다.")
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "")
+    monkeypatch.setattr(settings, "OSMNX_WALK_GEOMETRY_ENABLED", True)
+    monkeypatch.setattr(settings, "OSMNX_WALK_GEOMETRY_BLOCKING", True)
+    monkeypatch.setattr(OsmnxRouteCollector, "collect", osmnx_collect)
+    monkeypatch.setattr(
+        OsmnxRouteCollector,
+        "collect_cached_or_schedule",
+        cached_collect,
+    )
+
+    path, quality = asyncio.run(
+        OdsayRouteCollector._walk_geometry(ORIGIN, DEST)
+    )
 
     assert path == [ORIGIN, DEST]
     assert quality == "exact"
@@ -340,6 +366,7 @@ def test_odsay_collect_uses_search_and_load_lane_contract(monkeypatch):
             return Response(lane_payload if url.endswith("loadLane") else search_payload)
 
     monkeypatch.setattr(settings, "ODSAY_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "ODSAY_LOAD_LANE_ENABLED", True)
     monkeypatch.setattr(module.httpx, "AsyncClient", Client)
     result = asyncio.run(OdsayRouteCollector().collect(ORIGIN, DEST))
     assert len(result) == 1
@@ -348,6 +375,73 @@ def test_odsay_collect_uses_search_and_load_lane_contract(monkeypatch):
     assert result[0].geometry_quality == "exact"
     assert result[0].segments[0]["mode"] == "bus"
     assert len(result[0].segments[0]["path"]) == 2
+
+
+def test_odsay_labeling_mode_skips_load_lane_and_marks_transit_estimated(
+    monkeypatch,
+):
+    import collectors.odsay_collector as module
+
+    search_payload = {"result": {"path": [{
+        "info": {
+            "totalTime": 20,
+            "totalDistance": 5000,
+            "totalWalk": 100,
+        },
+        "subPath": [{
+            "trafficType": 2,
+            "sectionTime": 18,
+            "distance": 4900,
+            "startX": 129.04,
+            "startY": 35.115,
+            "endX": 129.059,
+            "endY": 35.157,
+            "passStopList": {"stations": [
+                {"x": "129.04", "y": "35.115"},
+                {"x": "129.05", "y": "35.14"},
+                {"x": "129.059", "y": "35.157"},
+            ]},
+            "lane": [{"busNo": "100"}],
+        }],
+    }]}}
+    requested_urls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return search_payload
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, url, **kwargs):
+            requested_urls.append(url)
+            return Response()
+
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "ODSAY_LOAD_LANE_ENABLED", False)
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+
+    result = asyncio.run(OdsayRouteCollector().collect(ORIGIN, DEST))
+
+    assert len(result) == 1
+    assert requested_urls == [OdsayRouteCollector.BASE_URL]
+    assert result[0].geometry_quality == "estimated"
+    assert result[0].segments[0]["geometry_quality"] == "estimated"
+    assert result[0].segments[0]["path"] == [
+        Coordinate(lat=35.115, lng=129.04),
+        Coordinate(lat=35.14, lng=129.05),
+        Coordinate(lat=35.157, lng=129.059),
+    ]
 
 
 def test_odsay_builds_three_independent_candidates_concurrently(monkeypatch):

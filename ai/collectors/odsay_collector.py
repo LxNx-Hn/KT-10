@@ -182,6 +182,42 @@ class OdsayRouteCollector(BaseRouteCollector):
     def _lane_coordinates(cls, data: dict, map_object: str) -> list[Coordinate]:
         return [point for path in cls._lane_paths(data, map_object) for point in path]
 
+    @classmethod
+    def _estimated_transit_path(cls, sub_path: dict) -> list[Coordinate]:
+        """정류장 관측 좌표만 연결한 표시용 추정 선형을 만든다.
+
+        도로 선형으로 위장하지 않으며 호출자는 geometry_quality를 반드시
+        estimated로 기록해야 한다. 보행 경사·그늘 분석에는 사용하지 않는다.
+        """
+        raw_stations = sub_path.get("passStopList")
+        stations = (
+            raw_stations.get("stations")
+            if isinstance(raw_stations, dict)
+            else None
+        )
+        coordinates: list[Coordinate] = []
+        start = cls._point(sub_path.get("startX"), sub_path.get("startY"))
+        end = cls._point(sub_path.get("endX"), sub_path.get("endY"))
+        station_coordinates = (
+            [
+                cls._point(station.get("x"), station.get("y"))
+                for station in stations
+                if isinstance(station, dict)
+            ]
+            if isinstance(stations, list)
+            else []
+        )
+        for coordinate in (
+            start,
+            *station_coordinates,
+            end,
+        ):
+            if coordinate is not None and (
+                not coordinates or coordinates[-1] != coordinate
+            ):
+                coordinates.append(coordinate)
+        return coordinates if len(coordinates) >= 2 else []
+
     async def _load_lane(
         self,
         client: httpx.AsyncClient,
@@ -305,10 +341,14 @@ class OdsayRouteCollector(BaseRouteCollector):
             collectors.append(OsmnxRouteCollector())
         for collector in collectors:
             try:
-                if isinstance(collector, OsmnxRouteCollector):
-                    candidates = await collector.collect_cached_or_schedule(
-                        start,
-                        end,
+                if collector.source_name == "osmnx":
+                    candidates = (
+                        await collector.collect(start, end)
+                        if settings.OSMNX_WALK_GEOMETRY_BLOCKING
+                        else await collector.collect_cached_or_schedule(
+                            start,
+                            end,
+                        )
                     )
                 else:
                     candidates = await collector.collect(start, end)
@@ -334,15 +374,6 @@ class OdsayRouteCollector(BaseRouteCollector):
         info = path.get("info")
         if not isinstance(info, dict):
             raise CollectorError("ODsay 후보의 info가 객체가 아닙니다.")
-        map_object = info.get("mapObj")
-        if not map_object:
-            raise CollectorError("ODsay 후보에 mapObj가 없습니다.")
-        lane_paths = await self._load_lane(
-            client,
-            map_object,
-            origin,
-            destination,
-        )
         duration = self._number(
             info.get("totalTime"),
             "totalTime",
@@ -360,6 +391,22 @@ class OdsayRouteCollector(BaseRouteCollector):
             or any(not isinstance(sub, dict) for sub in sub_paths)
         ):
             raise CollectorError("ODsay 후보에 subPath가 없습니다.")
+        if settings.ODSAY_LOAD_LANE_ENABLED:
+            map_object = info.get("mapObj")
+            if not map_object:
+                raise CollectorError("ODsay 후보에 mapObj가 없습니다.")
+            lane_paths = await self._load_lane(
+                client,
+                map_object,
+                origin,
+                destination,
+            )
+        else:
+            lane_paths = [
+                self._estimated_transit_path(sub)
+                for sub in sub_paths
+                if sub.get("trafficType") != 3
+            ]
 
         lane_index = 0
         segments = []
@@ -406,9 +453,13 @@ class OdsayRouteCollector(BaseRouteCollector):
                 lane_index += 1
                 if len(segment_path) < 2:
                     raise CollectorError(
-                        f"ODsay {mode} 구간의 loadLane geometry가 없습니다."
+                        f"ODsay {mode} 구간의 정류장 geometry가 없습니다."
                     )
-                quality = "exact"
+                quality = (
+                    "exact"
+                    if settings.ODSAY_LOAD_LANE_ENABLED
+                    else "estimated"
+                )
             if coords and coords[-1] == segment_path[0]:
                 coords.extend(segment_path[1:])
             else:
@@ -425,8 +476,8 @@ class OdsayRouteCollector(BaseRouteCollector):
         if len(coords) < 2:
             raise CollectorError("ODsay 후보의 조립된 geometry가 비어 있습니다.")
         geometry_quality = (
-            "exact"
-            if qualities and all(value == "exact" for value in qualities)
+            qualities[0]
+            if qualities and len(set(qualities)) == 1
             else "mixed"
         )
         return RouteCandidate(

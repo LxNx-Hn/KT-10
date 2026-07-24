@@ -20,8 +20,16 @@ class Settings(BaseSettings):
 
     ODSAY_API_KEY: str = ""
     ODSAY_CACHE_DIR: str = ""
-    ODSAY_CACHE_TTL_SECONDS: int = Field(default=1800, ge=60, le=86400)
+    ODSAY_CACHE_TTL_SECONDS: int = Field(
+        default=1800,
+        ge=60,
+        le=31_536_000,
+    )
     ODSAY_TIMEOUT_SECONDS: int = Field(default=20, ge=5, le=60)
+    # 일반 서비스는 ODsay loadLane 정밀 선형을 유지한다. API 호출 예산이
+    # 제한된 학습 수집 전용 컨테이너만 false로 설정해 정류장 연결선을
+    # estimated로 기록하고 검색 API 1회만 사용한다.
+    ODSAY_LOAD_LANE_ENABLED: bool = True
     ELEVATION_CACHE_DIR: str = ""
     ELEVATION_CACHE_TTL_SECONDS: int = Field(
         default=2_592_000,
@@ -30,6 +38,9 @@ class Settings(BaseSettings):
     )
     TMAP_API_KEY: str = ""
     OSMNX_WALK_GEOMETRY_ENABLED: bool = False
+    # 일반 요청은 캐시 누락 시 백그라운드 준비 후 즉시 estimated를 반환한다.
+    # 장시간 학습 수집 전용 컨테이너만 동기 준비를 명시적으로 선택한다.
+    OSMNX_WALK_GEOMETRY_BLOCKING: bool = False
     OSMNX_OVERPASS_URL: AnyHttpUrl = "https://lambert.openstreetmap.de/api"
     OSMNX_REQUEST_TIMEOUT_SECONDS: int = Field(default=12, ge=3, le=60)
     OSMNX_WALK_GEOMETRY_TIMEOUT_SECONDS: int = Field(default=15, ge=3, le=60)
