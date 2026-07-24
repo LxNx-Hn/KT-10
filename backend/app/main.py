@@ -11,7 +11,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.auth import optional_current_user, router as auth_router
@@ -72,6 +72,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["X-Place-Search-Source"],
 )
 
 app.include_router(auth_router)
@@ -121,7 +122,13 @@ def readiness() -> dict:
 
 
 @app.get("/api/places/search", response_model=list[Place])
-async def places_search(q: str = Query("", description="장소 이름/주소 검색")) -> list[Place]:
+async def places_search(
+    response: Response,
+    q: str = Query("", description="장소 이름/주소 검색"),
+) -> list[Place]:
+    response.headers["X-Place-Search-Source"] = (
+        "kakao-rest" if settings.live_places else "demo"
+    )
     try:
         return await search_places(q)
     except RuntimeError as exc:

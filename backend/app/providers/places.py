@@ -1,4 +1,4 @@
-"""장소 검색 프로바이더. Kakao 키워드 검색(REST) 라이브 + mock 폴백."""
+"""장소 검색 프로바이더. Kakao 키워드 검색(REST) 라이브 + 개발용 demo."""
 from __future__ import annotations
 
 import logging
@@ -57,6 +57,14 @@ async def search_places(query: str) -> list[Place]:
             )
             res.raise_for_status()
             return _map_kakao(res.json().get("documents", []))
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        log.warning("Kakao 장소검색 HTTP 실패(status=%s)", status)
+        if status in {401, 403}:
+            raise RuntimeError("Kakao place search authentication failed.") from exc
+        if status == 429:
+            raise RuntimeError("Kakao place search rate limit exceeded.") from exc
+        raise RuntimeError("Kakao place search provider request failed.") from exc
     except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
         log.warning("Kakao 장소검색 실패(%s)", type(exc).__name__)
-        raise RuntimeError("Kakao place search request failed") from exc
+        raise RuntimeError("Kakao place search provider request failed.") from exc

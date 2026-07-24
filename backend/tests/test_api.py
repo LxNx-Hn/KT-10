@@ -67,9 +67,21 @@ def test_cors_preflight_allows_profile_update_from_frontend():
     assert "PUT" in response.headers["access-control-allow-methods"]
 
 
+def test_guest_auth_probe_is_no_content_instead_of_console_error():
+    response = client.get("/api/auth/me")
+    assert response.status_code == 204
+    assert response.content == b""
+
+
 def test_places_search():
-    r = client.get("/api/places/search", params={"q": "서면"})
+    r = client.get(
+        "/api/places/search",
+        params={"q": "서면"},
+        headers={"Origin": "http://localhost:5173"},
+    )
     assert r.status_code == 200
+    assert r.headers["X-Place-Search-Source"] == "demo"
+    assert "x-place-search-source" in r.headers["access-control-expose-headers"].lower()
     names = [p["name"] for p in r.json()]
     assert "서면역" in names
 

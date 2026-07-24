@@ -17,6 +17,18 @@ describe('API 오류 사용자 메시지', () => {
     );
   });
 
+  it('Kakao JavaScript SDK 설정 오류는 도메인 등록 확인을 안내한다', () => {
+    expect(toUserMessage(new Error('KAKAO_SDK_LOAD_FAILED'), 'fallback')).toBe(
+      '카카오 장소 검색을 불러오지 못했습니다. JavaScript 키와 현재 도메인 등록을 확인해 주세요.',
+    );
+  });
+
+  it('live 장소 검색이 demo 응답이면 키 누락을 명시한다', () => {
+    expect(toUserMessage(new Error('KAKAO_PLACE_SEARCH_DEMO_SOURCE'), 'fallback')).toBe(
+      '카카오 장소 검색 키가 설정되지 않았습니다. 서비스 관리자에게 알려 주세요.',
+    );
+  });
+
   it('JSON 오류 응답의 detail을 ApiError로 변환한다', async () => {
     const response = new Response(JSON.stringify({ detail: '필수 키가 없습니다.' }), {
       status: 503,

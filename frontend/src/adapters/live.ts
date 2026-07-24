@@ -2,6 +2,8 @@ import type { Adapters } from './types';
 import type { BusStopArrivals, Place, RouteCandidate, ScoredRoute, WeatherCondition } from '@/types';
 import type { WeatherScenarioId } from '@/data/weather';
 import { API_BASE, throwApiError } from '@/api/http';
+import { hasKakaoKey } from '@/map/kakaoLoader';
+import { searchKakaoPlaces } from '@/map/kakaoPlaces';
 
 /**
  * 실 API(Python FastAPI 백엔드) 어댑터.
@@ -31,6 +33,17 @@ async function getJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function searchBackendPlaces(query: string): Promise<Place[]> {
+  const res = await fetchWithTimeout(
+    `/api/places/search?q=${encodeURIComponent(query)}`,
+  );
+  if (!res.ok) await throwApiError(res, '장소를 검색하지 못했습니다');
+  if (res.headers.get('X-Place-Search-Source') !== 'kakao-rest') {
+    throw new Error('KAKAO_PLACE_SEARCH_DEMO_SOURCE');
+  }
+  return (await res.json()) as Place[];
+}
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const res = await fetchWithTimeout(path, {
     method: 'POST',
@@ -43,8 +56,12 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 
 export const liveAdapters: Adapters = {
   places: {
-    searchPlaces: (query) =>
-      getJson<Place[]>(`/api/places/search?q=${encodeURIComponent(query)}`),
+    // JavaScript 키가 있는 웹/PWA는 Kakao Places SDK를 직접 사용한다.
+    // 키가 없는 서버 중심 배포만 출처가 확인된 백엔드 REST Local API를 사용한다.
+    // live UI에서 demo 응답을 실제 Kakao 검색처럼 표시하지 않는다.
+    searchPlaces: (query) => hasKakaoKey()
+      ? searchKakaoPlaces(query)
+      : searchBackendPlaces(query),
   },
   routes: {
     getCandidates: (origin, dest) =>

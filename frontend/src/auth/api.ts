@@ -41,7 +41,7 @@ export async function persistProfile(profile: ProfileId): Promise<void> {
 export async function getCurrentUser(): Promise<CurrentUser | null> {
   if (!IS_LIVE) return null;
   const response = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' });
-  if (response.status === 401 || response.status === 503) return null;
+  if (response.status === 204 || response.status === 401 || response.status === 503) return null;
   if (!response.ok) throw new Error(`current user load failed: ${response.status}`);
   return response.json() as Promise<CurrentUser>;
 }

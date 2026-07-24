@@ -12,78 +12,144 @@ function PlaceInput({
 }: {
   label: string;
   value: Place | null;
-  onSelect: (p: Place) => void;
+  onSelect: (p: Place | null) => void;
 }) {
   const [text, setText] = useState(value?.name ?? '');
   const [results, setResults] = useState<Place[]>([]);
   const [open, setOpen] = useState(false);
   const [searchError, setSearchError] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const timer = useRef<number | undefined>(undefined);
   const requestId = useRef(0);
+  const inputId = `${label}-place-input`;
+  const listId = `${label}-place-results`;
 
   useEffect(() => {
     setText(value?.name ?? '');
   }, [value]);
 
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => () => {
+    requestId.current += 1;
+    window.clearTimeout(timer.current);
+  }, []);
 
   const onChange = (q: string) => {
     setText(q);
     setSearchError('');
+    setResults([]);
+    setOpen(false);
+    setSearching(false);
+    setActiveIndex(-1);
     window.clearTimeout(timer.current);
     const currentRequest = ++requestId.current;
+    if (value && q !== value.name) onSelect(null);
     if (q.trim().length < 2) {
       setResults([]);
       setOpen(false);
+      setSearching(false);
       return;
     }
     timer.current = window.setTimeout(async () => {
+      setSearching(true);
       try {
         const r = await adapters.places.searchPlaces(q.trim());
         if (currentRequest !== requestId.current) return;
         setResults(r);
         setOpen(r.length > 0);
-        setSearchError(r.length ? '' : '검색 결과가 없습니다.');
+        setActiveIndex(r.length ? 0 : -1);
+        setSearchError(
+          r.length
+            ? ''
+            : `‘${q.trim()}’에 대한 부산 지역 검색 결과가 없습니다. 장소명이나 주소를 확인해 주세요.`,
+        );
       } catch (error) {
         if (currentRequest !== requestId.current) return;
         setResults([]);
         setOpen(false);
         setSearchError(toUserMessage(error, '장소를 검색하지 못했습니다.'));
+      } finally {
+        if (currentRequest === requestId.current) setSearching(false);
       }
     }, 200);
   };
 
+  const selectPlace = (place: Place) => {
+    requestId.current += 1;
+    window.clearTimeout(timer.current);
+    onSelect(place);
+    setText(place.name);
+    setResults([]);
+    setOpen(false);
+    setSearching(false);
+    setSearchError('');
+    setActiveIndex(-1);
+  };
+
   return (
     <div className="place-input">
-      <label className="place-input__label">{label}</label>
+      <label className="place-input__label" htmlFor={inputId}>{label}</label>
       <input
+        id={inputId}
         className="place-input__field"
         type="text"
+        role="combobox"
         value={text}
         placeholder="장소 이름 입력 (예: 서면역)"
         onChange={(e) => onChange(e.target.value)}
         onFocus={() => results.length && setOpen(true)}
+        onKeyDown={(event) => {
+          if (!open || !results.length) {
+            if (event.key === 'Escape') setOpen(false);
+            return;
+          }
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setActiveIndex((index) => (index + 1) % results.length);
+          } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setActiveIndex((index) => (index <= 0 ? results.length - 1 : index - 1));
+          } else if (event.key === 'Enter' && activeIndex >= 0) {
+            event.preventDefault();
+            selectPlace(results[activeIndex]);
+          } else if (event.key === 'Escape') {
+            setOpen(false);
+          }
+        }}
         aria-label={label}
-        aria-describedby={searchError ? `${label}-search-status` : undefined}
+        aria-describedby={(searching || searchError) ? `${label}-search-status` : undefined}
+        aria-autocomplete="list"
+        aria-controls={listId}
+        aria-expanded={open}
+        aria-activedescendant={
+          open && activeIndex >= 0 ? `${listId}-option-${activeIndex}` : undefined
+        }
         autoComplete="off"
       />
-      {searchError && (
-        <span className="place-input__status" id={`${label}-search-status`} role="status">
-          {searchError}
+      {(searching || searchError) && (
+        <span
+          className={`place-input__status${searching ? ' place-input__status--loading' : ''}`}
+          id={`${label}-search-status`}
+          role="status"
+        >
+          {searching ? '장소 검색 중…' : searchError}
         </span>
       )}
       {open && (
-        <ul className="place-input__list" role="listbox">
-          {results.map((p) => (
-            <li key={p.id}>
+        <ul className="place-input__list" id={listId} role="listbox">
+          {results.map((p, index) => (
+            <li key={p.id} role="none">
               <button
+                id={`${listId}-option-${index}`}
                 type="button"
-                className="place-input__option"
-                onClick={() => {
-                  onSelect(p);
-                  setText(p.name);
-                  setOpen(false);
-                }}
+                role="option"
+                tabIndex={-1}
+                aria-selected={activeIndex === index}
+                className={`place-input__option${
+                  activeIndex === index ? ' place-input__option--active' : ''
+                }`}
+                onMouseEnter={() => setActiveIndex(index)}
+                onClick={() => selectPlace(p)}
               >
                 <strong>{p.name}</strong>
                 <span>{p.category ?? ''} · {p.address ?? ''}</span>

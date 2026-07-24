@@ -142,8 +142,12 @@ def logout() -> Response:
     return response
 
 
-@router.get("/me")
-def me(user: User = Depends(current_user)) -> dict:
+@router.get("/me", response_model=None)
+def me(user: User | None = Depends(optional_current_user)) -> dict | Response:
+    # 로그인 여부 확인은 정상적인 게스트 흐름이다. 401을 반환하면 브라우저가
+    # 처리된 응답도 콘솔 오류로 기록하므로, 게스트는 본문 없는 204로 구분한다.
+    if user is None:
+        return Response(status_code=204)
     pref = user.preference
     return {"id": user.id, "nickname": user.nickname, "preference": _preference_dict(pref)}
 

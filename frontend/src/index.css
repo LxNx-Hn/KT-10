@@ -134,6 +134,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .place-input__field:focus { border-color: var(--brand); }
 .place-input__status { margin: 1px 2px 0; color: var(--bad); font-size: .78rem; }
+.place-input__status--loading { color: var(--ink-soft); }
 .place-input__list {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 9;
   list-style: none; margin: 0; padding: 6px;
@@ -144,7 +145,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   width: 100%; text-align: left; border: 0; background: transparent;
   padding: 10px; border-radius: 8px; display: flex; flex-direction: column; gap: 2px;
 }
-.place-input__option:hover { background: var(--brand-soft); }
+.place-input__option:hover,
+.place-input__option--active { background: var(--brand-soft); }
 .place-input__option span { font-size: 0.8rem; color: var(--ink-soft); }
 .searchbar__swap {
   height: var(--tap); width: var(--tap); border-radius: 50%;

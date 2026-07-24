@@ -35,6 +35,19 @@ export function toUserMessage(error: unknown, fallback: string): string {
   if (error instanceof DOMException && error.name === 'AbortError') {
     return '서버 응답이 늦어 요청을 중단했습니다. 잠시 후 다시 시도해 주세요.';
   }
+  if (
+    error instanceof Error
+    && ['NO_KAKAO_KEY', 'KAKAO_SDK_LOAD_FAILED', 'KAKAO_PLACES_LIBRARY_UNAVAILABLE']
+      .includes(error.message)
+  ) {
+    return '카카오 장소 검색을 불러오지 못했습니다. JavaScript 키와 현재 도메인 등록을 확인해 주세요.';
+  }
+  if (error instanceof Error && error.message.startsWith('KAKAO_PLACE_SEARCH_')) {
+    if (error.message === 'KAKAO_PLACE_SEARCH_DEMO_SOURCE') {
+      return '카카오 장소 검색 키가 설정되지 않았습니다. 서비스 관리자에게 알려 주세요.';
+    }
+    return '카카오 장소 검색 요청에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+  }
   if (error instanceof ApiError) {
     if (error.status === 401) return '카카오 로그인 후 이용할 수 있습니다.';
     if (error.status === 404) return '요청한 정보를 찾지 못했습니다.';

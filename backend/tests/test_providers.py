@@ -1,7 +1,11 @@
-"""프로바이더 폴백 테스트: 키가 없으면 mock 으로 동작해야 한다(데모 가용성 보장)."""
+"""장소/날씨 공급자 계약. 개발 demo와 운영 live를 섞지 않는다."""
 import asyncio
 
+import httpx
+import pytest
+
 from app.providers import get_current_weather, search_places
+from app.providers import places as places_provider
 from app.providers.weather import _map_openweather
 from app.providers.odsay import _normalize
 from app.models import Place
@@ -22,6 +26,75 @@ def test_places_falls_back_to_mock_without_key(monkeypatch):
 def test_places_empty_query_returns_empty(monkeypatch):
     _force_mock(monkeypatch)
     assert asyncio.run(search_places("   ")) == []
+
+
+def test_kakao_places_searches_busan_with_rest_key(monkeypatch):
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "documents": [
+                    {
+                        "id": "place-busan-station",
+                        "place_name": "부산역",
+                        "y": "35.1151",
+                        "x": "129.0414",
+                        "category_group_name": "지하철역",
+                        "road_address_name": "부산 동구 중앙대로 206",
+                    },
+                    {
+                        "id": "place-bukgu-office",
+                        "place_name": "부산광역시 북구청",
+                        "y": "35.1972",
+                        "x": "128.9903",
+                        "category_group_name": "공공기관",
+                        "address_name": "부산 북구 구포동",
+                    },
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        places_provider.httpx,
+        "AsyncClient",
+        lambda **kwargs: real_client(transport=transport, **kwargs),
+    )
+    monkeypatch.setattr(settings, "app_env", "development")
+    monkeypatch.setattr(settings, "kakao_rest_api_key", "test-rest-key")
+
+    results = asyncio.run(search_places("부산역"))
+
+    assert [place.name for place in results] == ["부산역", "부산광역시 북구청"]
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.headers["Authorization"] == "KakaoAK test-rest-key"
+    assert request.url.params["query"] == "부산역"
+    assert request.url.params["size"] == "15"
+    assert request.url.params["rect"] == "128.7,34.8,129.4,35.5"
+
+
+def test_kakao_places_reports_auth_failure_without_exposing_key(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, request=request, json={"code": -401})
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        places_provider.httpx,
+        "AsyncClient",
+        lambda **kwargs: real_client(transport=transport, **kwargs),
+    )
+    monkeypatch.setattr(settings, "kakao_rest_api_key", "must-not-leak")
+
+    with pytest.raises(RuntimeError, match="authentication failed") as error:
+        asyncio.run(search_places("북구청"))
+    assert "must-not-leak" not in str(error.value)
 
 
 def test_weather_falls_back_to_mock_without_key(monkeypatch):
@@ -53,8 +126,6 @@ def test_live_weather_uses_measured_pm10_and_aqi():
 
 
 def test_live_weather_rejects_missing_measurement_instead_of_defaulting():
-    import pytest
-
     with pytest.raises(ValueError, match="필수 관측값"):
         _map_openweather({"main": {}, "wind": {}, "weather": []}, {"list": []})
 
