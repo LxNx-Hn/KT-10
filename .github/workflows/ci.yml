@@ -24,6 +24,7 @@ jobs:
         env:
           PYTHONPATH: ai
       - run: python -m compileall -q ai
+      - run: python -m pip_audit -r ai/requirements.txt --progress-spinner off
       - run: pip check
 
   backend:
@@ -60,6 +61,7 @@ jobs:
       - run: python -m compileall -q backend
       - run: alembic -c backend/alembic.ini upgrade head
       - run: alembic -c backend/alembic.ini check
+      - run: python -m pip_audit -r backend/requirements.txt --progress-spinner off
       - run: pip check
 
   frontend:
