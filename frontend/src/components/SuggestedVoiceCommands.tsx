@@ -13,6 +13,8 @@ const EXAMPLES = [
 
 export default function SuggestedVoiceCommands() {
   const handleUserInput = useVoiceChatStore((s) => s.handleUserInput);
+  const status = useVoiceChatStore((s) => s.status);
+  const busy = status === 'listening' || status === 'thinking' || status === 'speaking';
 
   return (
     <section className="suggest" aria-label="추천 음성 명령">
@@ -23,6 +25,7 @@ export default function SuggestedVoiceCommands() {
             key={ex}
             type="button"
             className="suggest__chip"
+            disabled={busy}
             onClick={() => void handleUserInput(ex)}
           >
             “{ex}”

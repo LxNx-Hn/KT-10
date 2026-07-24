@@ -1,5 +1,6 @@
 import { useAppStore } from '@/store/appStore';
 import { WEATHER_SCENARIOS, type WeatherScenarioId } from '@/data/weather';
+import type { WeatherCondition } from '@/types';
 
 const SCENARIO_ICON: Record<WeatherScenarioId, string> = {
   normal: '☀️',
@@ -8,6 +9,16 @@ const SCENARIO_ICON: Record<WeatherScenarioId, string> = {
   rain: '🌧️',
   dust: '😷',
 };
+
+function iconForWeather(weather: WeatherCondition): string {
+  if (weather.sky === 'snow') return '🌨️';
+  if (weather.sky === 'rain' || weather.precipitationMm > 0) return '🌧️';
+  if (weather.air === 'bad' || weather.air === 'very_bad') return '😷';
+  if (weather.isHeatwave) return '🥵';
+  if (weather.isColdwave) return '🥶';
+  if (weather.sky === 'cloudy') return '☁️';
+  return '☀️';
+}
 
 /**
  * 실시간 날씨와 경로 노출 특성을 안내한다. 내부 위험 점수는 노출하지 않는다.
@@ -27,7 +38,11 @@ export default function WeatherWarning() {
 
       {weather && (
         <div className={`weather__banner weather__banner--${hasWeatherCaution ? 'warn' : 'good'}`} role="status">
-          <strong>{hasWeatherCaution ? '현재 기상·대기 관측을 확인하세요.' : '현재 관측에 강수·나쁜 대기질이 없습니다.'}</strong>
+          <strong>
+            {hasWeatherCaution
+              ? '경로 계산에 사용된 기상·대기 값을 확인하세요.'
+              : '경로 계산에 사용된 값에는 강수·나쁜 대기질이 없습니다.'}
+          </strong>
           {weather.precipitationMm > 0 && <span> · 강수 {weather.precipitationMm}mm</span>}
           {(weather.air === 'bad' || weather.air === 'very_bad') && <span> · 대기질 {weather.air}</span>}
         </div>
@@ -48,7 +63,7 @@ export default function WeatherWarning() {
 
       {weather && (
         <div className="weather__now">
-          <span>{SCENARIO_ICON[weatherScenario]} 체감 {weather.feelsLikeC}℃</span>
+          <span>{iconForWeather(weather)} 체감 {weather.feelsLikeC}℃</span>
           <span>강수 {weather.precipitationMm}mm</span>
           <span>풍속 {weather.windMs}m/s</span>
           <span>미세먼지 PM10 {weather.pm10}</span>

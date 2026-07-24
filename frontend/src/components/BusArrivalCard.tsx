@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { adapters } from '@/adapters';
 import { useAppStore } from '@/store/appStore';
 import { speak } from '@/voice/synthesis';
@@ -26,15 +26,26 @@ export default function BusArrivalCard() {
   const [stopId, setStopId] = useState('');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [searchingStops, setSearchingStops] = useState(false);
   const [error, setError] = useState('');
+  const stopSearchRequest = useRef(0);
   const lowFloorPriority = useAppStore((s) => s.options.lowFloorPriority);
   const toggleLowFloorPriority = useAppStore((s) => s.toggleLowFloorPriority);
 
   useEffect(() => {
+    const request = ++stopSearchRequest.current;
     void adapters.bus.listStops().then((results) => {
+      if (request !== stopSearchRequest.current) return;
       setStops(results);
       setStopId(results[0]?.stopId ?? '');
-    }).catch(() => setError('정류장 목록을 불러오지 못했습니다.'));
+    }).catch(() => {
+      if (request === stopSearchRequest.current) {
+        setError('정류장 목록을 불러오지 못했습니다.');
+      }
+    });
+    return () => {
+      stopSearchRequest.current += 1;
+    };
   }, []);
 
   useEffect(() => {
@@ -55,17 +66,19 @@ export default function BusArrivalCard() {
 
   const searchStops = async (event: FormEvent) => {
     event.preventDefault();
-    setLoading(true);
+    const request = ++stopSearchRequest.current;
+    setSearchingStops(true);
     setError('');
     try {
       const results = await adapters.bus.listStops(query);
+      if (request !== stopSearchRequest.current) return;
       setStops(results);
       setStopId(results[0]?.stopId ?? '');
       if (!results.length) setError('검색된 정류장이 없습니다.');
     } catch {
-      setError('정류장 검색에 실패했습니다.');
+      if (request === stopSearchRequest.current) setError('정류장 검색에 실패했습니다.');
     } finally {
-      setLoading(false);
+      if (request === stopSearchRequest.current) setSearchingStops(false);
     }
   };
 
@@ -99,7 +112,13 @@ export default function BusArrivalCard() {
           placeholder="정류소명 또는 5자리 ARS 번호"
           aria-label="버스 정류장 검색"
         />
-        <button type="submit" className="btn" disabled={loading || !query.trim()}>검색</button>
+        <button
+          type="submit"
+          className="btn btn--ghost"
+          disabled={searchingStops || !query.trim()}
+        >
+          {searchingStops ? '검색 중…' : '검색'}
+        </button>
       </form>
 
       <div className="bus__controls">

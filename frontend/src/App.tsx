@@ -8,6 +8,7 @@ import VoiceChatDock from '@/components/VoiceChatDock';
 import KakaoLoginButton from '@/components/KakaoLoginButton';
 import InstallPrompt from '@/components/InstallPrompt';
 import ConnectionStatus from '@/components/ConnectionStatus';
+import { preferredScrollBehavior } from '@/utils/motion';
 
 /**
  * 정보 구조(요구사항 §1·§3):
@@ -27,7 +28,10 @@ export default function App() {
   useEffect(() => {
     if (hasResults && !scrolled.current && resultsRef.current) {
       scrolled.current = true;
-      resultsRef.current.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      resultsRef.current.scrollIntoView?.({
+        behavior: preferredScrollBehavior(),
+        block: 'start',
+      });
     }
     if (!hasResults) scrolled.current = false;
   }, [hasResults]);

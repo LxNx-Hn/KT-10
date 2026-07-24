@@ -16,6 +16,7 @@ export default function ProfilePreferences() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [value, setValue] = useState<UserPreferences>(EMPTY);
   const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     void getCurrentUser().then((user) => {
@@ -31,12 +32,16 @@ export default function ProfilePreferences() {
     setValue((current) => ({ ...current, [key]: !current[key] }));
 
   async function persist() {
+    if (saving) return;
     const { profile: _profile, ...settingsOnly } = value;
+    setSaving(true);
     try {
       setValue(await savePreferences(settingsOnly));
       setMessage('저장되었습니다.');
     } catch {
       setMessage('저장하지 못했습니다.');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -58,8 +63,15 @@ export default function ProfilePreferences() {
         <input type="checkbox" checked={value.trainingConsent} onChange={() => toggle('trainingConsent')} />
         동의한 후기만 익명화해 전역 모델 후보 학습에 사용
       </label>
-      <button type="button" className="btn btn--ghost" onClick={() => void persist()}>설정 저장</button>
-      {message && <p>{message}</p>}
+      <button
+        type="button"
+        className="btn btn--ghost"
+        disabled={saving}
+        onClick={() => void persist()}
+      >
+        {saving ? '저장 중…' : '설정 저장'}
+      </button>
+      {message && <p role="status" aria-live="polite">{message}</p>}
     </details>
   );
 }

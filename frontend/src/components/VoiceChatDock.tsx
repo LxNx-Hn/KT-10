@@ -22,6 +22,7 @@ export default function VoiceChatDock() {
   const listenRequestId = useVoiceChatStore((s) => s.listenRequestId);
   const handleUserInput = useVoiceChatStore((s) => s.handleUserInput);
   const repeatLast = useVoiceChatStore((s) => s.repeatLast);
+  const setStatus = useVoiceChatStore((s) => s.setStatus);
 
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -38,6 +39,8 @@ export default function VoiceChatDock() {
     },
     onError: () => useVoiceChatStore.getState().setStatus('error'),
   });
+  const processing = status === 'thinking';
+  const voiceBusy = status === 'thinking' || status === 'speaking';
 
   // 외부(홈 마이크 버튼)에서 듣기 요청 시 시작
   useEffect(() => {
@@ -99,6 +102,7 @@ export default function VoiceChatDock() {
                   key={p.id}
                   type="button"
                   className="chip chip--small"
+                  disabled={processing}
                   onClick={() => void handleUserInput(`${p.label} 기준으로 알려줘`)}
                 >
                   {p.label}
@@ -112,16 +116,31 @@ export default function VoiceChatDock() {
               type="button"
               className={`voice-fab ${listening ? 'voice-fab--on' : ''}`}
               onClick={listening ? stop : start}
-              disabled={!supported}
+              disabled={!supported || voiceBusy}
               aria-pressed={listening}
               aria-label={listening ? '음성 인식 중지' : '음성 말하기'}
             >
               🎤 {supported ? (listening ? '듣는 중' : '말하기') : '음성 미지원'}
             </button>
-            <button type="button" className="btn btn--repeat" onClick={repeatLast} aria-label="다시 듣기">
+            <button
+              type="button"
+              className="btn btn--repeat"
+              onClick={repeatLast}
+              disabled={status === 'thinking' || status === 'listening'}
+              aria-label="다시 듣기"
+            >
               🔁 다시 듣기
             </button>
-            <button type="button" className="btn btn--stop" onClick={stopSpeaking} aria-label="음성 정지">
+            <button
+              type="button"
+              className="btn btn--stop"
+              onClick={() => {
+                stopSpeaking();
+                setStatus('idle');
+              }}
+              disabled={status !== 'speaking'}
+              aria-label="음성 정지"
+            >
               ⏹
             </button>
           </div>
@@ -140,9 +159,14 @@ export default function VoiceChatDock() {
               placeholder="음성 대신 입력해도 됩니다 (예: 서면역까지 가는 길 찾아줘)"
               onChange={(e) => setDraft(e.target.value)}
               aria-label="챗봇 텍스트 입력"
+              aria-busy={processing}
             />
-            <button type="submit" className="btn btn--primary" disabled={!draft.trim()}>
-              보내기
+            <button
+              type="submit"
+              className="btn btn--primary"
+              disabled={!draft.trim() || processing}
+            >
+              {processing ? '처리 중' : '보내기'}
             </button>
           </form>
         </div>

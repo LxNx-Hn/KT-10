@@ -29,7 +29,6 @@ export default defineConfig({
         background_color: '#f3f7f4',
         display: 'standalone',
         display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
-        orientation: 'portrait',
         lang: 'ko',
         scope: '/',
         start_url: '/',

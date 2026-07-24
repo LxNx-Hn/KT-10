@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e:places": "playwright test e2e/live-place-search.spec.ts",
+    "test:e2e:a11y": "playwright test -c playwright.a11y.config.ts",
     "validate": "vitest run src/scoring/validation",
     "typecheck": "tsc --noEmit"
   },
@@ -20,6 +21,7 @@
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.61.1",
     "@testing-library/react": "^16.0.1",
     "@types/react": "^18.3.12",
