@@ -69,6 +69,20 @@ def _candidate_record(row):
             "distance_m": 1000 + index,
             "sources": ["odsay"],
             "geometry_quality": "exact",
+            "segments": [{
+                "mode": "walk",
+                "distance_m": 1000 + index,
+                "geometry_quality": "exact",
+                "path": [
+                    {"lat": 35.1, "lng": 129.0},
+                    {"lat": 35.2, "lng": 129.1},
+                ],
+            }],
+            "segment_geometry": [{
+                "mode": "walk",
+                "distance_m": 1000 + index,
+                "geometry_quality": "exact",
+            }],
             "trait_labels": {"labels": []},
             "feature_snapshot": snapshot,
         })
@@ -149,6 +163,17 @@ def test_collection_checkpoints_and_resume_without_refetch(tmp_path):
     ]
     assert len(features) == 4
     assert len({row["feature_snapshot_hash"] for row in features}) == 4
+    contexts = [
+        json.loads(line)
+        for line in (output_dir / "candidate_context.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert contexts[0]["segment_geometry"] == [{
+        "mode": "walk",
+        "distance_m": 1000,
+        "geometry_quality": "exact",
+    }]
 
 
 def test_collection_failure_is_not_marked_ready(tmp_path):

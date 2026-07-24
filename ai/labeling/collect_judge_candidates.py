@@ -228,6 +228,15 @@ def _validate_candidate_payload(
             "distance_m": candidate.get("distance_m"),
             "sources": candidate.get("sources"),
             "geometry_quality": candidate.get("geometry_quality"),
+            "segment_geometry": [
+                {
+                    "mode": segment.get("mode"),
+                    "distance_m": segment.get("distance_m"),
+                    "geometry_quality": segment.get("geometry_quality"),
+                }
+                for segment in candidate.get("segments") or []
+                if isinstance(segment, dict)
+            ],
             "trait_labels": candidate.get("trait_labels"),
             "feature_snapshot": snapshot,
         })
@@ -479,6 +488,7 @@ def materialize_collection(
                 "distance_m": candidate.get("distance_m"),
                 "sources": candidate.get("sources"),
                 "geometry_quality": candidate.get("geometry_quality"),
+                "segment_geometry": candidate.get("segment_geometry"),
                 "trait_labels": candidate.get("trait_labels"),
             })
 
