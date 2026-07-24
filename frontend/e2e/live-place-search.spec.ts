@@ -12,6 +12,8 @@ test('Kakao Places에서 북구청과 부산역을 실제 검색·선택한다',
   });
 
   await page.goto('/');
+  await expect(page.getByText('API 연결 모드', { exact: true })).toBeVisible();
+  await expect(page.getByText('검증용 내장 데이터', { exact: true })).toHaveCount(0);
 
   const origin = page.getByRole('combobox', { name: '출발지' });
   await origin.fill('북구청');
@@ -31,8 +33,11 @@ test('Kakao Places에서 북구청과 부산역을 실제 검색·선택한다',
   await expect(page.getByRole('heading', { name: '추천 경로 3개' })).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.locator('.route-card')).toHaveCount(3);
-  await expect(page.locator('.route-card').first()).toContainText(
+  const routeCards = page
+    .getByRole('list', { name: '점수순 경로 카드' })
+    .locator(':scope > [role="listitem"]');
+  await expect(routeCards).toHaveCount(3);
+  await expect(routeCards.first()).toContainText(
     '규칙 베이스라인 적합 점수',
   );
 
