@@ -111,6 +111,27 @@ describe('v2 경로 표시 모델', () => {
     });
   });
 
+  it('수직이동 여부를 추정하지 않고 확인된 역사 승강기 접근성은 별도로 표시한다', () => {
+    const view = buildRouteViewModel(
+      makeItem({
+        segments: [{
+          ...BASE_SEGMENT,
+          id: 'subway-1',
+          mode: 'subway',
+          stationName: '부산역',
+          hasElevator: true,
+        }],
+      }),
+      1,
+      'disabled',
+    );
+
+    expect(view.facts.find((fact) => fact.id === 'elevator')).toMatchObject({
+      label: '역 승강기 접근성 확인',
+      kind: 'advantage',
+    });
+  });
+
   it('공공 건물 그늘 lower bound와 90m 지형 추정을 수치 그대로 구분한다', () => {
     const view = buildRouteViewModel(
       makeItem({

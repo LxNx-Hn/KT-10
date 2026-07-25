@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import math
+import re
 from datetime import UTC, datetime
 from threading import Lock
 from typing import Any, Literal
@@ -456,7 +457,10 @@ async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], d
             "_duration_min": candidate.duration_min,
             "_distance_m": candidate.distance_m,
             "_path": [{"lat": point.lat, "lng": point.lng} for point in candidate.path],
-            "_segments": _public_segments(candidate),
+            "_segments": _enrich_subway_elevator_accessibility(
+                _public_segments(candidate),
+                layers,
+            ),
             "_geometry_quality": candidate.geometry_quality,
         }
         feature.update(_context_features(feature, req))
@@ -842,6 +846,54 @@ def _parse_api_features(candidate) -> dict:
         "total_duration_min": candidate.duration_min,
         "is_low_floor_bus": low_floor,
     }
+
+
+def _station_name_key(value: object) -> str | None:
+    """공급자·공공데이터의 역명 표기를 보수적으로 맞춘다."""
+    if not isinstance(value, str):
+        return None
+    normalized = re.sub(r"[\s()\[\]·.-]", "", value).removesuffix("역")
+    return normalized.casefold() or None
+
+
+def _subway_elevator_lookup(layers: dict) -> dict[str, bool]:
+    """역명별 엘리베이터 접근성. 중복 역명의 충돌 값은 제외한다."""
+    subway = layers.get("subway")
+    if subway is None:
+        return {}
+    seen: dict[str, set[bool]] = {}
+    for _, row in subway.iterrows():
+        name = _station_name_key(row.get("역명"))
+        value = row.get("elevator_accessible")
+        if name is None or value not in (0, 1, False, True):
+            continue
+        seen.setdefault(name, set()).add(bool(value))
+    return {
+        name: next(iter(values))
+        for name, values in seen.items()
+        if len(values) == 1
+    }
+
+
+def _enrich_subway_elevator_accessibility(
+    segments: list[dict],
+    layers: dict,
+) -> list[dict]:
+    """확인된 역사 접근성만 도시철도 구간에 추가한다.
+
+    역에 엘리베이터가 있다는 사실은 해당 환승 동선이 반드시 수직이동을
+    한다는 뜻이 아니므로 ``needs_vertical_move``은 여기서 추정하지 않는다.
+    """
+    lookup = _subway_elevator_lookup(layers)
+    if not lookup:
+        return segments
+    for segment in segments:
+        if segment.get("mode") != "subway" or segment.get("has_elevator") is not None:
+            continue
+        value = lookup.get(_station_name_key(segment.get("station_name")) or "")
+        if value is not None:
+            segment["has_elevator"] = value
+    return segments
 
 
 def _public_segments(candidate) -> list[dict]:

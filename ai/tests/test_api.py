@@ -13,6 +13,7 @@ from api.router import (
     RecommendRequest,
     _analysis_route_parts,
     _context_features,
+    _enrich_subway_elevator_accessibility,
     _parse_api_features,
     _public_segments,
 )
@@ -572,6 +573,36 @@ def test_complete_route_facilities_preserve_known_false_for_ui_and_model():
         for segment in segments
         if segment["mode"] == "walk"
     ] == [True, False]
+
+
+def test_subway_accessibility_layer_enriches_only_confirmed_station_elevator():
+    class SubwayLayer:
+        def iterrows(self):
+            return iter([
+                (0, {"역명": "부산역", "elevator_accessible": 1}),
+                (1, {"역명": "서면역", "elevator_accessible": 0}),
+            ])
+
+    segments = [{
+        "mode": "subway",
+        "station_name": "부산역",
+        "has_elevator": None,
+        "needs_vertical_move": None,
+    }, {
+        "mode": "subway",
+        "station_name": "미등록역",
+        "has_elevator": None,
+        "needs_vertical_move": None,
+    }]
+
+    enriched = _enrich_subway_elevator_accessibility(
+        segments,
+        {"subway": SubwayLayer()},
+    )
+
+    assert enriched[0]["has_elevator"] is True
+    assert enriched[0]["needs_vertical_move"] is None
+    assert enriched[1]["has_elevator"] is None
 
 
 def test_partial_route_facilities_remain_unknown_for_ui_and_model():

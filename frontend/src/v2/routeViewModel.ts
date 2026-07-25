@@ -122,6 +122,9 @@ function elevatorFact(route: RouteCandidate): V2RouteFact {
   const elevatorUnavailable =
     verticalSegments.length > 0 &&
     verticalSegments.every((segment) => segment.hasElevator === false);
+  const stationElevatorSegments = route.segments.filter(
+    (segment) => segment.mode === 'subway' && segment.hasElevator !== undefined,
+  );
 
   if (noVerticalMoveConfirmed) {
     return {
@@ -131,6 +134,26 @@ function elevatorFact(route: RouteCandidate): V2RouteFact {
     };
   }
   if (verticalSegments.length === 0) {
+    if (
+      stationElevatorSegments.length > 0
+      && stationElevatorSegments.every((segment) => segment.hasElevator === true)
+    ) {
+      return {
+        id: 'elevator',
+        label: '역 승강기 접근성 확인',
+        kind: 'advantage',
+      };
+    }
+    if (
+      stationElevatorSegments.length > 0
+      && stationElevatorSegments.every((segment) => segment.hasElevator === false)
+    ) {
+      return {
+        id: 'elevator',
+        label: '역 승강기 없음 확인',
+        kind: 'caution',
+      };
+    }
     return {
       id: 'elevator',
       label: '수직이동 정보 미확인',
