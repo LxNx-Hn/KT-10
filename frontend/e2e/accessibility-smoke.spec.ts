@@ -59,8 +59,16 @@ test('프로필과 이동 조건 drawer에 자동 탐지 가능한 접근성 위
 
 test('모바일 핵심 조작부의 높이가 44px 이상이다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium-mobile-a11y');
+  await page.setViewportSize({ width: 320, height: 700 });
   await page.goto('/');
 
+  const contextControls = [
+    page.getByRole('button', { name: /프로필 선택, 현재/ }),
+    page.getByRole('button', { name: '짐 많음' }),
+    page.getByRole('button', { name: '계단 회피' }),
+    page.getByRole('button', { name: '쉬운 화면' }),
+    page.getByRole('button', { name: /^조건/ }),
+  ];
   const initialControls: Array<[string, Locator]> = [
     ['출발지', page.getByRole('combobox', { name: '출발지' })],
     ['도착지', page.getByRole('combobox', { name: '도착지' })],
@@ -81,6 +89,15 @@ test('모바일 핵심 조작부의 높이가 44px 이상이다', async ({ page 
   for (const [name, control] of initialControls) {
     await expectTapHeight(name, control);
   }
+
+  const contextTopPositions = await Promise.all(
+    contextControls.map(async (control) => {
+      const box = await control.boundingBox();
+      expect(box).not.toBeNull();
+      return Math.round(box?.y ?? -1);
+    }),
+  );
+  expect(new Set(contextTopPositions).size).toBe(1);
 
   await page.getByRole('button', { name: /^조건/ }).click();
   const conditionsDialog = page.getByRole('dialog', { name: '이번 이동 조건' });

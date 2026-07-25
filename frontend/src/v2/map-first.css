@@ -1132,9 +1132,9 @@
 }
 
 .map-first__chip--conditions {
-  gap: 6px;
-  min-width: 5.75rem;
-  padding-inline: 12px 10px;
+  gap: 4px;
+  min-width: 4.25rem;
+  padding-inline: 10px 8px;
   justify-content: space-between;
 }
 
@@ -2010,6 +2010,17 @@
 }
 
 @media (max-width: 359px) {
+  .map-first__context {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+
+  .map-first__context::-webkit-scrollbar {
+    display: none;
+  }
+
   .map-first__tab-panel .route-feedback__details {
     grid-template-columns: 1fr;
   }
@@ -2065,8 +2076,8 @@ body:has(.map-first__sheet--expanded:not(.map-first__sheet--empty)) .install-pro
   }
 
   .map-first__chip--conditions {
-    min-width: 5.5rem;
-    padding-inline: 10px 8px;
+    min-width: 4rem;
+    padding-inline: 8px 6px;
   }
 
   .map-first__route-card {
