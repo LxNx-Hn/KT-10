@@ -87,6 +87,8 @@ python scripts\prewarm_route_cache.py `
 
 `postgres-data`, `osmnx-cache`, `odsay-cache`, `elevation-cache`,
 `vworld-cache` named volume을 재배포 때 삭제하지 않습니다.
+`elevation-cache`에는 GLO-90 DEM COG 타일과 경로 표본별 계산 결과가
+함께 보존됩니다.
 
 ## 5. 배포 완료 검증
 

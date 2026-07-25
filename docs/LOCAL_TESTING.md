@@ -44,7 +44,10 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 
 `postgres`, `ai`, `backend`, `frontend`가 모두 `healthy`이면
 <http://localhost:8080>을 연다. 첫 빌드는 이미지 다운로드를 포함해 몇 분
-걸릴 수 있다.
+걸릴 수 있다. Compose 포트가 `127.0.0.1:8080`에 바인딩되어 있어도
+브라우저 주소는 카카오 JavaScript 키에 등록한 `localhost`를 사용한다.
+`http://127.0.0.1:8080`은 카카오 개발자 콘솔에 별도 Web 도메인으로
+등록하지 않았다면 지도 SDK가 `domain mismatched`로 거부한다.
 
 우선 OD 세 개를 한 번 준비하면 이후 테스트의 외부 API 대기시간을 줄일 수
 있다.
