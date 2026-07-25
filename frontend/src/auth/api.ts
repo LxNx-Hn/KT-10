@@ -1,7 +1,7 @@
 import type { ProfileId } from '@/types';
 import { API_BASE } from '@/api/http';
 
-const IS_LIVE = import.meta.env.VITE_DATA_SOURCE === 'live';
+const IS_LIVE = import.meta.env.VITE_DATA_SOURCE !== 'mock';
 
 export interface UserPreferences {
   profile: ProfileId;

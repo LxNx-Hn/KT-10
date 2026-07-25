@@ -972,7 +972,7 @@ export default function MapFirstApp() {
     ),
   );
   const activeConditionCount = CONDITION_KEYS.filter((key) => Boolean(options[key])).length;
-  const dataSource = import.meta.env.VITE_DATA_SOURCE === 'live' ? 'live' : 'mock';
+  const dataSource = import.meta.env.VITE_DATA_SOURCE === 'mock' ? 'mock' : 'live';
   const profileMeta = PROFILES[profile];
   const showLabeledControls =
     largeUi || profile === 'elderly' || profile === 'child' || profile === 'disabled';

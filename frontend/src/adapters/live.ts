@@ -49,6 +49,18 @@ async function searchBackendPlaces(query: string): Promise<Place[]> {
   return (await res.json()) as Place[];
 }
 
+async function searchLivePlaces(query: string): Promise<Place[]> {
+  if (hasKakaoKey()) {
+    try {
+      return await searchKakaoPlaces(query);
+    } catch {
+      // JavaScript SDK의 허용 도메인·일시 네트워크 오류 시에도
+      // 출처가 검증된 Kakao REST 결과만 대체 경로로 허용한다.
+    }
+  }
+  return searchBackendPlaces(query);
+}
+
 async function postJson<T>(
   path: string,
   body: unknown,
@@ -70,11 +82,9 @@ async function postJson<T>(
 export const liveAdapters: Adapters = {
   places: {
     // JavaScript 키가 있는 웹/PWA는 Kakao Places SDK를 직접 사용한다.
-    // 키가 없는 서버 중심 배포만 출처가 확인된 백엔드 REST Local API를 사용한다.
+    // SDK가 실패하거나 키가 없는 환경은 출처가 확인된 REST Local API를 사용한다.
     // live UI에서 demo 응답을 실제 Kakao 검색처럼 표시하지 않는다.
-    searchPlaces: (query) => hasKakaoKey()
-      ? searchKakaoPlaces(query)
-      : searchBackendPlaces(query),
+    searchPlaces: searchLivePlaces,
   },
   routes: {
     getCandidates: (origin, dest) =>

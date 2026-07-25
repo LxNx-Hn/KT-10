@@ -188,7 +188,7 @@ export default function SearchBar() {
   const { origin, destination, setOrigin, setDestination, search, loadDemoOd, loading } =
     useAppStore();
   const useCurrentLocation = useAppStore((s) => s.useCurrentLocation);
-  const isDemo = import.meta.env.VITE_DATA_SOURCE !== 'live';
+  const isDemo = import.meta.env.VITE_DATA_SOURCE === 'mock';
   const originInputRef = useRef<HTMLInputElement>(null);
   const destinationInputRef = useRef<HTMLInputElement>(null);
   const [validationError, setValidationError] = useState('');

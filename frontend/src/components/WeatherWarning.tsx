@@ -27,7 +27,7 @@ export default function WeatherWarning() {
   const weather = useAppStore((s) => s.weather);
   const weatherScenario = useAppStore((s) => s.weatherScenario);
   const setWeatherScenario = useAppStore((s) => s.setWeatherScenario);
-  const live = import.meta.env.VITE_DATA_SOURCE === 'live';
+  const live = import.meta.env.VITE_DATA_SOURCE !== 'mock';
   const hasWeatherCaution = Boolean(
     weather && (weather.precipitationMm > 0 || weather.air === 'bad' || weather.air === 'very_bad'),
   );

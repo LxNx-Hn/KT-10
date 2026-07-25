@@ -78,6 +78,30 @@ describe('live 장소 검색 공급자', () => {
       BUSAN_STATION,
     ]);
   });
+
+  it('JavaScript SDK 실패 시 검증된 Kakao REST 검색으로 대체한다', async () => {
+    vi.mocked(hasKakaoKey).mockReturnValue(true);
+    vi.mocked(searchKakaoPlaces).mockRejectedValue(
+      new Error('KAKAO_SDK_LOAD_FAILED'),
+    );
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify([BUSAN_STATION]),
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Place-Search-Source': 'kakao-rest',
+        },
+      },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(liveAdapters.places.searchPlaces('부산역')).resolves.toEqual([
+      BUSAN_STATION,
+    ]);
+    expect(searchKakaoPlaces).toHaveBeenCalledWith('부산역');
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 });
 
 describe('live 경로 요청 제한시간', () => {
