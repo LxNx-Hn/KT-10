@@ -291,7 +291,7 @@ OpenWeather, 버스, PostgreSQL, session, 개인화, 라벨링 인증은
 | 우선 OD cache warm | 3/3 exact walking·terrain·shade 상태; 캐시 응답 2.07초, 1.72초, 1.88초 |
 | 초기 평가 runtime | 380 OD·1,137개 후보·6,822개 평가, 6개 프로필 artifact 로드와 실제 순위 API 확인 |
 | 실제 공급자 E2E | Kakao REST, ODsay, VWorld, OpenWeather, 부산 버스 live 확인; Kakao OAuth는 운영 HTTPS origin 등록 대기 |
-| 원격 CI 이력 | 당시 라벨·초기 평가 모델·로컬 검증·문서 HEAD `2f447e1`의 5개 job 전체 성공; production 이미지와 hardened runtime 포함 ([run 30101398317](https://github.com/LxNx-Hn/KT-10/actions/runs/30101398317)) |
+| 원격 CI 이력 | 데이터·모델·문서 HEAD `378cd0c`의 5개 job 전체 성공; production 이미지와 hardened runtime 포함 ([run 30137336613](https://github.com/LxNx-Hn/KT-10/actions/runs/30137336613)) |
 
 ## 10. 배포 완료 기준
 
@@ -315,7 +315,7 @@ OpenWeather, 버스, PostgreSQL, session, 개인화, 라벨링 인증은
 - [x] 최종 전체 로컬 테스트·생산 빌드·Docker 이미지 빌드
 - [x] 모바일·데스크톱 브라우저 지도-카드 동기화 검증
 - [x] 작업 단위별 커밋·푸시
-- [ ] 현재 HEAD 원격 CI 전체 통과
+- [x] 데이터·모델·문서 HEAD `378cd0c` 원격 CI 전체 통과
 
 모든 미완료 항목을 통과하기 전에는 “키만 넣으면 배포 완료” 또는
 “실사용자 검증 AI”라고 표현하지 않습니다. 외부 모델 없이도 동작하는
