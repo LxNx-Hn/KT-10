@@ -6,13 +6,27 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import secrets
 from urllib.parse import urlparse
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = ROOT / ".env.production.example"
 TARGET = ROOT / ".env.production"
+BOOTSTRAP_MODEL = ROOT / "ai" / "data" / "rankers.bootstrap-baseline.zip"
+BOOTSTRAP_METADATA = (
+    ROOT / "ai" / "data" / "rankers.bootstrap-baseline.metadata.json"
+)
+MODEL_PROFILES = {
+    "general",
+    "elderly",
+    "child",
+    "youth",
+    "disabled",
+    "pregnant",
+}
 GENERATED = {
     "POSTGRES_PASSWORD": 24,
     "SESSION_SECRET": 48,
@@ -88,6 +102,29 @@ def _first_present(values: dict[str, str], aliases: tuple[str, ...]) -> str:
         if value:
             return value
     return ""
+
+
+def _bootstrap_artifact_ready() -> bool:
+    if not BOOTSTRAP_MODEL.is_file() or not BOOTSTRAP_METADATA.is_file():
+        return False
+    try:
+        metadata = json.loads(BOOTSTRAP_METADATA.read_text(encoding="utf-8"))
+        with zipfile.ZipFile(BOOTSTRAP_MODEL) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            archived_profiles = {
+                Path(name).stem
+                for name in archive.namelist()
+                if name.startswith("models/") and name.endswith(".json")
+            }
+    except (OSError, KeyError, json.JSONDecodeError, zipfile.BadZipFile):
+        return False
+    return bool(
+        metadata.get("model_tier") == "bootstrap_baseline"
+        and set(metadata.get("profiles", ())) == MODEL_PROFILES
+        and manifest.get("model_tier") == "bootstrap_baseline"
+        and set(manifest.get("profiles", ())) == MODEL_PROFILES
+        and archived_profiles == MODEL_PROFILES
+    )
 
 
 def prepare(import_existing: bool, import_env: Path | None = None) -> None:
@@ -187,8 +224,16 @@ def check() -> None:
         missing.append("ROUTE_MODE(live or ai)")
     if values.get("BUILDING_SOURCE") != "vworld":
         missing.append("BUILDING_SOURCE(vworld)")
-    if values.get("RANKER_TIER") != "human_validated":
-        missing.append("RANKER_TIER(human_validated)")
+    ranker_tier = values.get("RANKER_TIER")
+    local_bootstrap = bool(
+        values.get("ROUTE_MODE") == "ai"
+        and ranker_tier == "bootstrap_baseline"
+        and parsed.hostname in {"localhost", "127.0.0.1"}
+    )
+    if ranker_tier != "human_validated" and not local_bootstrap:
+        missing.append("RANKER_TIER(human_validated outside local model mode)")
+    if local_bootstrap and not _bootstrap_artifact_ready():
+        missing.append("bootstrap_baseline(model artifact contract)")
     if values.get("OSMNX_WALK_GEOMETRY_ENABLED", "").lower() not in {
         "true",
         "false",

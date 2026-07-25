@@ -1,5 +1,7 @@
 """배포 환경 가져오기는 키 종류를 섞거나 비밀값을 출력하지 않는다."""
+import json
 from pathlib import Path
+import zipfile
 
 import pytest
 
@@ -120,6 +122,73 @@ def test_check_accepts_explicit_osmnx_when_tmap_is_absent(
     prepare_deployment_env.check()
 
 
+def test_check_accepts_local_ai_mode_with_complete_bootstrap_artifact(
+    tmp_path: Path,
+    monkeypatch,
+):
+    target = tmp_path / ".env.production"
+    model = tmp_path / "rankers.bootstrap-baseline.zip"
+    metadata = tmp_path / "rankers.bootstrap-baseline.metadata.json"
+    profiles = sorted(prepare_deployment_env.MODEL_PROFILES)
+    target.write_text(
+        _valid_production_env()
+        .replace(
+            "PUBLIC_ORIGIN=https://route.example.kr",
+            "PUBLIC_ORIGIN=http://localhost:8080",
+        )
+        .replace("ROUTE_MODE=live", "ROUTE_MODE=ai")
+        .replace(
+            "RANKER_TIER=human_validated",
+            "RANKER_TIER=bootstrap_baseline",
+        ),
+        encoding="utf-8",
+    )
+    metadata.write_text(
+        json.dumps({
+            "model_tier": "bootstrap_baseline",
+            "profiles": profiles,
+        }),
+        encoding="utf-8",
+    )
+    with zipfile.ZipFile(model, "w") as archive:
+        archive.writestr(
+            "manifest.json",
+            json.dumps({
+                "model_tier": "bootstrap_baseline",
+                "profiles": profiles,
+            }),
+        )
+        for profile in profiles:
+            archive.writestr(f"models/{profile}.json", "{}")
+    monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
+    monkeypatch.setattr(prepare_deployment_env, "BOOTSTRAP_MODEL", model)
+    monkeypatch.setattr(prepare_deployment_env, "BOOTSTRAP_METADATA", metadata)
+
+    prepare_deployment_env.check()
+
+
+def test_check_rejects_bootstrap_model_for_public_origin(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    target = tmp_path / ".env.production"
+    target.write_text(
+        _valid_production_env()
+        .replace("ROUTE_MODE=live", "ROUTE_MODE=ai")
+        .replace(
+            "RANKER_TIER=human_validated",
+            "RANKER_TIER=bootstrap_baseline",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
+
+    with pytest.raises(SystemExit):
+        prepare_deployment_env.check()
+    assert "outside local model mode" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize(
     ("old", "new", "message"),
     [
@@ -142,11 +211,6 @@ def test_check_accepts_explicit_osmnx_when_tmap_is_absent(
             "KAKAO_REST_API_KEY=rest-key",
             "KAKAO_REST_API_KEY=javascript-key",
             "must be distinct",
-        ),
-        (
-            "RANKER_TIER=human_validated",
-            "RANKER_TIER=bootstrap_baseline",
-            "human_validated",
         ),
         (
             "BIND_ADDRESS=127.0.0.1",
