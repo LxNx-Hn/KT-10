@@ -37,6 +37,7 @@ from .models import (
     RecommendRequest,
     RouteCandidate,
     ScoredRoute,
+    ShadeRefreshRequest,
     WeatherCondition,
 )
 from .providers import (
@@ -51,8 +52,17 @@ from .providers import (
 from .providers.ai_pipeline import AIProviderError
 from .providers.vworld_buildings import get_vworld_buildings
 from .rule_demo import personalize_and_sign, select_representative_routes
+from .route_set_cache import route_set_cache
 from .scoring import recommend_routes
-from .shade import KST, add_demo_shade, add_shade, assign_characteristics
+from .shade import (
+    DEMO_BUILDING_DATA,
+    KST,
+    VWORLD_SHADE_SOURCE,
+    add_demo_shade,
+    add_shade,
+    assign_characteristics,
+    resolve_shade_without_buildings,
+)
 from .settings import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -95,6 +105,7 @@ async def _add_configured_shade(
     departure_at=None,
     *,
     wait_for_buildings: bool = False,
+    cache_only_buildings: bool = False,
 ) -> list[RouteCandidate]:
     if not candidates:
         return candidates
@@ -102,20 +113,53 @@ async def _add_configured_shade(
     # 스냅샷이 경로마다 몇 마이크로초씩 달라지지 않는다.
     effective_at = departure_at or datetime.now(KST)
     if settings.building_source == "demo":
+        if resolve_shade_without_buildings(
+            candidates,
+            effective_at,
+            source=str(DEMO_BUILDING_DATA["source"]),
+            data_quality="demo",
+        ):
+            log.info("야간 또는 계산 불가 경로: 데모 건물 조회·그림자 계산 생략")
+            return assign_characteristics(candidates)
         return assign_characteristics(add_demo_shade(candidates, effective_at))
     if not settings.live_buildings:
         raise HTTPException(
             status_code=503,
             detail="BUILDING_SOURCE=vworld requires VWORLD_API_KEY.",
         )
+    if resolve_shade_without_buildings(
+        candidates,
+        effective_at,
+        source=VWORLD_SHADE_SOURCE,
+        data_quality="public",
+    ):
+        log.info("야간 또는 계산 불가 경로: VWorld 건물 조회·그림자 계산 생략")
+        return assign_characteristics(candidates)
     try:
         buildings = await get_vworld_buildings(
             candidates,
             wait_for_complete=wait_for_buildings,
+            cache_only=cache_only_buildings,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return assign_characteristics(add_shade(candidates, effective_at, buildings))
+
+
+def _cache_scored_routes(
+    scored: list[ScoredRoute],
+    candidates: list[RouteCandidate],
+    weather: WeatherCondition,
+    *,
+    token: str | None = None,
+) -> list[ScoredRoute]:
+    if token is not None and route_set_cache.replace(token, candidates, weather):
+        route_set_token = token
+    else:
+        route_set_token = route_set_cache.put(candidates, weather)
+    for item in scored:
+        item.route_set_token = route_set_token
+    return scored
 
 
 @app.get("/api/health")
@@ -259,7 +303,7 @@ async def routes_recommend(
                 candidates,
                 req.options.departure_at,
             )
-            return await rank_ai_pipeline_candidates(
+            scored = await rank_ai_pipeline_candidates(
                 candidates,
                 req.profile,
                 req.options,
@@ -269,6 +313,11 @@ async def routes_recommend(
                     if user and user.preference
                     else None
                 ),
+            )
+            return _cache_scored_routes(
+                scored,
+                candidates,
+                current_weather,
             )
         except AIProviderError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -323,14 +372,90 @@ async def routes_recommend(
     # 비교 적합 점수순으로 유지한다.
     selected = select_representative_routes(scored, req.top_n)
     try:
-        return personalize_and_sign(
+        personalized = personalize_and_sign(
             selected,
             req.profile,
             user.preference.personalization_state if user and user.preference else None,
             req.options,
         )
+        return _cache_scored_routes(
+            personalized,
+            candidates,
+            weather,
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/routes/refresh-shade",
+    response_model=list[ScoredRoute],
+    response_model_exclude_none=True,
+)
+async def routes_refresh_shade(
+    req: ShadeRefreshRequest,
+    user: User | None = Depends(optional_current_user),
+) -> list[ScoredRoute]:
+    """기존 서버 후보로 시각별 그늘만 갱신하고 동일 후보군을 재순위화한다."""
+    cached = route_set_cache.get(req.route_set_token)
+    if cached is None:
+        raise HTTPException(
+            status_code=409,
+            detail="경로 계산 정보가 만료되었습니다. 경로를 다시 검색해 주세요.",
+        )
+
+    candidates = cached.candidates
+    try:
+        candidates = await _add_configured_shade(
+            candidates,
+            req.options.departure_at,
+            cache_only_buildings=True,
+        )
+        if settings.route_mode == "ai":
+            scored = await rank_ai_pipeline_candidates(
+                candidates,
+                req.profile,
+                req.options,
+                top_n=req.top_n,
+                personalization_state=(
+                    user.preference.personalization_state
+                    if user and user.preference
+                    else None
+                ),
+            )
+            return _cache_scored_routes(
+                scored,
+                candidates,
+                cached.weather,
+                token=req.route_set_token,
+            )
+
+        if settings.route_mode == "live":
+            await enrich_ai_pipeline_candidates(candidates, req.options)
+        scored = recommend_routes(
+            candidates,
+            cached.weather,
+            req.profile,
+            req.options,
+            top_n=len(candidates),
+        )
+        selected = select_representative_routes(scored, req.top_n)
+        personalized = personalize_and_sign(
+            selected,
+            req.profile,
+            user.preference.personalization_state if user and user.preference else None,
+            req.options,
+        )
+        return _cache_scored_routes(
+            personalized,
+            candidates,
+            cached.weather,
+            token=req.route_set_token,
+        )
+    except AIProviderError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/api/routes/labeling-candidates")

@@ -23,6 +23,7 @@ from .models import LatLng, RouteCandidate, ShadePathSegment, ShadeSummary
 KST = ZoneInfo("Asia/Seoul")
 SAMPLE_INTERVAL_M = 10.0
 DEMO_BUILDING_DATA = load("buildings.demo.json")
+VWORLD_SHADE_SOURCE = "VWorld LT_C_BLDGINFO WFS"
 
 
 def solar_position(moment: datetime, lat: float, lng: float) -> tuple[float, float]:
@@ -154,6 +155,26 @@ def _walking_paths(
     )
 
 
+def _solar_reference_points(
+    route: RouteCandidate,
+    walking_paths: list[list[LatLng]],
+) -> list[LatLng]:
+    """태양 고도 선판정에는 실제 보행선이 없더라도 경로 위치만 사용한다."""
+    if walking_paths:
+        return [
+            point
+            for walking_path in walking_paths
+            for point in walking_path
+        ]
+    if route.path:
+        return route.path
+    return [
+        point
+        for segment in route.segments
+        for point in (segment.path or [])
+    ]
+
+
 def _swept_shadow(polygon: Polygon, shift: tuple[float, float]) -> BaseGeometry:
     """수직 건물을 태양 반대 방향으로 밀어 만든 정확한 평면 스윕 영역."""
     shifted = affinity.translate(polygon, xoff=shift[0], yoff=shift[1])
@@ -247,10 +268,32 @@ def calculate_shade(
     estimated_status = (
         "estimated_public" if data_quality == "public" else "estimated_demo"
     )
+    solar_points = _solar_reference_points(route, walking_paths)
+    if solar_points:
+        ref_lat = sum(point.lat for point in solar_points) / len(solar_points)
+        ref_lng = sum(point.lng for point in solar_points) / len(solar_points)
+        azimuth, elevation = solar_position(evaluated_at, ref_lat, ref_lng)
+    else:
+        ref_lat = ref_lng = azimuth = elevation = None
+    if elevation is not None and elevation <= 0:
+        return ShadeSummary(
+            status="not_daylight",
+            evaluated_at=evaluated_at,
+            solar_azimuth_deg=round(azimuth, 2),
+            solar_elevation_deg=round(elevation, 2),
+            source=source,
+            data_quality=data_quality,
+            walking_geometry_quality=walking_quality,
+            calculation_note="태양이 지평선 아래에 있어 주간 건물 그림자를 계산하지 않았습니다.",
+        )
     if not walking_paths:
         return ShadeSummary(
             status="unavailable",
             evaluated_at=evaluated_at,
+            solar_azimuth_deg=round(azimuth, 2) if azimuth is not None else None,
+            solar_elevation_deg=(
+                round(elevation, 2) if elevation is not None else None
+            ),
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
@@ -259,11 +302,17 @@ def calculate_shade(
                 "그늘 비율을 계산하지 않았습니다."
             ),
         )
+    assert ref_lat is not None
+    assert ref_lng is not None
+    assert azimuth is not None
+    assert elevation is not None
     if not is_demo and walking_quality != "exact":
         return ShadeSummary(
             status="unavailable",
             evaluated_at=evaluated_at,
             total_walk_m=analyzed_walk_m,
+            solar_azimuth_deg=round(azimuth, 2),
+            solar_elevation_deg=round(elevation, 2),
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
@@ -277,6 +326,8 @@ def calculate_shade(
             status="unavailable",
             evaluated_at=evaluated_at,
             total_walk_m=analyzed_walk_m,
+            solar_azimuth_deg=round(azimuth, 2),
+            solar_elevation_deg=round(elevation, 2),
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
@@ -284,21 +335,6 @@ def calculate_shade(
                 "경로 주변 공공 건물 데이터를 사전계산 중이어서 "
                 "일부 데이터만으로 그늘 비율을 계산하지 않았습니다."
             ),
-        )
-    path = [point for walking_path in walking_paths for point in walking_path]
-    ref_lat = sum(point.lat for point in path) / len(path)
-    ref_lng = sum(point.lng for point in path) / len(path)
-    azimuth, elevation = solar_position(evaluated_at, ref_lat, ref_lng)
-    if elevation <= 0:
-        return ShadeSummary(
-            status="not_daylight",
-            evaluated_at=evaluated_at,
-            solar_azimuth_deg=round(azimuth, 2),
-            solar_elevation_deg=round(elevation, 2),
-            source=source,
-            data_quality=data_quality,
-            walking_geometry_quality=walking_quality,
-            calculation_note="태양이 지평선 아래에 있어 주간 건물 그림자를 계산하지 않았습니다.",
         )
 
     applicable_bounds = building_data.get("applicableBounds")
@@ -478,6 +514,86 @@ def add_shade(
     for route in routes:
         route.shade = calculate_shade(route, departure_at, building_data)
     return routes
+
+
+def resolve_shade_without_buildings(
+    routes: list[RouteCandidate],
+    departure_at: datetime | None,
+    *,
+    source: str,
+    data_quality: str,
+) -> bool:
+    """건물 조회 전에 전 후보를 확정할 수 있으면 그늘 결과를 바로 채운다.
+
+    현재 조기 확정 대상은 실외 보행 geometry가 없거나 태양 고도가 0도
+    이하인 경우다. 한 경로라도 주간 건물 계산이 필요하면 후보를 변경하지
+    않고 False를 반환한다.
+    """
+    evaluated_at = departure_at or datetime.now(KST)
+    if evaluated_at.tzinfo is None:
+        evaluated_at = evaluated_at.replace(tzinfo=KST)
+    else:
+        evaluated_at = evaluated_at.astimezone(KST)
+    is_demo = data_quality == "demo"
+    summaries: list[ShadeSummary] = []
+
+    for route in routes:
+        walking_paths, analyzed_walk_m, walking_quality = _walking_paths(
+            route,
+            demo=is_demo,
+        )
+        solar_points = _solar_reference_points(route, walking_paths)
+        if not solar_points:
+            summaries.append(ShadeSummary(
+                status="unavailable",
+                evaluated_at=evaluated_at,
+                source=source,
+                data_quality=data_quality,
+                walking_geometry_quality=walking_quality,
+                calculation_note=(
+                    "실외 도보 구간의 거리와 geometry가 모두 확인되지 않아 "
+                    "그늘 비율을 계산하지 않았습니다."
+                ),
+            ))
+            continue
+
+        ref_lat = sum(point.lat for point in solar_points) / len(solar_points)
+        ref_lng = sum(point.lng for point in solar_points) / len(solar_points)
+        azimuth, elevation = solar_position(evaluated_at, ref_lat, ref_lng)
+        if elevation > 0:
+            if walking_paths:
+                return False
+            summaries.append(ShadeSummary(
+                status="unavailable",
+                evaluated_at=evaluated_at,
+                solar_azimuth_deg=round(azimuth, 2),
+                solar_elevation_deg=round(elevation, 2),
+                source=source,
+                data_quality=data_quality,
+                walking_geometry_quality=walking_quality,
+                calculation_note=(
+                    "실외 도보 구간의 거리와 geometry가 모두 확인되지 않아 "
+                    "그늘 비율을 계산하지 않았습니다."
+                ),
+            ))
+            continue
+        summaries.append(ShadeSummary(
+            status="not_daylight",
+            evaluated_at=evaluated_at,
+            total_walk_m=analyzed_walk_m,
+            solar_azimuth_deg=round(azimuth, 2),
+            solar_elevation_deg=round(elevation, 2),
+            source=source,
+            data_quality=data_quality,
+            walking_geometry_quality=walking_quality,
+            calculation_note=(
+                "태양이 지평선 아래에 있어 주간 건물 그림자를 계산하지 않았습니다."
+            ),
+        ))
+
+    for route, summary in zip(routes, summaries, strict=True):
+        route.shade = summary
+    return True
 
 
 def add_demo_shade(

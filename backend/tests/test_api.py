@@ -12,6 +12,7 @@ from app.data.routes import demo_candidates
 from app.data.weather import WEATHER_SCENARIOS
 from app.main import _add_configured_shade, app
 from app.providers.ai_pipeline import EnrichedCandidateBundle
+from app.route_set_cache import route_set_cache
 from app.settings import settings
 
 client = TestClient(app)
@@ -28,6 +29,7 @@ def _isolated_demo_sources(monkeypatch):
         monkeypatch.setattr(settings, field, "")
     monkeypatch.setattr(settings, "route_mode", "demo")
     monkeypatch.setattr(settings, "building_source", "demo")
+    route_set_cache.clear()
 
 
 def _place_payload(place_id: str) -> dict:
@@ -188,8 +190,14 @@ def test_labeling_shade_can_wait_for_complete_vworld_corridor(monkeypatch):
     monkeypatch.setattr(settings, "vworld_api_key", "configured")
     wait_values = []
 
-    async def fake_buildings(_routes, *, wait_for_complete=False):
+    async def fake_buildings(
+        _routes,
+        *,
+        wait_for_complete=False,
+        cache_only=False,
+    ):
         wait_values.append(wait_for_complete)
+        assert cache_only is False
         return {
             "source": "test-buildings",
             "dataQuality": "demo",
@@ -205,6 +213,64 @@ def test_labeling_shade_can_wait_for_complete_vworld_corridor(monkeypatch):
     ))
 
     assert wait_values == [True]
+
+
+def test_vworld_night_skips_building_lookup(monkeypatch):
+    monkeypatch.setattr(settings, "building_source", "vworld")
+    monkeypatch.setattr(settings, "vworld_api_key", "configured")
+    calls = []
+
+    async def fail_if_called(*_args, **_kwargs):
+        calls.append(True)
+        raise AssertionError("야간에는 VWorld 건물 조회를 호출하면 안 됩니다.")
+
+    monkeypatch.setattr(app_main, "get_vworld_buildings", fail_if_called)
+    routes = asyncio.run(_add_configured_shade(
+        demo_candidates(),
+        datetime(2026, 7, 24, 2, 0, tzinfo=ZoneInfo("Asia/Seoul")),
+    ))
+
+    assert calls == []
+    assert all(route.shade is not None for route in routes)
+    assert all(route.shade.status == "not_daylight" for route in routes)
+    assert all(route.shade.shadow_polygons == [] for route in routes)
+
+
+def test_time_refresh_reuses_server_candidates_without_route_collection(monkeypatch):
+    request = {
+        "origin": _place_payload("gu-office"),
+        "destination": _place_payload("seomyeon-stn"),
+        "profile": "general",
+        "weatherScenario": "normal",
+        "options": {"departureAt": "2026-07-24T14:00:00+09:00"},
+        "topN": 3,
+    }
+    initial = client.post("/api/routes/recommend", json=request)
+    assert initial.status_code == 200
+    initial_results = initial.json()
+    token = initial_results[0]["routeSetToken"]
+    assert token
+    assert all(item["routeSetToken"] == token for item in initial_results)
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("시간 변경 시 경로 후보를 다시 수집하면 안 됩니다.")
+
+    monkeypatch.setattr(app_main, "get_route_candidates", fail_if_called)
+    refreshed = client.post("/api/routes/refresh-shade", json={
+        "routeSetToken": token,
+        "profile": "general",
+        "options": {"departureAt": "2026-07-24T02:00:00+09:00"},
+        "topN": 3,
+    })
+
+    assert refreshed.status_code == 200
+    refreshed_results = refreshed.json()
+    assert len(refreshed_results) == 3
+    assert all(
+        item["route"]["shade"]["status"] == "not_daylight"
+        for item in refreshed_results
+    )
+    assert all(item["routeSetToken"] == token for item in refreshed_results)
 
 
 @pytest.mark.parametrize(

@@ -156,6 +156,27 @@ def test_vworld_provider_requires_key(monkeypatch):
         asyncio.run(get_vworld_buildings([_exact_route()]))
 
 
+def test_vworld_cache_only_does_not_schedule_or_download(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "vworld_api_key", "test-secret")
+    monkeypatch.setattr(settings, "vworld_cache_dir", str(tmp_path))
+
+    def fail_if_scheduled(*_args, **_kwargs):
+        raise AssertionError("캐시 전용 조회에서 외부 보충 작업을 예약하면 안 됩니다.")
+
+    monkeypatch.setattr(
+        "app.providers.vworld_buildings._schedule_query_box_warm",
+        fail_if_scheduled,
+    )
+
+    result = asyncio.run(
+        get_vworld_buildings([_exact_route()], cache_only=True)
+    )
+
+    assert result["cacheComplete"] is False
+    assert result["featureCount"] == 0
+    assert result["buildings"] == []
+
+
 def test_vworld_provider_rejects_invalid_total_count(monkeypatch):
     monkeypatch.setattr(settings, "vworld_api_key", "test-secret")
     payload = _feature_collection()

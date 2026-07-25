@@ -460,6 +460,7 @@ async def get_vworld_buildings(
     *,
     transport: httpx.AsyncBaseTransport | None = None,
     wait_for_complete: bool = False,
+    cache_only: bool = False,
 ) -> dict:
     if not settings.vworld_api_key:
         raise RuntimeError("BUILDING_SOURCE=vworld requires VWORLD_API_KEY.")
@@ -500,9 +501,14 @@ async def get_vworld_buildings(
         if cached is None
     ]
     cache_complete = not missing_boxes
-    if missing_boxes and transport is None and not wait_for_complete:
+    if (
+        missing_boxes
+        and not cache_only
+        and transport is None
+        and not wait_for_complete
+    ):
         _schedule_query_box_warm(missing_boxes, base_params)
-    elif missing_boxes:
+    elif missing_boxes and not cache_only:
         try:
             async with httpx.AsyncClient(
                 timeout=settings.request_timeout * 3,
