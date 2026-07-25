@@ -80,6 +80,10 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 8. 프로필과 `짐 많음`, `유아차`, `그늘 우선`, `계단 회피`,
    `환승 최소` 조건을 바꿔 다시 검색하고 설명과 순서가 갱신되는지
    확인한다.
+9. `조건`의 그늘 계산 시각을 바꿨을 때 기존 경로 카드가 유지되고
+   `POST /api/routes/refresh-shade`만 호출되는지 확인한다. 야간 시각은
+   `not_daylight`가 되어야 하며 ODsay·TMAP·VWorld 외부 호출이 새로
+   발생하면 안 된다.
 
 현재 그늘은 VWorld 건물 도형·높이와 태양 위치로 계산한 건물 그늘이며
 나무·지형 그늘은 포함하지 않는다. 경사는 GLO-90 약 90m 지형 추정이고
