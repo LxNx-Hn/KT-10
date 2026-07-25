@@ -12,6 +12,7 @@ import {
   fireEvent,
   render,
   waitFor,
+  within,
 } from '@testing-library/react';
 import App from '@/App';
 import { adapters } from '@/adapters';
@@ -668,23 +669,34 @@ describe('프로덕션 v2 지도 중심 UI', () => {
   });
 
   it('조건 drawer에 6개 이동 조건이 있고 점수 옵션을 켜고 끈다', () => {
-    const { container, getByRole, queryByRole } = render(<App />);
-    expect(queryByRole('button', { name: '짐 많음' })).toBeNull();
-    expect(queryByRole('button', { name: '계단 회피' })).toBeNull();
-    expect(queryByRole('button', { name: '쉬운 화면' })).toBeNull();
-    fireEvent.click(getByRole('button', { name: '조건' }));
+    const { container, getByRole } = render(<App />);
+    const quickLuggage = getByRole('button', { name: '짐 많음' });
+    const quickStairs = getByRole('button', { name: '계단 회피' });
+    const easyScreen = getByRole('button', { name: '쉬운 화면' });
+    expect(quickLuggage).toBeTruthy();
+    expect(quickStairs).toBeTruthy();
+    expect(easyScreen).toBeTruthy();
 
-    expect(
-      getByRole('dialog', { name: '이번 이동 조건' }),
-    ).toBeTruthy();
+    fireEvent.click(quickLuggage);
+    expect(useAppStore.getState().options.carryLuggage).toBe(true);
+    fireEvent.click(getByRole('button', { name: /^조건/ }));
+
+    const dialog = getByRole('dialog', { name: '이번 이동 조건' });
+    const dialogQueries = within(dialog);
+    expect(dialog).toBeTruthy();
     expect(container.querySelectorAll('.condition-chip')).toHaveLength(
       6,
     );
-    expect(getByRole('button', { name: /짐 많음/ })).toBeTruthy();
-    expect(getByRole('button', { name: /계단 회피/ })).toBeTruthy();
-    const stroller = getByRole('button', { name: /유아차 이용/ });
-    const shade = getByRole('button', { name: /건물 그늘 우선/ });
-    const transfer = getByRole('button', { name: /환승 최소/ });
+    expect(
+      dialogQueries.getByRole('button', { name: /짐 많음/ })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(
+      dialogQueries.getByRole('button', { name: /계단 회피/ }),
+    ).toBeTruthy();
+    const stroller = dialogQueries.getByRole('button', { name: /유아차 이용/ });
+    const shade = dialogQueries.getByRole('button', { name: /건물 그늘 우선/ });
+    const transfer = dialogQueries.getByRole('button', { name: /환승 최소/ });
     fireEvent.click(stroller);
     fireEvent.click(shade);
     fireEvent.click(transfer);
@@ -703,8 +715,11 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     const widthBefore = conditions.getBoundingClientRect().width;
 
     fireEvent.click(conditions);
-    fireEvent.click(getByRole('button', { name: /짐 많음/ }));
-    fireEvent.keyDown(getByRole('dialog', { name: '이번 이동 조건' }), {
+    const dialog = getByRole('dialog', { name: '이번 이동 조건' });
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: /짐 많음/ }),
+    );
+    fireEvent.keyDown(dialog, {
       key: 'Escape',
     });
 
@@ -740,11 +755,42 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     fireEvent.click(getByRole('button', { name: '적용' }));
     await waitFor(() => {
       expect(refreshShade).toHaveBeenCalledOnce();
+      expect(queryByRole('dialog', { name: '출발 시간 설정' })).toBeNull();
     });
     expect(useAppStore.getState().options.departureAt).toMatch(/T14:00/);
     expect(getByRole('button', { name: '출발 오후 2:00' })).toBeTruthy();
-    expect(queryByRole('dialog', { name: '출발 시간 설정' })).toBeNull();
     expect(recommend).not.toHaveBeenCalled();
+  });
+
+  it('그늘 갱신 중 상태를 알리고 실패하면 이전 출발 시간과 결과를 유지한다', async () => {
+    const { getByRole } = render(<App />);
+    act(() => seedResults());
+    const beforeDepartureAt = useAppStore.getState().options.departureAt;
+    const beforeRecommendations = useAppStore.getState().recommendations;
+    const pending = deferred<ScoredRoute[]>();
+    vi.spyOn(adapters.routes, 'refreshShade').mockReturnValue(pending.promise);
+
+    fireEvent.click(getByRole('button', { name: '지금 출발' }));
+    fireEvent.click(getByRole('button', { name: '오후 2시' }));
+    fireEvent.click(getByRole('button', { name: '적용' }));
+
+    expect(
+      getByRole('button', { name: '계산 중…' }).hasAttribute('disabled'),
+    ).toBe(true);
+    expect(
+      getByRole('region', { name: '출발 시간 설정 내용' })
+        .getAttribute('aria-busy'),
+    ).toBe('true');
+
+    pending.reject(new Error('그늘 갱신 실패'));
+    await waitFor(() => {
+      expect(getByRole('button', { name: '적용' })).toBeTruthy();
+      expect(useAppStore.getState().options.departureAt).toBe(beforeDepartureAt);
+    });
+    expect(useAppStore.getState().recommendations).toEqual(beforeRecommendations);
+    expect(
+      getByRole('dialog', { name: '출발 시간 설정' }),
+    ).toBeTruthy();
   });
 
   it('그늘 legend와 지도 오버레이 계약은 선택 경로·토글과 동기화된다', () => {
@@ -1075,7 +1121,9 @@ describe('store 최신 요청 및 점수 계약', () => {
       .spyOn(adapters.routes, 'refreshShade')
       .mockResolvedValue(refreshed);
 
-    useAppStore.getState().setDepartureAt('2026-07-24T02:00:00+09:00');
+    await useAppStore
+      .getState()
+      .setDepartureAt('2026-07-24T02:00:00+09:00');
 
     await waitFor(() => {
       expect(useAppStore.getState().recommendations).toEqual(refreshed);

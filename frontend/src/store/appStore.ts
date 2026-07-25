@@ -107,7 +107,7 @@ interface AppState {
   toggleAvoidStairs: () => void;
   toggleShadePriority: () => void;
   toggleMinimizeTransfers: () => void;
-  setDepartureAt: (value: string) => void;
+  setDepartureAt: (value: string) => Promise<boolean>;
   toggleLargeUi: () => void;
   clearError: () => void;
   selectRoute: (id: string | null) => void;
@@ -116,7 +116,7 @@ interface AppState {
   search: () => Promise<void>;
   rescore: () => Promise<void>;
   refreshEnrichment: () => Promise<void>;
-  refreshShade: () => Promise<void>;
+  refreshShade: () => Promise<boolean>;
 
   /* 음성 챗봇 연동 액션 (요구사항 §9) */
   ensureOrigin: () => void;
@@ -412,7 +412,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedRouteId,
       recommendations: previous,
     } = get();
-    if (!previous.length) return;
+    if (!previous.length) return false;
     const requestGeneration = beginRecommendationRequest();
     const previousSelected = previous.find(
       ({ route }) => route.id === selectedRouteId,
@@ -432,7 +432,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         !isLatestRecommendationRequest(requestGeneration)
         || !recommendations.length
       ) {
-        return;
+        return false;
       }
       const semanticMatch = previousSemanticKey
         ? recommendations.find(
@@ -452,14 +452,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         )?.route.id ?? null,
         error: null,
       });
+      return true;
     } catch (error) {
-      if (!isLatestRecommendationRequest(requestGeneration)) return;
+      if (!isLatestRecommendationRequest(requestGeneration)) return false;
       set({
         error: toUserMessage(
           error,
           '그늘 계산 시각을 갱신하지 못했습니다. 경로를 다시 검색해 주세요.',
         ),
       });
+      return false;
     }
   },
 
@@ -471,14 +473,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().useCurrentLocation();
   },
 
-  setDepartureAt: (departureAt) => {
+  setDepartureAt: async (departureAt) => {
+    const previousDepartureAt = get().options.departureAt;
     const restartPendingSearch = get().loading && !get().candidates.length;
     set((s) => ({ options: { ...s.options, departureAt } }));
     if (get().candidates.length) {
-      void get().refreshShade();
+      const refreshed = await get().refreshShade();
+      if (!refreshed && get().options.departureAt === departureAt) {
+        set((s) => ({
+          options: { ...s.options, departureAt: previousDepartureAt },
+        }));
+      }
+      return refreshed;
     } else if (restartPendingSearch && get().origin && get().destination) {
-      void get().search();
+      await get().search();
     }
+    return true;
   },
 
   /** 브라우저 Geolocation으로 확인된 부산 좌표만 출발지로 사용한다. */

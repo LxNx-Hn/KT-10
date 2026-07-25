@@ -46,7 +46,11 @@ export default function DepartureTimePicker({
   const [draftIsNow, setDraftIsNow] = useState(initialIsNow);
 
   return (
-    <section className="departure-time-picker" aria-label="출발 시간 설정 내용">
+    <section
+      className="departure-time-picker"
+      aria-label="출발 시간 설정 내용"
+      aria-busy={loading}
+    >
       <label className="departure-time-picker__field">
         <span>출발 시각</span>
         <input
@@ -80,7 +84,9 @@ export default function DepartureTimePicker({
       </div>
 
       <p className="departure-time-picker__hint">
-        선택한 시간의 태양 위치를 기준으로 건물 그늘을 다시 계산해요.
+        {loading
+          ? '선택한 시간의 건물 그늘과 경로 순위를 갱신하고 있어요.'
+          : '선택한 시간의 태양 위치를 기준으로 건물 그늘을 다시 계산해요.'}
       </p>
 
       <div className="departure-time-picker__actions">
@@ -98,7 +104,7 @@ export default function DepartureTimePicker({
           disabled={loading || !draft}
           onClick={() => onApply(draft, draftIsNow)}
         >
-          적용
+          {loading ? '계산 중…' : '적용'}
         </button>
       </div>
     </section>

@@ -66,6 +66,9 @@ test('모바일 핵심 조작부의 높이가 44px 이상이다', async ({ page 
     ['도착지', page.getByRole('combobox', { name: '도착지' })],
     ['경로 찾기', page.getByRole('button', { name: '경로 찾기' })],
     ['프로필 선택', page.getByRole('button', { name: /프로필 선택, 현재/ })],
+    ['짐 많음', page.getByRole('button', { name: '짐 많음' })],
+    ['계단 회피', page.getByRole('button', { name: '계단 회피' })],
+    ['쉬운 화면', page.getByRole('button', { name: '쉬운 화면' })],
     ['조건', page.getByRole('button', { name: /^조건/ })],
     [
       '현재 위치',

@@ -41,6 +41,14 @@ import './map-first.css';
 type DrawerId = 'profile' | 'conditions' | 'details' | 'departure';
 type DetailTab = 'route' | 'environment' | 'feedback' | 'settings';
 
+const QUICK_CONDITIONS: Array<{
+  key: ToggleableScoringOption;
+  label: string;
+}> = [
+  { key: 'carryLuggage', label: '짐 많음' },
+  { key: 'avoidStairs', label: '계단 회피' },
+];
+
 const CONDITION_KEYS: ToggleableScoringOption[] = [
   'carryLuggage',
   'stroller',
@@ -933,6 +941,7 @@ export default function MapFirstApp() {
   const setProfile = useAppStore((state) => state.setProfile);
   const setOrigin = useAppStore((state) => state.setOrigin);
   const setDestination = useAppStore((state) => state.setDestination);
+  const setScoringOption = useAppStore((state) => state.setScoringOption);
   const setDepartureAt = useAppStore((state) => state.setDepartureAt);
   const toggleLargeUi = useAppStore((state) => state.toggleLargeUi);
   const clearError = useAppStore((state) => state.clearError);
@@ -952,6 +961,7 @@ export default function MapFirstApp() {
   const [facilityHint, setFacilityHint] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [departureIsNow, setDepartureIsNow] = useState(true);
+  const [departureRefreshing, setDepartureRefreshing] = useState(false);
   const originInputRef = useRef<HTMLInputElement>(null);
   const destinationInputRef = useRef<HTMLInputElement>(null);
   const locatingTimerRef = useRef<number>();
@@ -1300,6 +1310,33 @@ export default function MapFirstApp() {
               {profileMeta.label}
               <span className="map-first__profile-chevron" aria-hidden="true">▾</span>
             </button>
+            {QUICK_CONDITIONS.map(({ key, label }) => {
+              const active = Boolean(options[key]);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className={`map-first__chip${
+                    active ? ' map-first__chip--active' : ''
+                  }`}
+                  aria-pressed={active}
+                  onClick={() => setScoringOption(key, !active)}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              className={`map-first__chip map-first__chip--easy${
+                largeUi ? ' map-first__chip--active' : ''
+              }`}
+              aria-label="쉬운 화면"
+              aria-pressed={largeUi}
+              onClick={toggleLargeUi}
+            >
+              쉬운 화면
+            </button>
             <button
               type="button"
               className="map-first__chip map-first__chip--conditions"
@@ -1562,12 +1599,19 @@ export default function MapFirstApp() {
             <DepartureTimePicker
               initialValue={options.departureAt}
               initialIsNow={departureIsNow}
-              loading={loading}
+              loading={loading || departureRefreshing}
               onCancel={closeDrawer}
-              onApply={(value, isNow) => {
-                setDepartureIsNow(isNow);
-                setDepartureAt(value);
-                closeDrawer();
+              onApply={async (value, isNow) => {
+                setDepartureRefreshing(true);
+                try {
+                  const refreshed = await setDepartureAt(value);
+                  if (refreshed) {
+                    setDepartureIsNow(isNow);
+                    closeDrawer();
+                  }
+                } finally {
+                  setDepartureRefreshing(false);
+                }
               }}
             />
           </BottomDrawer>
