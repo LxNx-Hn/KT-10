@@ -8,15 +8,17 @@ ODsay Lab API로 대중교통 경로 후보를 수집한다.
 API 문서: https://lab.odsay.com/guide/service
 """
 import asyncio
-from hashlib import sha256
 import json
 import logging
+import time
+from hashlib import sha256
 from math import isfinite
 from pathlib import Path
-import time
+from threading import Lock
 from uuid import uuid4
 
 import httpx
+from config import settings
 
 from collectors.base import (
     BaseRouteCollector,
@@ -25,10 +27,11 @@ from collectors.base import (
     Coordinate,
     RouteCandidate,
 )
-from config import settings
 
 CACHE_SCHEMA_VERSION = 1
 log = logging.getLogger("collectors.odsay")
+_walk_geometry_failure_signatures: set[tuple[str, str]] = set()
+_walk_geometry_failure_signatures_guard = Lock()
 
 
 def _cache_path(kind: str, identity: dict) -> Path | None:
@@ -352,7 +355,19 @@ class OdsayRouteCollector(BaseRouteCollector):
                     )
                 else:
                     candidates = await collector.collect(start, end)
-            except (CollectorError, TimeoutError):
+            except (CollectorError, TimeoutError) as exc:
+                signature = (collector.source_name, str(exc))
+                with _walk_geometry_failure_signatures_guard:
+                    first_occurrence = (
+                        signature not in _walk_geometry_failure_signatures
+                    )
+                    _walk_geometry_failure_signatures.add(signature)
+                if first_occurrence:
+                    log.warning(
+                        "보행 경로 geometry 보완 실패 source=%s detail=%s",
+                        collector.source_name,
+                        str(exc),
+                    )
                 continue
             if candidates and len(candidates[0].path) >= 2:
                 return candidates[0].path, "exact"

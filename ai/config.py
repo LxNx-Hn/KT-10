@@ -35,6 +35,9 @@ class Settings(BaseSettings):
         ge=3600,
         le=31_536_000,
     )
+    # 비어 있으면 Open-Meteo API를 사용한다. 배포 환경은 공개 GLO-90 COG를
+    # 한 번만 내려받아 재사용할 수 있는 영속 캐시 경로를 지정한다.
+    ELEVATION_DEM_DIR: str = ""
     TMAP_API_KEY: str = ""
     OSMNX_WALK_GEOMETRY_ENABLED: bool = False
     # 일반 요청은 캐시 누락 시 백그라운드 준비 후 즉시 estimated를 반환한다.

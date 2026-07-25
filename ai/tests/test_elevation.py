@@ -1,18 +1,75 @@
 """90m DEM 경사 계산과 외부 응답 계약 테스트."""
 import asyncio
+import math
 
 import httpx
-import math
+import numpy as np
 import pytest
-
+import rasterio
 from config import settings
 from features.elevation import (
+    LOCAL_DEM_SOURCE,
+    _dem_tile_id,
     _sample,
     calculate_slope_features,
     calculate_slope_features_for_parts,
     extract_elevation_features,
     extract_elevation_features_for_parts,
 )
+from rasterio.transform import from_origin
+
+
+def test_copernicus_tile_id_uses_southwest_degree():
+    assert (
+        _dem_tile_id(35.1796, 129.0756)
+        == "Copernicus_DSM_COG_30_N35_00_E129_00_DEM"
+    )
+
+
+def test_local_dem_avoids_remote_provider(monkeypatch, tmp_path):
+    dem_dir = tmp_path / "dem"
+    dem_dir.mkdir()
+    tile_id = _dem_tile_id(35.1, 129.1)
+    tile_path = dem_dir / f"{tile_id}.tif"
+    terrain = np.repeat(
+        np.arange(100, dtype=np.float32)[:, np.newaxis],
+        100,
+        axis=1,
+    )
+    with rasterio.open(
+        tile_path,
+        "w",
+        driver="GTiff",
+        height=100,
+        width=100,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=from_origin(129.0, 36.0, 0.01, 0.01),
+        nodata=-9999,
+    ) as dataset:
+        dataset.write(terrain, 1)
+
+    monkeypatch.setattr(settings, "ELEVATION_DEM_DIR", str(dem_dir))
+    monkeypatch.setattr(settings, "ELEVATION_CACHE_DIR", str(tmp_path / "cache"))
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("로컬 DEM이 있으면 원격 고도 API를 호출하면 안 됩니다.")
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            return await extract_elevation_features(
+                [(35.10, 129.10), (35.11, 129.10)],
+                client,
+            )
+
+    result = asyncio.run(run())
+
+    assert result["elevation_status"] == "estimated_90m"
+    assert result["elevation_source"] == LOCAL_DEM_SOURCE
+    assert result["avg_slope_percent"] is not None
 
 
 def test_calculate_uphill_and_downhill_features():

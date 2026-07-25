@@ -6,25 +6,31 @@ Open-Meteo Elevation API는 최대 100개 WGS84 좌표를 받으며 90m 해상�
 from __future__ import annotations
 
 import asyncio
-from hashlib import sha256
 import json
 import logging
-from math import asin, ceil, cos, isfinite, radians, sin, sqrt
-from pathlib import Path
 import time
+from hashlib import sha256
+from itertools import pairwise
+from math import asin, ceil, cos, floor, isfinite, radians, sin, sqrt
+from pathlib import Path
+from threading import Lock
 from uuid import uuid4
 
 import httpx
 import numpy as np
-
+import rasterio
 from config import settings
 
 ELEVATION_URL = "https://api.open-meteo.com/v1/elevation"
+DEM_BASE_URL = "https://copernicus-dem-90m.s3.eu-central-1.amazonaws.com"
 MAX_POINTS = 100
 SAMPLE_SPACING_M = 90.0
 SOURCE = "Copernicus DEM GLO-90 via Open-Meteo"
+LOCAL_DEM_SOURCE = "Copernicus DEM GLO-90 via AWS Open Data COG"
 CACHE_SCHEMA_VERSION = 1
 log = logging.getLogger("features.elevation")
+_dem_tile_locks: dict[str, Lock] = {}
+_dem_tile_locks_guard = Lock()
 
 
 def _cache_path(
@@ -94,6 +100,108 @@ def _write_cache(
         temporary.unlink(missing_ok=True)
 
 
+def _dem_tile_id(lat: float, lng: float) -> str:
+    """WGS84 좌표가 속한 Copernicus GLO-90 1도 COG 식별자."""
+    latitude = floor(lat)
+    longitude = floor(lng)
+    northing = f"{'N' if latitude >= 0 else 'S'}{abs(latitude):02d}_00"
+    easting = f"{'E' if longitude >= 0 else 'W'}{abs(longitude):03d}_00"
+    return f"Copernicus_DSM_COG_30_{northing}_{easting}_DEM"
+
+
+def _dem_tile_lock(tile_id: str) -> Lock:
+    with _dem_tile_locks_guard:
+        return _dem_tile_locks.setdefault(tile_id, Lock())
+
+
+def _ensure_dem_tile(tile_id: str) -> Path | None:
+    """공개 GLO-90 COG를 원자적으로 한 번만 내려받아 영속 캐시에 둔다."""
+    configured_dir = settings.ELEVATION_DEM_DIR.strip()
+    if not configured_dir:
+        return None
+    directory = Path(configured_dir)
+    path = directory / f"{tile_id}.tif"
+    with _dem_tile_lock(tile_id):
+        if path.is_file() and path.stat().st_size > 0:
+            return path
+        directory.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+        url = f"{DEM_BASE_URL}/{tile_id}/{tile_id}.tif"
+        try:
+            with httpx.stream(
+                "GET",
+                url,
+                follow_redirects=True,
+                timeout=60.0,
+            ) as response:
+                response.raise_for_status()
+                with temporary.open("wb") as handle:
+                    for chunk in response.iter_bytes():
+                        handle.write(chunk)
+            with rasterio.open(temporary) as dataset:
+                if (
+                    dataset.count < 1
+                    or dataset.width < 2
+                    or dataset.height < 2
+                    or dataset.crs is None
+                    or dataset.crs.to_epsg() != 4326
+                ):
+                    raise ValueError("GLO-90 COG 공간 참조 또는 크기가 올바르지 않습니다.")
+            temporary.replace(path)
+            return path
+        except (httpx.HTTPError, OSError, ValueError, rasterio.errors.RasterioError) as exc:
+            log.warning(
+                "로컬 GLO-90 타일 준비 실패 tile=%s type=%s",
+                tile_id,
+                type(exc).__name__,
+            )
+            return None
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def _local_dem_elevations(
+    sampled: list[tuple[float, float]],
+) -> list[float] | None:
+    """표본 좌표를 같은 1도 타일끼리 묶어 로컬 COG에서 읽는다."""
+    if not settings.ELEVATION_DEM_DIR.strip():
+        return None
+    groups: dict[str, list[tuple[int, float, float]]] = {}
+    for index, (lat, lng) in enumerate(sampled):
+        groups.setdefault(_dem_tile_id(lat, lng), []).append((index, lat, lng))
+
+    elevations: list[float | None] = [None] * len(sampled)
+    for tile_id, points in groups.items():
+        path = _ensure_dem_tile(tile_id)
+        if path is None:
+            return None
+        try:
+            with rasterio.open(path) as dataset:
+                samples = dataset.sample(
+                    [(lng, lat) for _, lat, lng in points],
+                    indexes=1,
+                    masked=True,
+                )
+                for (index, _, _), sample in zip(points, samples):
+                    value = sample[0]
+                    if np.ma.is_masked(value):
+                        return None
+                    number = float(value)
+                    if not isfinite(number):
+                        return None
+                    elevations[index] = number
+        except (OSError, ValueError, rasterio.errors.RasterioError) as exc:
+            log.warning(
+                "로컬 GLO-90 표본 조회 실패 tile=%s type=%s",
+                tile_id,
+                type(exc).__name__,
+            )
+            return None
+    if any(value is None for value in elevations):
+        return None
+    return [float(value) for value in elevations]
+
+
 def _haversine_m(a: tuple[float, float], b: tuple[float, float]) -> float:
     radius = 6_371_000.0
     lat1, lng1 = map(radians, a)
@@ -133,7 +241,7 @@ def _sample(
         return []
 
     cumulative = [0.0]
-    for start, end in zip(compact, compact[1:]):
+    for start, end in pairwise(compact):
         cumulative.append(cumulative[-1] + _haversine_m(start, end))
     total = cumulative[-1]
     if not isfinite(total) or total <= 0:
@@ -165,7 +273,7 @@ def _sample(
     return sampled
 
 
-def _empty(status: str) -> dict:
+def _empty(status: str, source: str = SOURCE) -> dict:
     return {
         "avg_slope_percent": None,
         "max_slope_percent": None,
@@ -175,7 +283,7 @@ def _empty(status: str) -> dict:
         "downhill_distance_m": None,
         "elevation_gain_m": None,
         "elevation_loss_m": None,
-        "elevation_source": SOURCE,
+        "elevation_source": source,
         "elevation_resolution_m": 90,
         "elevation_status": status,
     }
@@ -184,6 +292,8 @@ def _empty(status: str) -> dict:
 def calculate_slope_features_for_parts(
     coord_parts: list[list[tuple[float, float]]],
     elevation_parts: list[list[float]],
+    *,
+    source: str = SOURCE,
 ) -> dict:
     """서로 끊어진 보행 구간을 연결하지 않고 경사 피처를 합산한다."""
     if (
@@ -196,7 +306,7 @@ def calculate_slope_features_for_parts(
             for coords, elevations in zip(coord_parts, elevation_parts)
         )
     ):
-        return _empty("invalid")
+        return _empty("invalid", source)
     grades: list[float] = []
     grade_distances: list[float] = []
     uphill_distance = downhill_distance = gain = loss = 0.0
@@ -211,18 +321,18 @@ def calculate_slope_features_for_parts(
             if distance < 1:
                 continue
             if isinstance(z1, bool) or isinstance(z2, bool):
-                return _empty("invalid")
+                return _empty("invalid", source)
             try:
                 start_elevation = float(z1)
                 end_elevation = float(z2)
             except (TypeError, ValueError):
-                return _empty("invalid")
+                return _empty("invalid", source)
             if not isfinite(start_elevation) or not isfinite(end_elevation):
-                return _empty("invalid")
+                return _empty("invalid", source)
             delta = end_elevation - start_elevation
             grade = delta / distance * 100
             if not isfinite(grade):
-                return _empty("invalid")
+                return _empty("invalid", source)
             grades.append(grade)
             grade_distances.append(distance)
             if delta > 0:
@@ -232,7 +342,7 @@ def calculate_slope_features_for_parts(
                 loss += abs(delta)
                 downhill_distance += distance
     if not grades:
-        return _empty("invalid")
+        return _empty("invalid", source)
     absolute = np.abs(np.asarray(grades, dtype=float))
     return {
         "avg_slope_percent": round(
@@ -246,7 +356,7 @@ def calculate_slope_features_for_parts(
         "downhill_distance_m": round(downhill_distance, 1),
         "elevation_gain_m": round(gain, 1),
         "elevation_loss_m": round(loss, 1),
-        "elevation_source": SOURCE,
+        "elevation_source": source,
         "elevation_resolution_m": 90,
         "elevation_status": "estimated_90m",
     }
@@ -279,6 +389,30 @@ async def extract_elevation_features_for_parts(
     if cached is not None:
         return cached
     sampled = [point for part in sampled_parts for point in part]
+    local_elevations = await asyncio.to_thread(_local_dem_elevations, sampled)
+    if local_elevations is not None:
+        elevation_parts: list[list[float]] = []
+        offset = 0
+        for part in sampled_parts:
+            elevation_parts.append(
+                local_elevations[offset:offset + len(part)]
+            )
+            offset += len(part)
+        result = calculate_slope_features_for_parts(
+            sampled_parts,
+            elevation_parts,
+            source=LOCAL_DEM_SOURCE,
+        )
+        if result["elevation_status"] == "estimated_90m":
+            try:
+                await asyncio.to_thread(_write_cache, sampled_parts, result)
+            except OSError as exc:
+                log.warning(
+                    "고도 캐시 저장 실패 (%s)",
+                    type(exc).__name__,
+                )
+        return result
+
     owns_client = client is None
     client = client or httpx.AsyncClient(follow_redirects=True)
     try:

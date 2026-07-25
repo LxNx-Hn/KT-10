@@ -52,9 +52,13 @@ services:
       - "8001:8001"
     env_file:
       - ai/.env
+    environment:
+      - ELEVATION_CACHE_DIR=/app/ai/data/cache/elevation
+      - ELEVATION_DEM_DIR=/app/ai/data/cache/elevation/dem
     volumes:
       - ./ai:/app/ai
       - ./data:/app/data
+      - elevation-cache:/app/ai/data/cache/elevation
     command: uvicorn main:app --app-dir ai --host 0.0.0.0 --port 8001 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/ready', timeout=3)"]
@@ -88,3 +92,4 @@ services:
 
 volumes:
   postgres-data:
+  elevation-cache:
