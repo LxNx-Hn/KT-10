@@ -66,6 +66,34 @@ def test_readiness_requires_strong_session_secret_and_exact_database_driver():
     assert configured.database_configured is True
 
 
+def test_route_readiness_accepts_configured_live_and_ai_modes():
+    live = Settings(
+        _env_file=None,
+        route_mode="live",
+        ai_server_url="http://ai:8001",
+    )
+    ai = Settings(
+        _env_file=None,
+        route_mode="ai",
+        ai_server_url="http://ai:8001",
+    )
+    missing_ai = Settings(
+        _env_file=None,
+        route_mode="ai",
+        ai_server_url=" ",
+    )
+    demo = Settings(
+        _env_file=None,
+        route_mode="demo",
+        ai_server_url="http://ai:8001",
+    )
+
+    assert live.deployment_readiness()["live_route_candidates"] is True
+    assert ai.deployment_readiness()["live_route_candidates"] is True
+    assert missing_ai.deployment_readiness()["live_route_candidates"] is False
+    assert demo.deployment_readiness()["live_route_candidates"] is False
+
+
 def test_whitespace_provider_keys_are_not_live():
     configured = Settings(
         _env_file=None,

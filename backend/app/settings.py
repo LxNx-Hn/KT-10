@@ -204,8 +204,12 @@ class Settings(BaseSettings):
 
     def deployment_readiness(self) -> dict[str, bool]:
         """키 값은 노출하지 않고 운영에 필요한 연결 설정의 충족 여부만 반환한다."""
+        live_route_candidates = (
+            (self.route_mode == "live" and self.live_routes)
+            or (self.route_mode == "ai" and self.live_ai_pipeline)
+        )
         return {
-            "live_route_candidates": self.route_mode == "live" and self.live_routes,
+            "live_route_candidates": live_route_candidates,
             "live_building_shade": self.building_source == "vworld" and self.live_buildings,
             "kakao_place_search": self.live_places,
             "live_weather": self.live_weather,
