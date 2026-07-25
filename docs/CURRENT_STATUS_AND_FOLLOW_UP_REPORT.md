@@ -285,6 +285,7 @@ OpenWeather, 버스, PostgreSQL, session, 개인화, 라벨링 인증은
 | Production Compose / Docker runtime | 비밀 아닌 smoke 값으로 4개 서비스 healthy; AI·백엔드·프론트 비루트 UID·capability 0·no-new-privileges, 백엔드 read-only root 확인 |
 | AI 운영 이미지 | 약 1.22GB; CPU XGBoost·rasterio GLO-90 COG와 9개 공간 레이어 로드 통과 |
 | 현재 `.env.production --check` | 통과; 선택 TMAP만 미설정이며 OSMnx exact walking 계약 충족 |
+| 현재 로컬 모델 runtime | `ROUTE_MODE=ai`, `bootstrap_baseline` 준비 완료; 6개 프로필 순위 API와 AI pipeline readiness 통과 |
 | 현재 운영 readiness | 경로·건물·장소·날씨·버스·DB·session·개인화·라벨링 인증 통과; 로컬 HTTP의 `origin_security`, `kakao_login`만 대기 |
 | 실제 브라우저 QA | Kakao 지도 v2에서 `북구청`·`부산역` 검색, ODsay 경로 3개, GLO-90 경사, 다음 카드 `2/3` 확인; 콘솔 오류 0건 |
 | ODsay live E2E | 개발 IP 인증, search/loadLane, 부산진구청·북구청 OD 통과 |

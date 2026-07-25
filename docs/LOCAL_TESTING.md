@@ -116,21 +116,19 @@ npm run test:e2e:places
 cd ..
 ```
 
-## 5. 초기 평가 베이스라인 테스트
+## 5. 학습 모델 실행
 
 현재 배포 저장소에는 동결된 평가 데이터셋과 학습 모델이 포함돼 있습니다.
-다음 두 파일이 Git에 추적되는지 확인한 뒤 로컬 비교 모드를 명시적으로
-켭니다.
+다음 두 파일이 Git에 추적되는지 확인한 뒤 로컬 `.env.production`에서
+`ROUTE_MODE=ai`, `RANKER_TIER=bootstrap_baseline`을 선택합니다.
 
 - 모델: `ai/data/rankers.bootstrap-baseline.zip`
 - 지표·계보: `ai/data/rankers.bootstrap-baseline.metadata.json`
 
-아래 PowerShell 환경변수는 Compose 치환값만 임시로 덮어쓰며
-`.env.production` 파일을 수정하지 않습니다.
+로컬 origin과 6개 프로필 모델 계약을 함께 검증한 뒤 서비스를 올립니다.
 
 ```powershell
-$env:ROUTE_MODE='ai'
-$env:RANKER_TIER='bootstrap_baseline'
+python scripts\prepare_deployment_env.py --check
 docker compose --env-file .env.production -f docker-compose.prod.yml `
   up -d --build --wait
 docker compose --env-file .env.production -f docker-compose.prod.yml `
@@ -144,17 +142,11 @@ docker compose --env-file .env.production -f docker-compose.prod.yml `
 같은 장소 검색을 실행하면 경로 카드에는 내부 평가 방식과 무관하게
 `프로필 적합 점수`만 표시돼야 합니다.
 
-이 모드는 실제 사용자 검증 결과가 아닙니다. 계단·엘리베이터·저상버스
-피처가 미확인인 후보가 있으면 장애인 접근성을 보장하지 않습니다.
-
-테스트가 끝나면 기본 실시간 규칙 모드로 되돌린다.
-
-```powershell
-Remove-Item Env:ROUTE_MODE -ErrorAction SilentlyContinue
-Remove-Item Env:RANKER_TIER -ErrorAction SilentlyContinue
-docker compose --env-file .env.production -f docker-compose.prod.yml `
-  up -d --force-recreate --wait ai backend frontend
-```
+로컬 모델 모드는 `PUBLIC_ORIGIN`이 `localhost` 또는 `127.0.0.1`이고,
+모델 ZIP·메타데이터·6개 프로필 계약이 모두 확인될 때만 배포 준비
+검증을 통과합니다. 공개 origin에서는 관리자 승인 모델만 허용합니다.
+계단·엘리베이터·저상버스 피처가 미확인인 후보가 있으면 장애인 접근성을
+보장하지 않습니다.
 
 ## 6. 오류 확인과 종료
 

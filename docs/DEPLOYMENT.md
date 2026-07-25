@@ -218,6 +218,10 @@ PostgreSQL `postgres-data` 볼륨은 별도 주기로 백업합니다. 전역 �
 | `human_validated` | `rankers.human-validated.zip` | 관리자 승인 사람 모델 |
 | `bootstrap_baseline` | `rankers.bootstrap-baseline.zip` | 초기 평가 비교 데모, 실사용자 검증 아님 |
 
+배포 준비 검증기는 `bootstrap_baseline`을 `ROUTE_MODE=ai`인 로컬 origin에서만
+허용하며, 모델 ZIP·메타데이터·6개 프로필 계약을 직접 검사합니다. 공개
+origin에서는 `human_validated`만 허용합니다.
+
 아카이브에는 프로필별 XGBoost JSON, 피처 스키마, 라벨 출처, 검증 지표와
 각 모델의 SHA-256이 들어갑니다. 실행 가능한 pickle은 읽지 않습니다.
 `rankers.human-candidate.zip`과
