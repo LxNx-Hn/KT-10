@@ -668,7 +668,10 @@ describe('프로덕션 v2 지도 중심 UI', () => {
   });
 
   it('조건 drawer에 6개 이동 조건이 있고 점수 옵션을 켜고 끈다', () => {
-    const { container, getByRole } = render(<App />);
+    const { container, getByRole, queryByRole } = render(<App />);
+    expect(queryByRole('button', { name: '짐 많음' })).toBeNull();
+    expect(queryByRole('button', { name: '계단 회피' })).toBeNull();
+    expect(queryByRole('button', { name: '쉬운 화면' })).toBeNull();
     fireEvent.click(getByRole('button', { name: '조건' }));
 
     expect(
@@ -677,6 +680,8 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(container.querySelectorAll('.condition-chip')).toHaveLength(
       6,
     );
+    expect(getByRole('button', { name: /짐 많음/ })).toBeTruthy();
+    expect(getByRole('button', { name: /계단 회피/ })).toBeTruthy();
     const stroller = getByRole('button', { name: /유아차 이용/ });
     const shade = getByRole('button', { name: /건물 그늘 우선/ });
     const transfer = getByRole('button', { name: /환승 최소/ });
@@ -690,6 +695,56 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     });
     fireEvent.click(stroller);
     expect(useAppStore.getState().options.stroller).toBe(false);
+  });
+
+  it('활성 조건이 생겨도 조건 버튼 폭과 접근 가능한 이름이 안정적이다', () => {
+    const { getByRole } = render(<App />);
+    const conditions = getByRole('button', { name: '조건' });
+    const widthBefore = conditions.getBoundingClientRect().width;
+
+    fireEvent.click(conditions);
+    fireEvent.click(getByRole('button', { name: /짐 많음/ }));
+    fireEvent.keyDown(getByRole('dialog', { name: '이번 이동 조건' }), {
+      key: 'Escape',
+    });
+
+    const updated = getByRole('button', { name: '조건, 활성 1개' });
+    expect(updated.textContent).toContain('1');
+    expect(
+      Math.abs(updated.getBoundingClientRect().width - widthBefore),
+    ).toBeLessThanOrEqual(1);
+    expect(document.documentElement.scrollWidth).toBe(
+      document.documentElement.clientWidth,
+    );
+  });
+
+  it('경로 결과가 있을 때만 출발 시간 버튼을 보이고 적용 시에만 setDepartureAt을 호출한다', async () => {
+    const { getByRole, queryByRole } = render(<App />);
+    expect(queryByRole('button', { name: '지금 출발' })).toBeNull();
+
+    act(() => seedResults());
+    const before = useAppStore.getState().options.departureAt;
+    const recommend = vi.spyOn(adapters.routes, 'recommend');
+    const refreshShade = vi
+      .spyOn(adapters.routes, 'refreshShade')
+      .mockResolvedValue(useAppStore.getState().recommendations);
+
+    expect(getByRole('button', { name: '지금 출발' })).toBeTruthy();
+    fireEvent.click(getByRole('button', { name: '지금 출발' }));
+    expect(getByRole('dialog', { name: '출발 시간 설정' })).toBeTruthy();
+
+    fireEvent.click(getByRole('button', { name: '오후 2시' }));
+    expect(useAppStore.getState().options.departureAt).toBe(before);
+    expect(refreshShade).not.toHaveBeenCalled();
+
+    fireEvent.click(getByRole('button', { name: '적용' }));
+    await waitFor(() => {
+      expect(refreshShade).toHaveBeenCalledOnce();
+    });
+    expect(useAppStore.getState().options.departureAt).toMatch(/T14:00/);
+    expect(getByRole('button', { name: '출발 오후 2:00' })).toBeTruthy();
+    expect(queryByRole('dialog', { name: '출발 시간 설정' })).toBeNull();
+    expect(recommend).not.toHaveBeenCalled();
   });
 
   it('그늘 legend와 지도 오버레이 계약은 선택 경로·토글과 동기화된다', () => {
@@ -716,6 +771,154 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     ).toBeTruthy();
     expect(container.textContent).not.toContain('API 연결 모드');
     expect(container.textContent).not.toContain('검증용 내장 데이터');
+  });
+
+  it('시설 정보는 있지만 segment 좌표가 없으면 안내만 보이고 오버레이는 켜지지 않는다', () => {
+    const { getByRole, queryByRole } = render(<App />);
+    act(() => {
+      seedResults();
+      const withInfo = useAppStore.getState().recommendations.find(({ route }) =>
+        route.segments.some(
+          (segment) =>
+            (segment.mode === 'subway' && segment.hasElevator === true) ||
+            (segment.mode === 'bus' && segment.isLowFloorBus === true),
+        ),
+      );
+      expect(withInfo).toBeTruthy();
+      useAppStore.setState({ selectedRouteId: withInfo!.route.id });
+    });
+
+    const map = getByRole('region', { name: '지도' });
+    const facility = getByRole('button', {
+      name: '편의시설 오버레이, 위치 데이터 없음',
+    });
+    expect(facility).toBeTruthy();
+    expect(facility.hasAttribute('disabled')).toBe(false);
+
+    fireEvent.click(facility);
+    expect(
+      document.querySelector('.map-first__fab-hint')?.textContent,
+    ).toContain('지도에 표시할 위치 데이터가 없어요');
+    expect(
+      document.querySelector('.map-first__fab-hint')?.getAttribute('role'),
+    ).toBe('status');
+    expect(map.getAttribute('data-facilities-visible')).toBe('false');
+    expect(facility.getAttribute('aria-pressed')).toBeNull();
+    expect(queryByRole('button', { name: '음성 챗봇' })).toBeNull();
+  });
+
+  it('시설 overlay 좌표가 있으면 편의시설 버튼을 토글할 수 있다', () => {
+    const { getByRole } = render(<App />);
+    act(() => {
+      seedResults();
+      const recommendations = useAppStore.getState().recommendations.map(
+        (item) => {
+          const fallbackPath = item.route.path?.slice(0, 2) ?? [
+            { lat: 35.1629, lng: 129.0532 },
+            { lat: 35.157, lng: 129.059 },
+          ];
+          return {
+            ...item,
+            route: {
+              ...item.route,
+              segments: item.route.segments.map((segment) => {
+                const needsPath =
+                  (segment.mode === 'subway' && segment.hasElevator === true)
+                  || (segment.mode === 'bus' && segment.isLowFloorBus === true);
+                return needsPath
+                  ? { ...segment, path: fallbackPath }
+                  : segment;
+              }),
+            },
+          };
+        },
+      );
+      const withOverlay = recommendations.find(({ route }) =>
+        route.segments.some(
+          (segment) =>
+            Boolean(segment.path?.length) &&
+            ((segment.mode === 'subway' && segment.hasElevator === true) ||
+              (segment.mode === 'bus' && segment.isLowFloorBus === true)),
+        ),
+      );
+      useAppStore.setState({
+        recommendations,
+        selectedRouteId:
+          withOverlay?.route.id ?? recommendations[0]?.route.id ?? null,
+      });
+    });
+
+    const map = getByRole('region', { name: '지도' });
+    const facility = getByRole('button', { name: '편의시설 오버레이' });
+    expect(facility.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(facility);
+    expect(facility.getAttribute('aria-pressed')).toBe('true');
+    expect(map.getAttribute('data-facilities-visible')).toBe('true');
+    fireEvent.click(facility);
+    expect(facility.getAttribute('aria-pressed')).toBe('false');
+    expect(map.getAttribute('data-facilities-visible')).toBe('false');
+  });
+
+  it('시설 정보가 없으면 별도 안내를 표시한다', () => {
+    const { getByRole } = render(<App />);
+    act(() => {
+      seedResults();
+      const recommendations = useAppStore.getState().recommendations.map(
+        (item) => ({
+          ...item,
+          route: {
+            ...item.route,
+            segments: item.route.segments.map((segment) => ({
+              ...segment,
+              hasElevator: undefined,
+              isLowFloorBus: undefined,
+            })),
+          },
+        }),
+      );
+      useAppStore.setState({ recommendations });
+    });
+
+    fireEvent.click(
+      getByRole('button', { name: '편의시설 오버레이 자료 없음' }),
+    );
+    expect(
+      document.querySelector('.map-first__fab-hint')?.textContent,
+    ).toContain('표시 가능한 편의시설 정보가 없어요');
+    expect(
+      getByRole('region', { name: '지도' }).getAttribute(
+        'data-facilities-visible',
+      ),
+    ).toBe('false');
+  });
+
+  it('상세 드로어가 열리면 음성 버튼이 사라지고 닫으면 다시 나타난다', () => {
+    const { container, getByRole, queryByRole } = render(<App />);
+    expect(getByRole('button', { name: '음성 챗봇' })).toBeTruthy();
+
+    act(() => seedResults());
+    expect(queryByRole('button', { name: '음성 챗봇' })).toBeNull();
+
+    openSelectedRouteDetails(container);
+    expect(queryByRole('button', { name: '음성 챗봇' })).toBeNull();
+    fireEvent.keyDown(getByRole('dialog', { name: '경로 상세 정보' }), {
+      key: 'Escape',
+    });
+    expect(queryByRole('button', { name: '음성 챗봇' })).toBeNull();
+
+    fireEvent.click(
+      getByRole('button', { name: '경로 결과 접기' }),
+    );
+    expect(getByRole('button', { name: '음성 챗봇' })).toBeTruthy();
+
+    fireEvent.click(
+      getByRole('button', { name: /프로필 선택, 현재/ }),
+    );
+    expect(queryByRole('button', { name: '음성 챗봇' })).toBeNull();
+    fireEvent.keyDown(getByRole('dialog', { name: '이동 프로필 선택' }), {
+      key: 'Escape',
+    });
+    expect(getByRole('button', { name: '음성 챗봇' })).toBeTruthy();
   });
 });
 

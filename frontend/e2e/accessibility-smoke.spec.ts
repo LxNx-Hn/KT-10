@@ -49,7 +49,10 @@ test('프로필과 이동 조건 drawer에 자동 탐지 가능한 접근성 위
   const conditionsDialog = page.getByRole('dialog', { name: '이번 이동 조건' });
   await expect(conditionsDialog).toBeVisible();
   await expect(
-    conditionsDialog.getByRole('textbox', { name: '건물 그늘 계산 시각' }),
+    conditionsDialog.getByRole('button', { name: /짐 많음/ }),
+  ).toBeVisible();
+  await expect(
+    conditionsDialog.getByRole('button', { name: /계단 회피/ }),
   ).toBeVisible();
   await expectNoAutomaticViolations(page);
 });
@@ -62,7 +65,6 @@ test('모바일 핵심 조작부의 높이가 44px 이상이다', async ({ page 
     ['출발지', page.getByRole('combobox', { name: '출발지' })],
     ['도착지', page.getByRole('combobox', { name: '도착지' })],
     ['경로 찾기', page.getByRole('button', { name: '경로 찾기' })],
-    ['쉬운 화면', page.getByRole('button', { name: '쉬운 화면' })],
     ['프로필 선택', page.getByRole('button', { name: /프로필 선택, 현재/ })],
     ['조건', page.getByRole('button', { name: /^조건/ })],
     [
@@ -80,12 +82,8 @@ test('모바일 핵심 조작부의 높이가 44px 이상이다', async ({ page 
   await page.getByRole('button', { name: /^조건/ }).click();
   const conditionsDialog = page.getByRole('dialog', { name: '이번 이동 조건' });
   await expectTapHeight(
-    '건물 그늘 계산 시각',
-    conditionsDialog.getByRole('textbox', { name: '건물 그늘 계산 시각' }),
-  );
-  await expectTapHeight(
-    '그늘 계산 시각 지금',
-    conditionsDialog.getByRole('button', { name: '지금', exact: true }),
+    '짐 많음',
+    conditionsDialog.getByRole('button', { name: /짐 많음/ }),
   );
   await expectTapHeight(
     '이동 조건 drawer 닫기',
