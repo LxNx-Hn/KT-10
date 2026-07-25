@@ -29,11 +29,13 @@ vi.mock('@/v2/KakaoMap', () => ({
     selectedRouteId,
     onSelectRoute,
     showShade,
+    showFacilities,
   }: {
     recommendations: ScoredRoute[];
     selectedRouteId: string | null;
     onSelectRoute: (routeId: string) => void;
     showShade: boolean;
+    showFacilities?: boolean;
   }) => {
     const selected = recommendations.find(
       ({ route }) => route.id === selectedRouteId,
@@ -52,6 +54,7 @@ vi.mock('@/v2/KakaoMap', () => ({
         data-selected-route-id={selectedRouteId ?? ''}
         data-route-count={recommendations.length}
         data-shade-visible={showShade}
+        data-facilities-visible={showFacilities}
         data-shadow-polygons={
           overlayVisible ? shade?.shadowPolygons.length ?? 0 : 0
         }
@@ -707,19 +710,12 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(map.getAttribute('data-shadow-polygons')).toBe('0');
     expect(container.querySelector('.map-first__map-legend')).toBeNull();
 
-    fireEvent.click(
-      getByRole('button', { name: '건물 그늘 오버레이' }),
-    );
-    fireEvent.click(
-      getByRole('button', { name: '지도와 데이터 설명' }),
-    );
-    const info = getByRole('dialog', {
-      name: '지도와 데이터 설명',
-    });
-    expect(info.textContent).toContain('나무 그늘은 포함하지 않으며');
-    expect(info.textContent).toContain(
-      '데이터가 없으면 0%로 바꾸지 않고',
-    );
+    fireEvent.click(getByRole('button', { name: '건물 그늘 오버레이' }));
+    expect(
+      getByRole('button', { name: /편의시설 오버레이/ }),
+    ).toBeTruthy();
+    expect(container.textContent).not.toContain('API 연결 모드');
+    expect(container.textContent).not.toContain('검증용 내장 데이터');
   });
 });
 
@@ -851,5 +847,40 @@ describe('store 최신 요청 및 점수 계약', () => {
       loading: false,
       error: null,
     });
+  });
+
+  it('그늘 시각 변경은 경로 추천을 다시 호출하지 않고 기존 후보만 갱신한다', async () => {
+    seedResults();
+    const baseline = useAppStore.getState().recommendations;
+    const refreshed = baseline.map((item) => ({
+      ...item,
+      route: {
+        ...item.route,
+        shade: {
+          status: 'not_daylight' as const,
+          evaluatedAt: '2026-07-24T02:00:00+09:00',
+          source: 'test',
+          dataQuality: 'demo' as const,
+          shadowPolygons: [],
+          pathSegments: [],
+          calculationNote: '야간',
+        },
+      },
+    }));
+    const recommend = vi.spyOn(adapters.routes, 'recommend');
+    const refreshShade = vi
+      .spyOn(adapters.routes, 'refreshShade')
+      .mockResolvedValue(refreshed);
+
+    useAppStore.getState().setDepartureAt('2026-07-24T02:00:00+09:00');
+
+    await waitFor(() => {
+      expect(useAppStore.getState().recommendations).toEqual(refreshed);
+    });
+    expect(refreshShade).toHaveBeenCalledOnce();
+    expect(refreshShade.mock.calls[0][3].departureAt).toBe(
+      '2026-07-24T02:00:00+09:00',
+    );
+    expect(recommend).not.toHaveBeenCalled();
   });
 });

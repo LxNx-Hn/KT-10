@@ -62,15 +62,14 @@ test('모바일 핵심 조작부의 높이가 44px 이상이다', async ({ page 
     ['출발지', page.getByRole('combobox', { name: '출발지' })],
     ['도착지', page.getByRole('combobox', { name: '도착지' })],
     ['경로 찾기', page.getByRole('button', { name: '경로 찾기' })],
-    ['큰 글씨', page.getByRole('button', { name: '큰 글씨' })],
-    ['카카오 로그인', page.getByRole('button', { name: '카카오 로그인' })],
+    ['쉬운 화면', page.getByRole('button', { name: '쉬운 화면' })],
     ['프로필 선택', page.getByRole('button', { name: /프로필 선택, 현재/ })],
     ['조건', page.getByRole('button', { name: /^조건/ })],
     [
       '현재 위치',
       page.getByRole('button', { name: '현재 위치를 출발지로 사용' }),
     ],
-    ['지도와 데이터 설명', page.getByRole('button', { name: '지도와 데이터 설명' })],
+    ['편의시설', page.getByRole('button', { name: /편의시설 오버레이/ })],
     ['음성 챗봇', page.getByRole('button', { name: '음성 챗봇' })],
   ];
 

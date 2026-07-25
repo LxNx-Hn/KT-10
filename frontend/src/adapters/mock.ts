@@ -22,6 +22,18 @@ export const mockAdapters: Adapters = {
       const weather = WEATHER_SCENARIOS[weatherScenario ?? DEFAULT_WEATHER];
       return recommendRoutes(candidates, weather, profile, options, topN);
     },
+    refreshShade: async (current, profile, weatherScenario, options, topN = 3) => {
+      const weather = WEATHER_SCENARIOS[weatherScenario ?? DEFAULT_WEATHER];
+      return delay(
+        recommendRoutes(
+          current.map(({ route }) => route),
+          weather,
+          profile,
+          options,
+          topN,
+        ),
+      );
+    },
   },
   bus: {
     getArrivals: (stopId) => delay(getArrivals(stopId)),

@@ -484,6 +484,71 @@ describe('KakaoMap production overlays', () => {
     },
   );
 
+  it('확인된 승강기와 저상버스만 편의시설 레이어에 표시하고 토글을 끄면 제거한다', async () => {
+    const selected = scoredRoute('facilities', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+      segments: [
+        {
+          ...routeSegment('subway', [ORIGIN, MIDPOINT], 'exact'),
+          mode: 'subway',
+          stationName: '부산역',
+          hasElevator: true,
+        },
+        {
+          ...routeSegment('bus', [MIDPOINT, DESTINATION], 'exact'),
+          mode: 'bus',
+          busRouteName: '1001번',
+          isLowFloorBus: true,
+        },
+        {
+          ...routeSegment('unknown', [ORIGIN, DESTINATION], 'exact'),
+          mode: 'subway',
+          stationName: '확인 전 역',
+        },
+      ],
+    });
+
+    const view = render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="facilities"
+        onSelectRoute={vi.fn()}
+        showShade={false}
+        showFacilities
+      />,
+    );
+    await waitUntilReady();
+
+    expect(
+      activeOverlays()
+        .map((overlay) => overlay.options.content.getAttribute('aria-label'))
+        .filter((label) => label?.startsWith('승강기') || label?.startsWith('저상버스')),
+    ).toEqual(['승강기 부산역', '저상버스 1001번']);
+
+    view.rerender(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="facilities"
+        onSelectRoute={vi.fn()}
+        showShade={false}
+        showFacilities={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        activeOverlays().filter((overlay) =>
+          overlay.options.content.classList.contains('map-first__kakao-facility'),
+        ),
+      ).toHaveLength(0);
+    });
+  });
+
   it('잘못된 좌표를 버리고 품질 미확인 구간을 임의 좌표나 실선으로 보정하지 않는다', async () => {
     const validUnknownSegment = [
       { lat: 35.12, lng: 129.04 },

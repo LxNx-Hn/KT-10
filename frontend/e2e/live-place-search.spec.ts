@@ -12,7 +12,7 @@ test('Kakao Places에서 북구청과 부산역을 실제 검색·선택한다',
   });
 
   await page.goto('/');
-  await expect(page.getByText('API 연결 모드', { exact: true })).toBeVisible();
+  await expect(page.getByText('API 연결 모드', { exact: true })).toHaveCount(0);
   await expect(page.getByText('검증용 내장 데이터', { exact: true })).toHaveCount(0);
 
   const origin = page.getByRole('combobox', { name: '출발지' });
@@ -40,6 +40,33 @@ test('Kakao Places에서 북구청과 부산역을 실제 검색·선택한다',
   await expect(routeCards.first()).toContainText(
     '프로필 적합 점수',
   );
+
+  const floatingControls = page.locator(
+    '.map-first__fab:visible, .map-first__voice:visible, .map-first__map-legend:visible',
+  );
+  const controlCount = await floatingControls.count();
+  const boxes = await Promise.all(
+    Array.from({ length: controlCount }, (_, index) =>
+      floatingControls.nth(index).boundingBox(),
+    ),
+  );
+  for (let left = 0; left < boxes.length; left += 1) {
+    for (let right = left + 1; right < boxes.length; right += 1) {
+      const a = boxes[left];
+      const b = boxes[right];
+      if (!a || !b) continue;
+      const overlaps = !(
+        a.x + a.width <= b.x ||
+        b.x + b.width <= a.x ||
+        a.y + a.height <= b.y ||
+        b.y + b.height <= a.y
+      );
+      expect(
+        overlaps,
+        `지도 조작부 ${left + 1}번과 ${right + 1}번이 겹치면 안 됩니다.`,
+      ).toBe(false);
+    }
+  }
 
   expect(consoleProblems, consoleProblems.join('\n')).toEqual([]);
 });

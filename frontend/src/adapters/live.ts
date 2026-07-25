@@ -91,6 +91,18 @@ export const liveAdapters: Adapters = {
         options,
         topN,
       }, ROUTE_TIMEOUT_MS),
+    refreshShade: (current, profile, _weatherScenario, options, topN = 3) => {
+      const routeSetToken = current[0]?.routeSetToken;
+      if (!routeSetToken) {
+        return Promise.reject(new Error('ROUTE_SET_TOKEN_MISSING'));
+      }
+      return postJson<ScoredRoute[]>('/api/routes/refresh-shade', {
+        routeSetToken,
+        profile,
+        options,
+        topN,
+      }, ROUTE_TIMEOUT_MS);
+    },
   },
   bus: {
     getArrivals: async (stopId) => {

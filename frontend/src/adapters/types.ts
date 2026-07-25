@@ -35,6 +35,17 @@ export interface RouteAdapter {
     options: ScoringOptions,
     topN?: number,
   ): Promise<ScoredRoute[]>;
+  /**
+   * 현재 서버 후보군을 유지한 채 시간별 그늘과 순위만 갱신한다.
+   * 경로 공급자 재호출 없이 서버가 발급한 routeSetToken을 사용한다.
+   */
+  refreshShade(
+    current: ScoredRoute[],
+    profile: ProfileId,
+    weatherScenario: WeatherScenarioId,
+    options: ScoringOptions,
+    topN?: number,
+  ): Promise<ScoredRoute[]>;
 }
 
 export interface BusAdapter {

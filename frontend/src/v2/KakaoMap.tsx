@@ -30,6 +30,7 @@ export type KakaoMapProps = {
   selectedRouteId: string | null;
   onSelectRoute: (routeId: string) => void;
   showShade: boolean;
+  showFacilities?: boolean;
 };
 
 type GeometryQuality = NonNullable<RouteCandidate['geometryQuality']>;
@@ -241,6 +242,23 @@ function createUserContent(): HTMLDivElement {
   return root;
 }
 
+function createFacilityContent(label: string, detail: string): HTMLDivElement {
+  const root = document.createElement('div');
+  root.className = 'map-first__kakao-facility';
+  root.setAttribute('aria-label', `${label} ${detail}`);
+
+  const icon = document.createElement('span');
+  icon.className = 'map-first__kakao-facility-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = label === '승강기' ? '↕' : '저';
+
+  const copy = document.createElement('span');
+  copy.className = 'map-first__kakao-facility-label';
+  copy.textContent = `${label} · ${detail}`;
+  root.append(icon, copy);
+  return root;
+}
+
 function strokeStyle(quality: GeometryQuality | undefined): string {
   return quality === 'exact' ? 'solid' : 'shortdash';
 }
@@ -257,6 +275,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showShade,
+    showFacilities = false,
   },
   ref,
 ) {
@@ -276,6 +295,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showShade,
+    showFacilities,
   });
   propsRef.current = {
     origin,
@@ -284,6 +304,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showShade,
+    showFacilities,
   };
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -448,6 +469,43 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     });
   };
 
+  const addFacilityOverlays = (
+    maps: KakaoMapsApi,
+    route: RouteCandidate | undefined,
+    visible: boolean,
+  ) => {
+    if (!visible || !route) return;
+    const rendered = new Set<string>();
+
+    route.segments.forEach((segment) => {
+      const path = validPath(segment.path, 1);
+      if (!path) return;
+
+      let label: string | null = null;
+      let detail: string | null = null;
+      if (segment.mode === 'subway' && segment.hasElevator === true) {
+        label = '승강기';
+        detail = segment.stationName ?? segment.description;
+      } else if (segment.mode === 'bus' && segment.isLowFloorBus === true) {
+        label = '저상버스';
+        detail = segment.busRouteName ?? segment.description;
+      }
+      if (!label || !detail) return;
+
+      const anchor = path[0];
+      const key = `${label}:${detail}:${anchor.lat}:${anchor.lng}`;
+      if (rendered.has(key)) return;
+      rendered.add(key);
+      addGraphic(new maps.CustomOverlay({
+        position: toKakaoLatLng(maps, anchor),
+        content: createFacilityContent(label, detail),
+        xAnchor: 0.5,
+        yAnchor: 1.25,
+        zIndex: 6,
+      }));
+    });
+  };
+
   const fitDataBounds = (
     maps: KakaoMapsApi,
     map: KakaoMapInstance,
@@ -489,6 +547,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedId: string | null,
     selectRoute: (routeId: string) => void,
     shadeVisible: boolean,
+    facilitiesVisible: boolean,
   ) => {
     const maps = mapsRef.current;
     const map = mapRef.current;
@@ -503,6 +562,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     addShadeOverlay(maps, selectedRoute, shadeVisible, boundsPoints);
     addAlternativeRoutes(maps, routes, selectedId, selectRoute, boundsPoints);
     addSelectedRoute(maps, selectedRoute);
+    addFacilityOverlays(maps, selectedRoute, facilitiesVisible);
     addEndpoint(maps, nextOrigin, 'origin');
     addEndpoint(maps, nextDestination, 'dest');
     fitDataBounds(maps, map, boundsPoints);
@@ -615,6 +675,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
           current.selectedRouteId,
           current.onSelectRoute,
           current.showShade,
+          current.showFacilities,
         );
         const pending = pendingUserLocationRef.current;
         if (pending && applyUserLocation(pending)) {
@@ -652,6 +713,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       selectedRouteId,
       onSelectRoute,
       showShade,
+      showFacilities,
     );
     // Map data helpers use refs and are intentionally recreated with the latest props.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -662,6 +724,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showShade,
+    showFacilities,
     status,
   ]);
 

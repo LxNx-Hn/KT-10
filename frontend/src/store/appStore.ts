@@ -116,6 +116,7 @@ interface AppState {
   search: () => Promise<void>;
   rescore: () => Promise<void>;
   refreshEnrichment: () => Promise<void>;
+  refreshShade: () => Promise<void>;
 
   /* 음성 챗봇 연동 액션 (요구사항 §9) */
   ensureOrigin: () => void;
@@ -402,6 +403,66 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  /** 기존 후보군을 유지하고 선택 시각의 그늘과 순위만 갱신한다. */
+  refreshShade: async () => {
+    const {
+      profile,
+      weatherScenario,
+      options,
+      selectedRouteId,
+      recommendations: previous,
+    } = get();
+    if (!previous.length) return;
+    const requestGeneration = beginRecommendationRequest();
+    const previousSelected = previous.find(
+      ({ route }) => route.id === selectedRouteId,
+    );
+    const previousSemanticKey = previousSelected
+      ? routeSemanticKey(previousSelected.route)
+      : null;
+    try {
+      const recommendations = await adapters.routes.refreshShade(
+        previous,
+        profile,
+        weatherScenario,
+        options,
+        previous.length,
+      );
+      if (
+        !isLatestRecommendationRequest(requestGeneration)
+        || !recommendations.length
+      ) {
+        return;
+      }
+      const semanticMatch = previousSemanticKey
+        ? recommendations.find(
+          ({ route }) => routeSemanticKey(route) === previousSemanticKey,
+        )
+        : undefined;
+      const directMatch = recommendations.find(
+        ({ route }) => route.id === selectedRouteId,
+      );
+      set({
+        candidates: recommendations.map(({ route }) => route),
+        recommendations,
+        selectedRouteId: (
+          semanticMatch
+          ?? directMatch
+          ?? serverRankedRecommendations(recommendations)[0]
+        )?.route.id ?? null,
+        error: null,
+      });
+    } catch (error) {
+      if (!isLatestRecommendationRequest(requestGeneration)) return;
+      set({
+        error: toUserMessage(
+          error,
+          '그늘 계산 시각을 갱신하지 못했습니다. 경로를 다시 검색해 주세요.',
+        ),
+      });
+    }
+  },
+
   /* ── 음성 챗봇 연동 액션 (요구사항 §9) ── */
 
   /** 출발지가 비어 있으면 브라우저의 실제 현재 위치 권한을 요청한다. */
@@ -414,7 +475,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const restartPendingSearch = get().loading && !get().candidates.length;
     set((s) => ({ options: { ...s.options, departureAt } }));
     if (get().candidates.length) {
-      void get().rescore();
+      void get().refreshShade();
     } else if (restartPendingSearch && get().origin && get().destination) {
       void get().search();
     }

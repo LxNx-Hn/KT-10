@@ -12,7 +12,6 @@ import { adapters } from '@/adapters';
 import { toUserMessage } from '@/api/http';
 import { useVoiceChatStore } from '@/chat/voiceChatStore';
 import BusArrivalCard from '@/components/BusArrivalCard';
-import ConnectionStatus from '@/components/ConnectionStatus';
 import FacilityReport from '@/components/FacilityReport';
 import KakaoLoginButton from '@/components/KakaoLoginButton';
 import ProfilePreferences from '@/components/ProfilePreferences';
@@ -36,7 +35,7 @@ import {
 } from './routeViewModel';
 import './map-first.css';
 
-type DrawerId = 'profile' | 'conditions' | 'details' | 'info';
+type DrawerId = 'profile' | 'conditions' | 'details';
 type DetailTab = 'route' | 'environment' | 'feedback' | 'settings';
 
 const QUICK_CONDITIONS: Array<{
@@ -45,7 +44,6 @@ const QUICK_CONDITIONS: Array<{
 }> = [
   { key: 'carryLuggage', label: '짐 많음' },
   { key: 'avoidStairs', label: '계단 회피' },
-  { key: 'shadePriority', label: '그늘 우선' },
 ];
 
 const CONDITION_KEYS: ToggleableScoringOption[] = [
@@ -892,11 +890,11 @@ function ShadeIcon() {
   );
 }
 
-function InfoIcon() {
+function FacilityIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 11v6M12 7h.01" strokeLinecap="round" />
+      <path d="M12 2l9 5-9 5-9-5 9-5z" strokeLinejoin="round" />
+      <path d="M3 12l9 5 9-5M3 17l9 5 9-5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -937,6 +935,7 @@ export default function MapFirstApp() {
   const [detailTab, setDetailTab] = useState<DetailTab>('route');
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const [showShade, setShowShade] = useState(true);
+  const [showFacilities, setShowFacilities] = useState(false);
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const originInputRef = useRef<HTMLInputElement>(null);
@@ -962,6 +961,15 @@ export default function MapFirstApp() {
         selectedShade.status === 'estimated_public') &&
       (selectedShade.shadowPolygons.length > 0 ||
         selectedShade.pathSegments.length > 0),
+  );
+  const hasFacilityOverlay = Boolean(
+    selectedItem?.route.segments.some(
+      (segment) =>
+        segment.path &&
+        segment.path.length > 0 &&
+        ((segment.mode === 'subway' && segment.hasElevator === true) ||
+          (segment.mode === 'bus' && segment.isLowFloorBus === true)),
+    ),
   );
   const activeConditionCount = CONDITION_KEYS.filter((key) => Boolean(options[key])).length;
   const dataSource = import.meta.env.VITE_DATA_SOURCE === 'live' ? 'live' : 'mock';
@@ -1145,12 +1153,13 @@ export default function MapFirstApp() {
     largeUi ? 'map-first__frame--easy' : '',
     options.carryLuggage ? 'map-first__frame--heavy' : '',
     showLabeledControls ? 'map-first__frame--labeled' : '',
+    ranked.length > 0 ? 'map-first__frame--results' : '',
   ]
     .filter(Boolean)
     .join(' ');
 
   const sheetTitle = loading
-    ? '경로 특성을 비교하는 중…'
+    ? '경로 찾는 중…'
     : selectedView
       ? selectedView.summary
       : error
@@ -1173,14 +1182,11 @@ export default function MapFirstApp() {
           selectedRouteId={selectedRouteId}
           onSelectRoute={selectRoute}
           showShade={showShade}
+          showFacilities={showFacilities}
         />
 
         <div className="map-first__top">
-          <div
-            className={`map-first__search${
-              ranked.length > 0 && !error ? ' map-first__search--results' : ''
-            }`}
-          >
+          <div className="map-first__search">
             <div className="map-first__search-body">
               <PlaceCombobox
                 fieldId="map-first-origin"
@@ -1214,7 +1220,7 @@ export default function MapFirstApp() {
               type="button"
               className="map-first__search-submit"
               onClick={() => void runRouteSearch()}
-              disabled={loading}
+              disabled={loading || !origin || !destination || origin.id === destination.id}
               aria-label="경로 찾기"
             >
               {loading ? '경로 찾는 중…' : '경로 찾기'}
@@ -1230,22 +1236,6 @@ export default function MapFirstApp() {
                 {searchHint ?? error}
               </p>
             )}
-
-            <div className="map-first__search-utility">
-              <span className={`map-first__source map-first__source--${dataSource}`}>
-                {dataSource === 'live' ? 'API 연결 모드' : '검증용 내장 데이터'}
-              </span>
-              <ConnectionStatus />
-              <button
-                type="button"
-                className="map-first__utility-button"
-                aria-pressed={largeUi}
-                onClick={toggleLargeUi}
-              >
-                {largeUi ? '기본 글씨' : '큰 글씨'}
-              </button>
-              <KakaoLoginButton />
-            </div>
           </div>
 
           <div className="map-first__context">
@@ -1278,6 +1268,17 @@ export default function MapFirstApp() {
             })}
             <button
               type="button"
+              className={`map-first__chip map-first__chip--easy${
+                largeUi ? ' map-first__chip--active' : ''
+              }`}
+              aria-label="쉬운 화면"
+              aria-pressed={largeUi}
+              onClick={toggleLargeUi}
+            >
+              쉬운 화면
+            </button>
+            <button
+              type="button"
               className="map-first__chip map-first__chip--conditions"
               aria-haspopup="dialog"
               aria-expanded={drawer === 'conditions'}
@@ -1289,6 +1290,11 @@ export default function MapFirstApp() {
               )}
             </button>
           </div>
+          {largeUi && (
+            <p className="map-first__easy-hint" role="status">
+              큰 글씨와 큰 버튼을 사용해요
+            </p>
+          )}
         </div>
 
         <div className="map-first__fab-stack">
@@ -1312,35 +1318,38 @@ export default function MapFirstApp() {
           <button
             type="button"
             className={`map-first__fab${
-              showShade && hasShadeOverlay ? ' map-first__fab--active' : ''
+              showFacilities && hasFacilityOverlay ? ' map-first__fab--active' : ''
             }${
               showLabeledControls ? ' map-first__fab--labeled' : ''
             }`}
             aria-label={
-              hasShadeOverlay
-                ? '건물 그늘 오버레이'
-                : '건물 그늘 오버레이 자료 없음'
+              hasFacilityOverlay
+                ? '편의시설 오버레이'
+                : '편의시설 오버레이 자료 없음'
             }
-            aria-pressed={hasShadeOverlay ? showShade : false}
-            disabled={!hasShadeOverlay}
-            onClick={() => setShowShade((visible) => !visible)}
+            aria-pressed={hasFacilityOverlay ? showFacilities : false}
+            disabled={!hasFacilityOverlay}
+            onClick={() => setShowFacilities((visible) => !visible)}
           >
-            <ShadeIcon />
-            {showLabeledControls && <span className="map-first__fab-label">그늘</span>}
+            <FacilityIcon />
+            {showLabeledControls && <span className="map-first__fab-label">편의시설</span>}
           </button>
-          <button
-            type="button"
-            className={`map-first__fab${
-              showLabeledControls ? ' map-first__fab--labeled' : ''
-            }`}
-            aria-label="지도와 데이터 설명"
-            aria-haspopup="dialog"
-            aria-expanded={drawer === 'info'}
-            onClick={() => setDrawer('info')}
-          >
-            <InfoIcon />
-            {showLabeledControls && <span className="map-first__fab-label">정보</span>}
-          </button>
+          {hasShadeOverlay && (
+            <button
+              type="button"
+              className={`map-first__fab${
+                showShade ? ' map-first__fab--active' : ''
+              }${
+                showLabeledControls ? ' map-first__fab--labeled' : ''
+              }`}
+              aria-label="건물 그늘 오버레이"
+              aria-pressed={showShade}
+              onClick={() => setShowShade((visible) => !visible)}
+            >
+              <ShadeIcon />
+              {showLabeledControls && <span className="map-first__fab-label">그늘</span>}
+            </button>
+          )}
         </div>
 
         {showShade &&
@@ -1416,7 +1425,7 @@ export default function MapFirstApp() {
 
           {sheetExpanded && (
             <div className="map-first__sheet-body">
-              {loading && <p className="map-first__empty-state" role="status">경로를 평가하고 있어요…</p>}
+              {loading && <p className="map-first__empty-state" role="status">경로를 찾고 있어요…</p>}
               {!loading && ranked.length > 0 && (
                 <RouteCarousel
                   recommendations={ranked}
@@ -1478,39 +1487,6 @@ export default function MapFirstApp() {
             onClose={closeDrawer}
           >
             <RouteConditions />
-          </BottomDrawer>
-        )}
-
-        {drawer === 'info' && (
-          <BottomDrawer
-            drawerId="info-drawer"
-            title="지도와 데이터 설명"
-            onClose={closeDrawer}
-          >
-            <section className="map-first__info">
-              <h3>현재 데이터 모드</h3>
-              <p>
-                {dataSource === 'live'
-                  ? '실 API 경로를 사용합니다. 각 응답의 실제 출처와 추정 상태는 경로 상세에서 구분해 표시합니다.'
-                  : '검증용 내장 데이터 모드입니다. 실제 서비스 배포에는 live 설정과 외부 키가 필요합니다.'}
-              </p>
-              <h3>건물 그늘</h3>
-              <p>
-                건물 도형·높이와 선택 시각의 태양 위치로 계산한 추정값입니다.
-                나무 그늘은 포함하지 않으며, 데이터가 없으면 0%로 바꾸지 않고
-                미확인으로 표시합니다.
-              </p>
-              {selectedShade && (
-                <p className="map-first__info-source">
-                  현재 경로: {selectedShade.calculationNote}
-                </p>
-              )}
-              <h3>지도 선</h3>
-              <p>
-                실선은 실제 형상, 점선은 일부 또는 전체가 추정된 형상입니다.
-                회색 선을 누르면 다른 후보 경로를 선택할 수 있습니다.
-              </p>
-            </section>
           </BottomDrawer>
         )}
 

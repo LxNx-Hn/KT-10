@@ -261,4 +261,6 @@ export interface ScoringOptions {
 export interface ScoredRoute {
   route: RouteCandidate;
   score: RouteScore;
+  /** 서버에 보관된 동일 후보군으로 시간별 그늘만 갱신할 때 사용하는 임시 토큰 */
+  routeSetToken?: string;
 }

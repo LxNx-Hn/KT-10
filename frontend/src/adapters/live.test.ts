@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hasKakaoKey } from '@/map/kakaoLoader';
 import { searchKakaoPlaces } from '@/map/kakaoPlaces';
 import { liveAdapters } from './live';
+import type { ScoredRoute } from '@/types';
 
 vi.mock('@/map/kakaoLoader', () => ({
   hasKakaoKey: vi.fn(),
@@ -109,5 +110,35 @@ describe('live 경로 요청 제한시간', () => {
     await vi.advanceTimersByTimeAsync(13_000);
     expect(requestSignal?.aborted).toBe(true);
     await rejection;
+  });
+
+  it('시간 변경은 기존 후보 토큰으로 그늘 갱신 endpoint만 호출한다', async () => {
+    const token = 'route-set-token-1234567890';
+    const current = [{ routeSetToken: token }] as ScoredRoute[];
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify([]),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await liveAdapters.routes.refreshShade(
+      current,
+      'general',
+      'normal',
+      { departureAt: '2026-07-24T02:00:00+09:00' },
+    );
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/routes/refresh-shade');
+    expect(JSON.parse(String(init.body))).toEqual({
+      routeSetToken: token,
+      profile: 'general',
+      options: { departureAt: '2026-07-24T02:00:00+09:00' },
+      topN: 3,
+    });
   });
 });
