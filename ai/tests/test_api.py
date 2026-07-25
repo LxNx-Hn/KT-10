@@ -818,6 +818,46 @@ def test_odsay_analysis_uses_only_declared_walk_parts_without_joining_them():
     assert candidate.path == display_path
 
 
+def test_odsay_analysis_ignores_confirmed_zero_distance_walk_part():
+    first = Coordinate(35.1000, 129.0000)
+    second = Coordinate(35.1100, 129.0000)
+    transfer = Coordinate(35.1200, 129.0000)
+    candidate = MergedRoute(
+        sources=["odsay"],
+        source="odsay",
+        path=[first, second, transfer],
+        duration_min=20,
+        distance_m=3000,
+        segments=[
+            {
+                "mode": "walk",
+                "path": [first, second],
+                "geometry_quality": "exact",
+                "duration_min": 5,
+                "distance_m": 300,
+            },
+            {
+                "mode": "walk",
+                "path": [transfer, transfer],
+                "geometry_quality": "exact",
+                "duration_min": 0,
+                "distance_m": 0,
+            },
+        ],
+    )
+
+    assert _analysis_route_parts(candidate) == [[
+        (35.1000, 129.0000),
+        (35.1100, 129.0000),
+    ]]
+
+    candidate.segments[1]["path"] = [
+        transfer,
+        Coordinate(35.1210, 129.0000),
+    ]
+    assert _analysis_route_parts(candidate) == []
+
+
 def test_tmap_standalone_analysis_uses_full_walking_path():
     path = [
         Coordinate(35.1000, 129.0000),

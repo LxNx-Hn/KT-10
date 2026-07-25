@@ -491,10 +491,23 @@ def _analysis_route_parts(candidate) -> list[list[tuple[float, float]]]:
                 # 일부만 분석하면 전체 보행 경로의 피처처럼 과장되므로
                 # 선언된 보행 part 하나라도 확인 불가하면 모두 미확인 처리한다.
                 return []
-            parts.append([
+            coordinates = [
                 (float(point.lat), float(point.lng))
                 for point in path
-            ])
+            ]
+            declared_distance = segment.get("distance_m")
+            if (
+                not isinstance(declared_distance, bool)
+                and isinstance(declared_distance, (int, float))
+                and declared_distance == 0
+            ):
+                # ODsay가 환승 지점에서 0m 보행 구간과 동일 좌표 두 개를
+                # 함께 반환하는 경우는 실제 이동이 없으므로 경사 구간에서
+                # 제외한다. 0m인데 좌표가 다르면 공급자 불일치로 취급한다.
+                if len(set(coordinates)) == 1:
+                    continue
+                return []
+            parts.append(coordinates)
         return parts
 
     if (
