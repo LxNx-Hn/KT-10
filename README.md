@@ -151,10 +151,16 @@ $env:PYTHONPATH='ai'
 # 프론트 (새 터미널, 5173)
 cd frontend
 npm ci
+# 기본 /api 프록시는 현재 프로덕션형 로컬 스택 http://localhost:8080
 npm run dev
 ```
 
-PostgreSQL까지 한 번에 실행하려면 저장소 루트에서 `docker compose up --build`를 사용합니다. 로컬 키 입력 파일 `ai/.env`, `backend/.env`, `frontend/.env`는 이미 생성되며 Git에서 무시됩니다.
+위처럼 AI와 백엔드를 직접 8001·8002로 실행하는 경우에는 프론트 실행 전에
+`$env:VITE_DEV_PROXY_TARGET='http://localhost:8002'`를 지정합니다.
+일반 로컬 검증은 PostgreSQL과 현재 live 설정까지 동일하게 맞추는
+`docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --wait`
+방식을 권장합니다. 로컬 키 입력 파일 `ai/.env`, `backend/.env`,
+`frontend/.env`는 Git에서 무시됩니다.
 
 ## 운영 배포
 

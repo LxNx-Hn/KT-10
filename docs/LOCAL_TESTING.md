@@ -49,6 +49,22 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 `http://127.0.0.1:8080`은 카카오 개발자 콘솔에 별도 Web 도메인으로
 등록하지 않았다면 지도 SDK가 `domain mismatched`로 거부한다.
 
+프로덕션형 백엔드는 그대로 두고 Vite 화면만 수정할 때는 새 터미널에서
+다음처럼 실행한다. 데이터 모드를 지정하지 않아도 live가 기본이며,
+`/api`는 `http://localhost:8080`으로 전달된다.
+
+```powershell
+cd frontend
+npm run dev
+```
+
+브라우저는 Kakao Web 도메인에 등록된 <http://localhost:5173>으로 연다.
+`127.0.0.1:5173`은 별도 도메인이므로 등록하지 않았다면 지도 SDK가
+거부할 수 있다. JavaScript SDK 검색이 실패해도 장소검색은 같은
+`/api` 프록시의 Kakao REST 응답으로 대체하며,
+`X-Place-Search-Source=kakao-rest`가 아니면 결과를 표시하지 않는다.
+mock 데이터는 `VITE_DATA_SOURCE=mock`을 명시한 테스트에서만 사용한다.
+
 우선 OD 세 개를 한 번 준비하면 이후 테스트의 외부 API 대기시간을 줄일 수
 있다.
 
@@ -64,7 +80,8 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 
 ## 3. 브라우저에서 확인할 항목
 
-1. 지도에 `API 연결 모드`가 표시되고 Kakao 지도가 렌더링되는지 확인한다.
+1. Kakao 지도가 렌더링되고 `API 연결 모드` 같은 내부 상태 문구가
+   사용자 화면에 표시되지 않는지 확인한다.
 2. 출발지에 `북구청`을 입력한 뒤 반드시 드롭다운의
    `부산광역시북구청` 결과를 선택한다.
 3. 도착지에 `부산역`을 입력한 뒤 반드시 드롭다운의 `부산역` 결과를

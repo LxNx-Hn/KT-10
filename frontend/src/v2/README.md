@@ -73,14 +73,17 @@
 | 변수 | 설명 |
 | --- | --- |
 | `VITE_KAKAO_MAP_KEY` | Kakao 지도·브라우저 Places JavaScript 키 |
-| `VITE_DATA_SOURCE` | `mock` 또는 `live` |
+| `VITE_DATA_SOURCE` | `mock` 또는 `live`; 미지정 기본값은 `live` |
 | `VITE_API_BASE` | live 백엔드 API 기준 URL |
+| `VITE_DEV_PROXY_TARGET` | Vite 개발 서버의 `/api` 전달 대상; 기본 `http://localhost:8080` |
 
-`VITE_DATA_SOURCE=live`이며 JavaScript 키가 있으면 브라우저 Places SDK를
-우선 사용합니다. 키가 없을 때만 백엔드 검색을 사용하며, 이 경우 응답의
+mock은 명시적으로 `VITE_DATA_SOURCE=mock`을 지정한 테스트에서만
+사용합니다. 일반 개발은 환경값이 없어도 live입니다.
+JavaScript 키가 있으면 브라우저 Places SDK를 우선 사용하고, 키가 없거나
+SDK가 허용 도메인·네트워크 문제로 실패하면 백엔드 검색을 사용합니다.
+이 경우 응답의
 `X-Place-Search-Source: kakao-rest`가 확인되지 않으면 데모 응답을 실제
-검색처럼 표시하지 않고 실패시킵니다. 이 때문에 백엔드 `/api/health`의
-REST 장소 공급자가 mock이어도 브라우저 장소 검색은 live일 수 있습니다.
+검색처럼 표시하지 않고 실패시킵니다.
 운영 배포 도메인은 Kakao Developers의 JavaScript SDK 허용 도메인에
 별도로 등록해야 합니다.
 
@@ -99,7 +102,7 @@ npm run test:e2e:places
 npm audit --audit-level=moderate
 ```
 
-2026-07-25 현재 통합 작업본에서 Vitest 15개 파일 95개 테스트,
+2026-07-25 현재 통합 작업본에서 Vitest 16개 파일 98개 테스트,
 Playwright 접근성 5개 통과·데스크톱 전용 1개 의도적 제외, Kakao Places
 live E2E 1개 통과, PWA production build와 npm audit 0건을 확인했습니다.
 
