@@ -104,12 +104,12 @@ function stairFact(route: RouteCandidate): V2RouteFact | null {
     };
   }
   if (stairFreeConfirmed) {
-    return { id: 'stairs', label: '계단 없음 확인', kind: 'advantage' };
+    return { id: 'stairs', label: '계단 없음', kind: 'advantage' };
   }
   return null;
 }
 
-function elevatorFact(route: RouteCandidate): V2RouteFact {
+function elevatorFact(route: RouteCandidate): V2RouteFact | null {
   const verticalSegments = route.segments.filter(
     (segment) => segment.needsVerticalMove === true,
   );
@@ -129,7 +129,7 @@ function elevatorFact(route: RouteCandidate): V2RouteFact {
   if (noVerticalMoveConfirmed) {
     return {
       id: 'elevator',
-      label: '수직이동 없음 확인',
+      label: '수직이동 없음',
       kind: 'neutral',
     };
   }
@@ -150,43 +150,35 @@ function elevatorFact(route: RouteCandidate): V2RouteFact {
     ) {
       return {
         id: 'elevator',
-        label: '역 승강기 없음 확인',
+        label: '역 승강기 없음',
         kind: 'caution',
       };
     }
-    return {
-      id: 'elevator',
-      label: '수직이동 정보 미확인',
-      kind: 'unknown',
-    };
+    return null;
   }
   if (hasElevator) {
     return {
       id: 'elevator',
-      label: '승강기 이용 확인',
+      label: '승강기 이용 가능',
       kind: 'advantage',
     };
   }
   if (elevatorUnavailable) {
     return {
       id: 'elevator',
-      label: '승강기 이용 불가 확인',
+      label: '승강기 이용 불가',
       kind: 'caution',
     };
   }
-  return {
-    id: 'elevator',
-    label: '승강기 정보 미확인',
-    kind: 'unknown',
-  };
+  return null;
 }
 
-function lowFloorFact(status: RouteScore['lowFloorStatus']): V2RouteFact {
+function lowFloorFact(status: RouteScore['lowFloorStatus']): V2RouteFact | null {
   switch (status) {
     case 'confirmed':
       return {
         id: 'low-floor',
-        label: '저상버스 확인됨',
+        label: '저상버스',
         kind: 'advantage',
       };
     case 'regular':
@@ -196,13 +188,8 @@ function lowFloorFact(status: RouteScore['lowFloorStatus']): V2RouteFact {
         kind: 'caution',
       };
     case 'unknown':
-      return {
-        id: 'low-floor',
-        label: '저상 여부 미확인',
-        kind: 'unknown',
-      };
     case 'none':
-      return { id: 'low-floor', label: '버스 미이용', kind: 'neutral' };
+      return null;
   }
 }
 
@@ -241,28 +228,13 @@ function terrainFacts(route: RouteCandidate): V2RouteFact[] {
     return facts;
   }
 
-  if (terrain?.status === 'invalid') {
-    return [
-      {
-        id: 'terrain',
-        label: '경사 정보 유효하지 않음',
-        kind: 'unknown',
-      },
-    ];
-  }
-  return [{ id: 'terrain', label: '경사 정보 미확인', kind: 'unknown' }];
+  return [];
 }
 
 function shadeFacts(route: RouteCandidate): V2RouteFact[] {
   const shade = route.shade;
   if (!shade) {
-    return [
-      {
-        id: 'shade',
-        label: '건물 그늘 정보 미확인',
-        kind: 'unknown',
-      },
-    ];
+    return [];
   }
 
   if (shade.status === 'not_daylight') {
@@ -288,14 +260,7 @@ function shadeFacts(route: RouteCandidate): V2RouteFact[] {
   }
 
   if (shade.shadeRatio === undefined) {
-    return [
-      {
-        id: 'shade',
-        label: '건물 그늘 비율 미확인',
-        kind: 'unknown',
-        detail: shade.calculationNote,
-      },
-    ];
+    return [];
   }
 
   const ratio = Math.round(shade.shadeRatio * 100);

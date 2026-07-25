@@ -14,12 +14,11 @@ export function Badge({
 export function lowFloorBadge(status: LowFloorStatus) {
   switch (status) {
     case 'confirmed':
-      return <Badge tone="good">저상버스 확인됨</Badge>;
+      return <Badge tone="good">저상버스</Badge>;
     case 'regular':
       return <Badge tone="bad">일반버스(저상 아님)</Badge>;
     case 'unknown':
-      return <Badge tone="warn">저상 여부 미확인</Badge>;
     case 'none':
-      return <Badge tone="neutral">버스 미이용</Badge>;
+      return null;
   }
 }

@@ -137,7 +137,7 @@ export default function RouteCard({
         {hasStairs
           ? <Badge tone="bad">계단 {stairCount ? `${stairCount}개` : '포함'}</Badge>
           : stairFreeConfirmed
-            ? <Badge tone="good">계단 없음 확인</Badge>
+            ? <Badge tone="good">계단 없음</Badge>
             : null}
         {route.transferCount === 0 && <Badge tone="good">환승 없음</Badge>}
       </div>
@@ -149,13 +149,11 @@ export default function RouteCard({
           {lowFloorBadge(score.lowFloorStatus)}
           {noVerticalMoveConfirmed
             ? <Badge tone="neutral">수직이동 없음</Badge>
-            : verticalSegments.length === 0
-              ? <Badge tone="warn">수직이동 정보 미확인</Badge>
-              : hasElevator
-              ? <Badge tone="good">승강기 이용 확인</Badge>
+            : hasElevator
+              ? <Badge tone="good">승강기 이용 가능</Badge>
               : elevatorUnavailable
-                ? <Badge tone="bad">승강기 이용 불가 확인</Badge>
-                : <Badge tone="warn">승강기 정보 미확인</Badge>}
+                ? <Badge tone="bad">승강기 이용 불가</Badge>
+                : null}
           {hasSlope && <Badge tone="warn">경사 구간 포함</Badge>}
           {terrain?.status === 'estimated_90m' && terrain.avgSlopePercent !== undefined && (
             <Badge tone="neutral">

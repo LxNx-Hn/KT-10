@@ -260,7 +260,7 @@ describe('v2 경로 표시 모델', () => {
     });
   });
 
-  it('승강기와 저상버스 미확인을 장점 목록으로 만들지 않는다', () => {
+  it('승강기와 저상버스 미확인을 팩트에 노출하지 않는다', () => {
     const view = buildRouteViewModel(
       makeItem({
         segments: [
@@ -278,20 +278,7 @@ describe('v2 경로 표시 모델', () => {
     );
 
     expect(view.characteristicLabels).toEqual(['제일 빠른 길']);
-    expect(view.facts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          label: '승강기 정보 미확인',
-          kind: 'unknown',
-        }),
-        expect.objectContaining({
-          label: '저상 여부 미확인',
-          kind: 'unknown',
-        }),
-      ]),
-    );
-    expect(view.needsConfirmation).toEqual(
-      expect.arrayContaining(['승강기 정보 미확인', '저상 여부 미확인']),
-    );
+    expect(view.facts.find((f) => f.id === 'elevator')).toBeUndefined();
+    expect(view.facts.find((f) => f.id === 'low-floor')).toBeUndefined();
   });
 });
