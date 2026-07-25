@@ -7,11 +7,11 @@ ODsay·TMAP에서 실제 후보를 수집합니다. OSMnx 보행 geometry 복구
 피처를 결합한 뒤 백엔드가 출발시각의 건물 그늘을 계산합니다. 마지막으로
 동결된 enriched snapshot을 프로필별 `XGBRanker`가 비교합니다.
 
-현재 `ai/data/training/route_features.jsonl`은 비어 있고
-`route_labels.csv`에는 헤더만 있으며 ranker artifact도 없습니다. 따라서
-파이프라인 코드는 구현되어 있지만 실제 학습 모델은 아직 생성되지
-않았습니다. 외부 공급자의 실제 후보와 사람 또는 외부 LLM 평가가
-확보되기 전에는 모델 준비 상태를 주장하지 않습니다.
+사람 평가용 `ai/data/training/route_features.jsonl`은 비어 있고
+`route_labels.csv`에는 헤더만입니다. 별도 초기 평가 데이터셋은
+`training/bootstrap_baseline/`의 380 OD·실제 후보 1,137개·6개 프로필
+평가 6,822개이며 `rankers.bootstrap-baseline.zip`을 학습했습니다.
+사람 평가와 관리자 승격을 거친 운영 모델은 아직 없습니다.
 
 ## 공개 경로와 내부 API
 
@@ -133,11 +133,10 @@ $candidateSha = (Get-FileHash ai\data\rankers.human-candidate.zip -Algorithm SHA
   --approval-note '<검증 결과와 승인 근거>'
 ```
 
-초기 평가 baseline의 빈 평가표 생성, 평가 입력 계약과 학습 명령은
-[초기 평가 baseline](docs/BASELINE_EVALUATION.md)에 있습니다. 2026-07-24의
-부산 OD 3개·실제 후보 9개·평가 54개는 계약 확인 기록으로만 남기고 당시
-평가 원문과 모델 아티팩트는 확대 학습 입력과 혼동하지 않도록 배포
-저장소에서 제외했습니다.
+초기 평가 baseline의 데이터셋, 평가 입력 계약, 재생성·학습 명령은
+[초기 평가 baseline](docs/BASELINE_EVALUATION.md)에 있습니다. 현재
+모델의 프로필별 OD holdout 지표와 학습 계보는
+`rankers.bootstrap-baseline.metadata.json`에 고정돼 있습니다.
 
 동의 후기 기반 전역 후보는
 `backend/ml/export_consented_reviews.py`와

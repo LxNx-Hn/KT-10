@@ -2,10 +2,9 @@
 
 ## 목적과 경계
 
-LLM judge는 실제 사용자 평가가 쌓이기 전 프로필별 순위화 파이프라인을
-검증하는 초기 baseline이다. 실제 경로 후보에서 고정한 피처만 평가하며,
-LLM이 경로·시설·그늘 값을 새로 만들거나 결측을 0으로 추정해서는 안
-된다.
+초기 평가는 실제 사용자 평가가 쌓이기 전 프로필별 순위화 파이프라인을
+검증하는 baseline이다. 실제 경로 후보에서 고정한 피처만 평가하며,
+경로·시설·그늘 값을 새로 만들거나 결측을 0으로 추정해서는 안 된다.
 
 - 관리자 검토 전 사람 모델: `ai/data/rankers.human-candidate.zip`
 - 승인된 운영 모델: `ai/data/rankers.human-validated.zip`
@@ -21,18 +20,20 @@ LLM이 경로·시설·그늘 값을 새로 만들거나 결측을 0으로 추�
 모델 artifact는 pickle이 아니다. ZIP 내부의 manifest와 프로필별
 XGBoost JSON만 허용하고 파일 경로·크기·SHA-256을 검증한 뒤 로드한다.
 
-2026-07-24에 다음 범위의 비운영 기술 검증을 수행했습니다.
+2026-07-25에 다음 범위의 비운영 baseline을 학습·검증했습니다.
 
-- 부산 OD 3개, 실제 후보 9개
-- Codex judge 1회, 6개 프로필의 평가 54개
-- `judge_source=openai:codex-gpt-5`
-- 당시 생성한 `rankers.judge-baseline.zip`
+- 부산 OD 380개, 실제 후보 1,137개
+- 6개 프로필 평가 6,822개
+- `evaluation_source=local:profile-rubric`
+- 미확인 피처는 평가에서 제외하고 0으로 대체하지 않음
+- 동백전 가맹점 수는 생활정보로만 보존하고 평가·모델 입력에서 제외
+- 프로필별 OD holdout: 학습 304개, 검증 76개
+- NDCG@3: 0.9166~0.9596
+- 후보쌍 정확도: 0.6806~0.8315
 - 모델 SHA-256:
-  `26392d4dd080e43969784e5e048b19ab7161843eae0da4364deeb9807c358451`
+  `60943dd30680a11bbd83dbf301d5bb6cbd96f78698dbdf0a068ab7044a5bf388`
 
-이 아티팩트와 평가 원문은 확대 학습용 입력으로 오인되지 않도록 현재
-배포 저장소에서는 제외했습니다. 프로필별 holdout 검증 OD가 1개뿐이어서
-당시 지표는 모델 파일·로딩·순위화 계약을 확인하는 스모크 결과일 뿐입니다.
+이 지표는 고정 프로필 평가 기준을 재현하는 기술 baseline의 성능입니다.
 실제 사용자 일반화 성능이나 접근성 품질을 주장하는 근거로 사용하지
 않습니다. 사람 평가용 후보와 승인 운영 모델은 여전히 없습니다.
 
@@ -193,7 +194,21 @@ $env:PYTHONPATH='ai'
   --output-dir ai\data\training\generated\candidate_collection
 ```
 
-평가 지침 파일의 SHA-256을 고정한 빈 초기 평가표를 만듭니다.
+현재 프로필 평가 기준으로 라벨과 동결 피처를 재생성합니다.
+
+```powershell
+$env:PYTHONPATH='ai'
+python -m labeling.generate_profile_evaluations `
+  --features ai\data\training\generated\candidate_collection\route_features.jsonl `
+  --labels-output ai\data\training\bootstrap_baseline\evaluation_labels.jsonl `
+  --report-output ai\data\training\bootstrap_baseline\evaluation_report.json `
+  --freeze-features-output ai\data\training\bootstrap_baseline\route_features.jsonl `
+  --evaluation-run-id profile-evaluation-20260725-v1 `
+  --evaluation-source local:profile-rubric
+```
+
+별도 평가 공급자를 사용할 때는 평가 지침 파일의 SHA-256을 고정한 빈
+초기 평가표를 만듭니다.
 
 ```powershell
 .\.venv\Scripts\python.exe -m labeling.prepare_bootstrap_baseline `
@@ -212,12 +227,12 @@ $env:PYTHONPATH='ai'
 검토한 뒤 교체합니다. 누락·stale 해시·불완전한 후보군·평가 지침
 provenance가 섞인 입력은 학습기가 거부합니다.
 
-평가가 끝난 뒤 별도 baseline을 학습합니다.
+완성된 평가 데이터셋으로 별도 baseline을 학습합니다.
 
 ```powershell
 .\.venv\Scripts\python.exe -m scoring.bootstrap_baseline `
-  --labels ai\data\training\generated\bootstrap_baseline\evaluation_labels.jsonl `
-  --features ai\data\training\generated\candidate_collection\route_features.jsonl `
+  --labels ai\data\training\bootstrap_baseline\evaluation_labels.jsonl `
+  --features ai\data\training\bootstrap_baseline\route_features.jsonl `
   --output ai\data\rankers.bootstrap-baseline.zip
 ```
 

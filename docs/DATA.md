@@ -102,7 +102,7 @@ geometry 결측, 야간 상태를 임의의 그늘 0%로 바꾸지 않습니다.
 
 | 파일 | 라벨 출처와 역할 |
 | --- | --- |
-| `rankers.bootstrap-baseline.zip` | 외부 평가 기반 비운영 비교선 |
+| `rankers.bootstrap-baseline.zip` | 프로필 평가 기반 비운영 비교선 |
 | `rankers.human-candidate.zip` | 최소 9명 사람 평가 기반 수동 검토 후보 |
 | `rankers.review-mixed-candidate.zip` | 동의 후기를 제한적으로 섞은 별도 후보, 자동 승격 금지 |
 | `rankers.human-validated.zip` | 사람 후보의 SHA-256과 승인 근거를 확인해 관리자가 승격한 운영 파일 |
