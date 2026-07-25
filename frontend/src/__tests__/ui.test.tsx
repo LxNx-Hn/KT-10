@@ -418,7 +418,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     });
 
     const details = openSelectedRouteDetails(container);
-    expect(details?.textContent).toContain('계단 정보 미확인');
+    expect(details?.textContent).not.toContain('계단 정보 미확인');
     expect(details?.textContent).toContain('수직이동 정보 미확인');
     expect(details?.textContent).toContain('저상 여부 미확인');
     expect(details?.textContent).not.toContain('계단 없음 확인');

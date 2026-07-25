@@ -77,7 +77,7 @@ function unique(values: string[]): string[] {
   return Array.from(new Set(values));
 }
 
-function stairFact(route: RouteCandidate): V2RouteFact {
+function stairFact(route: RouteCandidate): V2RouteFact | null {
   const walkSegments = route.segments.filter(
     (segment) => segment.mode === 'walk' || segment.mode === 'transfer',
   );
@@ -106,7 +106,7 @@ function stairFact(route: RouteCandidate): V2RouteFact {
   if (stairFreeConfirmed) {
     return { id: 'stairs', label: '계단 없음 확인', kind: 'advantage' };
   }
-  return { id: 'stairs', label: '계단 정보 미확인', kind: 'unknown' };
+  return null;
 }
 
 function elevatorFact(route: RouteCandidate): V2RouteFact {
@@ -370,7 +370,7 @@ export function buildRouteViewModel(
     lowFloorFact(score.lowFloorStatus),
     ...terrainFacts(route),
     ...shadeFacts(route),
-  ];
+  ].filter((fact): fact is V2RouteFact => fact !== null);
   const needsConfirmation = unique([
     ...unavailableTraits,
     ...facts

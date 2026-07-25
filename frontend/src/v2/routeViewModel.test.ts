@@ -82,15 +82,11 @@ function shade(
 }
 
 describe('v2 경로 표시 모델', () => {
-  it('계단 정보가 미확인이면 계단 없음 장점으로 표시하지 않는다', () => {
+  it('계단 정보가 미확인이면 배지를 노출하지 않는다', () => {
     const view = buildRouteViewModel(makeItem(), 1, 'general');
     const stairs = view.facts.find((fact) => fact.id === 'stairs');
 
-    expect(stairs).toMatchObject({
-      label: '계단 정보 미확인',
-      kind: 'unknown',
-    });
-    expect(view.needsConfirmation).toContain('계단 정보 미확인');
+    expect(stairs).toBeUndefined();
     expect(view.facts.map((fact) => fact.label)).not.toContain(
       '계단 없음 확인',
     );

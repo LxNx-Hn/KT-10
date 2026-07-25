@@ -138,7 +138,7 @@ export default function RouteCard({
           ? <Badge tone="bad">계단 {stairCount ? `${stairCount}개` : '포함'}</Badge>
           : stairFreeConfirmed
             ? <Badge tone="good">계단 없음 확인</Badge>
-            : <Badge tone="warn">계단 정보 미확인</Badge>}
+            : null}
         {route.transferCount === 0 && <Badge tone="good">환승 없음</Badge>}
       </div>
 
