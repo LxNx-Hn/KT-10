@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import httpx
 
+from ..building_heights import validated_building_height
 from ..models import LatLng, RouteCandidate
 from ..settings import settings
 
@@ -427,13 +428,7 @@ def _building_rows(features: list[dict]) -> list[dict]:
     buildings: list[dict] = []
     for feature_index, feature in enumerate(features):
         properties = feature.get("properties") or {}
-        raw_height = properties.get("height")
-        try:
-            height = float(raw_height) if raw_height not in (None, "") else None
-        except (TypeError, ValueError):
-            height = None
-        if height is not None and (not math.isfinite(height) or height <= 0):
-            height = None
+        height = validated_building_height(properties.get("height"))
         building_id = (
             properties.get("ufid")
             or properties.get("bldrgst_pk")

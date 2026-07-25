@@ -16,6 +16,7 @@ from shapely.geometry import LineString, Point, Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
+from .building_heights import validated_building_height
 from .data._loader import load
 from .models import LatLng, RouteCandidate, ShadePathSegment, ShadeSummary
 
@@ -188,12 +189,8 @@ def _shadow_polygons(
     for building in building_data["buildings"]:
         building_id = str(building.get("buildingId") or building.get("id"))
         building_ids.add(building_id)
-        raw_height = building.get("heightM")
-        try:
-            height = float(raw_height) if raw_height is not None else None
-        except (TypeError, ValueError):
-            height = None
-        if height is None or not math.isfinite(height) or height <= 0:
+        height = validated_building_height(building.get("heightM"))
+        if height is None:
             continue
         footprint = [
             _project(LatLng.model_validate(point), ref_lat, ref_lng)

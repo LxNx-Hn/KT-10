@@ -8,6 +8,7 @@ import pytest
 from app.data.routes import demo_candidates
 from app.models import LatLng
 from app.providers.vworld_buildings import (
+    _building_rows,
     _path_query_boxes,
     get_vworld_buildings,
 )
@@ -118,6 +119,17 @@ def test_vworld_provider_keeps_unknown_height_as_none_and_reuses_cache(
     assert seen_request.url.params["data"] == "LT_C_BLDGINFO"
     assert seen_request.url.params["geometry"] == "true"
     assert seen_request.url.params["domain"] == "http://localhost:8002"
+
+
+def test_vworld_provider_keeps_impossible_height_unknown():
+    features = _feature_collection()["response"]["result"][
+        "featureCollection"
+    ]["features"]
+    features[0]["properties"]["height"] = "19860821"
+
+    buildings = _building_rows(features)
+
+    assert buildings[0]["heightM"] is None
 
 
 def test_vworld_http_error_does_not_expose_api_key(monkeypatch):
@@ -265,6 +277,36 @@ def test_public_shade_reports_height_coverage_without_zero_fill():
     assert shade.building_count == 2
     assert shade.includes_tree_shade is False
     assert shade.shadow_polygons
+
+
+def test_public_shade_rejects_impossible_height_without_zero_fill():
+    buildings = {
+        "source": "VWorld LT_C_BLDGINFO WFS",
+        "dataQuality": "public",
+        "buildings": [{
+            "id": "outlier",
+            "heightM": 19_860_821,
+            "footprint": [
+                {"lat": 35.1792, "lng": 129.0752},
+                {"lat": 35.1792, "lng": 129.0754},
+                {"lat": 35.1794, "lng": 129.0754},
+                {"lat": 35.1794, "lng": 129.0752},
+                {"lat": 35.1792, "lng": 129.0752},
+            ],
+        }],
+    }
+
+    shade = calculate_shade(
+        _exact_route(),
+        datetime(2026, 7, 23, 14, 0, tzinfo=KST),
+        buildings,
+    )
+
+    assert shade.status == "unavailable"
+    assert shade.building_height_coverage == 0
+    assert shade.known_height_building_count == 0
+    assert shade.building_count == 1
+    assert shade.shade_ratio is None
 
 
 def test_public_shade_does_not_use_estimated_straight_walk_geometry():
