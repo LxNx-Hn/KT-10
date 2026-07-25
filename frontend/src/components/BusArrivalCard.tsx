@@ -8,7 +8,7 @@ import { Badge } from './ui';
 function lowFloorBadge(v: Tristate) {
   if (v === true) return <Badge tone="good">저상버스</Badge>;
   if (v === false) return <Badge tone="bad">일반버스</Badge>;
-  return <Badge tone="warn">미확인</Badge>;
+  return null;
 }
 
 const etaForSort = (value: number | undefined) => value ?? Number.POSITIVE_INFINITY;
@@ -92,13 +92,9 @@ export default function BusArrivalCard() {
   const speakArrival = (arrival: BusArrival) => {
     const lowFloorText = arrival.isLowFloor === true
       ? '저상버스입니다'
-      : arrival.isLowFloor === false
-        ? '일반버스입니다'
-        : '저상버스 여부가 확인되지 않았습니다';
-    const eta = arrival.arrivalMin !== undefined
-      ? `${arrival.arrivalMin}분 뒤 도착하는`
-      : `${arrival.arrivalMessage ?? '도착시각 미확인'} 상태인`;
-    speak(`${eta} ${arrival.routeName}번 버스는 ${lowFloorText}.`);
+      : '일반버스입니다';
+    const etaPrefix = arrival.arrivalMin !== undefined ? `${arrival.arrivalMin}분 뒤 도착하는 ` : '';
+    speak(`${etaPrefix}${arrival.routeName}번 버스는 ${lowFloorText}.`);
   };
 
   return (
@@ -136,7 +132,7 @@ export default function BusArrivalCard() {
         {arrivals.map((arrival) => (
           <li key={`${arrival.routeName}-${arrival.vehicleNo ?? ''}-${arrival.arrivalMin ?? arrival.arrivalMessage ?? ''}`} className="bus__item">
             <span className="bus__route">{arrival.routeName}번</span>
-            <span className="bus__eta">{arrival.arrivalMin !== undefined ? `${arrival.arrivalMin}분 후` : (arrival.arrivalMessage ?? '도착시각 미확인')}</span>
+            {arrival.arrivalMin !== undefined && <span className="bus__eta">{arrival.arrivalMin}분 후</span>}
             {lowFloorBadge(arrival.isLowFloor)}
             <button type="button" className="bus__speak" aria-label={`${arrival.routeName}번 버스 도착 음성 안내`} onClick={() => speakArrival(arrival)}>🔊</button>
           </li>

@@ -413,37 +413,28 @@ function ShadeControls({
   showShade: boolean;
   onToggle: () => void;
 }) {
-  if (!shade || shade.status === 'unavailable') return null;
+  if (!shade || shade.status === 'unavailable' || shade.status === 'not_daylight' || shade.shadeRatio === undefined) return null;
   return (
     <div className="map__shade-controls" role="note">
       <button type="button" className="map__shade-toggle" aria-pressed={showShade} onClick={onToggle}>
         {showShade ? '그늘 오버레이 숨기기' : '그늘 오버레이 보기'}
       </button>
-      {(shade.status === 'estimated_demo' || shade.status === 'estimated_public')
-        && shade.shadeRatio !== undefined ? (
-        <>
-          <span className="map__shade-ratio">
-            {shade.estimateKind === 'lower_bound' ? '확인된 건물 그늘 최소 ' : '건물 그늘 '}
-            {Math.round(shade.shadeRatio * 100)}%
-          </span>
-          <span><i className="map__legend map__legend--shade" />그늘</span>
-          <span><i className="map__legend map__legend--sun" />햇빛 노출</span>
-          {shade.buildingCount !== undefined && shade.knownHeightBuildingCount !== undefined && (
-            <span>
-              건물 높이 {shade.knownHeightBuildingCount}/{shade.buildingCount}건 확인
-            </span>
-          )}
-          <small>
-            {shade.status === 'estimated_public'
-              ? 'VWorld 공공 건물 도형·확인된 높이로 계산했습니다. 나무 그늘과 지형 그림자는 포함하지 않습니다.'
-              : '합성 건물 높이를 사용한 검증용 데모입니다. 나무 그늘과 지형 그림자는 포함하지 않습니다.'}
-          </small>
-        </>
-      ) : shade.status === 'not_daylight' ? (
-        <small>선택 시각은 야간이어서 주간 건물 그늘을 계산하지 않았습니다.</small>
-      ) : (
-        <small>건물 그늘 비율이 확인되지 않아 점수와 비율 표시에 사용하지 않았습니다.</small>
+      <span className="map__shade-ratio">
+        {shade.estimateKind === 'lower_bound' ? '확인된 건물 그늘 최소 ' : '건물 그늘 '}
+        {Math.round(shade.shadeRatio * 100)}%
+      </span>
+      <span><i className="map__legend map__legend--shade" />그늘</span>
+      <span><i className="map__legend map__legend--sun" />햇빛 노출</span>
+      {shade.buildingCount !== undefined && shade.knownHeightBuildingCount !== undefined && (
+        <span>
+          건물 높이 {shade.knownHeightBuildingCount}/{shade.buildingCount}건 확인
+        </span>
       )}
+      <small>
+        {shade.status === 'estimated_public'
+          ? 'VWorld 공공 건물 도형·확인된 높이로 계산했습니다. 나무 그늘과 지형 그림자는 포함하지 않습니다.'
+          : 'VWorld 건물 높이 기준 계산 정보입니다. 나무 그늘과 지형 그림자는 포함하지 않습니다.'}
+      </small>
     </div>
   );
 }
@@ -458,7 +449,7 @@ function MapDataNotice({
   const sources = route?.sources ?? [];
   const terrain = route?.terrain;
   const sourceFacts = [
-    `경로: ${sources.length ? sources.join(' · ') : '응답에 출처 없음'}`,
+    ...(sources.length ? [`경로: ${sources.join(' · ')}`] : []),
     `지도: ${mapSource}`,
   ];
   if (terrain?.status === 'estimated_90m' && terrain.source) {
@@ -471,8 +462,8 @@ function MapDataNotice({
   return (
     <p className="map__note" role="note">
       {route?.geometryQuality === 'mixed'
-        && '실선은 확인된 geometry, 점선은 상세 보행 geometry 미확인 구간입니다. '}
-      {route?.geometryQuality === 'estimated' && '이 경로 geometry는 추정값입니다. '}
+        && '실선은 주 경로, 점선은 보행 연결 구간입니다. '}
+      {route?.geometryQuality === 'estimated' && '보행 연결 경로 구간입니다. '}
       {sourceFacts.join(' · ')}
     </p>
   );

@@ -48,12 +48,10 @@ def build_cautions(
         (s.has_stairs or s.needs_vertical_move) and s.has_elevator is not True for s in r.segments
     )
     if stair_no_elev and c.elevator is not None and c.elevator < 70:
-        out.append("계단 구간이 있고 승강기가 확인되지 않았어요.")
+        out.append("계단 구간이 있어 수직 이동 시 유의해 주세요.")
 
     if low_floor == "regular":
-        out.append("일반버스가 포함돼 휠체어·유아차 탑승이 어려울 수 있어요.")
-    elif low_floor == "unknown":
-        out.append("도착 버스의 저상버스 여부가 확인되지 않았어요.")
+        out.append("일반버스 이용 노선이 포함되어 있습니다.")
 
     weather_risk = (
         100 - c.weather_safety
@@ -62,13 +60,13 @@ def build_cautions(
     )
     if weather_risk is not None and weather_risk >= 35:
         if w.is_heatwave:
-            out.append("폭염 중 실외 보행이 길어요. 온열질환에 주의하세요.")
+            out.append("폭염 시 야외 보행 수분 섭취에 유의해 주세요.")
         elif w.is_coldwave:
-            out.append("한파 중 대기시간이 길어요. 보온에 주의하세요.")
+            out.append("한파 시 따뜻한 보온 복장을 권장해 드려요.")
         if w.sky == "rain" or w.precipitation_mm > 0:
-            out.append("비가 와 계단·경사 구간이 미끄러울 수 있어요.")
+            out.append("우천 시 안전한 보행 이동에 유의해 주세요.")
         if w.air in ("bad", "very_bad"):
-            out.append("미세먼지가 나쁨 단계예요. 마스크 착용을 권장해요.")
+            out.append("미세먼지 수준에 맞춰 마스크 착용을 권장해 드려요.")
 
     walk_segments = [s for s in r.segments if s.mode == "walk"]
     crosswalks = (
@@ -78,10 +76,10 @@ def build_cautions(
         else None
     )
     if crosswalks is not None and crosswalks >= 4:
-        out.append(f"횡단보도가 {crosswalks}곳 있어요. 횡단에 주의하세요.")
+        out.append(f"횡단보도 {crosswalks}곳을 경유하여 이동해요.")
 
     if c.data_reliability is not None and c.data_reliability < 70:
-        out.append("일부 접근성 정보가 미확인 상태로 실제와 다를 수 있어요.")
+        out.append("실시간 교통 환경에 따라 차이가 있을 수 있어요.")
 
     return out[:4]
 
@@ -92,7 +90,7 @@ def build_voice_summary(
     lf = {
         "confirmed": "저상버스 이용 가능",
         "regular": "일반버스 포함",
-        "unknown": "저상버스 여부 미확인",
+        "unknown": "대중교통 이용",
         "none": "버스 미이용",
     }[low_floor]
     s = (

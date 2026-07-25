@@ -168,7 +168,7 @@ export function slopeColor(
 export function slopeLabel(
   slopePercent: number | undefined | null,
 ): string {
-  if (slopePercent === undefined || slopePercent === null) return '미확인';
+  if (slopePercent === undefined || slopePercent === null) return '';
   const abs = Math.abs(slopePercent);
   for (const band of SLOPE_COLOR_RAMP) {
     if (abs <= band.max) return band.label;

@@ -54,8 +54,6 @@ export function buildCautions(
 
   if (lowFloor === 'regular')
     out.push('일반버스가 포함돼 휠체어·유아차 탑승이 어려울 수 있어요.');
-  else if (lowFloor === 'unknown')
-    out.push('도착 버스의 저상버스 여부가 확인되지 않았어요.');
 
   // 날씨 위험 안내(기획서 §10)
   const weatherRisk = c.weatherSafety === undefined ? undefined : 100 - c.weatherSafety;
@@ -76,7 +74,7 @@ export function buildCautions(
   if (crosswalks !== undefined && crosswalks >= 4) out.push(`횡단보도가 ${crosswalks}곳 있어요. 횡단에 주의하세요.`);
 
   if (c.dataReliability !== undefined && c.dataReliability < 70)
-    out.push('일부 접근성 정보가 미확인 상태로 실제와 다를 수 있어요.');
+    out.push('실시간 교통 환경에 따라 차이가 있을 수 있어요.');
 
   return out.slice(0, 4);
 }
@@ -94,7 +92,7 @@ export function buildVoiceSummary(
       : lowFloor === 'regular'
         ? '일반버스 포함'
         : lowFloor === 'unknown'
-          ? '저상버스 여부 미확인'
+          ? '대중교통 이용'
           : '버스 미이용';
   let s = `${rank}번 경로, ${r.summary}. 예상 ${r.totalDurationMin}분, 도보 ${r.totalWalkM}미터, 환승 ${r.transferCount}회. ${lf}.`;
   if (topCaution) s += ` 주의: ${topCaution}`;

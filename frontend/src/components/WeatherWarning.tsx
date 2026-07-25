@@ -40,11 +40,11 @@ export default function WeatherWarning() {
         <div className={`weather__banner weather__banner--${hasWeatherCaution ? 'warn' : 'good'}`} role="status">
           <strong>
             {hasWeatherCaution
-              ? '경로 계산에 사용된 기상·대기 값을 확인하세요.'
-              : '경로 계산에 사용된 값에는 강수·나쁜 대기질이 없습니다.'}
+              ? '현재 경로 구간에 기상 또는 대기질 특이사항이 있습니다.'
+              : '현재 경로 구간의 기상이 양호합니다.'}
           </strong>
           {weather.precipitationMm > 0 && <span> · 강수 {weather.precipitationMm}mm</span>}
-          {(weather.air === 'bad' || weather.air === 'very_bad') && <span> · 대기질 {weather.air}</span>}
+          {(weather.air === 'bad' || weather.air === 'very_bad') && <span> · 대기질 {weather.air === 'very_bad' ? '매우 나쁨' : '나쁨'}</span>}
         </div>
       )}
 

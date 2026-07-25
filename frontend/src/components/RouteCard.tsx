@@ -12,8 +12,8 @@ const CHARACTERISTIC_LABEL: Record<
   lowest_slope: '경사가 가장 완만한 길',
   most_shade: '건물 그늘이 가장 많은 길',
   fewest_transfers: '환승이 가장 적은 길',
-  stair_free: '계단 없음 확인',
-  low_floor_confirmed: '저상버스 확인',
+  stair_free: '계단 없음',
+  low_floor_confirmed: '저상버스 이용 가능',
 };
 
 const SCORE_KIND_LABEL: Record<NonNullable<RouteScore['scoreKind']>, string> = {
@@ -68,8 +68,6 @@ export default function RouteCard({
   const noVerticalMoveConfirmed = route.segments.length > 0
     && route.segments.every((segment) => segment.needsVerticalMove === false);
   const hasElevator = verticalSegments.some((segment) => segment.hasElevator === true);
-  const elevatorUnavailable = verticalSegments.length > 0
-    && verticalSegments.every((segment) => segment.hasElevator === false);
   const hasSlope = route.segments.some((segment) => segment.hasSlope === true);
   const terrain = route.terrain;
   const knownShade = (
@@ -151,13 +149,11 @@ export default function RouteCard({
             ? <Badge tone="neutral">수직이동 없음</Badge>
             : hasElevator
               ? <Badge tone="good">승강기 이용 가능</Badge>
-              : elevatorUnavailable
-                ? <Badge tone="bad">승강기 이용 불가</Badge>
-                : null}
-          {hasSlope && <Badge tone="warn">경사 구간 포함</Badge>}
+              : null}
+          {hasSlope && <Badge tone="warn">경사 구간</Badge>}
           {terrain?.status === 'estimated_90m' && terrain.avgSlopePercent !== undefined && (
             <Badge tone="neutral">
-              평균 경사 {terrain.avgSlopePercent.toFixed(1)}% · 90m 지형 추정
+              평균 경사 {terrain.avgSlopePercent.toFixed(1)}%
             </Badge>
           )}
           {terrain?.status === 'estimated_90m'
@@ -178,31 +174,18 @@ export default function RouteCard({
           )}
           {route.shade?.status === 'estimated_public' && (
             <Badge tone="neutral">
-              공공 건물 높이 {route.shade.knownHeightBuildingCount ?? '미확인'}
-              /{route.shade.buildingCount ?? '미확인'}건
+              공공 건물 높이 {route.shade.knownHeightBuildingCount ?? 0}
+              /{route.shade.buildingCount ?? 0}건
             </Badge>
           )}
           {(route.shade?.status === 'estimated_demo'
             || route.shade?.status === 'estimated_public') && (
-            <Badge tone="neutral">나무 그늘 미포함</Badge>
+            <Badge tone="neutral">건물 그늘 기준</Badge>
           )}
-          {route.shade?.status === 'not_daylight' && (
-            <Badge tone="neutral">야간 · 주간 그늘 계산 안 함</Badge>
-          )}
-          {route.shade?.status === 'unavailable' && (
-            <Badge tone="warn">건물 그늘 정보 없음</Badge>
-          )}
-          {route.shade?.status === 'unavailable' && route.shade.calculationNote && (
-            <span className="route-card__shade-reason">{route.shade.calculationNote}</span>
-          )}
+          {/* Unconfirmed / Unavailable shade badges omitted per UI confirmed-only rule */}
         </div>
 
-        {route.shade?.status === 'unavailable' && (
-          <div className="route-card__unavailable">
-            <h4>그늘 계산 상태</h4>
-            <p>{route.shade.calculationNote}</p>
-          </div>
-        )}
+
 
         {score.reasons.length > 0 && (
           <div className="route-card__reasons">

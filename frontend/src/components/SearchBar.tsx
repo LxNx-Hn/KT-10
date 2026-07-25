@@ -254,7 +254,7 @@ export default function SearchBar() {
         </button>
         {isDemo && (
           <button type="button" className="btn btn--ghost" onClick={loadDemoOd}>
-            데모 경로 채우기
+            추천 예시 경로 입력
           </button>
         )}
         <button

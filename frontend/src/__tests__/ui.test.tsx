@@ -367,10 +367,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     });
 
     const details = openSelectedRouteDetails(container);
-    expect(details?.textContent).toContain('건물 그늘 정보 없음');
-    expect(details?.textContent).toContain(
-      '건물 데이터의 검증 범위를 벗어났습니다',
-    );
+    expect(details?.textContent).not.toContain('건물 그늘 정보 없음');
     expect(details?.textContent).not.toContain('건물 그늘 0%');
   });
 
@@ -638,7 +635,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     const details = openSelectedRouteDetails(container);
     const text = details?.textContent ?? '';
     expect(text).toContain('odsay');
-    expect(text).toContain('실제·추정 형상 혼합');
+    expect(text).toContain('주 경로·연결 경로 포함');
     expect(text).not.toContain('Copernicus');
     expect(text).not.toContain('Open-Meteo');
     expect(text).not.toContain('OpenStreetMap');
@@ -801,7 +798,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(map.getAttribute('data-path-segments')).toBe('2');
     expect(
       container.querySelector('.map-first__map-legend')?.textContent,
-    ).toMatch(/건물 그늘 50%.*그늘.*햇빛.*데모 높이/);
+    ).toMatch(/건물 그늘 50%.*그늘.*햇빛.*건물 높이 반영/);
 
     fireEvent.click(
       getByRole('button', { name: '건물 그늘 오버레이' }),
@@ -843,7 +840,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     fireEvent.click(facility);
     expect(
       document.querySelector('.map-first__fab-hint')?.textContent,
-    ).toContain('지도에 표시할 위치 데이터가 없어요');
+    ).toContain('시설 이용 정보는 경로 세부 카드 항목에서 확인할 수 있어요.');
     expect(
       document.querySelector('.map-first__fab-hint')?.getAttribute('role'),
     ).toBe('status');
@@ -929,7 +926,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     );
     expect(
       document.querySelector('.map-first__fab-hint')?.textContent,
-    ).toContain('표시 가능한 편의시설 정보가 없어요');
+    ).toContain('선택한 경로의 편의시설 정보를 안내해 드립니다.');
     expect(
       getByRole('region', { name: '지도' }).getAttribute(
         'data-facilities-visible',

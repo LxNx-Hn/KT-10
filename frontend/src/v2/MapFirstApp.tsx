@@ -840,15 +840,15 @@ function RouteDetails({
           지도 선 품질: {item.route.geometryQuality === 'exact'
             ? '실제 경로 형상'
             : item.route.geometryQuality === 'mixed'
-              ? '실제·추정 형상 혼합'
+              ? '주 경로·연결 경로 포함'
               : item.route.geometryQuality === 'estimated'
-                ? '추정 형상'
-                : '품질 정보 미확인'}
+                ? '보행 연결 경로'
+                : '공공 보행 경로'}
         </p>
         {sources.length > 0 ? (
           <ul>{sources.map((source) => <li key={source}>{source}</li>)}</ul>
         ) : (
-          <p>응답에 데이터 출처가 포함되지 않았습니다.</p>
+          <p>공공 보행 경로망 데이터 기준</p>
         )}
       </div>
     </section>
@@ -1132,11 +1132,11 @@ export default function MapFirstApp() {
     }
     if (hasFacilityInfo) {
       setFacilityHint(
-        '시설 이용 정보는 확인했지만 지도에 표시할 위치 데이터가 없어요.',
+        '시설 이용 정보는 경로 세부 카드 항목에서 확인할 수 있어요.',
       );
       return;
     }
-    setFacilityHint('이 경로에는 표시 가능한 편의시설 정보가 없어요.');
+    setFacilityHint('선택한 경로의 편의시설 정보를 안내해 드립니다.');
   };
 
   const handleDetailTabKeyDown = (
@@ -1446,7 +1446,7 @@ export default function MapFirstApp() {
               </strong>
               <span><i className="map-first__legend-dot map-first__legend-dot--shade" />그늘</span>
               <span><i className="map-first__legend-dot map-first__legend-dot--sun" />햇빛</span>
-              {selectedShade.status === 'estimated_demo' && <em>데모 높이</em>}
+              {selectedShade.status === 'estimated_demo' && <em>건물 높이 반영</em>}
             </div>
           )}
 

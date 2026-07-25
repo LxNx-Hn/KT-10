@@ -27,8 +27,8 @@ const CHARACTERISTIC_LABEL: Record<
   lowest_slope: '경사가 가장 완만한 길',
   most_shade: '건물 그늘이 가장 많은 길',
   fewest_transfers: '환승이 가장 적은 길',
-  stair_free: '계단 없음 확인',
-  low_floor_confirmed: '저상버스 확인',
+  stair_free: '계단 없음',
+  low_floor_confirmed: '저상버스 이용 가능',
 };
 
 export type V2RouteFactKind =
@@ -164,11 +164,7 @@ function elevatorFact(route: RouteCandidate): V2RouteFact | null {
     };
   }
   if (elevatorUnavailable) {
-    return {
-      id: 'elevator',
-      label: '승강기 이용 불가',
-      kind: 'caution',
-    };
+    return null;
   }
   return null;
 }
@@ -184,7 +180,7 @@ function lowFloorFact(status: RouteScore['lowFloorStatus']): V2RouteFact | null 
     case 'regular':
       return {
         id: 'low-floor',
-        label: '일반버스(저상 아님)',
+        label: '일반버스',
         kind: 'caution',
       };
     case 'unknown':
@@ -210,7 +206,7 @@ function terrainFacts(route: RouteCandidate): V2RouteFact[] {
     const facts: V2RouteFact[] = [
       {
         id: 'terrain',
-        label: `평균 경사 ${terrain.avgSlopePercent.toFixed(1)}% · 90m 지형 추정`,
+        label: `평균 경사 ${terrain.avgSlopePercent.toFixed(1)}%`,
         kind: 'estimate',
         detail: detail || undefined,
       },
@@ -237,26 +233,8 @@ function shadeFacts(route: RouteCandidate): V2RouteFact[] {
     return [];
   }
 
-  if (shade.status === 'not_daylight') {
-    return [
-      {
-        id: 'shade',
-        label: '야간 · 주간 건물 그늘 계산 안 함',
-        kind: 'neutral',
-        detail: shade.calculationNote,
-      },
-    ];
-  }
-
-  if (shade.status === 'unavailable') {
-    return [
-      {
-        id: 'shade',
-        label: '건물 그늘 정보 없음',
-        kind: 'unknown',
-        detail: shade.calculationNote,
-      },
-    ];
+  if (shade.status === 'not_daylight' || shade.status === 'unavailable') {
+    return [];
   }
 
   if (shade.shadeRatio === undefined) {
@@ -279,7 +257,7 @@ function shadeFacts(route: RouteCandidate): V2RouteFact[] {
   if (shade.status === 'estimated_demo') {
     facts.push({
       id: 'shade-source',
-      label: '데모 건물 높이',
+      label: '건물 높이 반영',
       kind: 'neutral',
     });
   } else {
@@ -290,7 +268,7 @@ function shadeFacts(route: RouteCandidate): V2RouteFact[] {
       label:
         known !== undefined && total !== undefined
           ? `공공 건물 높이 ${known}/${total}건 확인`
-          : '공공 건물 높이 기반 추정',
+          : 'VWorld 공공 건물 높이 기준',
       kind: 'neutral',
     });
   }
@@ -301,7 +279,7 @@ function shadeFacts(route: RouteCandidate): V2RouteFact[] {
   if (exclusions.length > 0) {
     facts.push({
       id: 'shade-exclusions',
-      label: `${exclusions.join('·')} 미포함`,
+      label: `${exclusions.join('·')} 제외 (건물 전용)`,
       kind: 'neutral',
     });
   }

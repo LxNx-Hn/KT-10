@@ -154,7 +154,7 @@ describe('v2 경로 표시 모델', () => {
     expect(view.facts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          label: '평균 경사 2.3% · 90m 지형 추정',
+          label: '평균 경사 2.3%',
           kind: 'estimate',
         }),
         expect.objectContaining({
@@ -194,14 +194,8 @@ describe('v2 경로 표시 모델', () => {
     );
 
     expect(view.traitLabels).toEqual(['빠른 도착']);
-    expect(view.needsConfirmation).toEqual(
-      expect.arrayContaining(['완만한 경사', '건물 그늘 정보 없음']),
-    );
-    expect(view.facts.find((fact) => fact.id === 'shade')).toMatchObject({
-      label: '건물 그늘 정보 없음',
-      kind: 'unknown',
-      detail: '건물 데이터의 검증 범위를 벗어났습니다.',
-    });
+    expect(view.needsConfirmation).toEqual(['완만한 경사']);
+    expect(view.facts.find((fact) => fact.id === 'shade')).toBeUndefined();
     expect(JSON.stringify(view)).not.toContain('그늘 0%');
   });
 
@@ -251,13 +245,10 @@ describe('v2 경로 표시 모델', () => {
     expect(demo.facts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ label: '건물 그늘 40%', kind: 'estimate' }),
-        expect.objectContaining({ label: '데모 건물 높이' }),
+        expect.objectContaining({ label: '건물 높이 반영' }),
       ]),
     );
-    expect(night.facts.find((fact) => fact.id === 'shade')).toMatchObject({
-      label: '야간 · 주간 건물 그늘 계산 안 함',
-      kind: 'neutral',
-    });
+    expect(night.facts.find((fact) => fact.id === 'shade')).toBeUndefined();
   });
 
   it('승강기와 저상버스 미확인을 팩트에 노출하지 않는다', () => {
