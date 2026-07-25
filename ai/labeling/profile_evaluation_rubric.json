@@ -1,0 +1,100 @@
+{
+  "schema_version": "route-profile-rubric-v2",
+  "missing_value_policy": "exclude_from_comparison",
+  "relevance_thresholds": {
+    "4": 0.85,
+    "3": 0.55,
+    "2": 0.25,
+    "1": 0.0
+  },
+  "shared_situation_criteria": [
+    {"feature": "stair_avoidance_burden", "label": "계단 회피 부담", "direction": "min", "weight": 0.12},
+    {"feature": "luggage_walk_burden", "label": "짐을 든 보행 부담", "direction": "min", "weight": 0.08},
+    {"feature": "luggage_stair_burden", "label": "짐을 든 계단 부담", "direction": "min", "weight": 0.08},
+    {"feature": "low_floor_priority_mismatch", "label": "저상버스 조건 불일치", "direction": "min", "weight": 0.1},
+    {"feature": "weather_priority_walk_burden", "label": "기상 상황의 보행 부담", "direction": "min", "weight": 0.08},
+    {"feature": "stroller_walk_burden", "label": "유아차 보행 부담", "direction": "min", "weight": 0.08},
+    {"feature": "stroller_stair_burden", "label": "유아차 계단 부담", "direction": "min", "weight": 0.1},
+    {"feature": "stroller_elevator_gap", "label": "유아차 엘리베이터 공백", "direction": "min", "weight": 0.1},
+    {"feature": "shade_priority_unshaded_walk_m", "label": "그늘 우선 시 햇빛 노출 보행", "direction": "min", "weight": 0.1},
+    {"feature": "minimize_transfers_burden", "label": "환승 최소 조건 부담", "direction": "min", "weight": 0.1},
+    {"feature": "max_walk_excess_m", "label": "최대 보행거리 초과", "direction": "min", "weight": 0.14}
+  ],
+  "profiles": {
+    "general": [
+      {"feature": "total_duration_min", "label": "소요시간", "direction": "min", "weight": 0.32},
+      {"feature": "walk_distance_m", "label": "도보거리", "direction": "min", "weight": 0.18},
+      {"feature": "transfer_count", "label": "환승 횟수", "direction": "min", "weight": 0.14},
+      {"feature": "peak_slope_percent", "label": "최대 체감 경사", "direction": "min", "weight": 0.1},
+      {"feature": "avg_slope_percent", "label": "평균 경사", "direction": "min", "weight": 0.06},
+      {"feature": "shade_ratio", "label": "건물 그늘 비율", "direction": "max", "weight": 0.08},
+      {"feature": "crosswalk_signal_ratio", "label": "신호 횡단 비율", "direction": "max", "weight": 0.05},
+      {"feature": "shelter_nearby", "label": "쉼터 인접", "direction": "max", "weight": 0.04},
+      {"feature": "bus_stop_count_200m", "label": "정류장 접근성", "direction": "max", "weight": 0.03}
+    ],
+    "elderly": [
+      {"feature": "walk_distance_m", "label": "도보거리", "direction": "min", "weight": 0.23},
+      {"feature": "peak_slope_percent", "label": "최대 체감 경사", "direction": "min", "weight": 0.19},
+      {"feature": "avg_slope_percent", "label": "평균 경사", "direction": "min", "weight": 0.08},
+      {"feature": "transfer_count", "label": "환승 횟수", "direction": "min", "weight": 0.14},
+      {"feature": "total_duration_min", "label": "소요시간", "direction": "min", "weight": 0.07},
+      {"feature": "crosswalk_count", "label": "횡단보도 수", "direction": "min", "weight": 0.06},
+      {"feature": "crosswalk_signal_ratio", "label": "신호 횡단 비율", "direction": "max", "weight": 0.06},
+      {"feature": "shelter_nearby", "label": "쉼터 인접", "direction": "max", "weight": 0.06},
+      {"feature": "shade_ratio", "label": "건물 그늘 비율", "direction": "max", "weight": 0.05},
+      {"feature": "elevator_ratio", "label": "엘리베이터 연결 비율", "direction": "max", "weight": 0.1},
+      {"feature": "stair_count", "label": "계단 수", "direction": "min", "weight": 0.1}
+    ],
+    "child": [
+      {"feature": "walk_distance_m", "label": "도보거리", "direction": "min", "weight": 0.15},
+      {"feature": "total_duration_min", "label": "소요시간", "direction": "min", "weight": 0.1},
+      {"feature": "transfer_count", "label": "환승 횟수", "direction": "min", "weight": 0.12},
+      {"feature": "crosswalk_count", "label": "횡단보도 수", "direction": "min", "weight": 0.15},
+      {"feature": "crosswalk_signal_ratio", "label": "신호 횡단 비율", "direction": "max", "weight": 0.17},
+      {"feature": "cctv_density_50m", "label": "CCTV 관측 밀도", "direction": "max", "weight": 0.08},
+      {"feature": "shelter_nearby", "label": "쉼터 인접", "direction": "max", "weight": 0.07},
+      {"feature": "shade_ratio", "label": "건물 그늘 비율", "direction": "max", "weight": 0.07},
+      {"feature": "peak_slope_percent", "label": "최대 체감 경사", "direction": "min", "weight": 0.05},
+      {"feature": "aed_nearby", "label": "AED 인접", "direction": "max", "weight": 0.04}
+    ],
+    "youth": [
+      {"feature": "total_duration_min", "label": "소요시간", "direction": "min", "weight": 0.47},
+      {"feature": "walk_distance_m", "label": "도보거리", "direction": "min", "weight": 0.13},
+      {"feature": "transfer_count", "label": "환승 횟수", "direction": "min", "weight": 0.14},
+      {"feature": "peak_slope_percent", "label": "최대 체감 경사", "direction": "min", "weight": 0.06},
+      {"feature": "shade_ratio", "label": "건물 그늘 비율", "direction": "max", "weight": 0.06},
+      {"feature": "crosswalk_signal_ratio", "label": "신호 횡단 비율", "direction": "max", "weight": 0.05},
+      {"feature": "bus_stop_count_200m", "label": "정류장 접근성", "direction": "max", "weight": 0.05},
+      {"feature": "smart_shelter_nearby", "label": "스마트쉼터 인접", "direction": "max", "weight": 0.04}
+    ],
+    "disabled": [
+      {"feature": "walk_distance_m", "label": "도보거리", "direction": "min", "weight": 0.2},
+      {"feature": "peak_slope_percent", "label": "최대 체감 경사", "direction": "min", "weight": 0.2},
+      {"feature": "avg_slope_percent", "label": "평균 경사", "direction": "min", "weight": 0.08},
+      {"feature": "transfer_count", "label": "환승 횟수", "direction": "min", "weight": 0.13},
+      {"feature": "crosswalk_count", "label": "횡단보도 수", "direction": "min", "weight": 0.06},
+      {"feature": "crosswalk_signal_ratio", "label": "신호 횡단 비율", "direction": "max", "weight": 0.06},
+      {"feature": "elevator_ratio", "label": "엘리베이터 연결 비율", "direction": "max", "weight": 0.16},
+      {"feature": "stair_count", "label": "계단 수", "direction": "min", "weight": 0.16},
+      {"feature": "is_low_floor_bus", "label": "저상버스 확인", "direction": "max", "weight": 0.12},
+      {"feature": "shelter_nearby", "label": "쉼터 인접", "direction": "max", "weight": 0.04},
+      {"feature": "wheelchair_charger_nearby", "label": "휠체어 충전기 인접", "direction": "max", "weight": 0.03},
+      {"feature": "wheelchair_stair_burden", "label": "휠체어 계단 부담", "direction": "min", "weight": 0.18},
+      {"feature": "wheelchair_elevator_gap", "label": "휠체어 엘리베이터 공백", "direction": "min", "weight": 0.18},
+      {"feature": "walking_aid_walk_burden", "label": "보행보조기 이동 부담", "direction": "min", "weight": 0.14}
+    ],
+    "pregnant": [
+      {"feature": "walk_distance_m", "label": "도보거리", "direction": "min", "weight": 0.23},
+      {"feature": "peak_slope_percent", "label": "최대 체감 경사", "direction": "min", "weight": 0.17},
+      {"feature": "avg_slope_percent", "label": "평균 경사", "direction": "min", "weight": 0.07},
+      {"feature": "transfer_count", "label": "환승 횟수", "direction": "min", "weight": 0.15},
+      {"feature": "total_duration_min", "label": "소요시간", "direction": "min", "weight": 0.1},
+      {"feature": "shade_ratio", "label": "건물 그늘 비율", "direction": "max", "weight": 0.08},
+      {"feature": "shelter_nearby", "label": "쉼터 인접", "direction": "max", "weight": 0.07},
+      {"feature": "crosswalk_count", "label": "횡단보도 수", "direction": "min", "weight": 0.05},
+      {"feature": "crosswalk_signal_ratio", "label": "신호 횡단 비율", "direction": "max", "weight": 0.04},
+      {"feature": "elevator_ratio", "label": "엘리베이터 연결 비율", "direction": "max", "weight": 0.1},
+      {"feature": "stair_count", "label": "계단 수", "direction": "min", "weight": 0.1}
+    ]
+  }
+}
