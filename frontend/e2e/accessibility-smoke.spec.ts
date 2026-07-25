@@ -49,10 +49,10 @@ test('프로필과 이동 조건 drawer에 자동 탐지 가능한 접근성 위
   const conditionsDialog = page.getByRole('dialog', { name: '이번 이동 조건' });
   await expect(conditionsDialog).toBeVisible();
   await expect(
-    conditionsDialog.getByRole('button', { name: /짐 많음/ }),
+    conditionsDialog.getByRole('button', { name: /유아차 이용/ }),
   ).toBeVisible();
   await expect(
-    conditionsDialog.getByRole('button', { name: /계단 회피/ }),
+    conditionsDialog.getByRole('button', { name: /건물 그늘 우선/ }),
   ).toBeVisible();
   await expectNoAutomaticViolations(page);
 });
@@ -102,8 +102,8 @@ test('모바일 핵심 조작부의 높이가 44px 이상이다', async ({ page 
   await page.getByRole('button', { name: /^조건/ }).click();
   const conditionsDialog = page.getByRole('dialog', { name: '이번 이동 조건' });
   await expectTapHeight(
-    '짐 많음',
-    conditionsDialog.getByRole('button', { name: /짐 많음/ }),
+    '유아차 이용',
+    conditionsDialog.getByRole('button', { name: /유아차 이용/ }),
   );
   await expectTapHeight(
     '이동 조건 drawer 닫기',

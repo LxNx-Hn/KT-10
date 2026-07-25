@@ -18,7 +18,9 @@ import DepartureTimePicker, {
 import FacilityReport from '@/components/FacilityReport';
 import KakaoLoginButton from '@/components/KakaoLoginButton';
 import ProfilePreferences from '@/components/ProfilePreferences';
-import RouteConditions from '@/components/RouteConditions';
+import RouteConditions, {
+  ROUTE_CONDITION_KEYS,
+} from '@/components/RouteConditions';
 import RouteFeedback from '@/components/RouteFeedback';
 import WeatherWarning from '@/components/WeatherWarning';
 import { PROFILE_LIST, PROFILES } from '@/config/profiles';
@@ -47,16 +49,6 @@ const QUICK_CONDITIONS: Array<{
 }> = [
   { key: 'carryLuggage', label: '짐 많음' },
   { key: 'avoidStairs', label: '계단 회피' },
-];
-
-const CONDITION_KEYS: ToggleableScoringOption[] = [
-  'carryLuggage',
-  'stroller',
-  'lowFloorPriority',
-  'weatherAvoid',
-  'avoidStairs',
-  'shadePriority',
-  'minimizeTransfers',
 ];
 
 const DETAIL_TABS: Array<[DetailTab, string]> = [
@@ -1001,7 +993,9 @@ export default function MapFirstApp() {
           (segment.mode === 'bus' && segment.isLowFloorBus === true)),
     ),
   );
-  const activeConditionCount = CONDITION_KEYS.filter((key) => Boolean(options[key])).length;
+  const activeConditionCount = ROUTE_CONDITION_KEYS.filter(
+    (key) => Boolean(options[key]),
+  ).length;
   const showVoiceControl = drawer === null && !(ranked.length > 0 && sheetExpanded);
   const dataSource = import.meta.env.VITE_DATA_SOURCE === 'mock' ? 'mock' : 'live';
   const profileMeta = PROFILES[profile];

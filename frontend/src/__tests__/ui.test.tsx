@@ -668,7 +668,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     );
   });
 
-  it('조건 drawer에 6개 이동 조건이 있고 점수 옵션을 켜고 끈다', () => {
+  it('빠른 토글과 중복되지 않는 4개 이동 조건을 drawer에서 조정한다', () => {
     const { container, getByRole } = render(<App />);
     const quickLuggage = getByRole('button', { name: '짐 많음' });
     const quickStairs = getByRole('button', { name: '계단 회피' });
@@ -679,21 +679,20 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
     fireEvent.click(quickLuggage);
     expect(useAppStore.getState().options.carryLuggage).toBe(true);
-    fireEvent.click(getByRole('button', { name: /^조건/ }));
+    fireEvent.click(getByRole('button', { name: '조건' }));
 
     const dialog = getByRole('dialog', { name: '이번 이동 조건' });
     const dialogQueries = within(dialog);
     expect(dialog).toBeTruthy();
     expect(container.querySelectorAll('.condition-chip')).toHaveLength(
-      6,
+      4,
     );
     expect(
-      dialogQueries.getByRole('button', { name: /짐 많음/ })
-        .getAttribute('aria-pressed'),
-    ).toBe('true');
+      dialogQueries.queryByRole('button', { name: /짐 많음/ }),
+    ).toBeNull();
     expect(
-      dialogQueries.getByRole('button', { name: /계단 회피/ }),
-    ).toBeTruthy();
+      dialogQueries.queryByRole('button', { name: /계단 회피/ }),
+    ).toBeNull();
     const stroller = dialogQueries.getByRole('button', { name: /유아차 이용/ });
     const shade = dialogQueries.getByRole('button', { name: /건물 그늘 우선/ });
     const transfer = dialogQueries.getByRole('button', { name: /환승 최소/ });
@@ -717,7 +716,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     fireEvent.click(conditions);
     const dialog = getByRole('dialog', { name: '이번 이동 조건' });
     fireEvent.click(
-      within(dialog).getByRole('button', { name: /짐 많음/ }),
+      within(dialog).getByRole('button', { name: /유아차 이용/ }),
     );
     fireEvent.keyDown(dialog, {
       key: 'Escape',
