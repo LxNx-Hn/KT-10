@@ -536,15 +536,6 @@
   box-shadow: var(--mf-shadow), inset 0 0 0 1px rgba(49, 130, 246, 0.35);
 }
 
-.map-first__condition-count {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--mf-blue);
-  padding: 0 4px;
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 8px;
-}
-
 /* ── Map side controls ── */
 .map-first__fab-stack {
   position: absolute;
@@ -553,8 +544,27 @@
   z-index: var(--mf-z-fab);
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 10px;
   pointer-events: none;
+}
+
+.map-first__fab-hint {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(220px, calc(100vw - 48px));
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(25, 31, 40, 0.92);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  pointer-events: none;
+  box-shadow: var(--mf-shadow);
 }
 
 .map-first__fab-stack > * {
@@ -627,11 +637,11 @@
   }
 }
 
-/* Voice button */
+/* Voice button — keep above the bottom sheet; never jump to mid-screen. */
 .map-first__voice-wrap {
   position: absolute;
   right: 16px;
-  bottom: calc(280px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(224px + env(safe-area-inset-bottom, 0px));
   z-index: var(--mf-z-fab);
   display: flex;
   flex-direction: column;
@@ -642,11 +652,15 @@
 
 .map-first__frame--labeled .map-first__voice-wrap,
 .map-first__frame[data-profile='elderly'] .map-first__voice-wrap {
-  bottom: calc(300px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(236px + env(safe-area-inset-bottom, 0px));
 }
 
 .map-first__frame:has(.map-first__sheet--collapsed) .map-first__voice-wrap {
-  bottom: calc(148px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(132px + env(safe-area-inset-bottom, 0px));
+}
+
+.map-first__frame:has(.map-first__sheet--empty.map-first__sheet--expanded) .map-first__voice-wrap {
+  bottom: calc(224px + env(safe-area-inset-bottom, 0px));
 }
 
 .map-first__voice-wrap > * {
@@ -1118,20 +1132,36 @@
 }
 
 .map-first__chip--conditions {
-  gap: 4px;
+  gap: 6px;
+  min-width: 5.75rem;
+  padding-inline: 12px 10px;
+  justify-content: space-between;
+}
+
+.map-first__chip-label {
+  flex: 0 0 auto;
 }
 
 .map-first__condition-count {
   min-width: 20px;
+  width: 20px;
   height: 20px;
+  flex: 0 0 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 5px;
+  padding: 0;
   color: #fff;
   background: var(--mf-blue);
   border-radius: 999px;
   font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.map-first__condition-count--empty {
+  visibility: hidden;
 }
 
 .map-first__map-legend {
@@ -1504,17 +1534,6 @@
   text-align: center;
 }
 
-.map-first__frame:has(.map-first__sheet--empty) .map-first__voice-wrap {
-  top: calc(42% + 116px);
-  bottom: auto;
-}
-
-.map-first__frame--results .map-first__voice-wrap {
-  top: calc(42% + 58px);
-  right: 74px;
-  bottom: auto;
-}
-
 .map-first__frame:has(.map-first__sheet--collapsed:not(.map-first__sheet--empty)) .map-first__map-legend {
   bottom: calc(132px + env(safe-area-inset-bottom, 0px));
 }
@@ -1615,21 +1634,158 @@
   display: none;
 }
 
+.map-first__drawer-body .route-conditions__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
 .map-first__drawer-body .condition-chip {
+  box-sizing: border-box;
   min-height: var(--mf-tap);
+  max-width: 100%;
+  border: 1px solid var(--mf-line);
   border-color: var(--mf-line);
   color: var(--mf-ink);
+  font-weight: 700;
 }
 
 .map-first__drawer-body .condition-chip--active {
   border-color: var(--mf-blue);
   background: var(--mf-blue);
   color: #fff;
+  font-weight: 700;
 }
 
-.map-first__drawer-body .route-conditions__time input,
-.map-first__drawer-body .route-conditions__time-presets button {
-  border-color: var(--mf-line);
+.map-first__departure-btn {
+  width: 100%;
+  min-height: var(--mf-tap);
+  margin: 0 0 10px;
+  padding: 0 14px;
+  border: 1px solid var(--mf-line);
+  border-radius: 14px;
+  background: var(--mf-surface);
+  color: var(--mf-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.map-first__departure-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.map-first__departure-btn-icon {
+  display: inline-flex;
+  color: var(--mf-ink-soft);
+}
+
+.map-first__departure-btn-label {
+  flex: 1;
+  text-align: left;
+  letter-spacing: -0.02em;
+}
+
+.map-first__departure-btn-chevron {
+  color: var(--mf-ink-soft);
+  font-size: 11px;
+}
+
+.departure-time-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.departure-time-picker__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mf-ink);
+}
+
+.departure-time-picker__field input {
+  width: 100%;
+  min-height: var(--mf-tap);
+  padding: 0 12px;
+  border: 1px solid var(--mf-line);
+  border-radius: 12px;
+  font: inherit;
+  font-size: 15px;
+  box-sizing: border-box;
+  background: #fff;
+  color: var(--mf-ink);
+}
+
+.departure-time-picker__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.departure-time-picker__presets button {
+  min-height: var(--mf-tap);
+  padding: 0 14px;
+  border: 1px solid var(--mf-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--mf-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.departure-time-picker__presets button:disabled,
+.departure-time-picker__actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.departure-time-picker__hint {
+  margin: 0;
+  color: var(--mf-ink-soft);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.departure-time-picker__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.departure-time-picker__cancel,
+.departure-time-picker__apply {
+  min-height: var(--mf-tap);
+  border-radius: 12px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.departure-time-picker__cancel {
+  border: 1px solid var(--mf-line);
+  background: #fff;
+  color: var(--mf-ink);
+}
+
+.departure-time-picker__apply {
+  border: none;
+  background: var(--mf-blue);
+  color: #fff;
 }
 
 .map-first__tabs {
@@ -1838,6 +1994,25 @@
 .map-first__tab-panel select,
 .map-first__tab-panel textarea {
   max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Drawer is phone-width even on desktop viewports; avoid 3-column truncation. */
+.map-first__tab-panel .route-feedback__details {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 100%;
+}
+
+.map-first__tab-panel .route-feedback__details select {
+  max-width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 359px) {
+  .map-first__tab-panel .route-feedback__details {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Voice and install overlays remain inside the same phone-width visual system. */
@@ -1887,6 +2062,11 @@ body:has(.map-first__sheet--expanded:not(.map-first__sheet--empty)) .install-pro
   .map-first__chip {
     padding-inline: 10px;
     font-size: 11px;
+  }
+
+  .map-first__chip--conditions {
+    min-width: 5.5rem;
+    padding-inline: 10px 8px;
   }
 
   .map-first__route-card {

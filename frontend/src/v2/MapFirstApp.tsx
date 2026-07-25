@@ -12,6 +12,9 @@ import { adapters } from '@/adapters';
 import { toUserMessage } from '@/api/http';
 import { useVoiceChatStore } from '@/chat/voiceChatStore';
 import BusArrivalCard from '@/components/BusArrivalCard';
+import DepartureTimePicker, {
+  formatDepartureButtonLabel,
+} from '@/components/DepartureTimePicker';
 import FacilityReport from '@/components/FacilityReport';
 import KakaoLoginButton from '@/components/KakaoLoginButton';
 import ProfilePreferences from '@/components/ProfilePreferences';
@@ -35,16 +38,8 @@ import {
 } from './routeViewModel';
 import './map-first.css';
 
-type DrawerId = 'profile' | 'conditions' | 'details';
+type DrawerId = 'profile' | 'conditions' | 'details' | 'departure';
 type DetailTab = 'route' | 'environment' | 'feedback' | 'settings';
-
-const QUICK_CONDITIONS: Array<{
-  key: ToggleableScoringOption;
-  label: string;
-}> = [
-  { key: 'carryLuggage', label: '짐 많음' },
-  { key: 'avoidStairs', label: '계단 회피' },
-];
 
 const CONDITION_KEYS: ToggleableScoringOption[] = [
   'carryLuggage',
@@ -908,6 +903,23 @@ function VoiceIcon() {
   );
 }
 
+function ClockIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8v5l3 2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function MapFirstApp() {
   const profile = useAppStore((state) => state.profile);
   const origin = useAppStore((state) => state.origin);
@@ -921,7 +933,7 @@ export default function MapFirstApp() {
   const setProfile = useAppStore((state) => state.setProfile);
   const setOrigin = useAppStore((state) => state.setOrigin);
   const setDestination = useAppStore((state) => state.setDestination);
-  const setScoringOption = useAppStore((state) => state.setScoringOption);
+  const setDepartureAt = useAppStore((state) => state.setDepartureAt);
   const toggleLargeUi = useAppStore((state) => state.toggleLargeUi);
   const clearError = useAppStore((state) => state.clearError);
   const selectRoute = useAppStore((state) => state.selectRoute);
@@ -937,7 +949,9 @@ export default function MapFirstApp() {
   const [showShade, setShowShade] = useState(true);
   const [showFacilities, setShowFacilities] = useState(false);
   const [searchHint, setSearchHint] = useState<string | null>(null);
+  const [facilityHint, setFacilityHint] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
+  const [departureIsNow, setDepartureIsNow] = useState(true);
   const originInputRef = useRef<HTMLInputElement>(null);
   const destinationInputRef = useRef<HTMLInputElement>(null);
   const locatingTimerRef = useRef<number>();
@@ -962,16 +976,23 @@ export default function MapFirstApp() {
       (selectedShade.shadowPolygons.length > 0 ||
         selectedShade.pathSegments.length > 0),
   );
+  const hasFacilityInfo = Boolean(
+    selectedItem?.route.segments.some(
+      (segment) =>
+        (segment.mode === 'subway' && segment.hasElevator === true) ||
+        (segment.mode === 'bus' && segment.isLowFloorBus === true),
+    ),
+  );
   const hasFacilityOverlay = Boolean(
     selectedItem?.route.segments.some(
       (segment) =>
-        segment.path &&
-        segment.path.length > 0 &&
+        Boolean(segment.path && segment.path.length > 0) &&
         ((segment.mode === 'subway' && segment.hasElevator === true) ||
           (segment.mode === 'bus' && segment.isLowFloorBus === true)),
     ),
   );
   const activeConditionCount = CONDITION_KEYS.filter((key) => Boolean(options[key])).length;
+  const showVoiceControl = drawer === null && !(ranked.length > 0 && sheetExpanded);
   const dataSource = import.meta.env.VITE_DATA_SOURCE === 'mock' ? 'mock' : 'live';
   const profileMeta = PROFILES[profile];
   const showLabeledControls =
@@ -1000,6 +1021,16 @@ export default function MapFirstApp() {
       setLocating(false);
     }
   }, [error, locating, origin]);
+
+  useEffect(() => {
+    if (!hasFacilityOverlay && showFacilities) {
+      setShowFacilities(false);
+    }
+  }, [hasFacilityOverlay, showFacilities]);
+
+  useEffect(() => {
+    setFacilityHint(null);
+  }, [selectedRouteId]);
 
   useEffect(() => {
     if (
@@ -1077,6 +1108,21 @@ export default function MapFirstApp() {
   const openDetails = () => {
     setDetailTab('route');
     setDrawer('details');
+  };
+
+  const handleFacilityLayerClick = () => {
+    if (hasFacilityOverlay) {
+      setFacilityHint(null);
+      setShowFacilities((visible) => !visible);
+      return;
+    }
+    if (hasFacilityInfo) {
+      setFacilityHint(
+        '시설 이용 정보는 확인했지만 지도에 표시할 위치 데이터가 없어요.',
+      );
+      return;
+    }
+    setFacilityHint('이 경로에는 표시 가능한 편의시설 정보가 없어요.');
   };
 
   const handleDetailTabKeyDown = (
@@ -1170,6 +1216,10 @@ export default function MapFirstApp() {
     : loading
       ? '경사·건물 그늘·이동 편의 정보를 확인하고 있습니다.'
       : '카카오 장소 검색 결과에서 실제 장소를 선택해 주세요.';
+  const departureButtonLabel = formatDepartureButtonLabel(
+    options.departureAt,
+    departureIsNow,
+  );
 
   return (
     <main className="map-first" id="main-content">
@@ -1250,44 +1300,29 @@ export default function MapFirstApp() {
               {profileMeta.label}
               <span className="map-first__profile-chevron" aria-hidden="true">▾</span>
             </button>
-            {QUICK_CONDITIONS.map(({ key, label }) => {
-              const active = Boolean(options[key]);
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  className={`map-first__chip${
-                    active ? ' map-first__chip--active' : ''
-                  }`}
-                  aria-pressed={active}
-                  onClick={() => setScoringOption(key, !active)}
-                >
-                  {label}
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              className={`map-first__chip map-first__chip--easy${
-                largeUi ? ' map-first__chip--active' : ''
-              }`}
-              aria-label="쉬운 화면"
-              aria-pressed={largeUi}
-              onClick={toggleLargeUi}
-            >
-              쉬운 화면
-            </button>
             <button
               type="button"
               className="map-first__chip map-first__chip--conditions"
               aria-haspopup="dialog"
               aria-expanded={drawer === 'conditions'}
+              aria-label={
+                activeConditionCount > 0
+                  ? `조건, 활성 ${activeConditionCount}개`
+                  : '조건'
+              }
               onClick={() => setDrawer('conditions')}
             >
-              조건
-              {activeConditionCount > 0 && (
-                <span className="map-first__condition-count">{activeConditionCount}</span>
-              )}
+              <span className="map-first__chip-label">조건</span>
+              <span
+                className={`map-first__condition-count${
+                  activeConditionCount > 0
+                    ? ''
+                    : ' map-first__condition-count--empty'
+                }`}
+                aria-hidden="true"
+              >
+                {activeConditionCount > 0 ? activeConditionCount : 0}
+              </span>
             </button>
           </div>
           {largeUi && (
@@ -1325,11 +1360,12 @@ export default function MapFirstApp() {
             aria-label={
               hasFacilityOverlay
                 ? '편의시설 오버레이'
-                : '편의시설 오버레이 자료 없음'
+                : hasFacilityInfo
+                  ? '편의시설 오버레이, 위치 데이터 없음'
+                  : '편의시설 오버레이 자료 없음'
             }
-            aria-pressed={hasFacilityOverlay ? showFacilities : false}
-            disabled={!hasFacilityOverlay}
-            onClick={() => setShowFacilities((visible) => !visible)}
+            aria-pressed={hasFacilityOverlay ? showFacilities : undefined}
+            onClick={handleFacilityLayerClick}
           >
             <FacilityIcon />
             {showLabeledControls && <span className="map-first__fab-label">편의시설</span>}
@@ -1350,6 +1386,11 @@ export default function MapFirstApp() {
               {showLabeledControls && <span className="map-first__fab-label">그늘</span>}
             </button>
           )}
+          {facilityHint && (
+            <p className="map-first__fab-hint" role="status" aria-live="polite">
+              {facilityHint}
+            </p>
+          )}
         </div>
 
         {showShade &&
@@ -1368,38 +1409,40 @@ export default function MapFirstApp() {
             </div>
           )}
 
-        <div className="map-first__voice-wrap">
-          {voiceStatus !== 'idle' && (
-            <span className="map-first__voice-status">
-              {voiceStatus === 'listening'
-                ? '듣고 있어요'
-                : voiceStatus === 'thinking'
-                  ? '분석 중'
-                  : voiceStatus === 'speaking'
-                    ? '안내 중'
-                    : '텍스트로 입력해 주세요'}
-            </span>
-          )}
-          <button
-            type="button"
-            className={`map-first__voice${
-              voiceStatus === 'listening' ? ' map-first__voice--listening' : ''
-            }${showLabeledControls ? ' map-first__voice--labeled' : ''}`}
-            aria-label="음성 챗봇"
-            aria-busy={voiceStatus === 'thinking'}
-            disabled={
-              voiceStatus === 'listening'
-              || voiceStatus === 'thinking'
-              || voiceStatus === 'speaking'
-            }
-            onClick={requestListen}
-          >
-            <VoiceIcon />
-            {showLabeledControls && (
-              <span className="map-first__voice-label">음성 검색</span>
+        {showVoiceControl && (
+          <div className="map-first__voice-wrap">
+            {voiceStatus !== 'idle' && (
+              <span className="map-first__voice-status">
+                {voiceStatus === 'listening'
+                  ? '듣고 있어요'
+                  : voiceStatus === 'thinking'
+                    ? '분석 중'
+                    : voiceStatus === 'speaking'
+                      ? '안내 중'
+                      : '텍스트로 입력해 주세요'}
+              </span>
             )}
-          </button>
-        </div>
+            <button
+              type="button"
+              className={`map-first__voice${
+                voiceStatus === 'listening' ? ' map-first__voice--listening' : ''
+              }${showLabeledControls ? ' map-first__voice--labeled' : ''}`}
+              aria-label="음성 챗봇"
+              aria-busy={voiceStatus === 'thinking'}
+              disabled={
+                voiceStatus === 'listening'
+                || voiceStatus === 'thinking'
+                || voiceStatus === 'speaking'
+              }
+              onClick={requestListen}
+            >
+              <VoiceIcon />
+              {showLabeledControls && (
+                <span className="map-first__voice-label">음성 검색</span>
+              )}
+            </button>
+          </div>
+        )}
 
         <section
           className={`map-first__sheet map-first__sheet--${
@@ -1427,13 +1470,33 @@ export default function MapFirstApp() {
             <div className="map-first__sheet-body">
               {loading && <p className="map-first__empty-state" role="status">경로를 찾고 있어요…</p>}
               {!loading && ranked.length > 0 && (
-                <RouteCarousel
-                  recommendations={ranked}
-                  profile={profile}
-                  selectedRouteId={selectedRouteId}
-                  onSelectRoute={selectRoute}
-                  onDetails={openDetails}
-                />
+                <>
+                  <button
+                    type="button"
+                    className="map-first__departure-btn"
+                    aria-haspopup="dialog"
+                    aria-expanded={drawer === 'departure'}
+                    disabled={loading}
+                    onClick={() => setDrawer('departure')}
+                  >
+                    <span className="map-first__departure-btn-icon" aria-hidden="true">
+                      <ClockIcon />
+                    </span>
+                    <span className="map-first__departure-btn-label">
+                      {departureButtonLabel}
+                    </span>
+                    <span className="map-first__departure-btn-chevron" aria-hidden="true">
+                      ▾
+                    </span>
+                  </button>
+                  <RouteCarousel
+                    recommendations={ranked}
+                    profile={profile}
+                    selectedRouteId={selectedRouteId}
+                    onSelectRoute={selectRoute}
+                    onDetails={openDetails}
+                  />
+                </>
               )}
               {!loading && ranked.length === 0 && (
                 <div className="map-first__empty-state">
@@ -1487,6 +1550,26 @@ export default function MapFirstApp() {
             onClose={closeDrawer}
           >
             <RouteConditions />
+          </BottomDrawer>
+        )}
+
+        {drawer === 'departure' && (
+          <BottomDrawer
+            drawerId="departure-drawer"
+            title="출발 시간 설정"
+            onClose={closeDrawer}
+          >
+            <DepartureTimePicker
+              initialValue={options.departureAt}
+              initialIsNow={departureIsNow}
+              loading={loading}
+              onCancel={closeDrawer}
+              onApply={(value, isNow) => {
+                setDepartureIsNow(isNow);
+                setDepartureAt(value);
+                closeDrawer();
+              }}
+            />
           </BottomDrawer>
         )}
 
