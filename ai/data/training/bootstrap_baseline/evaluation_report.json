@@ -1,0 +1,104 @@
+{
+  "schema_version": "profile-evaluation-report-v1",
+  "evaluation_run_id": "profile-evaluation-20260725-v1",
+  "evaluation_source": "local:profile-rubric",
+  "rubric_version": "route-profile-rubric-v2",
+  "rubric_sha256": "5efc003bcf8a5d01f0c64819f3ddb8dcde2afedd34fbbfec49a1f9a95a849419",
+  "evaluated_at": "2026-07-25T00:42:18.558657+00:00",
+  "od_count": 380,
+  "route_count": 1137,
+  "profile_count": 6,
+  "label_count": 6822,
+  "label_distribution": {
+    "general": {
+      "1": 490,
+      "2": 115,
+      "3": 111,
+      "4": 421
+    },
+    "elderly": {
+      "1": 482,
+      "2": 94,
+      "3": 118,
+      "4": 443
+    },
+    "child": {
+      "1": 477,
+      "2": 123,
+      "3": 107,
+      "4": 430
+    },
+    "youth": {
+      "1": 496,
+      "2": 113,
+      "3": 99,
+      "4": 429
+    },
+    "disabled": {
+      "1": 488,
+      "2": 98,
+      "3": 96,
+      "4": 455
+    },
+    "pregnant": {
+      "1": 474,
+      "2": 106,
+      "3": 121,
+      "4": 436
+    }
+  },
+  "known_feature_counts": {
+    "avg_slope_percent": 1109,
+    "max_slope_percent": 1109,
+    "min_slope_percent": 1109,
+    "slope_iqr": 1109,
+    "stair_count": 0,
+    "elevator_ratio": 0,
+    "transfer_count": 1137,
+    "walk_distance_m": 1137,
+    "total_duration_min": 1137,
+    "is_low_floor_bus": 0,
+    "shade_ratio": 1137,
+    "shaded_walk_m": 1137,
+    "shade_building_height_coverage": 1137,
+    "cctv_density_50m": 1111,
+    "crosswalk_count": 1111,
+    "crosswalk_signal_ratio": 1032,
+    "shelter_nearby": 1111,
+    "aed_nearby": 1111,
+    "wheelchair_charger_nearby": 1111,
+    "smart_shelter_nearby": 1111,
+    "smart_shelter_has_ac": 1111,
+    "bus_stop_count_200m": 1111,
+    "crowd_level": 0,
+    "temp_c": 1137,
+    "feels_like_c": 1137,
+    "precipitation_mm": 1137,
+    "wind_ms": 1137,
+    "pm10": 1137,
+    "weather_heatwave": 1137,
+    "weather_coldwave": 1137,
+    "weather_rain": 1137,
+    "weather_bad_air": 1137,
+    "stair_avoidance_burden": 1014,
+    "luggage_walk_burden": 1137,
+    "luggage_stair_burden": 1000,
+    "low_floor_priority_mismatch": 1014,
+    "wheelchair_stair_burden": 1137,
+    "wheelchair_elevator_gap": 1137,
+    "walking_aid_walk_burden": 1137,
+    "max_walk_excess_m": 1137,
+    "weather_priority_walk_burden": 1137,
+    "stroller_walk_burden": 1137,
+    "stroller_stair_burden": 1014,
+    "stroller_elevator_gap": 1014,
+    "shade_priority_unshaded_walk_m": 1137,
+    "minimize_transfers_burden": 1137
+  },
+  "missing_value_policy": "exclude_from_comparison",
+  "auxiliary_features_excluded": [
+    "dongbaekjeon_store_count_200m"
+  ],
+  "features_sha256": "944cc0344cfd69df25575597b02235c34e24ce44adaa42c12f979edf434c3975",
+  "labels_sha256": "3bd7d09c8a234acc597c9c1013df45be60950f48ea7f4e28a82cf29f31d02a00"
+}
