@@ -342,11 +342,11 @@ class RecommendRequest(CamelModel):
     profile: ProfileId = "general"
     weather_scenario: WeatherScenarioId = "normal"
     options: ScoringOptions = Field(default_factory=ScoringOptions)
-    top_n: int = Field(default=3, ge=1, le=10)
+    top_n: int = Field(default=5, ge=1, le=10)
 
 
 class ShadeRefreshRequest(CamelModel):
     route_set_token: str = Field(min_length=20, max_length=64)
     profile: ProfileId = "general"
     options: ScoringOptions = Field(default_factory=ScoringOptions)
-    top_n: int = Field(default=3, ge=1, le=10)
+    top_n: int = Field(default=5, ge=1, le=10)

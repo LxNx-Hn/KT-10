@@ -39,6 +39,8 @@ type RoutePathPart = {
   path: LatLng[];
   mode?: SegmentMode;
   quality?: GeometryQuality;
+  /** Per-segment slope (walk only), used for color ramp. */
+  slopePercent?: number;
 };
 
 type KakaoLatLng = {
@@ -137,6 +139,45 @@ const MODE_COLOR: Record<SegmentMode, string> = {
   transfer: '#64748b',
 };
 
+/**
+ * QGIS-style slope severity color ramp for walking segments.
+ * - ≤3 %  flat          → green
+ * - ≤6 %  moderate      → yellow-green
+ * - ≤10%  steep         → orange
+ * - >10%  very steep    → red
+ * Falls back to the default walk green when no terrain data is available.
+ */
+const SLOPE_COLOR_RAMP: Array<{ max: number; color: string; label: string }> = [
+  { max: 3,   color: '#16a34a', label: '완만' },
+  { max: 6,   color: '#ca8a04', label: '보통' },
+  { max: 10,  color: '#ea580c', label: '급경사' },
+  { max: Infinity, color: '#dc2626', label: '위험' },
+];
+
+export function slopeColor(
+  slopePercent: number | undefined | null,
+): string {
+  if (slopePercent === undefined || slopePercent === null) return MODE_COLOR.walk;
+  const abs = Math.abs(slopePercent);
+  for (const band of SLOPE_COLOR_RAMP) {
+    if (abs <= band.max) return band.color;
+  }
+  return SLOPE_COLOR_RAMP[SLOPE_COLOR_RAMP.length - 1].color;
+}
+
+export function slopeLabel(
+  slopePercent: number | undefined | null,
+): string {
+  if (slopePercent === undefined || slopePercent === null) return '미확인';
+  const abs = Math.abs(slopePercent);
+  for (const band of SLOPE_COLOR_RAMP) {
+    if (abs <= band.max) return band.label;
+  }
+  return SLOPE_COLOR_RAMP[SLOPE_COLOR_RAMP.length - 1].label;
+}
+
+export { SLOPE_COLOR_RAMP };
+
 const DEFAULT_ROUTE_COLOR = '#3182f6';
 const ALTERNATIVE_ROUTE_COLOR = '#64748b';
 const SHADOW_FILL = '#8290a8';
@@ -182,6 +223,12 @@ function validPath(path: LatLng[] | undefined, minimumLength = 2): LatLng[] | nu
 }
 
 function segmentPathParts(route: RouteCandidate): RoutePathPart[] {
+  // Use route-level terrain slope for all walk segments of this route.
+  // Per-segment slope would be ideal but the current data model provides
+  // slope metrics at the route level (90 m DEM terrain summary).
+  const walkSlope = route.terrain?.status === 'estimated_90m'
+    ? route.terrain.avgSlopePercent
+    : undefined;
   return route.segments.flatMap<RoutePathPart>((segment) => {
     const path = validPath(segment.path);
     if (!path) return [];
@@ -189,6 +236,7 @@ function segmentPathParts(route: RouteCandidate): RoutePathPart[] {
       path,
       mode: segment.mode,
       quality: segment.geometryQuality ?? route.geometryQuality,
+      slopePercent: segment.mode === 'walk' ? walkSlope : undefined,
     }];
   });
 }
@@ -388,11 +436,15 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     const segmentParts = segmentPathParts(route);
 
     const addRoutePart = (
-      { path, mode, quality }: RoutePathPart,
+      { path, mode, quality, slopePercent }: RoutePathPart,
       includeOutline: boolean,
     ) => {
       const kakaoPath = path.map((point) => toKakaoLatLng(maps, point));
       const style = strokeStyle(quality);
+      // Walk segments use slope-dependent color ramp; other modes keep fixed colors.
+      const color = mode === 'walk'
+        ? slopeColor(slopePercent)
+        : mode ? MODE_COLOR[mode] ?? DEFAULT_ROUTE_COLOR : DEFAULT_ROUTE_COLOR;
       if (includeOutline) {
         addGraphic(new maps.Polyline({
           path: kakaoPath,
@@ -406,7 +458,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       addGraphic(new maps.Polyline({
         path: kakaoPath,
         strokeWeight: 6,
-        strokeColor: mode ? MODE_COLOR[mode] ?? DEFAULT_ROUTE_COLOR : DEFAULT_ROUTE_COLOR,
+        strokeColor: color,
         strokeOpacity: 0.96,
         strokeStyle: style,
         zIndex: 4,

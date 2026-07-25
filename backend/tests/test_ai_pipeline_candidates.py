@@ -5,9 +5,11 @@ import asyncio
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import httpx
 import app.providers.ai_pipeline as ai_pipeline
 from app.providers.ai_pipeline import (
     _pipeline_payload,
+    _response_detail,
     _to_route_candidate,
     rank_ai_pipeline_candidates,
 )
@@ -190,6 +192,27 @@ def test_pipeline_payload_keeps_profile_and_trip_conditions_separate():
     assert payload["shade_priority"] is True
     assert payload["low_floor_priority"] is True
     assert payload["minimize_transfers"] is True
+
+
+def test_response_detail_includes_source_failures():
+    response = httpx.Response(
+        503,
+        json={
+            "detail": {
+                "message": "유효한 실제 경로 후보를 수집하지 못했습니다.",
+                "sources": {
+                    "odsay": "CollectorError: ApiKey authentication failed.",
+                    "tmap": "CollectorNotConfigured: TMAP_API_KEY가 설정되지 않았습니다.",
+                },
+            }
+        },
+    )
+
+    detail = _response_detail(response)
+
+    assert "유효한 실제 경로 후보를 수집하지 못했습니다." in detail
+    assert "odsay: CollectorError: ApiKey authentication failed." in detail
+    assert "tmap: CollectorNotConfigured: TMAP_API_KEY가 설정되지 않았습니다." in detail
 
 
 def test_ai_personalization_score_preserves_personalized_order_for_frontend(

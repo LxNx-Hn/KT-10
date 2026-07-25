@@ -122,7 +122,7 @@ export default function RouteCard({
       )}
 
       <ul className="route-card__stats" aria-label="경로 요약">
-        <li><b>{route.totalDurationMin}</b><span>분</span></li>
+        <li><b>{Math.round(route.totalDurationMin)}</b><span>분</span></li>
         <li><b>{route.totalWalkM}</b><span>m 도보</span></li>
         <li><b>{route.transferCount}</b><span>회 환승</span></li>
         {knownShade && (
@@ -193,6 +193,9 @@ export default function RouteCard({
           )}
           {route.shade?.status === 'unavailable' && (
             <Badge tone="warn">건물 그늘 정보 없음</Badge>
+          )}
+          {route.shade?.status === 'unavailable' && route.shade.calculationNote && (
+            <span className="route-card__shade-reason">{route.shade.calculationNote}</span>
           )}
         </div>
 

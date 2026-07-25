@@ -461,6 +461,11 @@ function RouteSummaryCard({
     (badge, index, all) =>
       all.findIndex((candidate) => candidate.label === badge.label) === index,
   );
+  const shadeFact = view.facts.find((fact) => fact.id === 'shade');
+  const shadeReason =
+    shadeFact && (shadeFact.kind === 'unknown' || shadeFact.kind === 'neutral')
+      ? shadeFact.detail
+      : undefined;
 
   return (
     <article
@@ -516,6 +521,10 @@ function RouteSummaryCard({
           <span className="map-first__badge">특성 +{badges.length - 4}</span>
         )}
       </div>
+
+      {shadeReason && (
+        <p className="map-first__shade-reason">{shadeReason}</p>
+      )}
 
       <button
         type="button"
@@ -978,6 +987,7 @@ export default function MapFirstApp() {
       (selectedShade.shadowPolygons.length > 0 ||
         selectedShade.pathSegments.length > 0),
   );
+  const selectedTerrain = selectedItem?.route.terrain;
   const hasFacilityInfo = Boolean(
     selectedItem?.route.segments.some(
       (segment) =>
@@ -1437,6 +1447,21 @@ export default function MapFirstApp() {
               <span><i className="map-first__legend-dot map-first__legend-dot--shade" />그늘</span>
               <span><i className="map-first__legend-dot map-first__legend-dot--sun" />햇빛</span>
               {selectedShade.status === 'estimated_demo' && <em>데모 높이</em>}
+            </div>
+          )}
+
+        {selectedTerrain?.status === 'estimated_90m' &&
+          selectedTerrain.avgSlopePercent !== undefined && (
+            <div className="map-first__map-legend map-first__map-legend--slope" role="note">
+              <strong>
+                도보 경사 {selectedTerrain.avgSlopePercent.toFixed(1)}%
+                {selectedTerrain.maxSlopePercent !== undefined &&
+                  ` (최대 ${selectedTerrain.maxSlopePercent.toFixed(1)}%)`}
+              </strong>
+              <span><i className="map-first__legend-dot map-first__legend-dot--slope-flat" />완만 ≤3%</span>
+              <span><i className="map-first__legend-dot map-first__legend-dot--slope-moderate" />보통 ≤6%</span>
+              <span><i className="map-first__legend-dot map-first__legend-dot--slope-steep" />급경사 ≤10%</span>
+              <span><i className="map-first__legend-dot map-first__legend-dot--slope-danger" />위험 &gt;10%</span>
             </div>
           )}
 

@@ -245,6 +245,24 @@ async def bus_arrivals(
     return stop
 
 
+def _filter_viable_candidates(candidates: list[RouteCandidate]) -> list[RouteCandidate]:
+    """대중교통 대안이 존재하는 경우 3km를 초과하는 순수 도보 경로는 추천 대상에서 제외한다."""
+    has_transit = any(
+        any(s.mode in ("bus", "subway") for s in c.segments)
+        for c in candidates
+    )
+    if not has_transit:
+        return candidates
+    filtered = [
+        c for c in candidates
+        if not (
+            all(s.mode in ("walk", "transfer") for s in c.segments)
+            and c.total_walk_m > 3000
+        )
+    ]
+    return filtered if filtered else candidates
+
+
 @app.post(
     "/api/routes/candidates",
     response_model=list[RouteCandidate],
@@ -262,14 +280,14 @@ async def routes_candidates(req: CandidatesRequest) -> list[RouteCandidate]:
             candidates = await get_ai_pipeline_candidates(req.origin, req.destination)
         except AIProviderError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-        return await _add_configured_shade(candidates)
+        return await _add_configured_shade(_filter_viable_candidates(candidates))
     if settings.route_mode == "ai":
         raise HTTPException(
             status_code=503,
             detail="AI mode exposes ranked routes through /api/routes/recommend.",
         )
     candidates = get_route_candidates(req.origin, req.destination)
-    return await _add_configured_shade(candidates)
+    return await _add_configured_shade(_filter_viable_candidates(candidates))
 
 
 @app.post(
@@ -299,6 +317,7 @@ async def routes_recommend(
                 user_preference=(user.preference if user else None),
                 weather_condition=current_weather,
             )
+            candidates = _filter_viable_candidates(candidates)
             candidates = await _add_configured_shade(
                 candidates,
                 req.options.departure_at,
@@ -343,6 +362,7 @@ async def routes_recommend(
                 user_preference=(user.preference if user else None),
                 weather_condition=current_weather,
             )
+            candidates = _filter_viable_candidates(candidates)
         except AIProviderError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     else:

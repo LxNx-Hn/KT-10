@@ -16,13 +16,13 @@ export const mockAdapters: Adapters = {
   },
   routes: {
     getCandidates: (origin, dest) => delay(getRouteCandidates(origin, dest), 260),
-    recommend: async (origin, dest, profile, weatherScenario, options, topN = 3) => {
+    recommend: async (origin, dest, profile, weatherScenario, options, topN = 5) => {
       const candidates = await delay(getRouteCandidates(origin, dest), 260);
       if (!candidates.length) throw new Error('고정 데모 OD 외 경로는 live 모드에서만 조회할 수 있습니다.');
       const weather = WEATHER_SCENARIOS[weatherScenario ?? DEFAULT_WEATHER];
       return recommendRoutes(candidates, weather, profile, options, topN);
     },
-    refreshShade: async (current, profile, weatherScenario, options, topN = 3) => {
+    refreshShade: async (current, profile, weatherScenario, options, topN = 5) => {
       const weather = WEATHER_SCENARIOS[weatherScenario ?? DEFAULT_WEATHER];
       return delay(
         recommendRoutes(

@@ -951,6 +951,15 @@
   color: var(--mf-blue);
 }
 
+.map-first__shade-reason {
+  margin: -8px 0 10px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: #9a5b00;
+  line-height: 1.4;
+}
+
 .map-first__sheet-cta {
   width: 100%;
   min-height: var(--mf-tap);
@@ -1219,6 +1228,30 @@
 
 .map-first__legend-dot--sun {
   background: #ff5a1f;
+}
+
+.map-first__legend-dot--slope-flat {
+  background: #16a34a;
+}
+
+.map-first__legend-dot--slope-moderate {
+  background: #ca8a04;
+}
+
+.map-first__legend-dot--slope-steep {
+  background: #ea580c;
+}
+
+.map-first__legend-dot--slope-danger {
+  background: #dc2626;
+}
+
+.map-first__map-legend--slope {
+  bottom: calc(240px + env(safe-area-inset-bottom, 0px));
+}
+
+.map-first__map-legend + .map-first__map-legend--slope {
+  bottom: calc(320px + env(safe-area-inset-bottom, 0px));
 }
 
 .map-first__sheet--empty.map-first__sheet--expanded {

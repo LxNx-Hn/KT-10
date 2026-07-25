@@ -62,7 +62,7 @@ describe('① 계단 vs 승강기 — 장애인 프로필', () => {
   });
 
   it('계단 경로 R1은 장애인 추천 상위 3개에서 제외된다', () => {
-    const top3 = recommendRoutes(ROUTES, NORMAL, 'disabled');
+    const top3 = recommendRoutes(ROUTES, NORMAL, 'disabled', {}, 3);
     expect(top3.map((r) => r.route.id)).not.toContain('r1-overpass');
   });
 });

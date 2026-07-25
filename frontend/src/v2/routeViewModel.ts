@@ -385,9 +385,9 @@ export function buildRouteViewModel(
     profileLabel,
     title: `${profileLabel} 맞춤 ${rank}순위`,
     summary: route.summary,
-    meta: `${route.totalDurationMin}분 · 도보 ${route.totalWalkM}m · 환승 ${route.transferCount}회`,
+    meta: `${Math.round(route.totalDurationMin)}분 · 도보 ${route.totalWalkM}m · 환승 ${route.transferCount}회`,
     stats: {
-      durationMin: route.totalDurationMin,
+      durationMin: Math.round(route.totalDurationMin),
       walkM: route.totalWalkM,
       transferCount: route.transferCount,
     },

@@ -117,7 +117,7 @@ export function recommendRoutes(
   weather: WeatherCondition,
   profile: ProfileId,
   opts: ScoringOptions = {},
-  topN = 3,
+  topN = 5,
 ): ScoredRoute[] {
   if (candidates.length === 0) return [];
   const fastestMin = Math.min(...candidates.map((c) => c.totalDurationMin));

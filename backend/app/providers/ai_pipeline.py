@@ -106,8 +106,17 @@ def _response_detail(response: httpx.Response) -> str:
         detail = None
     if isinstance(detail, str):
         return detail
-    if isinstance(detail, dict) and isinstance(detail.get("message"), str):
-        return detail["message"]
+    if isinstance(detail, dict):
+        message = detail.get("message")
+        sources = detail.get("sources")
+        if isinstance(message, str):
+            if isinstance(sources, dict) and sources:
+                source_detail = ", ".join(
+                    f"{name}: {value}"
+                    for name, value in sources.items()
+                )
+                return f"{message} ({source_detail})"
+            return message
     return f"AI pipeline server returned HTTP {response.status_code}."
 
 
@@ -474,7 +483,7 @@ async def rank_ai_pipeline_candidates(
     profile: str,
     options: ScoringOptions,
     *,
-    top_n: int = 3,
+    top_n: int = 5,
     personalization_state: str | None = None,
 ) -> list[ScoredRoute]:
     """건물 그늘까지 보강된 후보를 선택된 AI tier로 순위화한다."""

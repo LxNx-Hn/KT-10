@@ -202,11 +202,13 @@ def _shadow_polygons(
     ref_lat: float,
     ref_lng: float,
     building_data: dict,
+    route_lines: list[LineString] | None = None,
 ) -> tuple[BaseGeometry, int, int]:
     shadow_azimuth = math.radians((azimuth_deg + 180) % 360)
     shadows: list[BaseGeometry] = []
     building_ids: set[str] = set()
     known_height_ids: set[str] = set()
+    tan_elevation = math.tan(math.radians(elevation_deg))
     for building in building_data["buildings"]:
         building_id = str(building.get("buildingId") or building.get("id"))
         building_ids.add(building_id)
@@ -228,7 +230,12 @@ def _shadow_polygons(
         if polygon.is_empty or not polygon.is_valid or polygon.area <= 0:
             continue
         known_height_ids.add(building_id)
-        shadow_length = height / math.tan(math.radians(elevation_deg))
+        shadow_length = height / tan_elevation
+
+        if route_lines and shadow_length > 0 and len(building_data.get("buildings", [])) > 5:
+            if all(line.distance(polygon) > (shadow_length + 100.0) for line in route_lines):
+                continue
+
         shift = (
             math.sin(shadow_azimuth) * shadow_length,
             math.cos(shadow_azimuth) * shadow_length,
@@ -247,6 +254,12 @@ def _display_polygons(geometry: BaseGeometry) -> list[list[tuple[float, float]]]
         for polygon in polygons
         if polygon.geom_type == "Polygon" and not polygon.is_empty
     ]
+
+
+def round_to_30_minutes(dt: datetime) -> datetime:
+    """태양 방위각/고도각 연산 및 캐싱을 위해 시각을 30분 단위 버킷으로 정규화한다."""
+    minute = (dt.minute // 30) * 30
+    return dt.replace(minute=minute, second=0, microsecond=0)
 
 
 def calculate_shade(
@@ -272,7 +285,8 @@ def calculate_shade(
     if solar_points:
         ref_lat = sum(point.lat for point in solar_points) / len(solar_points)
         ref_lng = sum(point.lng for point in solar_points) / len(solar_points)
-        azimuth, elevation = solar_position(evaluated_at, ref_lat, ref_lng)
+        solar_at = round_to_30_minutes(evaluated_at)
+        azimuth, elevation = solar_position(solar_at, ref_lat, ref_lng)
     else:
         ref_lat = ref_lng = azimuth = elevation = None
     if elevation is not None and elevation <= 0:
@@ -381,8 +395,9 @@ def calculate_shade(
         [_project(point, ref_lat, ref_lng) for point in walking_path]
         for walking_path in walking_paths
     ]
+    route_lines = [LineString(points) for points in projected_paths if len(points) >= 2]
     shadow_geometry, known_heights, total_buildings = _shadow_polygons(
-        azimuth, elevation, ref_lat, ref_lng, building_data
+        azimuth, elevation, ref_lat, ref_lng, building_data, route_lines=route_lines
     )
     coverage = (
         known_heights / total_buildings if total_buildings else None
@@ -559,7 +574,8 @@ def resolve_shade_without_buildings(
 
         ref_lat = sum(point.lat for point in solar_points) / len(solar_points)
         ref_lng = sum(point.lng for point in solar_points) / len(solar_points)
-        azimuth, elevation = solar_position(evaluated_at, ref_lat, ref_lng)
+        solar_at = round_to_30_minutes(evaluated_at)
+        azimuth, elevation = solar_position(solar_at, ref_lat, ref_lng)
         if elevation > 0:
             if walking_paths:
                 return False

@@ -320,6 +320,7 @@ summary:focus-visible,
 .route-card__cautions li { color: #7c2d12; font-size: 0.92rem; }
 .route-card__unavailable li { color: var(--ink-soft); font-size: .88rem; }
 .route-card__unavailable p { margin: 0; color: var(--ink-soft); font-size: .88rem; line-height: 1.5; }
+.route-card__shade-reason { display: block; margin: 2px 0 4px; color: var(--warn); font-size: .82rem; font-weight: 600; }
 .route-card .btn--listen { min-height: 44px; margin-top: 10px; font-size: .9rem; }
 
 /* 배지 + 점수막대 */

@@ -407,7 +407,7 @@ async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], d
     for source, result in zip(source_names, results):
         if isinstance(result, Exception):
             failed.append(source)
-            source_errors[source] = type(result).__name__
+            source_errors[source] = f"{type(result).__name__}: {result}"
         elif not result:
             failed.append(source)
             source_errors[source] = "NoRoutes"
@@ -760,8 +760,10 @@ def _tmap_stair_feature_count(raw: dict) -> int | None:
         properties = item.get("properties")
         if not isinstance(properties, dict):
             return None
-        facility_type = str(properties.get("facilityType") or "")
-        if "계단" in facility_type:
+        raw_facility = properties.get("facilityType")
+        facility_str = str(raw_facility or "")
+        # TMAP API 규격: 1(계단), 11(육교 계단) 또는 "계단" 문자열 포함
+        if raw_facility in (1, 11, "1", "11") or "계단" in facility_str:
             count += 1
     # 명시된 계단은 확인 가능하지만, feature 부재만으로 계단 0을 단정하지 않는다.
     return count if count > 0 else None

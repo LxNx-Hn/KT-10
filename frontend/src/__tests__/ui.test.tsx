@@ -808,7 +808,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     );
     expect(map.getAttribute('data-shade-visible')).toBe('false');
     expect(map.getAttribute('data-shadow-polygons')).toBe('0');
-    expect(container.querySelector('.map-first__map-legend')).toBeNull();
+    expect(container.querySelector('.map-first__map-legend:not(.map-first__map-legend--slope)')).toBeNull();
 
     fireEvent.click(getByRole('button', { name: '건물 그늘 오버레이' }));
     expect(

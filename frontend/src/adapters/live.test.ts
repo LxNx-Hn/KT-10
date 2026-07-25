@@ -162,7 +162,7 @@ describe('live 경로 요청 제한시간', () => {
       routeSetToken: token,
       profile: 'general',
       options: { departureAt: '2026-07-24T02:00:00+09:00' },
-      topN: 3,
+      topN: 5,
     });
   });
 });
