@@ -73,6 +73,13 @@ class RouteSegment(CamelModel):
     geometry_quality: Optional[Literal["exact", "mixed", "estimated"]] = None
 
 
+class TerrainSlopeSegment(CamelModel):
+    start: LatLng
+    end: LatLng
+    slope_percent: float
+    distance_m: float = Field(gt=0)
+
+
 class TerrainSummary(CamelModel):
     avg_slope_percent: Optional[float] = None
     max_slope_percent: Optional[float] = None
@@ -83,6 +90,7 @@ class TerrainSummary(CamelModel):
     elevation_loss_m: Optional[float] = Field(default=None, ge=0)
     source: Optional[str] = Field(default=None, max_length=200)
     resolution_m: Optional[int] = Field(default=None, gt=0)
+    slope_segments: list[TerrainSlopeSegment] = Field(default_factory=list)
     status: Literal["estimated_90m", "unavailable", "invalid"] = "unavailable"
 
     @model_validator(mode="after")
@@ -107,7 +115,7 @@ class TerrainSummary(CamelModel):
                 raise ValueError(
                     "estimated terrain requires slope, resolution, and source."
                 )
-        elif any(value is not None for value in measurements):
+        elif any(value is not None for value in measurements) or self.slope_segments:
             raise ValueError(
                 "unavailable or invalid terrain cannot expose measurements."
             )

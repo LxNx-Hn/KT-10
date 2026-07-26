@@ -377,6 +377,7 @@ async def labeling_candidates(req: RecommendRequest):
                 "geometry_quality": feature["_geometry_quality"],
                 "path": feature["_path"],
                 "segments": feature["_segments"],
+                "slope_segments": feature.get("_slope_segments", []),
                 "features": {key: value for key, value in feature.items() if not key.startswith("_")},
                 "feature_snapshot": snapshot_by_route[route_id],
                 "trait_labels": traits_by_route[route_id],
@@ -441,10 +442,16 @@ async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], d
                 status_code=502,
                 detail=f"{candidate.source} 경로에 검증 가능한 소요시간이 없습니다.",
             )
+        slope_segments = elevation.get("slope_segments", [])
+        elevation_summary = {
+            key: value
+            for key, value in elevation.items()
+            if key != "slope_segments"
+        }
         feature = {
             **_parse_api_features(candidate),
             **extract_route_features_for_parts(parts, layers),
-            **elevation,
+            **elevation_summary,
             # 건물 그늘은 현재 백엔드의 검증된 building provider가 계산한다.
             # AI 후보 단계에서 확인할 수 없는 값은 0으로 추정하지 않는다.
             "shade_ratio": None,
@@ -461,6 +468,7 @@ async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], d
                 _public_segments(candidate),
                 layers,
             ),
+            "_slope_segments": slope_segments,
             "_geometry_quality": candidate.geometry_quality,
         }
         feature.update(_context_features(feature, req))

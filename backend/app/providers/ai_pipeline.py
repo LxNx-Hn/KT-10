@@ -726,6 +726,7 @@ def _to_route_candidate(
             elevation_loss_m=feature.get("elevation_loss_m"),
             source=feature.get("elevation_source"),
             resolution_m=feature.get("elevation_resolution_m"),
+            slope_segments=r.get("slope_segments") or [],
             status=feature.get("elevation_status", "unavailable"),
         ),
         trait_labels=trait_labels,

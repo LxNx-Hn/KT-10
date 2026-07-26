@@ -27,7 +27,7 @@ MAX_POINTS = 100
 SAMPLE_SPACING_M = 90.0
 SOURCE = "Copernicus DEM GLO-90 via Open-Meteo"
 LOCAL_DEM_SOURCE = "Copernicus DEM GLO-90 via AWS Open Data COG"
-CACHE_SCHEMA_VERSION = 1
+CACHE_SCHEMA_VERSION = 2
 log = logging.getLogger("features.elevation")
 _dem_tile_locks: dict[str, Lock] = {}
 _dem_tile_locks_guard = Lock()
@@ -286,6 +286,7 @@ def _empty(status: str, source: str = SOURCE) -> dict:
         "elevation_source": source,
         "elevation_resolution_m": 90,
         "elevation_status": status,
+        "slope_segments": [],
     }
 
 
@@ -309,6 +310,7 @@ def calculate_slope_features_for_parts(
         return _empty("invalid", source)
     grades: list[float] = []
     grade_distances: list[float] = []
+    slope_segments: list[dict] = []
     uphill_distance = downhill_distance = gain = loss = 0.0
     for coords, elevations in zip(coord_parts, elevation_parts):
         for start, end, z1, z2 in zip(
@@ -335,6 +337,12 @@ def calculate_slope_features_for_parts(
                 return _empty("invalid", source)
             grades.append(grade)
             grade_distances.append(distance)
+            slope_segments.append({
+                "start": {"lat": start[0], "lng": start[1]},
+                "end": {"lat": end[0], "lng": end[1]},
+                "slope_percent": round(grade, 3),
+                "distance_m": round(distance, 1),
+            })
             if delta > 0:
                 gain += delta
                 uphill_distance += distance
@@ -359,6 +367,7 @@ def calculate_slope_features_for_parts(
         "elevation_source": source,
         "elevation_resolution_m": 90,
         "elevation_status": "estimated_90m",
+        "slope_segments": slope_segments,
     }
 
 

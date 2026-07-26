@@ -11,6 +11,7 @@ from app.models import (
     RouteSegment,
     ShadeSummary,
     TerrainSummary,
+    TerrainSlopeSegment,
     WeatherCondition,
 )
 
@@ -98,6 +99,18 @@ def test_terrain_status_must_match_available_measurements():
     assert unavailable.avg_slope_percent is None
     assert unavailable.source == "Open-Meteo Copernicus DEM GLO-90"
     assert unavailable.resolution_m == 90
+    with pytest.raises(ValidationError, match="cannot expose measurements"):
+        TerrainSummary(
+            status="unavailable",
+            slope_segments=[
+                TerrainSlopeSegment(
+                    start=LatLng(lat=35.0, lng=129.0),
+                    end=LatLng(lat=35.001, lng=129.0),
+                    slope_percent=2.0,
+                    distance_m=111.2,
+                )
+            ],
+        )
 
 
 def test_live_weather_requires_both_offset_aware_observation_times():

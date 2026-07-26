@@ -396,6 +396,60 @@ describe('KakaoMap production overlays', () => {
     expect(onSelectRoute).toHaveBeenCalledWith('alternative');
   });
 
+  it('90m 지형 표본 사이 경사를 구간별 색상으로 표시한다', async () => {
+    const selected = scoredRoute('slope-segments', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+      segments: [
+        routeSegment('walk', [ORIGIN, MIDPOINT, DESTINATION], 'exact'),
+      ],
+      terrain: {
+        status: 'estimated_90m',
+        avgSlopePercent: 5,
+        maxSlopePercent: 12,
+        minSlopePercent: 2,
+        source: 'Copernicus DEM GLO-90',
+        resolutionM: 90,
+        slopeSegments: [
+          {
+            start: ORIGIN,
+            end: MIDPOINT,
+            slopePercent: 2,
+            distanceM: 90,
+          },
+          {
+            start: MIDPOINT,
+            end: DESTINATION,
+            slopePercent: 12,
+            distanceM: 90,
+          },
+        ],
+      },
+    });
+
+    render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="slope-segments"
+        onSelectRoute={vi.fn()}
+        showShade
+      />,
+    );
+    await waitUntilReady();
+
+    const coloredSegments = activePolylines().filter(
+      (line) => ['#16a34a', '#dc2626'].includes(line.options.strokeColor),
+    );
+    expect(coloredSegments.map((line) => line.options.strokeColor)).toEqual([
+      '#16a34a',
+      '#dc2626',
+    ]);
+    expect(coloredSegments.every((line) => line.options.path.length === 2))
+      .toBe(true);
+  });
+
   it.each(['estimated_demo', 'estimated_public'] as const)(
     '%s 그늘만 건물 폴리곤과 녹색·주황 경로로 올리고 토글을 끄면 제거한다',
     async (status) => {

@@ -62,6 +62,14 @@ def _candidate_payload() -> dict:
                 "geometry_quality": "exact",
             },
         ],
+        "slope_segments": [
+            {
+                "start": {"lat": 35.1151, "lng": 129.0414},
+                "end": {"lat": 35.1160, "lng": 129.0420},
+                "slope_percent": 4.2,
+                "distance_m": 112.8,
+            }
+        ],
         "features": {
             "transfer_count": 0,
             "walk_distance_m": 320,
@@ -129,6 +137,8 @@ def test_labeling_candidate_maps_geometry_and_terrain_without_invention():
     assert route.terrain is not None
     assert route.terrain.status == "estimated_90m"
     assert route.terrain.avg_slope_percent == 1.4
+    assert len(route.terrain.slope_segments) == 1
+    assert route.terrain.slope_segments[0].slope_percent == 4.2
     assert route.segments[0].path is not None
     assert route.trait_labels[0].label_id == "gentle_slope"
     assert route.trait_labels[0].evidence[0].value == 4.2

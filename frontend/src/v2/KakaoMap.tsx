@@ -223,22 +223,30 @@ function validPath(path: LatLng[] | undefined, minimumLength = 2): LatLng[] | nu
 }
 
 function segmentPathParts(route: RouteCandidate): RoutePathPart[] {
-  // Use route-level terrain slope for all walk segments of this route.
-  // Per-segment slope would be ideal but the current data model provides
-  // slope metrics at the route level (90 m DEM terrain summary).
-  const walkSlope = route.terrain?.status === 'estimated_90m'
-    ? route.terrain.avgSlopePercent
-    : undefined;
-  return route.segments.flatMap<RoutePathPart>((segment) => {
+  const terrainParts = route.terrain?.status === 'estimated_90m'
+    ? (route.terrain.slopeSegments ?? []).flatMap<RoutePathPart>((segment) => {
+      const path = validPath([segment.start, segment.end]);
+      return path
+        ? [{
+            path,
+            mode: 'walk',
+            quality: 'exact',
+            slopePercent: segment.slopePercent,
+          }]
+        : [];
+    })
+    : [];
+  const routeParts = route.segments.flatMap<RoutePathPart>((segment) => {
+    if (segment.mode === 'walk' && terrainParts.length > 0) return [];
     const path = validPath(segment.path);
     if (!path) return [];
     return [{
       path,
       mode: segment.mode,
       quality: segment.geometryQuality ?? route.geometryQuality,
-      slopePercent: segment.mode === 'walk' ? walkSlope : undefined,
     }];
   });
+  return [...routeParts, ...terrainParts];
 }
 
 function alternativeRoutePathParts(route: RouteCandidate): RoutePathPart[] {

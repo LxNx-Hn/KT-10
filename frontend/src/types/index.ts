@@ -105,6 +105,12 @@ export interface RouteCandidate {
     elevationLossM?: number;
     source?: string;
     resolutionM?: number;
+    slopeSegments?: Array<{
+      start: LatLng;
+      end: LatLng;
+      slopePercent: number;
+      distanceM: number;
+    }>;
     status: 'estimated_90m' | 'unavailable' | 'invalid';
   };
   shade?: {

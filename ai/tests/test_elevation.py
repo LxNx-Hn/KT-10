@@ -80,6 +80,14 @@ def test_calculate_uphill_and_downhill_features():
     assert result["elevation_loss_m"] == 3.0
     assert result["max_slope_percent"] == pytest.approx(5.0, abs=0.1)
     assert result["min_slope_percent"] == pytest.approx(-3.0, abs=0.1)
+    assert len(result["slope_segments"]) == 2
+    assert result["slope_segments"][0]["start"] == {
+        "lat": coords[0][0],
+        "lng": coords[0][1],
+    }
+    assert result["slope_segments"][0]["slope_percent"] == pytest.approx(
+        5.0, abs=0.1
+    )
 
 
 def test_extract_elevation_contract_with_mock_transport():
@@ -207,6 +215,11 @@ def test_disconnected_parts_do_not_create_artificial_elevation_gain():
     assert result["avg_slope_percent"] == 0
     assert result["elevation_gain_m"] == 0
     assert result["elevation_loss_m"] == 0
+    assert len(result["slope_segments"]) == 2
+    assert all(
+        segment["distance_m"] < 100
+        for segment in result["slope_segments"]
+    )
 
 
 def test_extract_elevation_parts_preserves_boundaries_in_one_api_batch():

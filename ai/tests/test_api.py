@@ -232,6 +232,14 @@ def test_labeling_candidates_does_not_require_trained_model(monkeypatch):
         "_sources": ["osmnx"],
         "_path": [{"lat": 35.11, "lng": 129.04}, {"lat": 35.12, "lng": 129.05}],
         "_segments": [{"mode": "walk", "description": "보행"}],
+        "_slope_segments": [
+            {
+                "start": {"lat": 35.11, "lng": 129.04},
+                "end": {"lat": 35.12, "lng": 129.05},
+                "slope_percent": 2.5,
+                "distance_m": 90.0,
+            }
+        ],
         "_geometry_quality": "exact",
         "_duration_min": 12.0,
         "_distance_m": 800.0,
@@ -257,6 +265,7 @@ def test_labeling_candidates_does_not_require_trained_model(monkeypatch):
     body = response.json()
     assert body["candidates"][0]["features"]["walk_distance_m"] == 800.0
     assert body["candidates"][0]["route_id"].startswith("route-")
+    assert body["candidates"][0]["slope_segments"][0]["slope_percent"] == 2.5
     assert body["candidates"][0]["feature_snapshot"]["snapshot_kind"] == "live_route_candidate"
     trait = body["candidates"][0]["trait_labels"]
     assert trait["feature_snapshot_hash"] == body["candidates"][0]["feature_snapshot"]["feature_snapshot_hash"]
