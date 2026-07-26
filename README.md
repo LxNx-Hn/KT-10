@@ -276,7 +276,7 @@
     </td>
     <td width="50%" valign="top">
       <h3>⛰️ Terrain Analysis</h3>
-      <p>Open-Meteo Copernicus GLO-90 고도 데이터를 이용해 평균 경사, 최대 경사, 누적 오르막을 계산합니다.</p>
+      <p>QGIS에서 90m 격자로 전처리한 부산 DEM을 메모리에 적재해 평균 경사, 최대 경사, 누적 오르막과 구간별 경사를 계산합니다.</p>
     </td>
   </tr>
   <tr>
@@ -310,7 +310,7 @@ flowchart LR
     A["사용자 입력<br/>출발지 · 도착지 · 프로필 · 이동 조건"] --> B["경로 수집<br/>ODsay · TMAP"]
     B --> C["경로 병합<br/>geometry · 구간 · 교통수단"]
     C --> D["공간 분석<br/>시설 · 횡단보도 · 정류장"]
-    D --> E["지형 분석<br/>GLO-90 경사 · 누적 오르막"]
+    D --> E["지형 분석<br/>부산 QGIS 90m DEM · 구간 경사"]
     E --> F["건물 그늘<br/>VWorld · 태양 위치"]
     F --> G["경로 피처 스냅샷"]
     G --> H{"추천 모드"}
@@ -326,7 +326,7 @@ flowchart LR
 1. Kakao Places에서 출발지와 도착지를 선택합니다.
 2. ODsay와 TMAP에서 경로 후보를 수집합니다.
 3. 경로 geometry와 교통수단별 구간을 하나의 후보 구조로 정리합니다.
-4. 경로 주변 공간 데이터와 GLO-90 지형 정보를 계산합니다.
+4. 경로 주변 공간 데이터와 부산 QGIS 90m DEM 지형 정보를 계산합니다.
 5. 출발시각에 맞춰 건물 그늘을 계산합니다.
 6. 프로필과 이동 조건을 기준으로 경로 순위를 정합니다.
 7. 로그인 사용자의 개인화 값을 함께 반영합니다.
@@ -360,7 +360,8 @@ flowchart LR
 | ODsay | 대중교통 경로와 노선 geometry |
 | TMAP | 보행 경로 |
 | OSMnx | 보행 geometry 캐시 |
-| Open-Meteo Copernicus GLO-90 | 고도와 경사 |
+| 부산 QGIS 90m DEM | 운영 경로의 고도와 구간별 경사 |
+| Open-Meteo Copernicus GLO-90 | 지역 DEM 범위 밖 fallback 고도 |
 | VWorld | 건물 도형과 높이 |
 | OpenWeather | 현재 날씨 |
 | 부산 버스 API | 정류장과 버스 도착 정보 |
@@ -423,7 +424,7 @@ flowchart TB
     subgraph AI["AI Service"]
         COLLECT["ODsay · TMAP Collectors"]
         GEO["GeoPandas · Shapely"]
-        DEM["GLO-90 Terrain"]
+        DEM["Busan QGIS 90m Terrain"]
         SNAPSHOT["Feature Snapshot"]
         RANK["Rule Baseline · XGBRanker"]
     end

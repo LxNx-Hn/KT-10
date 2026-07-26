@@ -2,13 +2,12 @@
 
 ## 현재 상태
 
-`feature/frontend-map-first-v2`의 지도 중심 UI/UX를 최신 `main`의
-프로덕션 기능과 연결한 현재 프론트 단일 진입점입니다.
+지도 중심 UI/UX와 프로덕션 기능을 연결한 프론트 단일 진입점입니다.
 
 - `App.tsx`는 `MapFirstApp`을 렌더링합니다.
-- `MapFirstPrototype.tsx`는 예전 import를 깨지 않기 위한 호환 별칭입니다.
+- `MapFirstPrototype.tsx`는 `MapFirstApp` 호환 별칭입니다.
 - 초기 가짜 경로·고정 좌표·자동 데모 검색은 실행하지 않습니다.
-- 기존 `components/MapView.tsx`와 기존 데이터 계약은 삭제하지 않았습니다.
+- `components/MapView.tsx`와 데이터 계약은 호환 경로로 유지합니다.
 - 검색 카드, 프로필·짐·계단·쉬운 화면 칩, 우측 지도 조작부와 하단 시트는
   인계본의 정보 위계와 조작 위치를 기준으로 유지합니다.
 - API 연결 여부나 내부 데이터 모드는 사용자 화면에 표시하지 않습니다.
@@ -102,9 +101,8 @@ npm run test:e2e:places
 npm audit --audit-level=moderate
 ```
 
-2026-07-25 현재 통합 작업본에서 Vitest 16개 파일 98개 테스트,
-Playwright 접근성 5개 통과·데스크톱 전용 1개 의도적 제외, Kakao Places
-live E2E 1개 통과, PWA production build와 npm audit 0건을 확인했습니다.
+검증 명령은 Vitest, Playwright 접근성·Kakao Places E2E, PWA production
+build와 npm audit을 포함합니다.
 
 `test:e2e:places`는 실행 중인 live 백엔드, 유효한 Kakao JavaScript 키,
 `E2E_BASE_URL`과 정확히 일치하는 Kakao JavaScript SDK 허용 도메인이

@@ -1,22 +1,78 @@
 """90m DEM 경사 계산과 외부 응답 계약 테스트."""
 import asyncio
 import math
+from pathlib import Path
 
 import httpx
 import numpy as np
 import pytest
 import rasterio
+import features.elevation as elevation_module
 from config import settings
 from features.elevation import (
     LOCAL_DEM_SOURCE,
+    REGIONAL_DEM_SOURCE,
     _dem_tile_id,
+    _haversine_m,
     _sample,
     calculate_slope_features,
     calculate_slope_features_for_parts,
     extract_elevation_features,
     extract_elevation_features_for_parts,
+    prepare_regional_dem,
 )
 from rasterio.transform import from_origin
+
+
+@pytest.fixture(autouse=True)
+def isolate_regional_dem(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        settings,
+        "ELEVATION_REGIONAL_DEM_PATH",
+        str(tmp_path / "missing-regional-dem.tif"),
+    )
+    monkeypatch.setattr(elevation_module, "_regional_dem", None)
+    yield
+    elevation_module._regional_dem = None
+
+
+def test_bundled_qgis_regional_dem_avoids_remote_provider(monkeypatch, tmp_path):
+    regional_path = (
+        Path(__file__).resolve().parents[1]
+        / "data"
+        / "precomputed"
+        / "busan_dem_clipped_90m.tif"
+    )
+    monkeypatch.setattr(
+        settings,
+        "ELEVATION_REGIONAL_DEM_PATH",
+        str(regional_path),
+    )
+    monkeypatch.setattr(settings, "ELEVATION_DEM_DIR", "")
+    monkeypatch.setattr(settings, "ELEVATION_CACHE_DIR", str(tmp_path / "cache"))
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("부산 QGIS DEM 범위에서는 원격 고도 API를 호출하면 안 됩니다.")
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            return await extract_elevation_features(
+                [(35.115, 129.04), (35.116, 129.04)],
+                client,
+            )
+
+    result = asyncio.run(run())
+
+    assert prepare_regional_dem() == {
+        "path": str(regional_path),
+        "width": 546,
+        "height": 627,
+        "resolution_m": 90,
+    }
+    assert result["elevation_status"] == "estimated_90m"
+    assert result["elevation_source"] == REGIONAL_DEM_SOURCE
 
 
 def test_copernicus_tile_id_uses_southwest_degree():
@@ -176,6 +232,49 @@ def test_sparse_long_geometry_is_sampled_by_distance():
     assert len(sampled) > 2
     assert sampled[0] == (35.0, 129.0)
     assert sampled[-1] == (35.01, 129.0)
+
+
+def test_fifteen_km_geometry_keeps_ninety_meter_sampling():
+    sampled = _sample([(35.0, 129.0), (35.1349, 129.0)])
+
+    assert len(sampled) > 100
+    assert max(
+        _haversine_m(start, end)
+        for start, end in zip(sampled, sampled[1:])
+    ) <= 90.1
+
+
+def test_fifteen_km_elevation_is_split_into_provider_batches(
+    monkeypatch,
+    tmp_path,
+):
+    batch_sizes = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        batch_size = len(request.url.params.get("latitude", "").split(","))
+        batch_sizes.append(batch_size)
+        return httpx.Response(200, json={"elevation": [10.0] * batch_size})
+
+    monkeypatch.setattr(settings, "ELEVATION_DEM_DIR", "")
+    monkeypatch.setattr(settings, "ELEVATION_CACHE_DIR", str(tmp_path))
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            return await extract_elevation_features(
+                [(35.0, 129.0), (35.1349, 129.0)],
+                client,
+            )
+
+    result = asyncio.run(run())
+
+    assert batch_sizes == [100, len(result["slope_segments"]) + 1 - 100]
+    assert len(result["slope_segments"]) > 100
+    assert max(
+        segment["distance_m"]
+        for segment in result["slope_segments"]
+    ) <= 90.1
 
 
 def test_non_finite_elevation_is_rejected_instead_of_leaking_nan():

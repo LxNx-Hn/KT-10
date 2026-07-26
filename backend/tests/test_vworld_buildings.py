@@ -1,4 +1,5 @@
 import asyncio
+import copy
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -10,6 +11,7 @@ from app.models import LatLng
 from app.providers.vworld_buildings import (
     _building_rows,
     _path_query_boxes,
+    _route_query_boxes,
     get_vworld_buildings,
 )
 from app.settings import settings
@@ -119,6 +121,81 @@ def test_vworld_provider_keeps_unknown_height_as_none_and_reuses_cache(
     assert seen_request.url.params["data"] == "LT_C_BLDGINFO"
     assert seen_request.url.params["geometry"] == "true"
     assert seen_request.url.params["domain"] == "http://localhost:8002"
+
+
+def test_vworld_provider_singleflights_shared_query_boxes(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(settings, "vworld_api_key", "singleflight-key")
+    monkeypatch.setattr(settings, "vworld_api_domain", "http://localhost:8002")
+    monkeypatch.setattr(settings, "vworld_cache_dir", str(tmp_path))
+    request_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        return httpx.Response(
+            200,
+            request=request,
+            json=_feature_collection(),
+        )
+
+    route = _exact_route()
+    expected_boxes = len(_route_query_boxes([route]))
+    transport = httpx.MockTransport(handler)
+
+    async def run():
+        return await asyncio.gather(
+            get_vworld_buildings([route], transport=transport),
+            get_vworld_buildings([route], transport=transport),
+        )
+
+    first, second = asyncio.run(run())
+
+    assert first == second
+    assert request_count == expected_boxes
+
+
+def test_vworld_aggregate_uses_per_query_box_safety_limit(
+    monkeypatch,
+    tmp_path,
+):
+    import app.providers.vworld_buildings as module
+
+    monkeypatch.setattr(settings, "vworld_api_key", "aggregate-key")
+    monkeypatch.setattr(settings, "vworld_cache_dir", str(tmp_path))
+    monkeypatch.setattr(module, "MAX_FEATURES", 2)
+    monkeypatch.setattr(
+        module,
+        "_route_query_boxes",
+        lambda _routes: [
+            (129.0, 35.1, 129.01, 35.11),
+            (129.01, 35.1, 129.02, 35.11),
+        ],
+    )
+    request_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        payload = copy.deepcopy(_feature_collection())
+        features = payload["response"]["result"]["featureCollection"]["features"]
+        for feature in features:
+            feature["id"] = f"{request_count}-{feature['id']}"
+            feature["properties"]["ufid"] = (
+                f"{request_count}-{feature['properties']['ufid']}"
+            )
+        return httpx.Response(200, request=request, json=payload)
+
+    result = asyncio.run(get_vworld_buildings(
+        [_exact_route()],
+        transport=httpx.MockTransport(handler),
+    ))
+
+    assert request_count == 2
+    assert result["featureCount"] == 4
+    assert len(result["buildings"]) == 4
 
 
 def test_vworld_provider_keeps_impossible_height_unknown():
@@ -347,7 +424,7 @@ def test_public_shade_does_not_use_estimated_straight_walk_geometry():
 
     assert shade.status == "unavailable"
     assert shade.shade_ratio is None
-    assert "실제 도로 geometry" in shade.calculation_note
+    assert shade.calculation_note == ""
 
 
 def test_public_shade_waits_for_complete_building_corridor_cache():
@@ -364,7 +441,7 @@ def test_public_shade_waits_for_complete_building_corridor_cache():
 
     assert shade.status == "unavailable"
     assert shade.shade_ratio is None
-    assert "사전계산 중" in shade.calculation_note
+    assert shade.calculation_note == ""
 
 
 def test_public_transit_route_without_walking_geometry_is_unavailable():
@@ -389,4 +466,4 @@ def test_public_transit_route_without_walking_geometry_is_unavailable():
         buildings,
     )
     assert shade.status == "unavailable"
-    assert "실외 도보 구간" in shade.calculation_note
+    assert shade.calculation_note == ""

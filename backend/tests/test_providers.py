@@ -6,6 +6,7 @@ import pytest
 
 from app.providers import get_current_weather, search_places
 from app.providers import places as places_provider
+from app.providers import weather as weather_provider
 from app.providers.weather import _map_openweather
 from app.providers.odsay import _normalize
 from app.models import Place
@@ -212,6 +213,56 @@ def test_live_weather_rejects_missing_observation_times():
     }
     with pytest.raises(ValueError, match="필수 관측값"):
         _map_openweather(weather, air)
+
+
+def test_live_weather_cache_singleflights_and_returns_copies(monkeypatch):
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/weather"):
+            payload = {
+                "main": {"temp": 28.4, "feels_like": 30.1},
+                "wind": {"speed": 2.4},
+                "weather": [{"main": "Clear"}],
+                "dt": 1784862000,
+            }
+        else:
+            payload = {
+                "list": [{
+                    "main": {"aqi": 2},
+                    "components": {"pm10": 31.5},
+                    "dt": 1784861700,
+                }]
+            }
+        return httpx.Response(200, request=request, json=payload)
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        weather_provider.httpx,
+        "AsyncClient",
+        lambda **kwargs: real_client(transport=transport, **kwargs),
+    )
+    monkeypatch.setattr(settings, "openweather_api_key", "cache-test-key")
+    monkeypatch.setattr(settings, "weather_cache_ttl_seconds", 300)
+    weather_provider._clear_weather_cache()
+
+    async def run():
+        first, second = await asyncio.gather(
+            get_current_weather("normal"),
+            get_current_weather("normal"),
+        )
+        third = await get_current_weather("normal")
+        return first, second, third
+
+    first, second, third = asyncio.run(run())
+
+    assert len(requests) == 2
+    assert first == second == third
+    assert first is not second
+    assert second is not third
+    weather_provider._clear_weather_cache()
 
 
 def test_odsay_normalizer_rejects_missing_required_metrics():

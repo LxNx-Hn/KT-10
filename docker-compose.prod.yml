@@ -31,10 +31,17 @@ services:
       ODSAY_CACHE_TTL_SECONDS: ${ODSAY_CACHE_TTL_SECONDS:-1800}
       ODSAY_TIMEOUT_SECONDS: ${ODSAY_TIMEOUT_SECONDS:-20}
       ODSAY_LOAD_LANE_ENABLED: ${ODSAY_LOAD_LANE_ENABLED:-true}
+      ODSAY_MAX_CANDIDATES: ${ODSAY_MAX_CANDIDATES:-10}
       ELEVATION_CACHE_DIR: /app/ai/data/cache/elevation
       ELEVATION_DEM_DIR: /app/ai/data/cache/elevation/dem
+      ELEVATION_REGIONAL_DEM_PATH: /app/ai/data/precomputed/busan_dem_clipped_90m.tif
       ELEVATION_CACHE_TTL_SECONDS: ${ELEVATION_CACHE_TTL_SECONDS:-2592000}
+      ROUTE_FEATURE_CACHE_DIR: /app/ai/data/cache/route_features
+      ROUTE_FEATURE_CACHE_TTL_SECONDS: ${ROUTE_FEATURE_CACHE_TTL_SECONDS:-1800}
       TMAP_API_KEY: ${TMAP_API_KEY:-}
+      TMAP_CACHE_DIR: /app/ai/data/cache/tmap
+      TMAP_CACHE_TTL_SECONDS: ${TMAP_CACHE_TTL_SECONDS:-1800}
+      TMAP_MAX_CONCURRENT_REQUESTS: ${TMAP_MAX_CONCURRENT_REQUESTS:-3}
       OSMNX_WALK_GEOMETRY_ENABLED: ${OSMNX_WALK_GEOMETRY_ENABLED:-false}
       OSMNX_WALK_GEOMETRY_BLOCKING: ${OSMNX_WALK_GEOMETRY_BLOCKING:-false}
       OSMNX_OVERPASS_URL: ${OSMNX_OVERPASS_URL:-https://lambert.openstreetmap.de/api}
@@ -51,6 +58,8 @@ services:
       - ${OSMNX_CACHE_HOST_DIR:-./ai/data/cache/osmnx}:/app/ai/data/cache/osmnx
       - odsay-cache:/app/ai/data/cache/odsay
       - elevation-cache:/app/ai/data/cache/elevation
+      - route-feature-cache:/app/ai/data/cache/route_features
+      - tmap-cache:/app/ai/data/cache/tmap
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/ready', timeout=3)"]
       interval: 10s
@@ -72,6 +81,7 @@ services:
       - /tmp:size=64m,mode=1777
     environment:
       APP_ENV: production
+      MAX_SUPPORTED_TOTAL_WALK_M: ${MAX_SUPPORTED_TOTAL_WALK_M:-15000}
       ROUTE_MODE: ${ROUTE_MODE:-live}
       BUILDING_SOURCE: ${BUILDING_SOURCE:-vworld}
       AI_SERVER_URL: http://ai:8001
@@ -80,6 +90,8 @@ services:
       VWORLD_API_DOMAIN: ${PUBLIC_ORIGIN:?PUBLIC_ORIGIN is required}
       VWORLD_CACHE_DIR: /var/cache/kt10/vworld
       VWORLD_CACHE_TTL_HOURS: ${VWORLD_CACHE_TTL_HOURS:-168}
+      SHADE_CACHE_DIR: /var/cache/kt10/shade
+      SHADE_CACHE_TTL_SECONDS: ${SHADE_CACHE_TTL_SECONDS:-86400}
       KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:?KAKAO_REST_API_KEY is required}
       KAKAO_OAUTH_CLIENT_SECRET: ${KAKAO_OAUTH_CLIENT_SECRET:?KAKAO_OAUTH_CLIENT_SECRET is required}
       KAKAO_OAUTH_REDIRECT_URI: ${PUBLIC_ORIGIN}/api/auth/kakao/callback
@@ -92,6 +104,7 @@ services:
       LABELING_API_TOKEN: ${LABELING_API_TOKEN:?LABELING_API_TOKEN is required}
       ALLOWED_ORIGINS: ${PUBLIC_ORIGIN}
       REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-8}
+      WEATHER_CACHE_TTL_SECONDS: ${WEATHER_CACHE_TTL_SECONDS:-300}
       PERSONALIZATION_LEARNING_RATE: "0.25"
       PERSONALIZATION_REGULARIZATION: "0.02"
       PERSONALIZATION_MAX_SHARE: "0.35"
@@ -102,6 +115,7 @@ services:
       PYTHONUTF8: "1"
     volumes:
       - vworld-cache:/var/cache/kt10/vworld
+      - shade-cache:/var/cache/kt10/shade
     command:
       - uvicorn
       - backend.app.main:app
@@ -152,4 +166,7 @@ volumes:
   postgres-data:
   odsay-cache:
   elevation-cache:
+  route-feature-cache:
+  tmap-cache:
   vworld-cache:
+  shade-cache:

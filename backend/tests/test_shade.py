@@ -1,8 +1,18 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import app.shade as shade_module
 from app.data.routes import demo_candidates
-from app.shade import _swept_shadow, add_demo_shade, assign_characteristics, solar_position
+from app.shade import (
+    DEMO_BUILDING_DATA,
+    _display_polygons,
+    _swept_shadow,
+    add_demo_shade,
+    assign_characteristics,
+    calculate_shade,
+    prepare_shade_context,
+    solar_position,
+)
 from shapely.geometry import Point, Polygon
 
 KST = ZoneInfo("Asia/Seoul")
@@ -57,7 +67,7 @@ def test_demo_buildings_outside_verified_area_are_unavailable_not_zero():
     assert shade is not None
     assert shade.status == "unavailable"
     assert shade.shade_ratio is None
-    assert "검증 범위" in shade.calculation_note
+    assert shade.calculation_note == ""
 
 
 def test_night_outside_demo_bounds_stays_not_daylight():
@@ -90,7 +100,7 @@ def test_zero_length_walking_geometry_is_unavailable_not_estimated():
     assert shade is not None
     assert shade.status == "unavailable"
     assert shade.shade_ratio is None
-    assert "길이가 0" in shade.calculation_note
+    assert shade.calculation_note == ""
 
 
 def test_concave_building_shadow_is_not_inflated_to_convex_hull():
@@ -100,6 +110,87 @@ def test_concave_building_shadow_is_not_inflated_to_convex_hull():
     shadow = _swept_shadow(footprint, (10, 0))
     assert shadow.covers(Point(8, 3))
     assert not shadow.covers(Point(13, 3))
+
+
+def test_display_shadow_simplification_preserves_topology_and_area():
+    detailed = Polygon([
+        (0, 0),
+        (1, 0.1),
+        (2, 0),
+        (3, 0.1),
+        (4, 0),
+        (4, 4),
+        (0, 4),
+        (0, 0),
+    ])
+
+    display = _display_polygons(detailed)
+
+    assert len(display) == 1
+    simplified = Polygon(display[0])
+    assert len(display[0]) < len(detailed.exterior.coords)
+    assert simplified.is_valid
+    assert abs(simplified.area - detailed.area) / detailed.area < 0.02
+
+
+def test_prepared_context_builds_shared_shadows_once(monkeypatch):
+    routes = demo_candidates()[:2]
+    evaluated_at = datetime(2026, 7, 23, 14, 0, tzinfo=KST)
+    swept_calls = 0
+    original = shade_module._swept_shadow
+
+    def counted(*args, **kwargs):
+        nonlocal swept_calls
+        swept_calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(shade_module, "_swept_shadow", counted)
+    context = prepare_shade_context(
+        routes,
+        evaluated_at,
+        DEMO_BUILDING_DATA,
+    )
+    prepared_calls = swept_calls
+
+    summaries = [
+        calculate_shade(
+            route,
+            evaluated_at,
+            DEMO_BUILDING_DATA,
+            prepared_context=context,
+        )
+        for route in routes
+    ]
+
+    assert context is not None
+    assert prepared_calls > 0
+    assert swept_calls == prepared_calls
+    assert all(summary.status == "estimated_demo" for summary in summaries)
+
+
+def test_prepared_context_matches_independent_route_ratios():
+    routes = demo_candidates()
+    evaluated_at = datetime(2026, 7, 23, 14, 0, tzinfo=KST)
+    context = prepare_shade_context(
+        routes,
+        evaluated_at,
+        DEMO_BUILDING_DATA,
+    )
+
+    assert context is not None
+    for route in routes:
+        independent = calculate_shade(
+            route,
+            evaluated_at,
+            DEMO_BUILDING_DATA,
+        )
+        shared = calculate_shade(
+            route,
+            evaluated_at,
+            DEMO_BUILDING_DATA,
+            prepared_context=context,
+        )
+        assert shared.shade_ratio == independent.shade_ratio
 
 
 def test_characteristics_cover_factual_route_traits():

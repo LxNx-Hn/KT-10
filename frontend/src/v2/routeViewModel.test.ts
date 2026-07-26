@@ -172,7 +172,7 @@ describe('v2 경로 표시 모델', () => {
     const view = buildRouteViewModel(
       makeItem({
         shade: shade('unavailable', {
-          calculationNote: '건물 데이터의 검증 범위를 벗어났습니다.',
+          calculationNote: '',
         }),
         traitLabels: [
           {

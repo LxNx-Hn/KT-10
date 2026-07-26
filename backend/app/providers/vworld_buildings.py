@@ -11,6 +11,7 @@ from threading import Lock
 import time
 from typing import Any
 from uuid import uuid4
+from weakref import WeakKeyDictionary
 
 import httpx
 
@@ -26,11 +27,75 @@ PAGE_SIZE = 1000
 MAX_FEATURES = 10_000
 MAX_QUERY_BOXES = 200
 MAX_CONCURRENT_QUERIES = 3
+MAX_MEMORY_CACHE_BOXES = 4096
+MAX_MEMORY_ROUTE_BUILDING_SETS = 1024
 CACHE_SCHEMA_VERSION = 1
 _warm_tasks: set[asyncio.Task] = set()
 _warming_boxes: set[tuple[float, float, float, float]] = set()
 _warming_boxes_guard = Lock()
+_memory_cache: dict[
+    tuple[str, tuple[float, float, float, float]],
+    tuple[float, list[dict]],
+] = {}
+_memory_cache_guard = Lock()
+_route_memory_cache: dict[
+    tuple[str, tuple[tuple[float, float, float, float], ...]],
+    tuple[float, dict],
+] = {}
+_route_memory_cache_guard = Lock()
+_request_locks: WeakKeyDictionary = WeakKeyDictionary()
+_request_locks_guard = Lock()
 log = logging.getLogger("providers.vworld_buildings")
+
+
+def _cache_namespace() -> str:
+    material = (
+        f"{CACHE_SCHEMA_VERSION}|{settings.vworld_api_key}|"
+        f"{settings.vworld_api_domain}|{settings.vworld_cache_dir}"
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _store_memory_cache(
+    query_box: tuple[float, float, float, float],
+    features: list[dict],
+) -> None:
+    key = (_cache_namespace(), query_box)
+    with _memory_cache_guard:
+        _memory_cache[key] = (time.monotonic(), features)
+        while len(_memory_cache) > MAX_MEMORY_CACHE_BOXES:
+            oldest = next(iter(_memory_cache))
+            _memory_cache.pop(oldest, None)
+
+
+def _read_route_memory_cache(
+    query_boxes: list[tuple[float, float, float, float]],
+) -> dict | None:
+    key = (_cache_namespace(), tuple(query_boxes))
+    now = time.monotonic()
+    with _route_memory_cache_guard:
+        cached = _route_memory_cache.get(key)
+        if (
+            cached is None
+            or now - cached[0]
+            > settings.vworld_cache_ttl_hours * 3600
+        ):
+            if cached is not None:
+                _route_memory_cache.pop(key, None)
+            return None
+        return cached[1]
+
+
+def _store_route_memory_cache(
+    query_boxes: list[tuple[float, float, float, float]],
+    building_data: dict,
+) -> None:
+    key = (_cache_namespace(), tuple(query_boxes))
+    with _route_memory_cache_guard:
+        _route_memory_cache[key] = (time.monotonic(), building_data)
+        while len(_route_memory_cache) > MAX_MEMORY_ROUTE_BUILDING_SETS:
+            oldest = next(iter(_route_memory_cache))
+            _route_memory_cache.pop(oldest, None)
 
 
 def _distance_m(left: LatLng, right: LatLng) -> float:
@@ -183,6 +248,16 @@ def _cache_path(query_box: tuple[float, float, float, float]) -> Path | None:
 def _read_cached_features(
     query_box: tuple[float, float, float, float],
 ) -> list[dict] | None:
+    now = time.monotonic()
+    memory_key = (_cache_namespace(), query_box)
+    with _memory_cache_guard:
+        memory_cached = _memory_cache.get(memory_key)
+        if (
+            memory_cached is not None
+            and now - memory_cached[0]
+            <= settings.vworld_cache_ttl_hours * 3600
+        ):
+            return memory_cached[1]
     path = _cache_path(query_box)
     if path is None or not path.is_file():
         return None
@@ -198,13 +273,19 @@ def _read_cached_features(
         or time.time() - cached_at > settings.vworld_cache_ttl_hours * 3600
     ):
         return None
-    return [feature for feature in features if isinstance(feature, dict)]
+    validated = [
+        feature for feature in features
+        if isinstance(feature, dict)
+    ]
+    _store_memory_cache(query_box, validated)
+    return validated
 
 
 def _write_cached_features(
     query_box: tuple[float, float, float, float],
     features: list[dict],
 ) -> None:
+    _store_memory_cache(query_box, features)
     path = _cache_path(query_box)
     if path is None:
         return
@@ -295,6 +376,38 @@ async def _download_query_box(
     return all_features
 
 
+def _query_box_request_lock(
+    query_box: tuple[float, float, float, float],
+) -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    key = (_cache_namespace(), query_box)
+    with _request_locks_guard:
+        locks = _request_locks.setdefault(loop, {})
+        return locks.setdefault(key, asyncio.Lock())
+
+
+async def _download_missing_query_box(
+    client: httpx.AsyncClient,
+    base_params: dict[str, Any],
+    query_box: tuple[float, float, float, float],
+    semaphore: asyncio.Semaphore,
+) -> list[dict]:
+    """동시 후보가 공유하는 같은 회랑 box는 공급자에 한 번만 요청한다."""
+    async with _query_box_request_lock(query_box):
+        cached = await asyncio.to_thread(
+            _read_cached_features,
+            query_box,
+        )
+        if cached is not None:
+            return cached
+        return await _download_query_box(
+            client,
+            base_params,
+            query_box,
+            semaphore,
+        )
+
+
 async def _warm_query_boxes(
     query_boxes: list[tuple[float, float, float, float]],
     base_params: dict[str, Any],
@@ -306,7 +419,7 @@ async def _warm_query_boxes(
         ) as client:
             results = await asyncio.gather(
                 *(
-                    _download_query_box(
+                    _download_missing_query_box(
                         client,
                         base_params,
                         query_box,
@@ -465,6 +578,10 @@ async def get_vworld_buildings(
     if not settings.vworld_api_key:
         raise RuntimeError("BUILDING_SOURCE=vworld requires VWORLD_API_KEY.")
     query_boxes = _route_query_boxes(routes)
+    if transport is None:
+        route_cached = _read_route_memory_cache(query_boxes)
+        if route_cached is not None:
+            return route_cached
     base_params = {
         "service": "data",
         "version": "2.0",
@@ -516,7 +633,7 @@ async def get_vworld_buildings(
             ) as client:
                 semaphore = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
                 query_results.extend(await asyncio.gather(*(
-                    _download_query_box(
+                    _download_missing_query_box(
                         client,
                         base_params,
                         query_box,
@@ -540,14 +657,9 @@ async def get_vworld_buildings(
                     _feature_identity(feature),
                     feature,
                 )
-        if len(unique_features) > MAX_FEATURES:
-            raise RuntimeError(
-                f"보행 회랑 주변 고유 건물이 안전 조회 한도 "
-                f"{MAX_FEATURES}건을 초과했습니다."
-            )
     all_features = list(unique_features.values())
     buildings = _building_rows(all_features)
-    return {
+    building_data = {
         "schemaVersion": 1,
         "source": "VWorld LT_C_BLDGINFO WFS",
         "dataQuality": "public",
@@ -556,3 +668,6 @@ async def get_vworld_buildings(
         "featureCount": len(all_features),
         "buildings": buildings,
     }
+    if cache_complete and transport is None:
+        _store_route_memory_cache(query_boxes, building_data)
+    return building_data

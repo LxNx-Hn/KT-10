@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import json
+import logging
 import math
 import re
 from datetime import UTC, datetime
@@ -22,6 +24,12 @@ from features.extractor import (
     prepare_spatial_layers,
 )
 from features.elevation import extract_elevation_features_for_parts
+from features.route_feature_cache import (
+    cache_identity as route_feature_cache_identity,
+    read as read_route_feature_cache,
+    request_lock as route_feature_request_lock,
+    write as write_route_feature_cache,
+)
 from labeling.route_traits import generate_route_traits
 from merger.route_merger import merge_route_candidates, sample_path_by_distance
 from preprocessing.load_layers import load_all_layers
@@ -39,6 +47,7 @@ router = APIRouter()
 _layers = None
 _rankers = None
 _layers_lock = Lock()
+log = logging.getLogger("api.router")
 
 
 def _get_layers():
@@ -93,7 +102,8 @@ class RecommendRequest(BaseModel):
     low_floor_priority: bool = False
     uses_wheelchair: bool = False
     uses_walking_aid: bool = False
-    max_walk_distance_m: int | None = Field(default=None, ge=100, le=10000)
+    max_walk_distance_m: int | None = Field(default=None, ge=100, le=15000)
+    candidate_limit: int = Field(default=5, ge=1, le=10)
     temp_c: float | None = Field(default=None, ge=-60, le=60)
     feels_like_c: float | None = Field(default=None, ge=-80, le=80)
     precipitation_mm: float | None = Field(default=None, ge=0)
@@ -388,16 +398,25 @@ async def labeling_candidates(req: RecommendRequest):
     }
 
 
-async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], dict]:
+async def _collect_static_featured_routes(
+    req: RecommendRequest,
+) -> tuple[list[dict], dict]:
     origin = Coordinate(lat=req.origin_lat, lng=req.origin_lng)
     destination = Coordinate(lat=req.dest_lat, lng=req.dest_lng)
     # Opt-in OSMnx is used only inside ODsay to recover walking geometry. It has
     # no authoritative travel-time value and therefore must not become a
     # scored standalone route candidate.
-    collectors = [OdsayRouteCollector(), TmapRouteCollector()]
+    odsay_collector = OdsayRouteCollector()
+    tmap_collector = TmapRouteCollector()
+    collectors = [odsay_collector, tmap_collector]
     source_names = [collector.source_name for collector in collectors]
     results = await asyncio.gather(
-        *(collector.collect(origin, destination) for collector in collectors),
+        odsay_collector.collect(
+            origin,
+            destination,
+            max_candidates=req.candidate_limit,
+        ),
+        tmap_collector.collect(origin, destination),
         return_exceptions=True,
     )
 
@@ -459,7 +478,6 @@ async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], d
             "shade_building_height_coverage": None,
             # 교통카드 시간대 데이터가 연결되기 전에는 혼잡을 추정하지 않는다.
             "crowd_level": None,
-            **_weather_features(req),
             "_sources": candidate.sources,
             "_duration_min": candidate.duration_min,
             "_distance_m": candidate.distance_m,
@@ -471,7 +489,6 @@ async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], d
             "_slope_segments": slope_segments,
             "_geometry_quality": candidate.geometry_quality,
         }
-        feature.update(_context_features(feature, req))
         route_features.append(feature)
 
     return route_features, {
@@ -481,6 +498,102 @@ async def _collect_featured_routes(req: RecommendRequest) -> tuple[list[dict], d
         "sources_failed": failed,
         "source_errors": source_errors,
     }
+
+
+def _limit_cached_route_features(
+    route_features: list[dict],
+    candidate_limit: int,
+) -> list[dict]:
+    """더 큰 사전계산 캐시에서 요청한 ODsay 후보 수만 선택한다."""
+    selected: list[dict] = []
+    odsay_count = 0
+    for feature in route_features:
+        sources = feature.get("_sources")
+        has_odsay = (
+            isinstance(sources, list)
+            and "odsay" in sources
+        )
+        if has_odsay:
+            if odsay_count >= candidate_limit:
+                continue
+            odsay_count += 1
+        selected.append(feature)
+    return selected
+
+
+def _apply_request_features(
+    route_features: list[dict],
+    req: RecommendRequest,
+) -> list[dict]:
+    scoped = copy.deepcopy(
+        _limit_cached_route_features(
+            route_features,
+            req.candidate_limit,
+        )
+    )
+    for feature in scoped:
+        feature.update(_weather_features(req))
+        feature.update(_context_features(feature, req))
+    return scoped
+
+
+def _static_features_cacheable(route_features: list[dict]) -> bool:
+    """정확 보행 geometry와 90m 경사가 완성된 후보군을 캐시한다."""
+    return bool(route_features) and all(
+        feature.get("_geometry_quality") == "exact"
+        and feature.get("elevation_status") == "estimated_90m"
+        and bool(feature.get("_slope_segments"))
+        for feature in route_features
+    )
+
+
+async def _collect_featured_routes(
+    req: RecommendRequest,
+) -> tuple[list[dict], dict]:
+    """정적 후보·경사는 OD 캐시에서 읽고 요청별 날씨·조건만 다시 결합한다."""
+    identity = route_feature_cache_identity(
+        req.origin_lat,
+        req.origin_lng,
+        req.dest_lat,
+        req.dest_lng,
+    )
+    cached = await asyncio.to_thread(
+        read_route_feature_cache,
+        identity,
+        minimum_candidate_limit=req.candidate_limit,
+    )
+    if cached is None:
+        async with route_feature_request_lock(identity):
+            cached = await asyncio.to_thread(
+                read_route_feature_cache,
+                identity,
+                minimum_candidate_limit=req.candidate_limit,
+            )
+            if cached is None:
+                route_features, metadata = (
+                    await _collect_static_featured_routes(req)
+                )
+                if _static_features_cacheable(route_features):
+                    try:
+                        await asyncio.to_thread(
+                            write_route_feature_cache,
+                            identity,
+                            candidate_limit=req.candidate_limit,
+                            route_features=route_features,
+                            metadata=metadata,
+                        )
+                    except OSError as exc:
+                        log.warning(
+                            "정적 경로 피처 캐시 저장 실패 (%s)",
+                            type(exc).__name__,
+                        )
+                else:
+                    log.info(
+                        "정확 geometry·90m 경사 완성 전 후보군은 요청 범위에서만 사용"
+                    )
+                cached = (route_features, metadata)
+    route_features, metadata = cached
+    return _apply_request_features(route_features, req), metadata
 
 
 def _analysis_route_parts(candidate) -> list[list[tuple[float, float]]]:

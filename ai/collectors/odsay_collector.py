@@ -331,8 +331,8 @@ class OdsayRouteCollector(BaseRouteCollector):
 
     @staticmethod
     async def _walk_geometry(start: Coordinate, end: Coordinate) -> tuple[list[Coordinate], str]:
-        # TMAP 키가 있으면 공식 보행 경로를 우선한다. OSMnx는 외부 그래프
-        # 조회 지연이 크므로 명시적으로 활성화한 환경에서만 보조로 사용한다.
+        # TMAP 공식 보행 경로를 우선하고, OSMnx는 명시적으로 활성화한
+        # 환경의 보조 공급자다.
         from collectors.tmap_collector import TmapRouteCollector
 
         collectors = []
@@ -517,6 +517,8 @@ class OdsayRouteCollector(BaseRouteCollector):
         self,
         origin: Coordinate,
         destination: Coordinate,
+        *,
+        max_candidates: int,
     ) -> list:
         try:
             search_identity = {
@@ -561,8 +563,8 @@ class OdsayRouteCollector(BaseRouteCollector):
             candidates = []
             rejected: list[str] = []
             async with httpx.AsyncClient(follow_redirects=True) as lane_client:
-                # 후보별 OSM 보행 구간은 서로 독립적이다. 세 후보를 한 묶음으로
-                # 조립해 공급자 지연이 직렬로 누적되지 않게 하되, OSM 수집기
+                # 후보별 보행 구간은 서로 독립적이다. 세 후보를 한 묶음으로
+                # 조립해 공급자 지연이 직렬로 누적되지 않게 하되, 보행 수집기
                 # 내부 동시성 상한으로 공개 Overpass에 과도한 요청을 보내지 않는다.
                 for batch_start in range(0, len(paths), 3):
                     batch: list[tuple[int, dict]] = []
@@ -593,9 +595,9 @@ class OdsayRouteCollector(BaseRouteCollector):
                             raise result
                         else:
                             candidates.append(result)
-                            if len(candidates) >= 3:
+                            if len(candidates) >= max_candidates:
                                 break
-                    if len(candidates) >= 3:
+                    if len(candidates) >= max_candidates:
                         break
             if not candidates:
                 suffix = f" ({'; '.join(rejected[:3])})" if rejected else ""
@@ -609,12 +611,26 @@ class OdsayRouteCollector(BaseRouteCollector):
         except (httpx.HTTPError, ValueError, TypeError) as exc:
             raise CollectorError(f"ODsay 호출 또는 응답 처리 실패: {type(exc).__name__}") from exc
 
-    async def collect(self, origin: Coordinate, destination: Coordinate) -> list:
+    async def collect(
+        self,
+        origin: Coordinate,
+        destination: Coordinate,
+        *,
+        max_candidates: int | None = None,
+    ) -> list:
         if not settings.ODSAY_API_KEY or settings.ODSAY_API_KEY.startswith("YOUR_"):
             raise CollectorNotConfigured("ODSAY_API_KEY가 설정되지 않았습니다.")
+        candidate_limit = min(
+            max_candidates or settings.ODSAY_MAX_CANDIDATES,
+            settings.ODSAY_MAX_CANDIDATES,
+        )
         try:
             return await asyncio.wait_for(
-                self._collect_live_or_cached(origin, destination),
+                self._collect_live_or_cached(
+                    origin,
+                    destination,
+                    max_candidates=candidate_limit,
+                ),
                 timeout=settings.ODSAY_TIMEOUT_SECONDS,
             )
         except TimeoutError as exc:

@@ -8,6 +8,7 @@ import asyncio
 import time
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from collectors.base import CollectorError, CollectorNotConfigured, Coordinate
@@ -45,7 +46,7 @@ def test_odsay_persistent_cache_round_trip(monkeypatch, tmp_path):
 
 
 def test_odsay_has_hard_service_timeout(monkeypatch):
-    async def slow_collect(_self, _origin, _destination):
+    async def slow_collect(_self, _origin, _destination, **_kwargs):
         await asyncio.sleep(0.05)
         return []
 
@@ -65,6 +66,118 @@ def test_tmap_fails_explicitly_without_api_key(monkeypatch):
     monkeypatch.setattr(settings, "TMAP_API_KEY", "")
     with pytest.raises(CollectorNotConfigured):
         asyncio.run(TmapRouteCollector().collect(ORIGIN, DEST))
+
+
+def test_tmap_persistent_cache_avoids_repeated_provider_call(
+    monkeypatch,
+    tmp_path,
+):
+    import collectors.tmap_collector as module
+
+    payload = {
+        "features": [{
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [ORIGIN.lng, ORIGIN.lat],
+                    [DEST.lng, DEST.lat],
+                ],
+            },
+            "properties": {
+                "totalTime": 600,
+                "totalDistance": 1000,
+            },
+        }],
+    }
+    requests = 0
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return payload
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            nonlocal requests
+            requests += 1
+            await asyncio.sleep(0.01)
+            return Response()
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "test-secret")
+    monkeypatch.setattr(settings, "TMAP_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "TMAP_CACHE_TTL_SECONDS", 1800)
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+
+    async def collect_concurrently():
+        return await asyncio.gather(
+            TmapRouteCollector().collect(ORIGIN, DEST),
+            TmapRouteCollector().collect(ORIGIN, DEST),
+        )
+
+    first, second = asyncio.run(collect_concurrently())
+    third = asyncio.run(TmapRouteCollector().collect(ORIGIN, DEST))
+
+    assert requests == 1
+    assert first[0].path == second[0].path
+    assert second[0].path == third[0].path
+    cache_text = next(tmp_path.glob("*.json")).read_text(encoding="utf-8")
+    assert "test-secret" not in cache_text
+
+
+def test_tmap_quota_backoff_limits_repeated_provider_calls(
+    monkeypatch,
+    tmp_path,
+):
+    import collectors.tmap_collector as module
+
+    requests = 0
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            nonlocal requests
+            requests += 1
+            request = httpx.Request("POST", TmapRouteCollector.BASE_URL)
+            return httpx.Response(
+                429,
+                request=request,
+                json={"error": {"code": "QUOTA_EXCEEDED"}},
+            )
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "test-secret")
+    monkeypatch.setattr(settings, "TMAP_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+    module._clear_quota_backoff()
+
+    with pytest.raises(CollectorError, match="한도 초과"):
+        asyncio.run(TmapRouteCollector().collect(ORIGIN, DEST))
+    with pytest.raises(CollectorError, match="대기 중"):
+        asyncio.run(TmapRouteCollector().collect(
+            Coordinate(35.17, 129.06),
+            Coordinate(35.18, 129.07),
+        ))
+
+    assert requests == 1
+    module._clear_quota_backoff()
 
 
 def test_odsay_walk_geometry_defaults_to_estimated_without_provider(monkeypatch):
@@ -508,11 +621,11 @@ def test_odsay_labeling_mode_skips_load_lane_and_marks_transit_estimated(
     ]
 
 
-def test_odsay_builds_three_independent_candidates_concurrently(monkeypatch):
+def test_odsay_respects_requested_candidate_limit_in_batches_of_three(monkeypatch):
     import collectors.odsay_collector as module
 
     search_payload = {
-        "result": {"path": [{"candidate": index} for index in range(3)]}
+        "result": {"path": [{"candidate": index} for index in range(7)]}
     }
     active = 0
     max_active = 0
@@ -550,9 +663,11 @@ def test_odsay_builds_three_independent_candidates_concurrently(monkeypatch):
     monkeypatch.setattr(module.httpx, "AsyncClient", Client)
     monkeypatch.setattr(collector, "_build_candidate", fake_build)
 
-    result = asyncio.run(collector.collect(ORIGIN, DEST))
+    result = asyncio.run(
+        collector.collect(ORIGIN, DEST, max_candidates=5)
+    )
 
-    assert [item.candidate for item in result] == [0, 1, 2]
+    assert [item.candidate for item in result] == [0, 1, 2, 3, 4]
     assert max_active == 3
 
 

@@ -134,7 +134,9 @@ AI 서버는 시작 시 정적 GeoPackage 레이어 9개를 EPSG:5179로 한 번
 | --- | --- | --- |
 | `odsay-cache` | 경로 검색·`loadLane` 원시 응답 | 30분 |
 | `osmnx-cache` | OD 보행 그래프와 OSM HTTP cache | 그래프 파일 보존 |
-| `elevation-cache` | GLO-90 DEM COG 타일과 경로 표본별 계산 결과 | 계산 결과 30일, 타일 파일 보존 |
+| `elevation-cache` | 지역 DEM 범위 밖 GLO-90 fallback 타일과 경로 표본별 계산 결과 | 계산 결과 30일, 타일 파일 보존 |
+| `route-feature-cache` | OD 후보의 geometry·공간 피처·90m 경사 구간 | 30분 |
+| `shade-cache` | 경로·30분 시각 버킷별 건물 그늘 결과 | 24시간 |
 | `vworld-cache` | 500m 건물 corridor box 응답 | 7일 |
 
 컨테이너가 healthy가 된 뒤 우선 OD를 준비합니다.

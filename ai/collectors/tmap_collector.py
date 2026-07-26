@@ -5,12 +5,146 @@ TMAP 보행자 길찾기 수집기 (보조 소스).
 facilityType 필드: 계단/엘리베이터/에스컬레이터 직접 파악 가능.
 키가 없거나 응답이 불완전하면 가짜 직선 경로를 만들지 않는다.
 """
+import asyncio
+import json
+import logging
+import time
+from hashlib import sha256
 from math import isfinite
+from pathlib import Path
+from threading import Lock
+from uuid import uuid4
+from weakref import WeakKeyDictionary
 
 import httpx
 
 from collectors.base import BaseRouteCollector, CollectorError, CollectorNotConfigured, RouteCandidate, Coordinate
 from config import settings
+
+CACHE_SCHEMA_VERSION = 1
+QUOTA_BACKOFF_SECONDS = 60.0
+log = logging.getLogger("collectors.tmap")
+_cache_write_locks: dict[str, Lock] = {}
+_cache_write_locks_guard = Lock()
+_request_locks: WeakKeyDictionary = WeakKeyDictionary()
+_request_semaphores: WeakKeyDictionary = WeakKeyDictionary()
+_request_state_guard = Lock()
+_quota_backoff_until = 0.0
+_quota_backoff_guard = Lock()
+
+
+def _cache_identity(
+    origin: Coordinate,
+    destination: Coordinate,
+) -> dict[str, list[float]]:
+    return {
+        "origin": [round(origin.lat, 7), round(origin.lng, 7)],
+        "destination": [
+            round(destination.lat, 7),
+            round(destination.lng, 7),
+        ],
+    }
+
+
+def _cache_path(identity: dict) -> Path | None:
+    cache_dir = settings.TMAP_CACHE_DIR.strip()
+    if not cache_dir:
+        return None
+    digest = sha256(
+        json.dumps(
+            identity,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+    ).hexdigest()
+    return Path(cache_dir) / f"route-{digest}.json"
+
+
+def _read_cache(identity: dict) -> dict | None:
+    path = _cache_path(identity)
+    if path is None or not path.is_file():
+        return None
+    try:
+        wrapper = json.loads(path.read_text(encoding="utf-8"))
+        cached_at = float(wrapper["cachedAtEpoch"])
+        payload = wrapper["payload"]
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return None
+    if (
+        wrapper.get("schemaVersion") != CACHE_SCHEMA_VERSION
+        or not isinstance(payload, dict)
+        or time.time() - cached_at > settings.TMAP_CACHE_TTL_SECONDS
+    ):
+        return None
+    return payload
+
+
+def _cache_write_lock(path: Path) -> Lock:
+    key = str(path.resolve())
+    with _cache_write_locks_guard:
+        return _cache_write_locks.setdefault(key, Lock())
+
+
+def _request_lock(identity: dict) -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    key = json.dumps(identity, sort_keys=True, separators=(",", ":"))
+    with _request_state_guard:
+        locks = _request_locks.setdefault(loop, {})
+        return locks.setdefault(key, asyncio.Lock())
+
+
+def _request_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    with _request_state_guard:
+        return _request_semaphores.setdefault(
+            loop,
+            asyncio.Semaphore(settings.TMAP_MAX_CONCURRENT_REQUESTS),
+        )
+
+
+def _quota_backoff_active() -> bool:
+    with _quota_backoff_guard:
+        return time.monotonic() < _quota_backoff_until
+
+
+def _start_quota_backoff() -> None:
+    global _quota_backoff_until
+    with _quota_backoff_guard:
+        _quota_backoff_until = max(
+            _quota_backoff_until,
+            time.monotonic() + QUOTA_BACKOFF_SECONDS,
+        )
+
+
+def _clear_quota_backoff() -> None:
+    global _quota_backoff_until
+    with _quota_backoff_guard:
+        _quota_backoff_until = 0.0
+
+
+def _write_cache(identity: dict, payload: dict) -> None:
+    path = _cache_path(identity)
+    if path is None:
+        return
+    with _cache_write_lock(path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+        try:
+            temporary.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": CACHE_SCHEMA_VERSION,
+                        "cachedAtEpoch": time.time(),
+                        "payload": payload,
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 class TmapRouteCollector(BaseRouteCollector):
@@ -33,87 +167,133 @@ class TmapRouteCollector(BaseRouteCollector):
             )
         return number
 
+    def _candidate_from_data(self, data: dict) -> RouteCandidate:
+        features = data.get("features")
+        if not isinstance(features, list):
+            raise CollectorError("TMAP 응답의 features가 배열이 아닙니다.")
+        coords = []
+        for feat in features:
+            if not isinstance(feat, dict):
+                raise CollectorError(
+                    "TMAP 응답의 feature가 객체가 아닙니다."
+                )
+            geom = feat.get("geometry", {})
+            if not isinstance(geom, dict):
+                raise CollectorError(
+                    "TMAP 응답의 geometry가 객체가 아닙니다."
+                )
+            properties = feat.get("properties", {})
+            if not isinstance(properties, dict):
+                raise CollectorError(
+                    "TMAP 응답의 properties가 객체가 아닙니다."
+                )
+            if geom.get("type") == "LineString":
+                geometry_coords = geom.get("coordinates")
+                if not isinstance(geometry_coords, list):
+                    raise CollectorError(
+                        "TMAP LineString의 coordinates가 배열이 아닙니다."
+                    )
+                for lng, lat in geometry_coords:
+                    point = Coordinate(lat=float(lat), lng=float(lng))
+                    if not (
+                        isfinite(point.lat)
+                        and isfinite(point.lng)
+                        and 33 <= point.lat <= 39
+                        and 124 <= point.lng <= 132
+                    ):
+                        raise CollectorError(
+                            "TMAP 응답에 대한민국 범위를 벗어난 좌표가 있습니다."
+                        )
+                    if not coords or coords[-1] != point:
+                        coords.append(point)
+
+        if len(coords) < 2:
+            raise CollectorError("TMAP 응답에 유효한 경로 좌표가 없습니다.")
+
+        props = next(
+            (
+                feature["properties"]
+                for feature in features
+                if feature.get("properties", {}).get("totalTime") is not None
+            ),
+            {},
+        )
+        duration = self._positive_number(
+            props.get("totalTime"),
+            "totalTime",
+        ) / 60
+        distance = self._positive_number(
+            props.get("totalDistance"),
+            "totalDistance",
+        )
+        return RouteCandidate(
+            source=self.source_name,
+            path=coords,
+            duration_min=duration,
+            distance_m=distance,
+            raw_response=data,
+        )
+
     async def collect(self, origin: Coordinate, destination: Coordinate) -> list:
         if not settings.TMAP_API_KEY or settings.TMAP_API_KEY.startswith("YOUR_"):
             raise CollectorNotConfigured("TMAP_API_KEY가 설정되지 않았습니다.")
 
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(self.BASE_URL, json={
-                    "startX": origin.lng, "startY": origin.lat,
-                    "endX": destination.lng, "endY": destination.lat,
-                    "startName": "출발지", "endName": "도착지",
-                }, headers={"appKey": settings.TMAP_API_KEY}, timeout=10.0)
-            resp.raise_for_status()
-            data = resp.json()
-            if not isinstance(data, dict):
-                raise CollectorError("TMAP 응답 본문이 JSON 객체가 아닙니다.")
+        identity = _cache_identity(origin, destination)
+        cached = await asyncio.to_thread(_read_cache, identity)
+        if cached is not None:
+            try:
+                return [self._candidate_from_data(cached)]
+            except CollectorError:
+                # 스키마 계약 불일치 캐시는 공급자 실응답 갱신 대상이다.
+                pass
 
-            features = data.get("features")
-            if not isinstance(features, list):
-                raise CollectorError("TMAP 응답의 features가 배열이 아닙니다.")
-            coords = []
-            for feat in features:
-                if not isinstance(feat, dict):
-                    raise CollectorError(
-                        "TMAP 응답의 feature가 객체가 아닙니다."
-                    )
-                geom = feat.get("geometry", {})
-                if not isinstance(geom, dict):
-                    raise CollectorError(
-                        "TMAP 응답의 geometry가 객체가 아닙니다."
-                    )
-                properties = feat.get("properties", {})
-                if not isinstance(properties, dict):
-                    raise CollectorError(
-                        "TMAP 응답의 properties가 객체가 아닙니다."
-                    )
-                if geom.get("type") == "LineString":
-                    geometry_coords = geom.get("coordinates")
-                    if not isinstance(geometry_coords, list):
+        async with _request_lock(identity):
+            # 동일 OD 요청은 잠금 안에서 캐시를 재확인해 공급자 호출을
+            # 한 번으로 제한한다.
+            cached = await asyncio.to_thread(_read_cache, identity)
+            if cached is not None:
+                try:
+                    return [self._candidate_from_data(cached)]
+                except CollectorError:
+                    pass
+            if _quota_backoff_active():
+                raise CollectorError(
+                    "TMAP 호출 한도 대기 중"
+                )
+            try:
+                async with _request_semaphore():
+                    if _quota_backoff_active():
                         raise CollectorError(
-                            "TMAP LineString의 coordinates가 배열이 아닙니다."
+                            "TMAP 호출 한도 대기 중"
                         )
-                    for lng, lat in geometry_coords:
-                        point = Coordinate(lat=float(lat), lng=float(lng))
-                        if not (
-                            isfinite(point.lat)
-                            and isfinite(point.lng)
-                            and 33 <= point.lat <= 39
-                            and 124 <= point.lng <= 132
-                        ):
-                            raise CollectorError(
-                                "TMAP 응답에 대한민국 범위를 벗어난 좌표가 있습니다."
-                            )
-                        if not coords or coords[-1] != point:
-                            coords.append(point)
-
-            if len(coords) < 2:
-                raise CollectorError("TMAP 응답에 유효한 경로 좌표가 없습니다.")
-
-            props = next(
-                (
-                    feature["properties"]
-                    for feature in features
-                    if feature.get("properties", {}).get("totalTime") is not None
-                ),
-                {},
-            )
-            duration = self._positive_number(
-                props.get("totalTime"),
-                "totalTime",
-            ) / 60
-            distance = self._positive_number(
-                props.get("totalDistance"),
-                "totalDistance",
-            )
-            return [RouteCandidate(
-                source=self.source_name, path=coords,
-                duration_min=duration,
-                distance_m=distance,
-                raw_response=data,
-            )]
-        except CollectorError:
-            raise
-        except (httpx.HTTPError, ValueError, TypeError) as exc:
-            raise CollectorError(f"TMAP 호출 또는 응답 처리 실패: {type(exc).__name__}") from exc
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.post(self.BASE_URL, json={
+                            "startX": origin.lng, "startY": origin.lat,
+                            "endX": destination.lng, "endY": destination.lat,
+                            "startName": "출발지", "endName": "도착지",
+                        }, headers={"appKey": settings.TMAP_API_KEY}, timeout=10.0)
+                resp.raise_for_status()
+                data = resp.json()
+                if not isinstance(data, dict):
+                    raise CollectorError("TMAP 응답 본문이 JSON 객체가 아닙니다.")
+                candidate = self._candidate_from_data(data)
+                try:
+                    await asyncio.to_thread(_write_cache, identity, data)
+                except OSError as exc:
+                    log.warning("TMAP 캐시 저장 실패 (%s)", type(exc).__name__)
+                return [candidate]
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429:
+                    _start_quota_backoff()
+                    raise CollectorError(
+                        "TMAP 호출 한도 초과"
+                    ) from exc
+                raise CollectorError(
+                    f"TMAP 호출 실패: HTTP {exc.response.status_code}"
+                ) from exc
+            except CollectorError:
+                raise
+            except (httpx.HTTPError, ValueError, TypeError) as exc:
+                raise CollectorError(
+                    f"TMAP 호출 또는 응답 처리 실패: {type(exc).__name__}"
+                ) from exc

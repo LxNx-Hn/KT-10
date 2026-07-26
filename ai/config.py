@@ -26,6 +26,8 @@ class Settings(BaseSettings):
         le=31_536_000,
     )
     ODSAY_TIMEOUT_SECONDS: int = Field(default=20, ge=5, le=600)
+    # ODsay 후보 수는 요청별 상한과 서버 상한 중 작은 값으로 결정한다.
+    ODSAY_MAX_CANDIDATES: int = Field(default=10, ge=1, le=10)
     # 일반 서비스는 ODsay loadLane 정밀 선형을 유지한다. 오프라인 보행망을
     # 쓰는 배치 수집은 정류장 연결선을 estimated로 기록하는 모드를 선택할 수 있다.
     ODSAY_LOAD_LANE_ENABLED: bool = True
@@ -35,10 +37,25 @@ class Settings(BaseSettings):
         ge=3600,
         le=31_536_000,
     )
-    # 비어 있으면 Open-Meteo API를 사용한다. 배포 환경은 공개 GLO-90 COG를
-    # 한 번만 내려받아 재사용할 수 있는 영속 캐시 경로를 지정한다.
+    # 지역 DEM 범위 밖에서는 영속 캐시의 공개 GLO-90 COG 또는
+    # Open-Meteo API를 사용한다.
     ELEVATION_DEM_DIR: str = ""
+    # QGIS에서 생성한 부산 90m DEM. 운영 경사는 이 로컬 파일에서 조회한다.
+    ELEVATION_REGIONAL_DEM_PATH: str = ""
     TMAP_API_KEY: str = ""
+    TMAP_CACHE_DIR: str = ""
+    TMAP_CACHE_TTL_SECONDS: int = Field(
+        default=1800,
+        ge=60,
+        le=31_536_000,
+    )
+    TMAP_MAX_CONCURRENT_REQUESTS: int = Field(default=3, ge=1, le=10)
+    ROUTE_FEATURE_CACHE_DIR: str = ""
+    ROUTE_FEATURE_CACHE_TTL_SECONDS: int = Field(
+        default=1800,
+        ge=300,
+        le=2_592_000,
+    )
     OSMNX_WALK_GEOMETRY_ENABLED: bool = False
     # 일반 요청은 캐시 누락 시 백그라운드 준비 후 즉시 estimated를 반환한다.
     # 장시간 학습 수집 전용 컨테이너만 동기 준비를 명시적으로 선택한다.

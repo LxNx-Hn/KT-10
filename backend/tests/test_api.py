@@ -4,13 +4,14 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import app.main as app_main
 from app.data.places import find_place
 from app.data.routes import demo_candidates
 from app.data.weather import WEATHER_SCENARIOS
-from app.main import _add_configured_shade, app
+from app.main import _add_configured_shade, _filter_viable_candidates, app
 from app.providers.ai_pipeline import EnrichedCandidateBundle
 from app.route_set_cache import route_set_cache
 from app.settings import settings
@@ -36,6 +37,30 @@ def _place_payload(place_id: str) -> dict:
     p = find_place(place_id)
     assert p is not None
     return p.model_dump(by_alias=True)
+
+
+def test_total_walk_limit_applies_to_every_route_type(monkeypatch):
+    candidates = demo_candidates()[:2]
+    candidates[0].total_walk_m = 14_999
+    candidates[1].total_walk_m = 15_001
+    candidates[1].segments[0].mode = "bus"
+    monkeypatch.setattr(settings, "max_supported_total_walk_m", 15_000)
+
+    filtered = _filter_viable_candidates(candidates)
+
+    assert [candidate.total_walk_m for candidate in filtered] == [14_999]
+
+
+def test_total_walk_limit_does_not_restore_unsupported_routes(monkeypatch):
+    candidates = demo_candidates()[:1]
+    candidates[0].total_walk_m = 15_001
+    monkeypatch.setattr(settings, "max_supported_total_walk_m", 15_000)
+
+    with pytest.raises(HTTPException) as exc_info:
+        _filter_viable_candidates(candidates)
+
+    assert exc_info.value.status_code == 422
+    assert "15000m" in str(exc_info.value.detail)
 
 
 def test_health():
@@ -215,6 +240,38 @@ def test_labeling_shade_can_wait_for_complete_vworld_corridor(monkeypatch):
     assert wait_values == [True]
 
 
+def test_vworld_shade_prepares_candidates_from_one_building_set(
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "building_source", "vworld")
+    monkeypatch.setattr(settings, "vworld_api_key", "configured")
+    calls = []
+
+    async def fake_buildings(
+        routes,
+        *,
+        wait_for_complete=False,
+        cache_only=False,
+    ):
+        calls.append((len(routes), wait_for_complete, cache_only))
+        return {
+            "source": "test-buildings",
+            "dataQuality": "public",
+            "cacheComplete": True,
+            "buildings": [],
+        }
+
+    monkeypatch.setattr(app_main, "get_vworld_buildings", fake_buildings)
+
+    asyncio.run(_add_configured_shade(
+        demo_candidates()[:2],
+        datetime(2026, 7, 24, 14, 0, tzinfo=ZoneInfo("Asia/Seoul")),
+        wait_for_buildings=True,
+    ))
+
+    assert calls == [(2, True, False)]
+
+
 def test_vworld_night_skips_building_lookup(monkeypatch):
     monkeypatch.setattr(settings, "building_source", "vworld")
     monkeypatch.setattr(settings, "vworld_api_key", "configured")
@@ -234,6 +291,24 @@ def test_vworld_night_skips_building_lookup(monkeypatch):
     assert all(route.shade is not None for route in routes)
     assert all(route.shade.status == "not_daylight" for route in routes)
     assert all(route.shade.shadow_polygons == [] for route in routes)
+
+
+def test_vworld_provider_failure_remains_a_502(monkeypatch):
+    monkeypatch.setattr(settings, "building_source", "vworld")
+    monkeypatch.setattr(settings, "vworld_api_key", "configured")
+
+    async def fail_buildings(_routes, **_kwargs):
+        raise RuntimeError("공급자 연결 실패")
+
+    monkeypatch.setattr(app_main, "get_vworld_buildings", fail_buildings)
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(_add_configured_shade(
+            demo_candidates(),
+            datetime(2026, 7, 24, 14, 0, tzinfo=ZoneInfo("Asia/Seoul")),
+        ))
+
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.detail == "공급자 연결 실패"
 
 
 def test_time_refresh_reuses_server_candidates_without_route_collection(monkeypatch):
@@ -256,6 +331,13 @@ def test_time_refresh_reuses_server_candidates_without_route_collection(monkeypa
         raise AssertionError("시간 변경 시 경로 후보를 다시 수집하면 안 됩니다.")
 
     monkeypatch.setattr(app_main, "get_route_candidates", fail_if_called)
+    add_shade = app_main._add_configured_shade
+
+    async def assert_cache_only(candidates, departure_at=None, **kwargs):
+        assert kwargs == {"cache_only_buildings": True}
+        return await add_shade(candidates, departure_at, **kwargs)
+
+    monkeypatch.setattr(app_main, "_add_configured_shade", assert_cache_only)
     refreshed = client.post("/api/routes/refresh-shade", json={
         "routeSetToken": token,
         "profile": "general",
@@ -271,6 +353,37 @@ def test_time_refresh_reuses_server_candidates_without_route_collection(monkeypa
         for item in refreshed_results
     )
     assert all(item["routeSetToken"] == token for item in refreshed_results)
+
+
+def test_same_departure_reuses_calculated_shade(monkeypatch):
+    departure_at = datetime(
+        2026,
+        7,
+        24,
+        14,
+        0,
+        tzinfo=ZoneInfo("Asia/Seoul"),
+    )
+    candidates = asyncio.run(_add_configured_shade(
+        demo_candidates(),
+        departure_at,
+    ))
+
+    def fail_if_recalculated(*_args, **_kwargs):
+        raise AssertionError("같은 출발시각의 그늘을 다시 계산했습니다.")
+
+    monkeypatch.setattr(app_main, "add_demo_shade", fail_if_recalculated)
+
+    reused = asyncio.run(_add_configured_shade(
+        candidates,
+        departure_at,
+    ))
+
+    assert all(
+        candidate.shade is not None
+        and candidate.shade.status == "estimated_demo"
+        for candidate in reused
+    )
 
 
 @pytest.mark.parametrize(
@@ -331,6 +444,53 @@ def test_routes_recommend_accepts_new_trip_conditions():
     response = client.post("/api/routes/recommend", json=body)
     assert response.status_code == 200
     assert len(response.json()) == 3
+
+
+@pytest.mark.parametrize("shade_priority", [False, True])
+def test_ai_recommend_always_calculates_shade_for_complete_route_data(
+    monkeypatch,
+    shade_priority,
+):
+    monkeypatch.setattr(settings, "route_mode", "ai")
+    monkeypatch.setattr(settings, "ai_server_url", "http://ai.test")
+    shade_calls = 0
+
+    async def fake_weather(_scenario):
+        return WEATHER_SCENARIOS["normal"]
+
+    async def fake_candidates(*_args, **_kwargs):
+        return demo_candidates()
+
+    async def fake_shade(candidates, *_args, **_kwargs):
+        nonlocal shade_calls
+        shade_calls += 1
+        return candidates
+
+    async def fake_rank(candidates, profile, options, *, top_n, **_kwargs):
+        return app_main.recommend_routes(
+            candidates,
+            WEATHER_SCENARIOS["normal"],
+            profile,
+            options,
+            top_n=top_n,
+        )
+
+    monkeypatch.setattr(app_main, "get_current_weather", fake_weather)
+    monkeypatch.setattr(app_main, "get_ai_pipeline_candidates", fake_candidates)
+    monkeypatch.setattr(app_main, "_add_configured_shade", fake_shade)
+    monkeypatch.setattr(app_main, "rank_ai_pipeline_candidates", fake_rank)
+
+    response = client.post("/api/routes/recommend", json={
+        "origin": _place_payload("gu-office"),
+        "destination": _place_payload("seomyeon-stn"),
+        "profile": "general",
+        "weatherScenario": "normal",
+        "options": {"shadePriority": shade_priority},
+        "topN": 3,
+    })
+
+    assert response.status_code == 200
+    assert shade_calls == 1
 
 
 def test_labeling_candidates_requires_explicit_ai_mode():

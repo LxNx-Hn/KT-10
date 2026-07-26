@@ -141,17 +141,17 @@ const MODE_COLOR: Record<SegmentMode, string> = {
 
 /**
  * QGIS-style slope severity color ramp for walking segments.
- * - ≤3 %  flat          → green
- * - ≤6 %  moderate      → yellow-green
- * - ≤10%  steep         → orange
- * - >10%  very steep    → red
+ * - ≤2%  gentle         → green
+ * - ≤5%  moderate       → yellow
+ * - ≤8%  steep          → orange
+ * - >8%  very steep     → red
  * Falls back to the default walk green when no terrain data is available.
  */
 const SLOPE_COLOR_RAMP: Array<{ max: number; color: string; label: string }> = [
-  { max: 3,   color: '#16a34a', label: '완만' },
-  { max: 6,   color: '#ca8a04', label: '보통' },
-  { max: 10,  color: '#ea580c', label: '급경사' },
-  { max: Infinity, color: '#dc2626', label: '위험' },
+  { max: 2, color: '#2ca25f', label: '완만' },
+  { max: 5, color: '#f2cf4a', label: '보통' },
+  { max: 8, color: '#f28e2b', label: '급경사' },
+  { max: Infinity, color: '#d73027', label: '매우 급경사' },
 ];
 
 export function slopeColor(
@@ -460,7 +460,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
           strokeColor: '#ffffff',
           strokeOpacity: 0.88,
           strokeStyle: style,
-          zIndex: 3,
+          zIndex: 4,
         }));
       }
       addGraphic(new maps.Polyline({
@@ -469,7 +469,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
         strokeColor: color,
         strokeOpacity: 0.96,
         strokeStyle: style,
-        zIndex: 4,
+        zIndex: 5,
       }));
     };
 
@@ -524,7 +524,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
           : SUN_EXPOSED_ROUTE_COLOR,
         strokeOpacity: 0.95,
         strokeStyle: 'solid',
-        zIndex: 5,
+        zIndex: 3,
       }));
     });
   };

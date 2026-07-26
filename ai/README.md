@@ -3,8 +3,9 @@
 운영 추천은 합성 라벨이나 규칙 점수로 학습하지 않습니다. AI 서비스가
 ODsay·TMAP에서 실제 후보를 수집합니다. OSMnx 보행 geometry 복구는
 `OSMNX_WALK_GEOMETRY_ENABLED=true`인 환경에서만 사용하며 기본값은
-응답 지연을 막기 위해 `false`입니다. 저장된 공간 레이어와 Open-Meteo GLO-90 지형
-피처를 결합한 뒤 백엔드가 출발시각의 건물 그늘을 계산합니다. 마지막으로
+응답 지연을 막기 위해 `false`입니다. 운영 경사는 메모리에 적재한 부산
+QGIS 90m DEM을 사용하고, 지역 DEM 범위 밖은 Open-Meteo GLO-90을
+fallback으로 사용합니다. 백엔드는 출발시각의 건물 그늘을 계산하고 마지막으로
 동결된 enriched snapshot을 프로필별 `XGBRanker`가 비교합니다.
 
 사람 평가용 `ai/data/training/route_features.jsonl`은 비어 있고
@@ -34,7 +35,7 @@ AI 내부 API는 다음과 같습니다.
 - `POST /labeling/candidates`: 모델 없이 실제 후보와 기본 피처 스냅샷 생성
 - `POST /labeling/enriched-snapshots`: 건물 그늘을 포함한 최종 스냅샷·사실 특성 생성
 - `POST /rank/candidates`: 준비된 모델로 이미 보강된 후보만 순위화
-- `POST /recommend`: 사용 중지된 이전 직접 경로, 409 반환
+- `POST /recommend`: 409를 반환하는 비활성 호환 endpoint
 
 초기 평가 배치는 백엔드
 `POST /api/routes/labeling-candidates`만 호출합니다. 이 endpoint는 공개

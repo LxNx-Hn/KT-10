@@ -1,0 +1,1205 @@
+{
+  "schemaVersion": 2,
+  "baseUrl": "http://127.0.0.1:18080",
+  "candidateCounts": [
+    3,
+    5,
+    10
+  ],
+  "requestMode": "90m 경사와 공공 건물 그늘을 모두 포함한 기본 경로 추천.",
+  "coldDefinition": "이 실행에서 각 OD에 보내는 첫 요청. 완전 cold 측정은 실행 전 캐시 초기 상태와 함께 판정.",
+  "warmDefinition": "같은 실행에서 첫 요청을 마친 OD의 반복 요청.",
+  "results": [
+    {
+      "requestedCandidates": 3,
+      "cold": {
+        "samples": 20,
+        "successfulSamples": 20,
+        "failedSamples": 0,
+        "successRate": 1.0,
+        "p50Seconds": 1.764,
+        "p95Seconds": 2.772,
+        "minSeconds": 0.93,
+        "maxSeconds": 2.959,
+        "meanSeconds": 1.779,
+        "returnedCandidateP50": 3.0,
+        "exactGeometryP50": 3.0,
+        "terrainReadyP50": 3.0,
+        "shadeReadyP50": 3.0
+      },
+      "warm": {
+        "samples": 20,
+        "successfulSamples": 20,
+        "failedSamples": 0,
+        "successRate": 1.0,
+        "p50Seconds": 0.344,
+        "p95Seconds": 1.447,
+        "minSeconds": 0.263,
+        "maxSeconds": 1.471,
+        "meanSeconds": 0.455,
+        "returnedCandidateP50": 3.0,
+        "exactGeometryP50": 3.0,
+        "terrainReadyP50": 3.0,
+        "shadeReadyP50": 3.0
+      },
+      "coldSamples": [
+        {
+          "odId": "od-d4d2faa9c1441e98b981",
+          "ok": true,
+          "seconds": 2.959412,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-cbee226ab0b574e49647",
+          "ok": true,
+          "seconds": 1.487191,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-6c9ee1a2481579afae1f",
+          "ok": true,
+          "seconds": 1.970507,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-8dac3a633ca5932cea4f",
+          "ok": true,
+          "seconds": 1.799006,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-7e82b4aa08bb0b58c52b",
+          "ok": true,
+          "seconds": 2.000495,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-dbde98c2ca3ec994d4b0",
+          "ok": true,
+          "seconds": 1.606975,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-55b5dcf7704507f38bfb",
+          "ok": true,
+          "seconds": 0.930436,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-b6fd932a033b9a2108a6",
+          "ok": true,
+          "seconds": 2.195731,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-0a60cb9e1240c49f82af",
+          "ok": true,
+          "seconds": 1.990392,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-cc575475893fd45b26b9",
+          "ok": true,
+          "seconds": 1.551184,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-59d5fbe4e482ccc46e83",
+          "ok": true,
+          "seconds": 1.492563,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-f1678cb5c7fcc332638d",
+          "ok": true,
+          "seconds": 0.975684,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-420f9d748be6bc8906b4",
+          "ok": true,
+          "seconds": 1.37701,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-734f62ba2683500c7f1f",
+          "ok": true,
+          "seconds": 2.762585,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-de45b9718cc412b8546c",
+          "ok": true,
+          "seconds": 2.092866,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-8f1bf9868ca08fd24752",
+          "ok": true,
+          "seconds": 1.452663,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-2eb78eb9af1528d0f140",
+          "ok": true,
+          "seconds": 2.109158,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-05cb8f38d0d3777d4b6e",
+          "ok": true,
+          "seconds": 1.256496,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-08a2678a24b185ed5c63",
+          "ok": true,
+          "seconds": 1.84085,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-0ee18447eb56b52c3859",
+          "ok": true,
+          "seconds": 1.729115,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        }
+      ],
+      "warmSamples": [
+        {
+          "odId": "od-d4d2faa9c1441e98b981",
+          "ok": true,
+          "seconds": 0.333777,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-cbee226ab0b574e49647",
+          "ok": true,
+          "seconds": 0.317283,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-6c9ee1a2481579afae1f",
+          "ok": true,
+          "seconds": 1.470562,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-8dac3a633ca5932cea4f",
+          "ok": true,
+          "seconds": 0.390283,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-7e82b4aa08bb0b58c52b",
+          "ok": true,
+          "seconds": 0.384425,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-dbde98c2ca3ec994d4b0",
+          "ok": true,
+          "seconds": 0.378751,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-55b5dcf7704507f38bfb",
+          "ok": true,
+          "seconds": 0.262849,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-b6fd932a033b9a2108a6",
+          "ok": true,
+          "seconds": 0.34484,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-0a60cb9e1240c49f82af",
+          "ok": true,
+          "seconds": 0.269336,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-cc575475893fd45b26b9",
+          "ok": true,
+          "seconds": 0.304256,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-59d5fbe4e482ccc46e83",
+          "ok": true,
+          "seconds": 0.286635,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-f1678cb5c7fcc332638d",
+          "ok": true,
+          "seconds": 0.282972,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-420f9d748be6bc8906b4",
+          "ok": true,
+          "seconds": 0.357116,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-734f62ba2683500c7f1f",
+          "ok": true,
+          "seconds": 0.469995,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-de45b9718cc412b8546c",
+          "ok": true,
+          "seconds": 0.37884,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-8f1bf9868ca08fd24752",
+          "ok": true,
+          "seconds": 0.329201,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-2eb78eb9af1528d0f140",
+          "ok": true,
+          "seconds": 1.445809,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-05cb8f38d0d3777d4b6e",
+          "ok": true,
+          "seconds": 0.423713,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-08a2678a24b185ed5c63",
+          "ok": true,
+          "seconds": 0.327872,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-0ee18447eb56b52c3859",
+          "ok": true,
+          "seconds": 0.342983,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        }
+      ]
+    },
+    {
+      "requestedCandidates": 5,
+      "cold": {
+        "samples": 20,
+        "successfulSamples": 20,
+        "failedSamples": 0,
+        "successRate": 1.0,
+        "p50Seconds": 2.232,
+        "p95Seconds": 5.418,
+        "minSeconds": 0.587,
+        "maxSeconds": 5.861,
+        "meanSeconds": 2.598,
+        "returnedCandidateP50": 5.0,
+        "exactGeometryP50": 5.0,
+        "terrainReadyP50": 5.0,
+        "shadeReadyP50": 5.0
+      },
+      "warm": {
+        "samples": 20,
+        "successfulSamples": 20,
+        "failedSamples": 0,
+        "successRate": 1.0,
+        "p50Seconds": 0.404,
+        "p95Seconds": 0.783,
+        "minSeconds": 0.277,
+        "maxSeconds": 3.068,
+        "meanSeconds": 0.541,
+        "returnedCandidateP50": 5.0,
+        "exactGeometryP50": 5.0,
+        "terrainReadyP50": 5.0,
+        "shadeReadyP50": 5.0
+      },
+      "coldSamples": [
+        {
+          "odId": "od-d11eb032d0512aa8e8e3",
+          "ok": true,
+          "seconds": 1.977729,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-b2d14e7a05118e137555",
+          "ok": true,
+          "seconds": 2.12192,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-e5c579848f5b0f037363",
+          "ok": true,
+          "seconds": 4.084932,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-9f72a655d7a9665737ea",
+          "ok": true,
+          "seconds": 2.139859,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-d5f55aebe8052f39289d",
+          "ok": true,
+          "seconds": 2.988914,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-61d71fd879ac06e75880",
+          "ok": true,
+          "seconds": 1.945725,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-25b7932c6eae466095a0",
+          "ok": true,
+          "seconds": 3.913269,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-a477164fdcd7a7491514",
+          "ok": true,
+          "seconds": 2.597901,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-5971ad90271494e09d6a",
+          "ok": true,
+          "seconds": 1.295238,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-35750b7957ea82333bfd",
+          "ok": true,
+          "seconds": 1.994244,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-349bb6bc935bfbef3cf6",
+          "ok": true,
+          "seconds": 2.120103,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-820a971cb0bb90c0b35c",
+          "ok": true,
+          "seconds": 5.860747,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-3a17a4ee2c5562e3d6f6",
+          "ok": true,
+          "seconds": 1.859153,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-9bdc161879fbca56df82",
+          "ok": true,
+          "seconds": 2.328384,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-5ce8aa1dc78806577b75",
+          "ok": true,
+          "seconds": 5.395129,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-401fdc0d04c393e96fc5",
+          "ok": true,
+          "seconds": 2.323975,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-eb9b1069a00bb27893d3",
+          "ok": true,
+          "seconds": 0.586976,
+          "returnedCandidates": 2,
+          "exactGeometryCount": 2,
+          "terrainReadyCount": 2,
+          "shadeReadyCount": 2
+        },
+        {
+          "odId": "od-a1d7b0e75f2f33d51e00",
+          "ok": true,
+          "seconds": 2.655913,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-705f41d176396864724e",
+          "ok": true,
+          "seconds": 2.397295,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-053f41fdef0d565d2929",
+          "ok": true,
+          "seconds": 1.382068,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        }
+      ],
+      "warmSamples": [
+        {
+          "odId": "od-d11eb032d0512aa8e8e3",
+          "ok": true,
+          "seconds": 0.354596,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-b2d14e7a05118e137555",
+          "ok": true,
+          "seconds": 0.405506,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-e5c579848f5b0f037363",
+          "ok": true,
+          "seconds": 0.419783,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-9f72a655d7a9665737ea",
+          "ok": true,
+          "seconds": 0.338794,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-d5f55aebe8052f39289d",
+          "ok": true,
+          "seconds": 3.068094,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-61d71fd879ac06e75880",
+          "ok": true,
+          "seconds": 0.455009,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-25b7932c6eae466095a0",
+          "ok": true,
+          "seconds": 0.416276,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-a477164fdcd7a7491514",
+          "ok": true,
+          "seconds": 0.376498,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-5971ad90271494e09d6a",
+          "ok": true,
+          "seconds": 0.381426,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-35750b7957ea82333bfd",
+          "ok": true,
+          "seconds": 0.410887,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-349bb6bc935bfbef3cf6",
+          "ok": true,
+          "seconds": 0.338461,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-820a971cb0bb90c0b35c",
+          "ok": true,
+          "seconds": 0.476317,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-3a17a4ee2c5562e3d6f6",
+          "ok": true,
+          "seconds": 0.402289,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-9bdc161879fbca56df82",
+          "ok": true,
+          "seconds": 0.371674,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-5ce8aa1dc78806577b75",
+          "ok": true,
+          "seconds": 0.455779,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-401fdc0d04c393e96fc5",
+          "ok": true,
+          "seconds": 0.421988,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-eb9b1069a00bb27893d3",
+          "ok": true,
+          "seconds": 0.277173,
+          "returnedCandidates": 2,
+          "exactGeometryCount": 2,
+          "terrainReadyCount": 2,
+          "shadeReadyCount": 2
+        },
+        {
+          "odId": "od-a1d7b0e75f2f33d51e00",
+          "ok": true,
+          "seconds": 0.662842,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-705f41d176396864724e",
+          "ok": true,
+          "seconds": 0.400602,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        },
+        {
+          "odId": "od-053f41fdef0d565d2929",
+          "ok": true,
+          "seconds": 0.392542,
+          "returnedCandidates": 5,
+          "exactGeometryCount": 5,
+          "terrainReadyCount": 5,
+          "shadeReadyCount": 5
+        }
+      ]
+    },
+    {
+      "requestedCandidates": 10,
+      "cold": {
+        "samples": 20,
+        "successfulSamples": 20,
+        "failedSamples": 0,
+        "successRate": 1.0,
+        "p50Seconds": 4.328,
+        "p95Seconds": 7.007,
+        "minSeconds": 0.942,
+        "maxSeconds": 8.617,
+        "meanSeconds": 4.467,
+        "returnedCandidateP50": 10.0,
+        "exactGeometryP50": 10.0,
+        "terrainReadyP50": 10.0,
+        "shadeReadyP50": 10.0
+      },
+      "warm": {
+        "samples": 20,
+        "successfulSamples": 20,
+        "failedSamples": 0,
+        "successRate": 1.0,
+        "p50Seconds": 0.6,
+        "p95Seconds": 1.187,
+        "minSeconds": 0.287,
+        "maxSeconds": 5.527,
+        "meanSeconds": 0.842,
+        "returnedCandidateP50": 10.0,
+        "exactGeometryP50": 10.0,
+        "terrainReadyP50": 10.0,
+        "shadeReadyP50": 10.0
+      },
+      "coldSamples": [
+        {
+          "odId": "od-898e5e1097fa396e40e3",
+          "ok": true,
+          "seconds": 3.612766,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-12f9eb532d380b5bfcbc",
+          "ok": true,
+          "seconds": 6.922196,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-6caa463459160ad4ad60",
+          "ok": true,
+          "seconds": 5.649606,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-9bb674a691526482fd54",
+          "ok": true,
+          "seconds": 5.631153,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-1c90e01d10a20526d720",
+          "ok": true,
+          "seconds": 2.502669,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-493524b383e7e78d3992",
+          "ok": true,
+          "seconds": 3.128579,
+          "returnedCandidates": 8,
+          "exactGeometryCount": 8,
+          "terrainReadyCount": 8,
+          "shadeReadyCount": 8
+        },
+        {
+          "odId": "od-dfbd564d6342a285b739",
+          "ok": true,
+          "seconds": 6.312032,
+          "returnedCandidates": 9,
+          "exactGeometryCount": 9,
+          "terrainReadyCount": 9,
+          "shadeReadyCount": 9
+        },
+        {
+          "odId": "od-7dcdd0185a31dc4a2ffc",
+          "ok": true,
+          "seconds": 5.285486,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-71e8d3872d77f3a0d45c",
+          "ok": true,
+          "seconds": 4.953442,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-a6a458951b16e0f031f3",
+          "ok": true,
+          "seconds": 3.355663,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-0eec38182c062ab5e587",
+          "ok": true,
+          "seconds": 4.280309,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-12dce1cb3d3619446b29",
+          "ok": true,
+          "seconds": 3.192105,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-484c4aa80ee6914b4749",
+          "ok": true,
+          "seconds": 6.46381,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-83d2b322b5f2bdc9879a",
+          "ok": true,
+          "seconds": 8.617232,
+          "returnedCandidates": 6,
+          "exactGeometryCount": 6,
+          "terrainReadyCount": 6,
+          "shadeReadyCount": 6
+        },
+        {
+          "odId": "od-15d5b12161e896929546",
+          "ok": true,
+          "seconds": 2.715283,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-0a7599d396d225c6d74d",
+          "ok": true,
+          "seconds": 0.941533,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-f7e5670ee7cc81e0ce00",
+          "ok": true,
+          "seconds": 2.866199,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-79c2cc575578e546a734",
+          "ok": true,
+          "seconds": 3.231707,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-e849cc8b1455a7ec5b55",
+          "ok": true,
+          "seconds": 4.375317,
+          "returnedCandidates": 9,
+          "exactGeometryCount": 9,
+          "terrainReadyCount": 9,
+          "shadeReadyCount": 9
+        },
+        {
+          "odId": "od-cd282dc35e5da11b8893",
+          "ok": true,
+          "seconds": 5.295686,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        }
+      ],
+      "warmSamples": [
+        {
+          "odId": "od-898e5e1097fa396e40e3",
+          "ok": true,
+          "seconds": 0.605382,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-12f9eb532d380b5bfcbc",
+          "ok": true,
+          "seconds": 0.639552,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-6caa463459160ad4ad60",
+          "ok": true,
+          "seconds": 0.859226,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-9bb674a691526482fd54",
+          "ok": true,
+          "seconds": 0.543919,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-1c90e01d10a20526d720",
+          "ok": true,
+          "seconds": 0.386862,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-493524b383e7e78d3992",
+          "ok": true,
+          "seconds": 0.584813,
+          "returnedCandidates": 8,
+          "exactGeometryCount": 8,
+          "terrainReadyCount": 8,
+          "shadeReadyCount": 8
+        },
+        {
+          "odId": "od-dfbd564d6342a285b739",
+          "ok": true,
+          "seconds": 5.527027,
+          "returnedCandidates": 9,
+          "exactGeometryCount": 9,
+          "terrainReadyCount": 9,
+          "shadeReadyCount": 9
+        },
+        {
+          "odId": "od-7dcdd0185a31dc4a2ffc",
+          "ok": true,
+          "seconds": 0.812037,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-71e8d3872d77f3a0d45c",
+          "ok": true,
+          "seconds": 0.700033,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-a6a458951b16e0f031f3",
+          "ok": true,
+          "seconds": 0.513258,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-0eec38182c062ab5e587",
+          "ok": true,
+          "seconds": 0.646914,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-12dce1cb3d3619446b29",
+          "ok": true,
+          "seconds": 0.434228,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-484c4aa80ee6914b4749",
+          "ok": true,
+          "seconds": 0.626857,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-83d2b322b5f2bdc9879a",
+          "ok": true,
+          "seconds": 0.501259,
+          "returnedCandidates": 6,
+          "exactGeometryCount": 6,
+          "terrainReadyCount": 6,
+          "shadeReadyCount": 6
+        },
+        {
+          "odId": "od-15d5b12161e896929546",
+          "ok": true,
+          "seconds": 0.418155,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-0a7599d396d225c6d74d",
+          "ok": true,
+          "seconds": 0.287039,
+          "returnedCandidates": 3,
+          "exactGeometryCount": 3,
+          "terrainReadyCount": 3,
+          "shadeReadyCount": 3
+        },
+        {
+          "odId": "od-f7e5670ee7cc81e0ce00",
+          "ok": true,
+          "seconds": 0.595234,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-79c2cc575578e546a734",
+          "ok": true,
+          "seconds": 0.534013,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        },
+        {
+          "odId": "od-e849cc8b1455a7ec5b55",
+          "ok": true,
+          "seconds": 0.958715,
+          "returnedCandidates": 9,
+          "exactGeometryCount": 9,
+          "terrainReadyCount": 9,
+          "shadeReadyCount": 9
+        },
+        {
+          "odId": "od-cd282dc35e5da11b8893",
+          "ok": true,
+          "seconds": 0.657094,
+          "returnedCandidates": 10,
+          "exactGeometryCount": 10,
+          "terrainReadyCount": 10,
+          "shadeReadyCount": 10
+        }
+      ]
+    }
+  ]
+}

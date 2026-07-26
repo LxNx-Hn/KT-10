@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     vworld_api_domain: str = "http://localhost:8002"
     vworld_cache_dir: str = ""
     vworld_cache_ttl_hours: int = Field(default=168, ge=1, le=24 * 365)
+    shade_cache_dir: str = ""
+    shade_cache_ttl_seconds: int = Field(
+        default=86_400,
+        ge=60,
+        le=7 * 24 * 3600,
+    )
 
     # ai/ 파이프라인 서버(경로 수집+XGB 순위화). 설정 시 /api/routes/recommend가
     # 자체 scoring 엔진 대신 이 서버로 위임한다.
@@ -58,6 +64,11 @@ class Settings(BaseSettings):
 
     # 외부 호출 타임아웃(초)
     request_timeout: float = Field(default=4.0, gt=0, le=60)
+    # 부산 전역이 공유하는 현재 날씨·대기질 성공 응답의 서버 캐시.
+    # 0은 캐시 비활성 상태다.
+    weather_cache_ttl_seconds: int = Field(default=300, ge=0, le=3600)
+    # 모든 경로 유형에 동일하게 적용하는 총 도보거리 하드 상한.
+    max_supported_total_walk_m: int = Field(default=15_000, ge=100, le=50_000)
 
     # 후기 개인화 정책. 실제 검증 전 임의 기본값을 넣지 않고 운영자가 명시한다.
     personalization_learning_rate: float | None = Field(default=None, gt=0, le=1)

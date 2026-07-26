@@ -19,6 +19,7 @@ ENV HOME=/home/app
 COPY --chown=app:app ai/ ai/
 COPY --chown=app:app data/ data/
 RUN mkdir -p ai/data/cache/osmnx ai/data/cache/odsay ai/data/cache/elevation \
+    ai/data/cache/route_features \
     && chown -R app:app ai/data/cache
 
 USER app

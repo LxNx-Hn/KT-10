@@ -1231,19 +1231,19 @@
 }
 
 .map-first__legend-dot--slope-flat {
-  background: #16a34a;
+  background: #2ca25f;
 }
 
 .map-first__legend-dot--slope-moderate {
-  background: #ca8a04;
+  background: #f2cf4a;
 }
 
 .map-first__legend-dot--slope-steep {
-  background: #ea580c;
+  background: #f28e2b;
 }
 
 .map-first__legend-dot--slope-danger {
-  background: #dc2626;
+  background: #d73027;
 }
 
 .map-first__map-legend--slope {

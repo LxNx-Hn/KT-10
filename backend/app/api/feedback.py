@@ -59,7 +59,7 @@ class PreferenceInput(ApiInput):
     visual_support_required: bool | None = None
     hearing_support_required: bool | None = None
     avoid_stairs_required: bool | None = None
-    max_walk_distance_m: int | None = Field(default=None, ge=100, le=10000)
+    max_walk_distance_m: int | None = Field(default=None, ge=100, le=15000)
     training_consent: bool | None = None
 
 

@@ -789,25 +789,33 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     ).toBeTruthy();
   });
 
-  it('그늘 legend와 지도 오버레이 계약은 선택 경로·토글과 동기화된다', () => {
+  it('그늘과 경사 레이어를 함께 표시하고 그늘 토글은 그늘만 제어한다', () => {
     const { container, getByRole } = render(<App />);
     act(() => seedShadedResults());
 
     const map = getByRole('region', { name: '지도' });
+    expect(map.getAttribute('data-shade-visible')).toBe('true');
     expect(map.getAttribute('data-shadow-polygons')).toBe('1');
     expect(map.getAttribute('data-path-segments')).toBe('2');
     expect(
       container.querySelector('.map-first__map-legend')?.textContent,
     ).toMatch(/건물 그늘 50%.*그늘.*햇빛.*건물 높이 반영/);
+    expect(
+      container.querySelector('.map-first__map-legend--slope'),
+    ).toBeTruthy();
 
     fireEvent.click(
       getByRole('button', { name: '건물 그늘 오버레이' }),
     );
     expect(map.getAttribute('data-shade-visible')).toBe('false');
-    expect(map.getAttribute('data-shadow-polygons')).toBe('0');
-    expect(container.querySelector('.map-first__map-legend:not(.map-first__map-legend--slope)')).toBeNull();
-
-    fireEvent.click(getByRole('button', { name: '건물 그늘 오버레이' }));
+    expect(
+      container.querySelector(
+        '.map-first__map-legend:not(.map-first__map-legend--slope)',
+      ),
+    ).toBeNull();
+    expect(
+      container.querySelector('.map-first__map-legend--slope'),
+    ).toBeTruthy();
     expect(
       getByRole('button', { name: /편의시설 오버레이/ }),
     ).toBeTruthy();

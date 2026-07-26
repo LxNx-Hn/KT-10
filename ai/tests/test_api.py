@@ -16,6 +16,7 @@ from api.router import (
     _enrich_subway_elevator_accessibility,
     _parse_api_features,
     _public_segments,
+    _static_features_cacheable,
 )
 from collectors.base import Coordinate, RouteCandidate
 from merger.route_merger import MergedRoute
@@ -27,6 +28,25 @@ REQUIRED_LAYERS = {
     name: [object()]
     for name in ai_main.REQUIRED_LAYER_NAMES
 }
+
+
+def test_static_route_cache_accepts_only_exact_90m_features():
+    complete = {
+        "_geometry_quality": "exact",
+        "elevation_status": "estimated_90m",
+        "_slope_segments": [{"distance_m": 90}],
+    }
+
+    assert _static_features_cacheable([complete]) is True
+    assert _static_features_cacheable([
+        {**complete, "_geometry_quality": "mixed"},
+    ]) is False
+    assert _static_features_cacheable([
+        {**complete, "elevation_status": "unavailable"},
+    ]) is False
+    assert _static_features_cacheable([
+        {**complete, "_slope_segments": []},
+    ]) is False
 
 
 def test_model_status_reports_not_ready_without_fabricated_model(monkeypatch):
@@ -74,7 +94,14 @@ def test_lifespan_preloads_regional_walk_graph_when_enabled(monkeypatch):
 
 def test_readiness_requires_odsay_but_not_model_artifact(monkeypatch):
     monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "")
+    monkeypatch.setattr(ai_main.settings, "TMAP_API_KEY", "")
+    monkeypatch.setattr(
+        ai_main.settings,
+        "OSMNX_WALK_GEOMETRY_ENABLED",
+        False,
+    )
     monkeypatch.setattr(ai_main, "_get_layers", lambda: REQUIRED_LAYERS)
+    monkeypatch.setattr(ai_main, "regional_dem_ready", lambda: True)
 
     response = client.get("/ready")
 
@@ -83,6 +110,8 @@ def test_readiness_requires_odsay_but_not_model_artifact(monkeypatch):
     assert body["checks"] == {
         "odsay_configured": False,
         "spatial_layers_loaded": True,
+        "regional_dem_precomputed": True,
+        "exact_walking_geometry_ready": False,
     }
     assert body["model_artifact_required"] is False
 
@@ -92,7 +121,9 @@ def test_readiness_fails_without_raw_spatial_layers(monkeypatch):
         raise FileNotFoundError("secret local source path")
 
     monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "configured-key")
+    monkeypatch.setattr(ai_main.settings, "TMAP_API_KEY", "tmap-key")
     monkeypatch.setattr(ai_main, "_get_layers", missing_layers)
+    monkeypatch.setattr(ai_main, "regional_dem_ready", lambda: True)
 
     response = client.get("/ready")
 
@@ -101,7 +132,9 @@ def test_readiness_fails_without_raw_spatial_layers(monkeypatch):
     assert "secret local source path" not in response.text
 
 
-def test_readiness_accepts_candidate_pipeline_without_ranker(monkeypatch):
+def test_readiness_rejects_candidate_pipeline_without_exact_walk_geometry(
+    monkeypatch,
+):
     monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "configured-key")
     monkeypatch.setattr(ai_main.settings, "TMAP_API_KEY", "")
     monkeypatch.setattr(
@@ -110,11 +143,12 @@ def test_readiness_accepts_candidate_pipeline_without_ranker(monkeypatch):
         False,
     )
     monkeypatch.setattr(ai_main, "_get_layers", lambda: REQUIRED_LAYERS)
+    monkeypatch.setattr(ai_main, "regional_dem_ready", lambda: True)
 
     response = client.get("/ready")
 
-    assert response.status_code == 200
-    assert response.json()["ready"] is True
+    assert response.status_code == 503
+    assert response.json()["ready"] is False
     assert response.json()["spatial_layer_count"] == 9
     assert response.json()["capabilities"] == {
         "exact_walking_geometry_configured": False,
@@ -134,6 +168,7 @@ def test_readiness_reports_exact_walk_geometry_capability(monkeypatch):
         "_get_layers",
         lambda: {**REQUIRED_LAYERS, "future_layer": [object()]},
     )
+    monkeypatch.setattr(ai_main, "regional_dem_ready", lambda: True)
 
     response = client.get("/ready")
 
@@ -1020,7 +1055,7 @@ def test_feature_pipeline_keeps_display_path_but_analyzes_walk_parts(
     )
     observed: list[tuple[str, list[list[tuple[float, float]]]]] = []
 
-    async def collect_odsay(self, origin, destination):
+    async def collect_odsay(self, origin, destination, **_kwargs):
         return [route]
 
     async def collect_tmap(self, origin, destination):

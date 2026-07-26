@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from hashlib import sha256
 import logging
 import math
+from threading import Lock
+import time
+from weakref import WeakKeyDictionary
 
 import httpx
 
@@ -17,6 +21,59 @@ log = logging.getLogger("providers.weather")
 
 OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 OPENWEATHER_AIR_URL = "https://api.openweathermap.org/data/2.5/air_pollution"
+_weather_cache: tuple[float, str, WeatherCondition] | None = None
+_weather_cache_guard = Lock()
+_request_locks: WeakKeyDictionary = WeakKeyDictionary()
+_request_locks_guard = Lock()
+
+
+def _weather_cache_key() -> str:
+    center = DISTRICT["center"]
+    material = (
+        f"{settings.openweather_api_key}|{center['lat']}|{center['lng']}"
+    )
+    return sha256(material.encode("utf-8")).hexdigest()
+
+
+def _read_weather_cache() -> WeatherCondition | None:
+    if settings.weather_cache_ttl_seconds <= 0:
+        return None
+    cache_key = _weather_cache_key()
+    now = time.monotonic()
+    with _weather_cache_guard:
+        cached = _weather_cache
+        if (
+            cached is None
+            or cached[1] != cache_key
+            or now - cached[0] > settings.weather_cache_ttl_seconds
+        ):
+            return None
+        return cached[2].model_copy(deep=True)
+
+
+def _store_weather_cache(weather: WeatherCondition) -> None:
+    global _weather_cache
+    if settings.weather_cache_ttl_seconds <= 0:
+        return
+    with _weather_cache_guard:
+        _weather_cache = (
+            time.monotonic(),
+            _weather_cache_key(),
+            weather.model_copy(deep=True),
+        )
+
+
+def _clear_weather_cache() -> None:
+    """테스트·운영 진단에서 현재 프로세스 캐시만 명시적으로 비운다."""
+    global _weather_cache
+    with _weather_cache_guard:
+        _weather_cache = None
+
+
+def _request_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    with _request_locks_guard:
+        return _request_locks.setdefault(loop, asyncio.Lock())
 
 
 def _observation_time(value: object, source: str) -> datetime:
@@ -87,6 +144,20 @@ def _map_openweather(d: dict, air_data: dict) -> WeatherCondition:
 async def get_current_weather(scenario: str | None) -> WeatherCondition:
     if not settings.live_weather:
         return get_weather(scenario)
+    cached = _read_weather_cache()
+    if cached is not None:
+        return cached
+    async with _request_lock():
+        cached = _read_weather_cache()
+        if cached is not None:
+            return cached
+        weather = await _fetch_current_weather()
+        _store_weather_cache(weather)
+        return weather.model_copy(deep=True)
+
+
+async def _fetch_current_weather() -> WeatherCondition:
+    """실측 두 응답을 모두 검증한 성공 결과만 반환한다."""
     try:
         center = DISTRICT["center"]
         async with httpx.AsyncClient(timeout=settings.request_timeout) as client:

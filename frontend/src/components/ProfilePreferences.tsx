@@ -57,7 +57,7 @@ export default function ProfilePreferences() {
       </div>
       <label>
         최대 도보거리(선택, m)
-        <input type="number" min="100" max="10000" value={value.maxWalkDistanceM ?? ''} onChange={(event) => setValue((current) => ({ ...current, maxWalkDistanceM: event.target.value ? Number(event.target.value) : undefined }))} />
+        <input type="number" min="100" max="15000" value={value.maxWalkDistanceM ?? ''} onChange={(event) => setValue((current) => ({ ...current, maxWalkDistanceM: event.target.value ? Number(event.target.value) : undefined }))} />
       </label>
       <label className="profile-preferences__consent">
         <input type="checkbox" checked={value.trainingConsent} onChange={() => toggle('trainingConsent')} />

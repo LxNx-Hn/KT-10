@@ -6,10 +6,12 @@ FastAPI 앱. 장소/경로/버스/날씨 데이터를 REST 로 제공하고 서�
 """
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
+from functools import partial
 
 from fastapi import (
     Depends,
@@ -53,14 +55,17 @@ from .providers.ai_pipeline import AIProviderError
 from .providers.vworld_buildings import get_vworld_buildings
 from .rule_demo import personalize_and_sign, select_representative_routes
 from .route_set_cache import route_set_cache
+from .shade_cache import get_or_compute as get_or_compute_shade
+from .shade_cache import read as read_shade_cache
 from .scoring import recommend_routes
 from .shade import (
     DEMO_BUILDING_DATA,
     KST,
     VWORLD_SHADE_SOURCE,
     add_demo_shade,
-    add_shade,
     assign_characteristics,
+    calculate_shade,
+    prepare_shade_context,
     resolve_shade_without_buildings,
 )
 from .settings import settings
@@ -100,6 +105,34 @@ app.include_router(auth_router)
 app.include_router(feedback_router)
 
 
+def _effective_departure(departure_at=None):
+    effective_at = departure_at or datetime.now(KST)
+    if effective_at.tzinfo is None:
+        return effective_at.replace(tzinfo=KST)
+    return effective_at.astimezone(KST)
+
+
+def _has_reusable_shade(
+    candidate: RouteCandidate,
+    effective_at,
+    *,
+    data_quality: str,
+) -> bool:
+    shade = candidate.shade
+    if (
+        shade is None
+        or shade.status not in {"estimated_public", "estimated_demo", "not_daylight"}
+        or shade.data_quality != data_quality
+    ):
+        return False
+    evaluated_at = shade.evaluated_at
+    if evaluated_at.tzinfo is None:
+        evaluated_at = evaluated_at.replace(tzinfo=KST)
+    else:
+        evaluated_at = evaluated_at.astimezone(KST)
+    return evaluated_at == effective_at
+
+
 async def _add_configured_shade(
     candidates: list[RouteCandidate],
     departure_at=None,
@@ -111,24 +144,62 @@ async def _add_configured_shade(
         return candidates
     # 한 후보군의 시간별 그늘은 정확히 같은 시각을 사용해야 학습·후기
     # 스냅샷이 경로마다 몇 마이크로초씩 달라지지 않는다.
-    effective_at = departure_at or datetime.now(KST)
+    effective_at = _effective_departure(departure_at)
     if settings.building_source == "demo":
+        pending = [
+            candidate
+            for candidate in candidates
+            if not _has_reusable_shade(
+                candidate,
+                effective_at,
+                data_quality="demo",
+            )
+        ]
+        if not pending:
+            return assign_characteristics(candidates)
         if resolve_shade_without_buildings(
-            candidates,
+            pending,
             effective_at,
             source=str(DEMO_BUILDING_DATA["source"]),
             data_quality="demo",
         ):
             log.info("야간 또는 계산 불가 경로: 데모 건물 조회·그림자 계산 생략")
             return assign_characteristics(candidates)
-        return assign_characteristics(add_demo_shade(candidates, effective_at))
+        add_demo_shade(pending, effective_at)
+        return assign_characteristics(candidates)
     if not settings.live_buildings:
         raise HTTPException(
             status_code=503,
             detail="BUILDING_SOURCE=vworld requires VWORLD_API_KEY.",
         )
-    if resolve_shade_without_buildings(
+    cached_summaries = await asyncio.gather(*(
+        asyncio.to_thread(
+            read_shade_cache,
+            candidate.id,
+            effective_at,
+        )
+        for candidate in candidates
+    ))
+    for candidate, cached_summary in zip(
         candidates,
+        cached_summaries,
+        strict=True,
+    ):
+        if cached_summary is not None:
+            candidate.shade = cached_summary
+    pending = [
+        candidate
+        for candidate in candidates
+        if not _has_reusable_shade(
+            candidate,
+            effective_at,
+            data_quality="public",
+        )
+    ]
+    if not pending:
+        return assign_characteristics(candidates)
+    if resolve_shade_without_buildings(
+        pending,
         effective_at,
         source=VWORLD_SHADE_SOURCE,
         data_quality="public",
@@ -137,13 +208,40 @@ async def _add_configured_shade(
         return assign_characteristics(candidates)
     try:
         buildings = await get_vworld_buildings(
-            candidates,
+            pending,
             wait_for_complete=wait_for_buildings,
             cache_only=cache_only_buildings,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return assign_characteristics(add_shade(candidates, effective_at, buildings))
+    prepared_context = await asyncio.to_thread(
+        prepare_shade_context,
+        pending,
+        effective_at,
+        buildings,
+    )
+    summaries = await asyncio.gather(*(
+        asyncio.to_thread(
+            get_or_compute_shade,
+            candidate.id,
+            effective_at,
+            partial(
+                calculate_shade,
+                candidate,
+                effective_at,
+                buildings,
+                prepared_context=prepared_context,
+            ),
+        )
+        for candidate in pending
+    ))
+    for candidate, summary in zip(
+        pending,
+        summaries,
+        strict=True,
+    ):
+        candidate.shade = summary
+    return assign_characteristics(candidates)
 
 
 def _cache_scored_routes(
@@ -246,21 +344,21 @@ async def bus_arrivals(
 
 
 def _filter_viable_candidates(candidates: list[RouteCandidate]) -> list[RouteCandidate]:
-    """대중교통 대안이 존재하는 경우 3km를 초과하는 순수 도보 경로는 추천 대상에서 제외한다."""
-    has_transit = any(
-        any(s.mode in ("bus", "subway") for s in c.segments)
-        for c in candidates
-    )
-    if not has_transit:
-        return candidates
+    """총 도보거리 상한을 모든 경로 유형에 동일하게 적용한다."""
     filtered = [
-        c for c in candidates
-        if not (
-            all(s.mode in ("walk", "transfer") for s in c.segments)
-            and c.total_walk_m > 3000
-        )
+        candidate
+        for candidate in candidates
+        if candidate.total_walk_m <= settings.max_supported_total_walk_m
     ]
-    return filtered if filtered else candidates
+    if candidates and not filtered:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "지원하는 총 도보거리 "
+                f"{settings.max_supported_total_walk_m}m 이내의 경로가 없습니다."
+            ),
+        )
+    return filtered
 
 
 @app.post(
@@ -280,7 +378,10 @@ async def routes_candidates(req: CandidatesRequest) -> list[RouteCandidate]:
             candidates = await get_ai_pipeline_candidates(req.origin, req.destination)
         except AIProviderError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-        return await _add_configured_shade(_filter_viable_candidates(candidates))
+        return await _add_configured_shade(
+            _filter_viable_candidates(candidates),
+            wait_for_buildings=True,
+        )
     if settings.route_mode == "ai":
         raise HTTPException(
             status_code=503,
@@ -316,11 +417,13 @@ async def routes_recommend(
                 req.options,
                 user_preference=(user.preference if user else None),
                 weather_condition=current_weather,
+                candidate_limit=req.top_n,
             )
             candidates = _filter_viable_candidates(candidates)
             candidates = await _add_configured_shade(
                 candidates,
                 req.options.departure_at,
+                wait_for_buildings=True,
             )
             scored = await rank_ai_pipeline_candidates(
                 candidates,
@@ -361,6 +464,7 @@ async def routes_recommend(
                 req.options,
                 user_preference=(user.preference if user else None),
                 weather_condition=current_weather,
+                candidate_limit=req.top_n,
             )
             candidates = _filter_viable_candidates(candidates)
         except AIProviderError as exc:
@@ -370,7 +474,9 @@ async def routes_recommend(
         if not candidates:
             raise HTTPException(status_code=503, detail="고정 데모 OD 외 경로는 AI live pipeline이 필요합니다.")
     candidates = await _add_configured_shade(
-        candidates, req.options.departure_at
+        candidates,
+        req.options.departure_at,
+        wait_for_buildings=(settings.route_mode == "live"),
     )
     if settings.route_mode == "live":
         try:
@@ -510,6 +616,7 @@ async def routes_labeling_candidates(
             req.weather_scenario,
             req.options,
             weather_condition=current_weather,
+            candidate_limit=req.top_n,
         )
         candidates = await _add_configured_shade(
             candidates,

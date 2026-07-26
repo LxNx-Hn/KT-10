@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from api.router import _get_layers, router
 from collectors.osmnx_collector import prepare_regional_graph
 from config import settings
+from features.elevation import prepare_regional_dem, regional_dem_ready
 
 logger = logging.getLogger(__name__)
 REQUIRED_LAYER_NAMES = frozenset({
@@ -32,6 +33,14 @@ REQUIRED_LAYER_NAMES = frozenset({
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    dem_status = await asyncio.to_thread(prepare_regional_dem)
+    if dem_status is None:
+        raise RuntimeError("부산 90m 사전계산 DEM이 없습니다.")
+    logger.info(
+        "부산 90m 사전계산 DEM 준비 완료: width=%s height=%s",
+        dem_status["width"],
+        dem_status["height"],
+    )
     if settings.OSMNX_WALK_GEOMETRY_ENABLED:
         try:
             graph_status = await asyncio.to_thread(prepare_regional_graph)
@@ -95,11 +104,17 @@ def readiness():
         layer_count = 0
         layer_error = type(exc).__name__
 
-    ready = odsay_ready and layers_ready
+    dem_ready = regional_dem_ready()
     tmap_key = settings.TMAP_API_KEY.strip()
-    exact_walk_geometry_configured = bool(
-        (tmap_key and not tmap_key.startswith("YOUR_"))
-        or settings.OSMNX_WALK_GEOMETRY_ENABLED
+    tmap_ready = bool(tmap_key and not tmap_key.startswith("YOUR_"))
+    exact_walk_geometry_ready = bool(
+        tmap_ready or settings.OSMNX_WALK_GEOMETRY_ENABLED
+    )
+    ready = (
+        odsay_ready
+        and layers_ready
+        and dem_ready
+        and exact_walk_geometry_ready
     )
     body = {
         "ready": ready,
@@ -107,11 +122,11 @@ def readiness():
         "checks": {
             "odsay_configured": odsay_ready,
             "spatial_layers_loaded": layers_ready,
+            "regional_dem_precomputed": dem_ready,
+            "exact_walking_geometry_ready": exact_walk_geometry_ready,
         },
         "capabilities": {
-            "exact_walking_geometry_configured": (
-                exact_walk_geometry_configured
-            ),
+            "exact_walking_geometry_configured": exact_walk_geometry_ready,
         },
         "spatial_layer_count": layer_count,
         "model_artifact_required": False,

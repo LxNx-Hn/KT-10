@@ -202,6 +202,7 @@ def test_pipeline_payload_keeps_profile_and_trip_conditions_separate():
     assert payload["shade_priority"] is True
     assert payload["low_floor_priority"] is True
     assert payload["minimize_transfers"] is True
+    assert payload["candidate_limit"] == 5
 
 
 def test_response_detail_includes_source_failures():

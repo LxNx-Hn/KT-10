@@ -368,7 +368,7 @@ describe('KakaoMap production overlays', () => {
         && line.options.strokeColor !== '#64748b',
     );
     expect(fullRouteLines).toHaveLength(2);
-    expect(fullRouteLines.map((line) => line.options.zIndex)).toEqual([3, 4]);
+    expect(fullRouteLines.map((line) => line.options.zIndex)).toEqual([4, 5]);
     expect(
       fullRouteLines.every((line) => line.options.strokeStyle === 'solid'),
     ).toBe(true);
@@ -378,7 +378,7 @@ describe('KakaoMap production overlays', () => {
     );
     expect(partialOverlay?.options.path).toHaveLength(2);
     expect(partialOverlay?.options.strokeStyle).toBe('shortdash');
-    expect(partialOverlay?.options.zIndex).toBe(4);
+    expect(partialOverlay?.options.zIndex).toBe(5);
 
     const alternativeLine = activePolylines().find(
       (line) => line.options.clickable === true,
@@ -408,7 +408,7 @@ describe('KakaoMap production overlays', () => {
         avgSlopePercent: 5,
         maxSlopePercent: 12,
         minSlopePercent: 2,
-        source: 'Copernicus DEM GLO-90',
+        source: 'Busan DEM 90m (QGIS precomputed)',
         resolutionM: 90,
         slopeSegments: [
           {
@@ -434,20 +434,83 @@ describe('KakaoMap production overlays', () => {
         recommendations={[selected]}
         selectedRouteId="slope-segments"
         onSelectRoute={vi.fn()}
-        showShade
+        showShade={false}
       />,
     );
     await waitUntilReady();
 
     const coloredSegments = activePolylines().filter(
-      (line) => ['#16a34a', '#dc2626'].includes(line.options.strokeColor),
+      (line) => ['#2ca25f', '#d73027'].includes(line.options.strokeColor),
     );
     expect(coloredSegments.map((line) => line.options.strokeColor)).toEqual([
-      '#16a34a',
-      '#dc2626',
+      '#2ca25f',
+      '#d73027',
     ]);
     expect(coloredSegments.every((line) => line.options.path.length === 2))
       .toBe(true);
+  });
+
+  it('그늘 폴리곤과 90m 경사선을 동시에 표시하고 경사선을 위에 배치한다', async () => {
+    const selected = scoredRoute('layer-order', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+      segments: [
+        routeSegment('walk', [ORIGIN, MIDPOINT, DESTINATION], 'exact'),
+      ],
+      terrain: {
+        status: 'estimated_90m',
+        avgSlopePercent: 12,
+        maxSlopePercent: 12,
+        minSlopePercent: 12,
+        source: 'Busan DEM 90m (QGIS precomputed)',
+        resolutionM: 90,
+        slopeSegments: [{
+          start: ORIGIN,
+          end: MIDPOINT,
+          slopePercent: 12,
+          distanceM: 90,
+        }],
+      },
+      shade: {
+        status: 'estimated_public',
+        evaluatedAt: '2026-07-26T14:00:00+09:00',
+        shadeRatio: 0.5,
+        source: 'VWorld LT_C_BLDGINFO WFS',
+        dataQuality: 'public',
+        shadowPolygons: [[ORIGIN, MIDPOINT, DESTINATION]],
+        pathSegments: [
+          { start: ORIGIN, end: MIDPOINT, shaded: true },
+        ],
+        calculationNote: '공공 건물 기반',
+      },
+    });
+
+    render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="layer-order"
+        onSelectRoute={vi.fn()}
+        showShade
+      />,
+    );
+    await waitUntilReady();
+
+    expect(activePolygons()).toHaveLength(1);
+    expect(
+      activePolylines().filter(
+        (line) => line.options.strokeColor === '#d73027',
+      ),
+    ).toHaveLength(1);
+    const shadeLine = activePolylines().find(
+      (line) => line.options.strokeColor === '#00b84a',
+    );
+    const slopeLine = activePolylines().find(
+      (line) => line.options.strokeColor === '#d73027',
+    );
+    expect(shadeLine?.options.zIndex).toBe(3);
+    expect(slopeLine?.options.zIndex).toBe(5);
   });
 
   it.each(['estimated_demo', 'estimated_public'] as const)(
@@ -502,7 +565,7 @@ describe('KakaoMap production overlays', () => {
       expect(
         shadeLines.every(
           (line) =>
-            line.options.zIndex === 5
+            line.options.zIndex === 3
             && line.options.strokeStyle === 'solid',
         ),
       ).toBe(true);
@@ -513,8 +576,8 @@ describe('KakaoMap production overlays', () => {
           )
           .map((line) => line.options.zIndex ?? 0),
       );
-      expect(Math.min(...shadeLines.map((line) => line.options.zIndex ?? 0)))
-        .toBeGreaterThan(selectedBaseZ);
+      expect(Math.max(...shadeLines.map((line) => line.options.zIndex ?? 0)))
+        .toBeLessThan(selectedBaseZ);
 
       view.rerender(
         <KakaoMap

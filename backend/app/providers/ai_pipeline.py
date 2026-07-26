@@ -69,6 +69,7 @@ def _pipeline_payload(
     options: ScoringOptions,
     user_preference=None,
     weather_condition=None,
+    candidate_limit: int = 5,
 ) -> dict:
     return {
         "origin_lat": origin.lat, "origin_lng": origin.lng, "origin_name": origin.name,
@@ -89,6 +90,7 @@ def _pipeline_payload(
         "max_walk_distance_m": (
             user_preference.max_walk_distance_m if user_preference else None
         ),
+        "candidate_limit": candidate_limit,
         "temp_c": weather_condition.temp_c if weather_condition else None,
         "feels_like_c": weather_condition.feels_like_c if weather_condition else None,
         "precipitation_mm": (
@@ -154,6 +156,7 @@ async def get_ai_pipeline_candidates(
     options: ScoringOptions | None = None,
     user_preference=None,
     weather_condition=None,
+    candidate_limit: int = 5,
 ) -> list[RouteCandidate]:
     """학습 모델 없이도 실제 geometry·지형 피처가 있는 후보를 수집한다."""
     payload = _pipeline_payload(
@@ -164,6 +167,7 @@ async def get_ai_pipeline_candidates(
         options or ScoringOptions(),
         user_preference,
         weather_condition,
+        candidate_limit,
     )
     data = await _post_pipeline("/labeling/candidates", payload)
     candidates = data.get("candidates") or []

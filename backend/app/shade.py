@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import math
 from zoneinfo import ZoneInfo
@@ -22,6 +23,8 @@ from .models import LatLng, RouteCandidate, ShadePathSegment, ShadeSummary
 
 KST = ZoneInfo("Asia/Seoul")
 SAMPLE_INTERVAL_M = 10.0
+DISPLAY_SIMPLIFY_TOLERANCE_M = 0.5
+DISPLAY_COORDINATE_DECIMALS = 7
 DEMO_BUILDING_DATA = load("buildings.demo.json")
 VWORLD_SHADE_SOURCE = "VWorld LT_C_BLDGINFO WFS"
 
@@ -83,10 +86,48 @@ def _project(point: LatLng, ref_lat: float, ref_lng: float) -> tuple[float, floa
     )
 
 
+def _project_mapping(
+    point: object,
+    ref_lat: float,
+    ref_lng: float,
+) -> tuple[float, float]:
+    if not isinstance(point, dict):
+        raise ValueError("건물 footprint 좌표가 객체 형식이 아닙니다.")
+    try:
+        lat = float(point["lat"])
+        lng = float(point["lng"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("건물 footprint 좌표가 숫자가 아닙니다.") from exc
+    if (
+        not math.isfinite(lat)
+        or not math.isfinite(lng)
+        or not -90 <= lat <= 90
+        or not -180 <= lng <= 180
+    ):
+        raise ValueError("건물 footprint 좌표 범위가 올바르지 않습니다.")
+    return (
+        (lng - ref_lng) * 111_320 * math.cos(math.radians(ref_lat)),
+        (lat - ref_lat) * 110_540,
+    )
+
+
 def _unproject(x: float, y: float, ref_lat: float, ref_lng: float) -> LatLng:
     return LatLng(
         lat=ref_lat + y / 110_540,
         lng=ref_lng + x / (111_320 * math.cos(math.radians(ref_lat))),
+    )
+
+
+def _unproject_display(
+    x: float,
+    y: float,
+    ref_lat: float,
+    ref_lng: float,
+) -> LatLng:
+    point = _unproject(x, y, ref_lat, ref_lng)
+    return LatLng(
+        lat=round(point.lat, DISPLAY_COORDINATE_DECIMALS),
+        lng=round(point.lng, DISPLAY_COORDINATE_DECIMALS),
     )
 
 
@@ -196,6 +237,137 @@ def _swept_shadow(polygon: Polygon, shift: tuple[float, float]) -> BaseGeometry:
     return unary_union(pieces)
 
 
+@dataclass(frozen=True)
+class _PreparedBuildingShadow:
+    footprint: Polygon
+    shadow: BaseGeometry
+    route_distance_limit_m: float
+
+
+@dataclass(frozen=True)
+class PreparedShadeContext:
+    ref_lat: float
+    ref_lng: float
+    azimuth_deg: float
+    elevation_deg: float
+    known_height_buildings: int
+    total_buildings: int
+    filter_by_route: bool
+    building_shadows: tuple[_PreparedBuildingShadow, ...]
+
+
+def _prepare_shadow_context(
+    azimuth_deg: float,
+    elevation_deg: float,
+    ref_lat: float,
+    ref_lng: float,
+    building_data: dict,
+    route_lines: list[LineString] | None = None,
+) -> PreparedShadeContext:
+    shadow_azimuth = math.radians((azimuth_deg + 180) % 360)
+    prepared: list[_PreparedBuildingShadow] = []
+    building_ids: set[str] = set()
+    known_height_ids: set[str] = set()
+    tan_elevation = math.tan(math.radians(elevation_deg))
+    filter_by_route = len(building_data.get("buildings", [])) > 5
+    route_bounds = [
+        line.bounds
+        for line in (route_lines or [])
+        if not line.is_empty
+    ]
+    for building in building_data["buildings"]:
+        building_id = str(building.get("buildingId") or building.get("id"))
+        building_ids.add(building_id)
+        height = validated_building_height(building.get("heightM"))
+        if height is None:
+            continue
+        footprint = [
+            _project_mapping(point, ref_lat, ref_lng)
+            for point in building["footprint"]
+        ]
+        known_height_ids.add(building_id)
+        shadow_length = height / tan_elevation
+
+        if (
+            route_bounds
+            and shadow_length > 0
+            and filter_by_route
+        ):
+            min_x = min(point[0] for point in footprint)
+            min_y = min(point[1] for point in footprint)
+            max_x = max(point[0] for point in footprint)
+            max_y = max(point[1] for point in footprint)
+            distance_limit = shadow_length + 100.0
+            if all(
+                max_x < route_min_x - distance_limit
+                or min_x > route_max_x + distance_limit
+                or max_y < route_min_y - distance_limit
+                or min_y > route_max_y + distance_limit
+                for (
+                    route_min_x,
+                    route_min_y,
+                    route_max_x,
+                    route_max_y,
+                ) in route_bounds
+            ):
+                continue
+        holes = [
+            [
+                _project_mapping(point, ref_lat, ref_lng)
+                for point in ring
+            ]
+            for ring in building.get("holes") or []
+        ]
+        polygon = Polygon(footprint, holes)
+        if polygon.is_empty or not polygon.is_valid or polygon.area <= 0:
+            continue
+
+        route_distance_limit = shadow_length + 100.0
+        if route_lines and shadow_length > 0 and filter_by_route:
+            if all(line.distance(polygon) > (shadow_length + 100.0) for line in route_lines):
+                continue
+
+        shift = (
+            math.sin(shadow_azimuth) * shadow_length,
+            math.cos(shadow_azimuth) * shadow_length,
+        )
+        prepared.append(_PreparedBuildingShadow(
+            footprint=polygon,
+            shadow=_swept_shadow(polygon, shift),
+            route_distance_limit_m=route_distance_limit,
+        ))
+    return PreparedShadeContext(
+        ref_lat=ref_lat,
+        ref_lng=ref_lng,
+        azimuth_deg=azimuth_deg,
+        elevation_deg=elevation_deg,
+        known_height_buildings=len(known_height_ids),
+        total_buildings=len(building_ids),
+        filter_by_route=filter_by_route,
+        building_shadows=tuple(prepared),
+    )
+
+
+def _shadow_geometry_for_route(
+    context: PreparedShadeContext,
+    route_lines: list[LineString],
+) -> BaseGeometry:
+    shadows = [
+        prepared.shadow
+        for prepared in context.building_shadows
+        if (
+            not context.filter_by_route
+            or not route_lines
+            or any(
+                line.distance(prepared.footprint)
+                <= prepared.route_distance_limit_m
+                for line in route_lines
+            )
+        )
+    ]
+    return unary_union(shadows) if shadows else Polygon()
+
+
 def _shadow_polygons(
     azimuth_deg: float,
     elevation_deg: float,
@@ -204,51 +376,77 @@ def _shadow_polygons(
     building_data: dict,
     route_lines: list[LineString] | None = None,
 ) -> tuple[BaseGeometry, int, int]:
-    shadow_azimuth = math.radians((azimuth_deg + 180) % 360)
-    shadows: list[BaseGeometry] = []
-    building_ids: set[str] = set()
-    known_height_ids: set[str] = set()
-    tan_elevation = math.tan(math.radians(elevation_deg))
-    for building in building_data["buildings"]:
-        building_id = str(building.get("buildingId") or building.get("id"))
-        building_ids.add(building_id)
-        height = validated_building_height(building.get("heightM"))
-        if height is None:
-            continue
-        footprint = [
-            _project(LatLng.model_validate(point), ref_lat, ref_lng)
-            for point in building["footprint"]
-        ]
-        holes = [
-            [
-                _project(LatLng.model_validate(point), ref_lat, ref_lng)
-                for point in ring
-            ]
-            for ring in building.get("holes") or []
-        ]
-        polygon = Polygon(footprint, holes)
-        if polygon.is_empty or not polygon.is_valid or polygon.area <= 0:
-            continue
-        known_height_ids.add(building_id)
-        shadow_length = height / tan_elevation
+    context = _prepare_shadow_context(
+        azimuth_deg,
+        elevation_deg,
+        ref_lat,
+        ref_lng,
+        building_data,
+        route_lines,
+    )
+    return (
+        _shadow_geometry_for_route(context, route_lines or []),
+        context.known_height_buildings,
+        context.total_buildings,
+    )
 
-        if route_lines and shadow_length > 0 and len(building_data.get("buildings", [])) > 5:
-            if all(line.distance(polygon) > (shadow_length + 100.0) for line in route_lines):
-                continue
 
-        shift = (
-            math.sin(shadow_azimuth) * shadow_length,
-            math.cos(shadow_azimuth) * shadow_length,
-        )
-        shadows.append(_swept_shadow(polygon, shift))
-    geometry = unary_union(shadows) if shadows else Polygon()
-    return geometry, len(known_height_ids), len(building_ids)
+def prepare_shade_context(
+    routes: list[RouteCandidate],
+    departure_at: datetime,
+    building_data: dict,
+) -> PreparedShadeContext | None:
+    """같은 OD·시각 후보가 공유하는 태양과 건물 그림자를 준비한다."""
+    data_quality = str(building_data.get("dataQuality") or "demo")
+    is_demo = data_quality == "demo"
+    walking_paths = []
+    for route in routes:
+        route_paths, _, quality = _walking_paths(route, demo=is_demo)
+        if route_paths and (is_demo or quality == "exact"):
+            walking_paths.extend(route_paths)
+    points = [
+        point
+        for path in walking_paths
+        for point in path
+    ]
+    if not points:
+        return None
+    ref_lat = sum(point.lat for point in points) / len(points)
+    ref_lng = sum(point.lng for point in points) / len(points)
+    solar_at = round_to_30_minutes(departure_at)
+    azimuth, elevation = solar_position(solar_at, ref_lat, ref_lng)
+    if elevation <= 0:
+        return None
+    route_lines = [
+        LineString([
+            _project(point, ref_lat, ref_lng)
+            for point in path
+        ])
+        for path in walking_paths
+        if len(path) >= 2
+    ]
+    return _prepare_shadow_context(
+        azimuth,
+        elevation,
+        ref_lat,
+        ref_lng,
+        building_data,
+        route_lines,
+    )
 
 
 def _display_polygons(geometry: BaseGeometry) -> list[list[tuple[float, float]]]:
     if geometry.is_empty:
         return []
-    polygons = [geometry] if geometry.geom_type == "Polygon" else list(geometry.geoms)
+    display_geometry = geometry.simplify(
+        DISPLAY_SIMPLIFY_TOLERANCE_M,
+        preserve_topology=True,
+    )
+    polygons = (
+        [display_geometry]
+        if display_geometry.geom_type == "Polygon"
+        else list(display_geometry.geoms)
+    )
     return [
         [(float(x), float(y)) for x, y in polygon.exterior.coords]
         for polygon in polygons
@@ -266,6 +464,8 @@ def calculate_shade(
     route: RouteCandidate,
     departure_at: datetime | None,
     building_data: dict,
+    *,
+    prepared_context: PreparedShadeContext | None = None,
 ) -> ShadeSummary:
     evaluated_at = departure_at or datetime.now(KST)
     if evaluated_at.tzinfo is None:
@@ -282,7 +482,12 @@ def calculate_shade(
         "estimated_public" if data_quality == "public" else "estimated_demo"
     )
     solar_points = _solar_reference_points(route, walking_paths)
-    if solar_points:
+    if prepared_context is not None:
+        ref_lat = prepared_context.ref_lat
+        ref_lng = prepared_context.ref_lng
+        azimuth = prepared_context.azimuth_deg
+        elevation = prepared_context.elevation_deg
+    elif solar_points:
         ref_lat = sum(point.lat for point in solar_points) / len(solar_points)
         ref_lng = sum(point.lng for point in solar_points) / len(solar_points)
         solar_at = round_to_30_minutes(evaluated_at)
@@ -298,7 +503,7 @@ def calculate_shade(
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
-            calculation_note="태양이 지평선 아래에 있어 주간 건물 그림자를 계산하지 않았습니다.",
+            calculation_note="",
         )
     if not walking_paths:
         return ShadeSummary(
@@ -311,10 +516,7 @@ def calculate_shade(
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
-            calculation_note=(
-                "실외 도보 구간의 거리와 geometry가 모두 확인되지 않아 "
-                "그늘 비율을 계산하지 않았습니다."
-            ),
+            calculation_note="",
         )
     assert ref_lat is not None
     assert ref_lng is not None
@@ -330,10 +532,7 @@ def calculate_shade(
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
-            calculation_note=(
-                "실외 보행 동선이 실제 도로 geometry로 확인되지 않아 "
-                "공공 건물 그늘 비율을 계산하지 않았습니다."
-            ),
+            calculation_note="",
         )
     if not is_demo and building_data.get("cacheComplete") is False:
         return ShadeSummary(
@@ -345,10 +544,7 @@ def calculate_shade(
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
-            calculation_note=(
-                "경로 주변 공공 건물 데이터를 사전계산 중이어서 "
-                "일부 데이터만으로 그늘 비율을 계산하지 않았습니다."
-            ),
+            calculation_note="",
         )
 
     applicable_bounds = building_data.get("applicableBounds")
@@ -385,10 +581,7 @@ def calculate_shade(
                 source=source,
                 data_quality=data_quality,
                 walking_geometry_quality=walking_quality,
-                calculation_note=(
-                    "선택한 경로가 건물 데이터의 검증 범위를 벗어나 "
-                    "그늘 비율을 계산하지 않았습니다."
-                ),
+                calculation_note="",
             )
 
     projected_paths = [
@@ -396,9 +589,22 @@ def calculate_shade(
         for walking_path in walking_paths
     ]
     route_lines = [LineString(points) for points in projected_paths if len(points) >= 2]
-    shadow_geometry, known_heights, total_buildings = _shadow_polygons(
-        azimuth, elevation, ref_lat, ref_lng, building_data, route_lines=route_lines
-    )
+    if prepared_context is None:
+        shadow_geometry, known_heights, total_buildings = _shadow_polygons(
+            azimuth,
+            elevation,
+            ref_lat,
+            ref_lng,
+            building_data,
+            route_lines=route_lines,
+        )
+    else:
+        shadow_geometry = _shadow_geometry_for_route(
+            prepared_context,
+            route_lines,
+        )
+        known_heights = prepared_context.known_height_buildings
+        total_buildings = prepared_context.total_buildings
     coverage = (
         known_heights / total_buildings if total_buildings else None
     )
@@ -414,7 +620,7 @@ def calculate_shade(
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
-            calculation_note="높이가 확인된 경로 주변 건물이 없어 그늘을 계산하지 못했습니다.",
+            calculation_note="",
         )
     segments: list[ShadePathSegment] = []
     route_lines = [LineString(points) for points in projected_paths]
@@ -462,10 +668,7 @@ def calculate_shade(
             walking_geometry_quality=walking_quality,
             source=source,
             data_quality=data_quality,
-            calculation_note=(
-                "실외 도보 geometry의 길이가 0이어서 그늘 비율을 "
-                "계산하지 않았습니다."
-            ),
+            calculation_note="",
         )
     ratio = shaded_geometry_m / total_geometry_m
     shaded_walk_m = (
@@ -492,26 +695,27 @@ def calculate_shade(
         source=source,
         data_quality=data_quality,
         shadow_polygons=[
-            [_unproject(x, y, ref_lat, ref_lng) for x, y in polygon]
+            [_unproject_display(x, y, ref_lat, ref_lng) for x, y in polygon]
             for polygon in display_polygons
         ],
         path_segments=segments,
         calculation_note=(
             (
-                "VWorld 공공 건물 footprint와 확인된 높이, 평면 지형을 사용했습니다. "
+                "VWorld 공공 건물 footprint와 확인된 높이, 평면 지형 기반 "
+                "추정 결과입니다. "
                 + (
-                    "높이 결측 건물은 0m로 대체하지 않아 표시 비율은 확인된 "
-                    "건물로 설명 가능한 최소 그늘입니다. "
+                    "표시 비율은 높이가 확인된 건물로 설명 가능한 최소 "
+                    "그늘입니다. "
                     if estimate_kind == "lower_bound"
                     else ""
                 )
-                + "나무 그늘과 지형 그림자는 포함하지 않습니다."
+                + "범위는 건물 그늘이며 나무 그늘과 지형 그림자는 제외 범위입니다."
             )
             if data_quality == "public"
             else (
-                "합성 건물 높이와 평면 지형을 사용한 검증용 데모 결과입니다. "
-                "공공 건물 높이 데이터로 교체하기 전에는 실제 그늘로 해석하지 않습니다. "
-                "나무 그늘과 지형 그림자는 포함하지 않습니다."
+                "합성 건물 높이와 평면 지형 기반 검증용 데모 결과입니다. "
+                "실제 서비스 기준은 VWorld 공공 건물 높이 데이터입니다. "
+                "범위는 건물 그늘이며 나무 그늘과 지형 그림자는 제외 범위입니다."
             )
         ),
     )
@@ -565,10 +769,7 @@ def resolve_shade_without_buildings(
                 source=source,
                 data_quality=data_quality,
                 walking_geometry_quality=walking_quality,
-                calculation_note=(
-                    "실외 도보 구간의 거리와 geometry가 모두 확인되지 않아 "
-                    "그늘 비율을 계산하지 않았습니다."
-                ),
+                calculation_note="",
             ))
             continue
 
@@ -587,10 +788,7 @@ def resolve_shade_without_buildings(
                 source=source,
                 data_quality=data_quality,
                 walking_geometry_quality=walking_quality,
-                calculation_note=(
-                    "실외 도보 구간의 거리와 geometry가 모두 확인되지 않아 "
-                    "그늘 비율을 계산하지 않았습니다."
-                ),
+                calculation_note="",
             ))
             continue
         summaries.append(ShadeSummary(
@@ -602,9 +800,7 @@ def resolve_shade_without_buildings(
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
-            calculation_note=(
-                "태양이 지평선 아래에 있어 주간 건물 그림자를 계산하지 않았습니다."
-            ),
+            calculation_note="",
         ))
 
     for route, summary in zip(routes, summaries, strict=True):
