@@ -34,6 +34,8 @@ export const mockAdapters: Adapters = {
         ),
       );
     },
+    // 고정 데모 경로는 이미 확정 geometry이므로 정밀화가 없다.
+    refineTransit: () => Promise.resolve(null),
   },
   bus: {
     getArrivals: (stopId) => delay(getArrivals(stopId)),

@@ -15,11 +15,21 @@
    ODsay와 TMAP 후보를 수집한다. OSMnx는
    `OSMNX_WALK_GEOMETRY_ENABLED=true`일 때만 ODsay 보행 geometry
    복구에 사용한다. 실패 공급자는 메타데이터에 남긴다.
-4. AI 서버가 ODsay `mapObj`·`loadLane`과 보행 geometry를 결합하고
-   EPSG:5179 공간 피처, 부산 QGIS 90m DEM 지형 피처, 실제 수집시각
-   `captured_at`이 담긴 기본 스냅샷을 반환한다.
+4. AI 서버가 ODsay search 메타데이터와 TMAP exact 보행 geometry를
+   결합해 EPSG:5179 공간 피처, 부산 QGIS 90m DEM 지형 피처, 실제
+   수집시각 `captured_at`이 담긴 기본 스냅샷을 반환한다. 대중교통
+   표시 선형은 이 단계에서 정류장 관측 좌표 기반 estimated이며,
+   `loadLane` 정밀 선형은 최종 순위 확정 후 1위 후보에 1회, 그
+   외 후보는 사용자가 해당 추천 카드를 선택했을 때
+   `POST /api/routes/refine-transit` → AI `POST /routes/refine-transit`
+   경유로만 조회한다(재선택은 캐시 재사용, 추가 호출 0회).
 5. 백엔드가 요청 출발시각의 VWorld 건물 그늘을 계산한다. 합성 건물은
-   명시적인 데모 모드에서만 사용한다.
+   명시적인 데모 모드에서만 사용한다. 그늘은 출발시각이 10~18시(KST),
+   유효한 실측 날씨 관측(관측 age·출발시각이 `WEATHER_CACHE_TTL_SECONDS`
+   유효기간 이내), 체감온도 25°C 이상, 태양 고도 양수, exact 실외 보행
+   geometry, 회랑 건물 높이 100% 확인 조건을 모두 만족할 때만 계산하며,
+   하나라도 불충족이면 VWorld 조회 없이 shade를 생략(None)한다.
+   그늘 결과가 있으면 지도에 자동 표시되고 별도 토글은 없다.
 6. 백엔드는 `captured_at`과 별도 `shade_evaluated_at`을 포함해 AI 서버의
    `POST /labeling/enriched-snapshots`를 호출한다. AI 서버는 checksum이
    포함된 동결 스냅샷과 `most_shade` 등의 사실 특성 라벨을 만든다.

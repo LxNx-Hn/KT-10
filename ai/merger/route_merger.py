@@ -24,6 +24,8 @@ class MergedRoute:
     source:       str = ""
     segments:     list = field(default_factory=list)
     geometry_quality: str = "exact"
+    # 대표 후보의 대중교통 지연 정밀화 서술자(서버 내부 전용).
+    transit_refinement: dict | None = None
 
 
 def _haversine(c1: Coordinate, c2: Coordinate) -> float:
@@ -205,8 +207,15 @@ def merge_route_candidates(candidates: list) -> list:
                     m.raw_response = cand.raw_response
                     m.segments = cand.segments
                     m.geometry_quality = cand.geometry_quality
+                    m.transit_refinement = getattr(
+                        cand, "transit_refinement", None
+                    )
                 elif cand.raw_response and not m.raw_response:
                     m.raw_response = cand.raw_response
+                if m.transit_refinement is None:
+                    m.transit_refinement = getattr(
+                        cand, "transit_refinement", None
+                    )
                 matched = True
                 break
 
@@ -220,6 +229,7 @@ def merge_route_candidates(candidates: list) -> list:
                 raw_response=cand.raw_response or {},
                 segments=cand.segments,
                 geometry_quality=cand.geometry_quality,
+                transit_refinement=getattr(cand, "transit_refinement", None),
             ))
 
     return merged

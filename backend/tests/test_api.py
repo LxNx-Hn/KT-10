@@ -210,7 +210,47 @@ def test_explicit_demo_buildings_remain_labeled_when_used_with_live_routes(monke
     assert settings.active_sources()["buildings"] == "synthetic-demo"
 
 
+_GATE_FIXED_NOW = datetime(
+    2026, 7, 27, 14, 10, tzinfo=ZoneInfo("Asia/Seoul")
+)
+
+
+class _GateFixedDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return _GATE_FIXED_NOW.astimezone(tz) if tz else _GATE_FIXED_NOW
+
+
+def _freeze_daytime_clock(monkeypatch):
+    """실행 시각과 무관하게 주간 gate 조건을 재현한다."""
+    monkeypatch.setattr(app_main, "datetime", _GateFixedDatetime)
+
+
+def _valid_live_weather(feels_like_c: float = 31.0):
+    """그늘 gate를 통과하는 유효 실측 날씨 컨텍스트."""
+    from app.models import WeatherCondition
+
+    return WeatherCondition(
+        label="실시간",
+        temp_c=30.0,
+        feels_like_c=feels_like_c,
+        precipitation_mm=0.0,
+        wind_ms=1.0,
+        pm10=20.0,
+        sky="clear",
+        air="good",
+        observed_at=_GATE_FIXED_NOW,
+        air_quality_observed_at=_GATE_FIXED_NOW,
+    )
+
+
+def _gate_open_departure():
+    """관측 유효기간 안에 있는 주간(10~18시 KST) 출발시각."""
+    return _GATE_FIXED_NOW.replace(minute=11)
+
+
 def test_labeling_shade_can_wait_for_complete_vworld_corridor(monkeypatch):
+    _freeze_daytime_clock(monkeypatch)
     monkeypatch.setattr(settings, "building_source", "vworld")
     monkeypatch.setattr(settings, "vworld_api_key", "configured")
     wait_values = []
@@ -233,7 +273,8 @@ def test_labeling_shade_can_wait_for_complete_vworld_corridor(monkeypatch):
 
     asyncio.run(_add_configured_shade(
         demo_candidates(),
-        datetime(2026, 7, 24, 14, 0, tzinfo=ZoneInfo("Asia/Seoul")),
+        _gate_open_departure(),
+        weather=_valid_live_weather(),
         wait_for_buildings=True,
     ))
 
@@ -243,6 +284,7 @@ def test_labeling_shade_can_wait_for_complete_vworld_corridor(monkeypatch):
 def test_vworld_shade_prepares_candidates_from_one_building_set(
     monkeypatch,
 ):
+    _freeze_daytime_clock(monkeypatch)
     monkeypatch.setattr(settings, "building_source", "vworld")
     monkeypatch.setattr(settings, "vworld_api_key", "configured")
     calls = []
@@ -265,7 +307,8 @@ def test_vworld_shade_prepares_candidates_from_one_building_set(
 
     asyncio.run(_add_configured_shade(
         demo_candidates()[:2],
-        datetime(2026, 7, 24, 14, 0, tzinfo=ZoneInfo("Asia/Seoul")),
+        _gate_open_departure(),
+        weather=_valid_live_weather(),
         wait_for_buildings=True,
     ))
 
@@ -285,15 +328,16 @@ def test_vworld_night_skips_building_lookup(monkeypatch):
     routes = asyncio.run(_add_configured_shade(
         demo_candidates(),
         datetime(2026, 7, 24, 2, 0, tzinfo=ZoneInfo("Asia/Seoul")),
+        weather=_valid_live_weather(),
     ))
 
+    # 10~18시 밖 출발은 gate에서 차단되어 VWorld 0회, shade는 None(생략)이다.
     assert calls == []
-    assert all(route.shade is not None for route in routes)
-    assert all(route.shade.status == "not_daylight" for route in routes)
-    assert all(route.shade.shadow_polygons == [] for route in routes)
+    assert all(route.shade is None for route in routes)
 
 
 def test_vworld_provider_failure_remains_a_502(monkeypatch):
+    _freeze_daytime_clock(monkeypatch)
     monkeypatch.setattr(settings, "building_source", "vworld")
     monkeypatch.setattr(settings, "vworld_api_key", "configured")
 
@@ -304,7 +348,8 @@ def test_vworld_provider_failure_remains_a_502(monkeypatch):
     with pytest.raises(HTTPException) as exc_info:
         asyncio.run(_add_configured_shade(
             demo_candidates(),
-            datetime(2026, 7, 24, 14, 0, tzinfo=ZoneInfo("Asia/Seoul")),
+            _gate_open_departure(),
+            weather=_valid_live_weather(),
         ))
 
     assert exc_info.value.status_code == 502
@@ -334,7 +379,8 @@ def test_time_refresh_reuses_server_candidates_without_route_collection(monkeypa
     add_shade = app_main._add_configured_shade
 
     async def assert_cache_only(candidates, departure_at=None, **kwargs):
-        assert kwargs == {"cache_only_buildings": True}
+        assert kwargs.get("cache_only_buildings") is True
+        assert "weather" in kwargs
         return await add_shade(candidates, departure_at, **kwargs)
 
     monkeypatch.setattr(app_main, "_add_configured_shade", assert_cache_only)

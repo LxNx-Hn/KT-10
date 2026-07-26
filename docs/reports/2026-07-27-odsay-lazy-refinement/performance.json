@@ -1,0 +1,102 @@
+{
+  "reportKind": "route-lazy-refinement-performance",
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-26T15:36:00Z",
+  "git": {
+    "baseSha": "5e201c0c1567bc93b89a4f98b605f21814edc08c",
+    "baseRef": "origin/main",
+    "comparisonShas": {
+      "v1.0.0": "f56f414c89e8435797e86b420b926017cb91f979",
+      "v1.0.1": "eb77e3fd321772f3aa360fef00b8d07f31863f93"
+    },
+    "note": "v1.0.0/v1.0.1은 태그가 아니라 커밋 메시지로만 기록되어 있으며 SHA는 git log에서 재검증했다. 작업 변경분은 미커밋 working tree 상태다."
+  },
+  "environment": {
+    "host": "developer macOS (Darwin 25.2.0, macOS 26.2)",
+    "python": "3.12.2 (scratchpad venv; repo 고정 xgboost-cpu==2.1.1이 macOS에 배포되지 않아 xgboost==2.1.1로 대체 설치)",
+    "uvicornWorkers": {
+      "backend": 1,
+      "ai": 1,
+      "source": "docker-compose.prod.yml command 정의(단일 프로세스, worker 옵션 없음)"
+    },
+    "routeSetTtlSeconds": 1800,
+    "cacheVolumes": [
+      "odsay-cache:/app/ai/data/cache/odsay",
+      "elevation-cache:/app/ai/data/cache/elevation",
+      "route-feature-cache:/app/ai/data/cache/route_features",
+      "tmap-cache:/app/ai/data/cache/tmap",
+      "vworld-cache:/var/cache/kt10/vworld",
+      "shade-cache:/var/cache/kt10/shade"
+    ]
+  },
+  "commands": {
+    "aiTests": "venv/bin/python -m pytest ai/tests -q (repo 루트)",
+    "backendTests": "venv/bin/python -m pytest tests -q (backend/)",
+    "frontendTests": "npx vitest run",
+    "typecheck": "npm run typecheck",
+    "build": "npm run build (tsc --noEmit && vite build, PWA 포함)",
+    "liveMatrix": "scratchpad/live_odsay_matrix.py (실제 ODsay 키, 후보 3/5/7/10 + refine)"
+  },
+  "testResults": {
+    "ai": {"passed": 197, "skipped": 2, "failed": 0},
+    "backend": {"passed": 231, "skipped": 1, "failed": 0},
+    "frontend": {"passed": 115, "failed": 0},
+    "typecheck": "pass",
+    "productionBuild": "pass (PWA precache 9 entries)"
+  },
+  "odsayCallMatrix": {
+    "verification": "mock HTTP transport 단위테스트로 검증 (ai/tests/test_odsay_lazy_refinement.py, ai/tests/test_collectors.py)",
+    "coldInitialPerRequest": {
+      "topN3": {"search": 1, "initialLoadLane": 1, "total": 2},
+      "topN5": {"search": 1, "initialLoadLane": 1, "total": 2},
+      "topN7": {"search": 1, "initialLoadLane": 1, "total": 2},
+      "topN10": {"search": 1, "initialLoadLane": 1, "total": 2},
+      "note": "search 1회는 collect() 단위테스트로, 1위 loadLane 1회는 refine_transit/_refine_top_ranked_transit 단위테스트로 각각 확인. 후보 수와 무관하게 초기 loadLane은 최종 1위 1건뿐이다."
+    },
+    "candidateSelection": {"loadLanePerNewCandidate": 1, "reselection": 0, "searchOnSelection": 0, "fullRecommendOnSelection": 0},
+    "singleFlight": {"sameOdConcurrent10Search": 1, "sameCandidateConcurrent10LoadLane": 1, "semaphoreCapRespected": true},
+    "before": {
+      "topN5ObservedCallsPerColdRequest": "search 1회 + loadLane 최대 6회 = 최대 7회 (코드 분석). 기존 코드는 후보를 3개 고정 배치로 동시 조립하며 loadLane을 후보별 inline 호출했다. 후보 5개 요청 시 2번째 배치가 4·5·6번 후보의 loadLane을 모두 시작한 뒤 5개에서 절단하므로 6번 후보 호출이 초과분(7번째 호출)이 된다.",
+      "seventhCallSite": "ai/collectors/odsay_collector.py 구 _collect_live_or_cached의 asyncio.gather(배치 3개) + len(candidates)>=max_candidates 사후 절단"
+    }
+  },
+  "liveOdsayAttempt": {
+    "attemptedNetworkCalls": 2,
+    "budgetLimit": 50,
+    "outcome": "FAILED_AUTH",
+    "detail": "로컬 ai/.env·backend/.env 두 키 모두 searchPubTransPathT에서 [ApiKeyAuthFailed] 반환(IP 제한 추정). 오류는 명시적으로 전파됐고 캐시에 저장되지 않았으며 일일 counter에 2회로 기록됐다.",
+    "dailyCounterAfter": {"searchPubTransPathT": 2, "estimatedRemainingServiceBudget": 998}
+  },
+  "latency": {
+    "historicalBaselineTop5": {
+      "coldP50s": 2.232, "coldP95s": 5.418, "warmP50s": 0.404, "warmP95s": 0.783,
+      "source": "docs/performance/route-candidate-benchmark-2026-07-26.json (과거 측정값, 이번 구현 결과 아님)"
+    },
+    "afterChange": "NOT MEASURED",
+    "notMeasuredReason": "live 성능 측정에는 유효한 ODsay 키(현 호스트 IP 미허용), TMAP 키(exact 보행 geometry), OpenWeather 키, VWorld 키와 운영 스택 기동이 필요하다. 통계적으로 유효한 표본 없이 p95를 주장하지 않는다.",
+    "targets": {
+      "warmP95MaxS": 3.0, "warmP50MaxS": 2.5, "coldP95GoalS": 4.0,
+      "refinementP50GoalS": 1.0, "refinementP95GoalS": 2.5, "cachedReselectionMaxMs": 200
+    },
+    "targetStatus": "NOT MEASURED (배포 환경에서 scripts/benchmark_route_candidate_counts.py --candidate-counts 3,5,7,10 실행 필요)"
+  },
+  "candidateCountCostMatrix": {
+    "status": "NOT MEASURED",
+    "reason": "TMAP·VWorld·OpenWeather 키 부재로 후보 수별 TMAP/terrain/shade/VWorld/payload 실측 불가. ODsay 목표 호출 수(모든 후보 수에서 2회)는 mock 계측으로 검증됨."
+  },
+  "cacheSchemaVersions": {
+    "odsaySearchLane": 1,
+    "routeFeature": 3,
+    "elevation": 3,
+    "shade": 4,
+    "routeSetInMemory": 2
+  },
+  "notMeasured": [
+    "cold/warm p50·p95 (live)",
+    "후보 refinement p50·p95 (live)",
+    "cache 재선택 200ms (live)",
+    "후보 3·5·7·10 비용 매트릭스 (live)",
+    "VWorld corridor 호출·건물 수 매트릭스",
+    "Docker production image build·compose 기동·healthcheck (로컬 Docker 미실행/키 부재)"
+  ]
+}

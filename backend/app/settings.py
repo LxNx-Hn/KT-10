@@ -62,6 +62,10 @@ class Settings(BaseSettings):
         "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173"
     )
 
+    # 운영 기본 추천 후보 수. 요청 body의 topN이 없을 때만 적용하며,
+    # 변경은 서비스 재시작 후 새 검색부터 반영된다(기존 route-set 소급 없음).
+    route_default_top_n: int = Field(default=5, ge=1, le=10)
+
     # 외부 호출 타임아웃(초)
     request_timeout: float = Field(default=4.0, gt=0, le=60)
     # 부산 전역이 공유하는 현재 날씨·대기질 성공 응답의 서버 캐시.

@@ -29,7 +29,6 @@ export type KakaoMapProps = {
   recommendations: ScoredRoute[];
   selectedRouteId: string | null;
   onSelectRoute: (routeId: string) => void;
-  showShade: boolean;
   showFacilities?: boolean;
 };
 
@@ -330,7 +329,6 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     recommendations,
     selectedRouteId,
     onSelectRoute,
-    showShade,
     showFacilities = false,
   },
   ref,
@@ -350,7 +348,6 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     recommendations,
     selectedRouteId,
     onSelectRoute,
-    showShade,
     showFacilities,
   });
   propsRef.current = {
@@ -359,7 +356,6 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     recommendations,
     selectedRouteId,
     onSelectRoute,
-    showShade,
     showFacilities,
   };
 
@@ -487,10 +483,10 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
   const addShadeOverlay = (
     maps: KakaoMapsApi,
     route: RouteCandidate | undefined,
-    visible: boolean,
     boundsPoints: LatLng[],
   ) => {
-    if (!visible || !route?.shade) return;
+    // 실제 shade 결과가 있으면 자동 표시하고, 없으면 layer만 조용히 생략한다.
+    if (!route?.shade) return;
     if (
       route.shade.status !== 'estimated_demo'
       && route.shade.status !== 'estimated_public'
@@ -606,7 +602,6 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     routes: ScoredRoute[],
     selectedId: string | null,
     selectRoute: (routeId: string) => void,
-    shadeVisible: boolean,
     facilitiesVisible: boolean,
   ) => {
     const maps = mapsRef.current;
@@ -619,7 +614,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     if (nextDestination && isValidPoint(nextDestination)) boundsPoints.push(nextDestination);
 
     const selectedRoute = routes.find(({ route }) => route.id === selectedId)?.route;
-    addShadeOverlay(maps, selectedRoute, shadeVisible, boundsPoints);
+    addShadeOverlay(maps, selectedRoute, boundsPoints);
     addAlternativeRoutes(maps, routes, selectedId, selectRoute, boundsPoints);
     addSelectedRoute(maps, selectedRoute);
     addFacilityOverlays(maps, selectedRoute, facilitiesVisible);
@@ -734,7 +729,6 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
           current.recommendations,
           current.selectedRouteId,
           current.onSelectRoute,
-          current.showShade,
           current.showFacilities,
         );
         const pending = pendingUserLocationRef.current;
@@ -772,7 +766,6 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       recommendations,
       selectedRouteId,
       onSelectRoute,
-      showShade,
       showFacilities,
     );
     // Map data helpers use refs and are intentionally recreated with the latest props.
@@ -783,7 +776,6 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     recommendations,
     selectedRouteId,
     onSelectRoute,
-    showShade,
     showFacilities,
     status,
   ]);

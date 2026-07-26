@@ -7,10 +7,12 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 
 from ..models import (
+    LatLng,
     LowFloorStatus,
     Place,
     RouteCandidate,
@@ -270,14 +272,26 @@ async def enrich_ai_pipeline_candidates(
     if None in holdout_group_ids or len(holdout_group_ids) != 1:
         raise AIProviderError(502, "AI candidates do not share one holdout OD group.")
 
+    # 그늘 없음(None)은 오류가 아니라 정상 지원 상태다(0%와 구분).
+    # 계산된 그늘이 있는 후보끼리는 동일 평가시각을 요구하고, 하나도 없으면
+    # 이번 이동 조건의 평가 기준시각을 사용한다.
     evaluated_values = {
         route.shade.evaluated_at.astimezone(UTC).isoformat()
         for route in candidates
         if route.shade is not None
     }
-    if len(evaluated_values) != 1 or any(route.shade is None for route in candidates):
+    if len(evaluated_values) > 1:
         raise AIProviderError(502, "AI candidate shade evaluation time is inconsistent.")
-    shade_evaluated_at = next(iter(evaluated_values))
+    if evaluated_values:
+        shade_evaluated_at = next(iter(evaluated_values))
+    else:
+        reference = options.departure_at or datetime.now(UTC)
+        if reference.tzinfo is None:
+            # ScoringOptions.departure_at는 KST 로컬 시각으로 들어온다.
+            reference = reference.replace(
+                tzinfo=ZoneInfo("Asia/Seoul")
+            )
+        shade_evaluated_at = reference.astimezone(UTC).isoformat()
     raw_captured_values = {
         str(route.model_snapshot.get("captured_at") or "")
         for route in candidates
@@ -315,7 +329,11 @@ async def enrich_ai_pipeline_candidates(
                     "base_snapshot_hash": route.model_snapshot_hash,
                     "sources": list(dict.fromkeys([
                         *route.sources,
-                        str(route.shade.source),
+                        *(
+                            [str(route.shade.source)]
+                            if route.shade is not None
+                            else []
+                        ),
                     ])),
                     "geometry_quality": route.geometry_quality,
                     "features": features_by_id[route.id],
@@ -708,6 +726,23 @@ def _to_route_candidate(
     ]
     if len(path) < 2:
         raise RuntimeError("ai pipeline route has no truthful geometry")
+    transit_refinement = r.get("transit_refinement")
+    if transit_refinement is not None and not isinstance(
+        transit_refinement, dict
+    ):
+        raise RuntimeError("ai pipeline transit refinement shape is invalid")
+    transit_segments = [
+        segment for segment in segments if segment.mode in ("bus", "subway")
+    ]
+    if not transit_segments or all(
+        segment.geometry_quality == "exact" for segment in transit_segments
+    ):
+        refinement_state = "exact"
+    elif transit_refinement is not None:
+        refinement_state = "not_loaded"
+    else:
+        # estimated 대중교통 선형이 있으나 정밀화 서술자가 없는 배치 모드.
+        refinement_state = "failed"
     return RouteCandidate(
         id=route_id,
         summary=summary,
@@ -739,7 +774,136 @@ def _to_route_candidate(
         model_holdout_group_id=model_holdout_group_id,
         model_snapshot_hash=model_snapshot_hash,
         model_snapshot=dict(snapshot) if isinstance(snapshot, dict) else {},
+        transit_refinement=transit_refinement,
+        transit_refinement_state=refinement_state,
     )
+
+
+def _valid_refinement_descriptor(descriptor: dict | None) -> dict | None:
+    """수집 시점에 저장한 서버 내부 refinement 서술자를 검증한다."""
+    if not isinstance(descriptor, dict):
+        return None
+    map_object = descriptor.get("map_object")
+    origin = descriptor.get("origin")
+    destination = descriptor.get("destination")
+    try:
+        parsed = {
+            "map_object": str(map_object),
+            "origin_lat": float(origin["lat"]),
+            "origin_lng": float(origin["lng"]),
+            "dest_lat": float(destination["lat"]),
+            "dest_lng": float(destination["lng"]),
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not parsed["map_object"].strip():
+        return None
+    return parsed
+
+
+def apply_refined_transit_geometry(
+    route: RouteCandidate,
+    lane_paths: list[list[dict]],
+    *,
+    refined_at: datetime,
+) -> None:
+    """정밀 선형을 대중교통 구간에만 반영한다.
+
+    score·rank·model snapshot·feedback token·terrain·shade는 변경하지 않는다.
+    """
+    transit_segments = [
+        segment
+        for segment in route.segments
+        if segment.mode in ("bus", "subway")
+    ]
+    usable_paths = [path for path in lane_paths if len(path) >= 2]
+    if len(usable_paths) != len(transit_segments):
+        raise AIProviderError(
+            502,
+            "정밀 선형 수가 대중교통 구간 수와 일치하지 않습니다.",
+        )
+    for segment, lane_path in zip(transit_segments, usable_paths):
+        segment.path = [
+            LatLng(lat=float(point["lat"]), lng=float(point["lng"]))
+            for point in lane_path
+        ]
+        segment.geometry_quality = "exact"
+    merged_path: list[LatLng] = []
+    for segment in route.segments:
+        for point in segment.path or []:
+            candidate_point = (
+                point
+                if isinstance(point, LatLng)
+                else LatLng.model_validate(point)
+            )
+            if (
+                not merged_path
+                or merged_path[-1].lat != candidate_point.lat
+                or merged_path[-1].lng != candidate_point.lng
+            ):
+                merged_path.append(candidate_point)
+    if len(merged_path) >= 2:
+        route.path = merged_path
+    qualities = {
+        segment.geometry_quality
+        for segment in route.segments
+        if segment.geometry_quality is not None
+    }
+    route.geometry_quality = (
+        next(iter(qualities)) if len(qualities) == 1 else "mixed"
+    )
+    route.transit_refinement_state = "exact"
+    route.transit_refined_at = refined_at
+
+
+async def refine_candidate_transit(route: RouteCandidate) -> bool:
+    """선택된 후보의 대중교통 표시 선형만 AI 서버로 정밀화한다.
+
+    이미 exact이거나 정밀화 대상이 없으면 외부 호출 없이 False를 반환한다.
+    실패는 AIProviderError로 그대로 전달하며 가짜 성공으로 바꾸지 않는다.
+    """
+    if route.transit_refinement_state == "exact":
+        return False
+    descriptor = _valid_refinement_descriptor(route.transit_refinement)
+    if descriptor is None:
+        raise AIProviderError(
+            409,
+            "이 후보는 대중교통 정밀화를 지원하지 않습니다.",
+        )
+    data = await _post_pipeline(
+        "/routes/refine-transit",
+        {
+            "origin_lat": descriptor["origin_lat"],
+            "origin_lng": descriptor["origin_lng"],
+            "dest_lat": descriptor["dest_lat"],
+            "dest_lng": descriptor["dest_lng"],
+            "map_object": descriptor["map_object"],
+        },
+    )
+    lane_paths = data.get("lane_paths")
+    if (
+        str(data.get("geometry_quality") or "") != "exact"
+        or not isinstance(lane_paths, list)
+        or not lane_paths
+        or any(not isinstance(path, list) for path in lane_paths)
+    ):
+        raise AIProviderError(502, "AI 정밀 선형 응답이 유효하지 않습니다.")
+    refined_at_raw = str(data.get("refined_at") or "")
+    try:
+        refined_at = datetime.fromisoformat(
+            refined_at_raw.replace("Z", "+00:00")
+        )
+    except ValueError as exc:
+        raise AIProviderError(
+            502,
+            "AI 정밀 선형 완료시각이 유효하지 않습니다.",
+        ) from exc
+    apply_refined_transit_geometry(
+        route,
+        lane_paths,
+        refined_at=refined_at,
+    )
+    return True
 
 
 def _derive_low_floor_status(bus_used: bool, is_low_floor) -> LowFloorStatus:

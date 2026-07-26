@@ -29,6 +29,7 @@ services:
       - AI_SERVER_URL=http://ai:8001
       - DATABASE_URL=postgresql+psycopg://kt10:kt10-local-only@postgres:5432/kt10
       - MAX_SUPPORTED_TOTAL_WALK_M=15000
+      - ROUTE_DEFAULT_TOP_N=5
       - WEATHER_CACHE_TTL_SECONDS=300
       - VWORLD_CACHE_DIR=/var/cache/kt10/vworld
       - VWORLD_CACHE_TTL_HOURS=168
@@ -67,6 +68,8 @@ services:
       - ODSAY_CACHE_DIR=/app/ai/data/cache/odsay
       - ODSAY_CACHE_TTL_SECONDS=1800
       - ODSAY_MAX_CANDIDATES=10
+      - ODSAY_MAX_CONCURRENT_REQUESTS=3
+      - ODSAY_DAILY_BUDGET=1000
       - ROUTE_FEATURE_CACHE_DIR=/app/ai/data/cache/route_features
       - ROUTE_FEATURE_CACHE_TTL_SECONDS=1800
       - TMAP_CACHE_DIR=/app/ai/data/cache/tmap

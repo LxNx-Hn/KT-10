@@ -15,7 +15,11 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from collectors.base import Coordinate
+from collectors.base import (
+    CollectorError,
+    CollectorNotConfigured,
+    Coordinate,
+)
 from collectors.odsay_collector import OdsayRouteCollector
 from collectors.tmap_collector import TmapRouteCollector
 from config import settings
@@ -347,6 +351,44 @@ def rank_candidates(req: RankCandidatesRequest) -> dict:
     }
 
 
+class RefineTransitRequest(BaseModel):
+    """백엔드 내부 refinement 서술자. 프론트엔드에 노출되지 않는다."""
+
+    origin_lat: float = Field(ge=34.8, le=35.5)
+    origin_lng: float = Field(ge=128.7, le=129.4)
+    dest_lat: float = Field(ge=34.8, le=35.5)
+    dest_lng: float = Field(ge=128.7, le=129.4)
+    map_object: str = Field(min_length=1, max_length=8000)
+
+
+@router.post("/routes/refine-transit")
+async def refine_transit(req: RefineTransitRequest) -> dict:
+    """선택된 후보 하나의 대중교통 정밀 선형(loadLane)만 조회한다.
+
+    검색·후보 재수집·순위화를 다시 실행하지 않으며, 실패는 정상 geometry로
+    위장하지 않고 명시적 오류로 반환한다.
+    """
+    collector = OdsayRouteCollector()
+    try:
+        lane_paths = await collector.refine_transit(
+            req.map_object,
+            Coordinate(lat=req.origin_lat, lng=req.origin_lng),
+            Coordinate(lat=req.dest_lat, lng=req.dest_lng),
+        )
+    except CollectorNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CollectorError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "geometry_quality": "exact",
+        "refined_at": datetime.now(UTC).isoformat(),
+        "lane_paths": [
+            [{"lat": point.lat, "lng": point.lng} for point in path]
+            for path in lane_paths
+        ],
+    }
+
+
 @router.post("/recommend")
 async def recommend(req: RecommendRequest):
     """그늘 보강을 우회하는 이전 직접 추천 경로는 사용하지 않는다."""
@@ -363,6 +405,16 @@ async def recommend(req: RecommendRequest):
 @router.post("/labeling/candidates")
 async def labeling_candidates(req: RecommendRequest):
     """초기 라벨링용 후보와 당시 피처를 생성한다. 모델 준비 전에도 호출할 수 있다."""
+    if req.candidate_limit > settings.ODSAY_MAX_CANDIDATES:
+        # 요청보다 적게 수집한 결과를 정상 응답처럼 보이지 않게 한다.
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"요청한 후보 수 {req.candidate_limit}개가 서버 상한 "
+                f"{settings.ODSAY_MAX_CANDIDATES}개를 초과합니다. "
+                "후보 수를 줄여 다시 요청해 주세요."
+            ),
+        )
     route_features, collection_metadata = await _collect_featured_routes(req)
     group_id = _group_id(req)
     snapshots = _route_snapshots(
@@ -388,6 +440,7 @@ async def labeling_candidates(req: RecommendRequest):
                 "path": feature["_path"],
                 "segments": feature["_segments"],
                 "slope_segments": feature.get("_slope_segments", []),
+                "transit_refinement": feature.get("_transit_refinement"),
                 "features": {key: value for key, value in feature.items() if not key.startswith("_")},
                 "feature_snapshot": snapshot_by_route[route_id],
                 "trait_labels": traits_by_route[route_id],
@@ -488,6 +541,9 @@ async def _collect_static_featured_routes(
             ),
             "_slope_segments": slope_segments,
             "_geometry_quality": candidate.geometry_quality,
+            # 백엔드 내부 전용 대중교통 정밀화 서술자. 사용자 응답으로
+            # 전달되지 않도록 백엔드에서 직렬화 제외 필드에 보관한다.
+            "_transit_refinement": candidate.transit_refinement,
         }
         route_features.append(feature)
 
@@ -537,10 +593,30 @@ def _apply_request_features(
     return scoped
 
 
+def _walk_geometry_exact(feature: dict) -> bool:
+    """보행·환승 구간 geometry가 모두 exact인지 확인한다."""
+    walk_segments = [
+        segment
+        for segment in feature.get("_segments") or []
+        if segment.get("mode") in {"walk", "transfer"}
+    ]
+    return bool(walk_segments) and all(
+        segment.get("geometry_quality") == "exact"
+        for segment in walk_segments
+    )
+
+
 def _static_features_cacheable(route_features: list[dict]) -> bool:
-    """정확 보행 geometry와 90m 경사가 완성된 후보군을 캐시한다."""
+    """정확 보행 geometry와 90m 경사가 완성된 후보군을 캐시한다.
+
+    대중교통 표시 선형은 선택 시점에 지연 정밀화되므로 estimated여도
+    scoring 피처 캐시 저장을 막지 않는다.
+    """
     return bool(route_features) and all(
-        feature.get("_geometry_quality") == "exact"
+        (
+            feature.get("_geometry_quality") == "exact"
+            or _walk_geometry_exact(feature)
+        )
         and feature.get("elevation_status") == "estimated_90m"
         and bool(feature.get("_slope_segments"))
         for feature in route_features
@@ -761,19 +837,37 @@ def _summary(feature: dict) -> str:
 
 
 def _route_id(feature: dict) -> str:
-    path = [
+    """대중교통 정밀화 전후 동일한 semantic 경로 식별자.
+
+    전체 정밀 path 해시는 loadLane 정밀화로 값이 바뀌므로 사용하지 않는다.
+    노선·승하차·보행 geometry는 정밀화로 변하지 않는 관측값이다.
+    """
+    walk_points = [
         Coordinate(lat=float(point["lat"]), lng=float(point["lng"]))
-        for point in feature["_path"]
+        for segment in feature["_segments"]
+        if segment.get("mode") in {"walk", "transfer"}
+        for point in segment.get("path") or []
     ]
-    sampled_path = sample_path_by_distance(path, n=41) or path
+    if not walk_points:
+        walk_points = [
+            Coordinate(lat=float(point["lat"]), lng=float(point["lng"]))
+            for point in feature["_path"]
+        ]
+    sampled_walk = sample_path_by_distance(walk_points, n=41) or walk_points
     fingerprint = {
         "sources": sorted(feature["_sources"]),
-        "path": [
+        "walk_path": [
             [round(point.lat, 5), round(point.lng, 5)]
-            for point in sampled_path
+            for point in sampled_walk
         ],
         "segments": [
-            [segment.get("mode"), segment.get("bus_route_name"), segment.get("station_name")]
+            [
+                segment.get("mode"),
+                segment.get("bus_route_name"),
+                segment.get("station_name"),
+                segment.get("description"),
+                segment.get("distance_m"),
+            ]
             for segment in feature["_segments"]
         ],
     }

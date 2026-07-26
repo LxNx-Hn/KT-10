@@ -158,11 +158,66 @@ describe('live 경로 요청 제한시간', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain('/api/routes/refresh-shade');
+    // topN을 강제로 넣지 않아 서버가 route-set의 원래 후보 수를 유지한다.
     expect(JSON.parse(String(init.body))).toEqual({
       routeSetToken: token,
       profile: 'general',
       options: { departureAt: '2026-07-24T02:00:00+09:00' },
-      topN: 5,
+    });
+  });
+
+  it('추천 요청은 topN을 강제하지 않아 서버 운영 기본값을 따른다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify([]),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await liveAdapters.routes.recommend(
+      BUSAN_STATION,
+      { ...BUSAN_STATION, id: 'destination', name: '북구청' },
+      'general',
+      'normal',
+      {},
+    );
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/routes/recommend');
+    expect(JSON.parse(String(init.body))).not.toHaveProperty('topN');
+  });
+
+  it('카드 선택 정밀화는 route-set 토큰과 route ID만 전송한다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        routeId: 'route-1',
+        path: [
+          { lat: 35.1, lng: 129.0 },
+          { lat: 35.2, lng: 129.1 },
+        ],
+        segments: [],
+        geometryQuality: 'exact',
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await liveAdapters.routes.refineTransit(
+      'route-set-token-1234567890',
+      'route-1',
+    );
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/routes/refine-transit');
+    // mapObj·좌표·내부 서술자는 프론트엔드 요청에 포함되지 않는다.
+    expect(JSON.parse(String(init.body))).toEqual({
+      routeSetToken: 'route-set-token-1234567890',
+      routeId: 'route-1',
     });
   });
 });

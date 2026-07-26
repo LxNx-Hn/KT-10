@@ -39,6 +39,18 @@ function defaultDepartureAt(): string {
 let recommendationRequestGeneration = 0;
 let weatherRequestGeneration = 0;
 
+/** 후보별 대중교통 정밀화 in-flight 단일화(같은 후보 중복 요청 방지). */
+const transitRefinementInFlight = new Set<string>();
+
+/** 대중교통 구간이 아직 estimated인 후보만 정밀화 대상이다. */
+function needsTransitRefinement(route: RouteCandidate): boolean {
+  return route.segments.some(
+    (segment) =>
+      (segment.mode === 'bus' || segment.mode === 'subway') &&
+      segment.geometryQuality !== 'exact',
+  );
+}
+
 function beginRecommendationRequest(): number {
   recommendationRequestGeneration += 1;
   return recommendationRequestGeneration;
@@ -115,7 +127,6 @@ interface AppState {
   loadDemoOd: () => void;
   search: () => Promise<void>;
   rescore: () => Promise<void>;
-  refreshEnrichment: () => Promise<void>;
   refreshShade: () => Promise<boolean>;
 
   /* 음성 챗봇 연동 액션 (요구사항 §9) */
@@ -248,7 +259,61 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleLargeUi: () => set((s) => ({ largeUi: !s.largeUi })),
   clearError: () => set({ error: null }),
-  selectRoute: (selectedRouteId) => set({ selectedRouteId }),
+  /**
+   * 카드 선택은 즉시 반영하고, 선택한 후보의 대중교통 표시 선형이 아직
+   * estimated면 서버 refinement로 해당 후보 geometry만 patch한다.
+   * 재검색·재순위화·점수 변경은 발생하지 않는다.
+   */
+  selectRoute: (selectedRouteId) => {
+    set({ selectedRouteId });
+    if (!selectedRouteId) return;
+    const { recommendations } = get();
+    const selected = recommendations.find(
+      ({ route }) => route.id === selectedRouteId,
+    );
+    const routeSetToken = selected?.routeSetToken;
+    if (
+      !selected
+      || !routeSetToken
+      || !needsTransitRefinement(selected.route)
+      || transitRefinementInFlight.has(selectedRouteId)
+    ) {
+      return;
+    }
+    transitRefinementInFlight.add(selectedRouteId);
+    void adapters.routes
+      .refineTransit(routeSetToken, selectedRouteId)
+      .then((refined) => {
+        // 응답 route ID가 일치하는 후보만 patch한다. 순위·점수·카드
+        // 순서는 그대로 유지되며, 늦은 응답도 다른 후보의 지도를
+        // 덮지 않는다(해당 route ID의 저장 geometry만 갱신).
+        if (!refined || refined.routeId !== selectedRouteId) return;
+        const patch = (route: RouteCandidate): RouteCandidate =>
+          route.id === refined.routeId
+            ? {
+                ...route,
+                path: refined.path,
+                segments: refined.segments,
+                geometryQuality: refined.geometryQuality,
+              }
+            : route;
+        set((state) => ({
+          candidates: state.candidates.map(patch),
+          recommendations: state.recommendations.map((item) => (
+            item.route.id === refined.routeId
+              ? { ...item, route: patch(item.route) }
+              : item
+          )),
+        }));
+      })
+      .catch(() => {
+        // 정밀화 실패 시 estimated 표시를 유지한다. 전체 재검색이나
+        // 오류 화면 전환 없이 다음 명시적 선택에서 다시 시도할 수 있다.
+      })
+      .finally(() => {
+        transitRefinementInFlight.delete(selectedRouteId);
+      });
+  },
   setLastSpoken: (lastSpoken) => set({ lastSpoken }),
 
   /** 데모 기본 OD(부산진구청 → 서면역) 채우기 */
@@ -345,61 +410,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         loading: false,
         error: toUserMessage(error, '변경한 조건으로 경로를 다시 계산하지 못했습니다.'),
       });
-    }
-  },
-
-  /** 첫 화면을 막지 않고 백그라운드 사전계산 결과만 조용히 갱신한다. */
-  refreshEnrichment: async () => {
-    const {
-      origin,
-      destination,
-      profile,
-      weatherScenario,
-      options,
-      selectedRouteId,
-      recommendations: previous,
-    } = get();
-    if (!origin || !destination || !previous.length) return;
-    const requestGeneration = beginRecommendationRequest();
-    const previousSelected = previous.find(
-      ({ route }) => route.id === selectedRouteId,
-    );
-    const previousSemanticKey = previousSelected
-      ? routeSemanticKey(previousSelected.route)
-      : null;
-    try {
-      const recommendations = await adapters.routes.recommend(
-        origin,
-        destination,
-        profile,
-        weatherScenario,
-        options,
-      );
-      if (
-        !isLatestRecommendationRequest(requestGeneration)
-        || !recommendations.length
-      ) {
-        return;
-      }
-      const semanticMatch = previousSemanticKey
-        ? recommendations.find(
-          ({ route }) => routeSemanticKey(route) === previousSemanticKey,
-        )
-        : undefined;
-      const directMatch = recommendations.find(
-        ({ route }) => route.id === selectedRouteId,
-      );
-      set({
-        candidates: recommendations.map(({ route }) => route),
-        recommendations,
-        selectedRouteId: (
-          semanticMatch
-          ?? directMatch
-          ?? serverRankedRecommendations(recommendations)[0]
-        )?.route.id ?? null,
-      });
-    } catch {
-      // 초기 경로는 이미 표시 중이므로 백그라운드 보강 실패로 화면을 지우지 않는다.
     }
   },
 

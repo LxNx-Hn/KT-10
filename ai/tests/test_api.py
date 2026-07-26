@@ -38,8 +38,31 @@ def test_static_route_cache_accepts_only_exact_90m_features():
     }
 
     assert _static_features_cacheable([complete]) is True
+    # 보행 geometry가 확인되지 않은 mixed 후보는 캐시하지 않는다.
     assert _static_features_cacheable([
         {**complete, "_geometry_quality": "mixed"},
+    ]) is False
+    # 대중교통 표시 선형만 estimated인 지연 정밀화 후보는
+    # 보행 exact + 90m 경사가 완성되면 캐시할 수 있다.
+    assert _static_features_cacheable([
+        {
+            **complete,
+            "_geometry_quality": "mixed",
+            "_segments": [
+                {"mode": "walk", "geometry_quality": "exact"},
+                {"mode": "bus", "geometry_quality": "estimated"},
+            ],
+        },
+    ]) is True
+    assert _static_features_cacheable([
+        {
+            **complete,
+            "_geometry_quality": "mixed",
+            "_segments": [
+                {"mode": "walk", "geometry_quality": "estimated"},
+                {"mode": "bus", "geometry_quality": "estimated"},
+            ],
+        },
     ]) is False
     assert _static_features_cacheable([
         {**complete, "elevation_status": "unavailable"},
@@ -1138,3 +1161,145 @@ def test_feature_pipeline_keeps_display_path_but_analyzes_walk_parts(
         {"lat": point.lat, "lng": point.lng}
         for point in display_path
     ]
+
+
+def test_labeling_candidates_rejects_over_limit_top_n(monkeypatch):
+    """상한을 넘는 후보 수 요청은 조용한 절단 대신 명시적 422다."""
+    from config import settings as ai_settings
+
+    monkeypatch.setattr(ai_settings, "ODSAY_MAX_CANDIDATES", 5)
+    response = client.post("/labeling/candidates", json={
+        "origin_lat": 35.1151, "origin_lng": 129.0414, "origin_name": "부산역",
+        "dest_lat": 35.1972, "dest_lng": 128.9902, "dest_name": "북구청",
+        "profile": "general",
+        "candidate_limit": 7,
+    })
+
+    assert response.status_code == 422
+    assert "상한" in response.json()["detail"]
+
+
+def test_refine_transit_endpoint_returns_exact_lane_paths(monkeypatch):
+    async def fake_refine(self, map_object, origin, destination):
+        assert map_object == "100:1:1:2"
+        return [[
+            Coordinate(lat=35.115, lng=129.04),
+            Coordinate(lat=35.157, lng=129.059),
+        ]]
+
+    monkeypatch.setattr(
+        api_router.OdsayRouteCollector,
+        "refine_transit",
+        fake_refine,
+    )
+    response = client.post("/routes/refine-transit", json={
+        "origin_lat": 35.1151,
+        "origin_lng": 129.0414,
+        "dest_lat": 35.1972,
+        "dest_lng": 128.9902,
+        "map_object": "100:1:1:2",
+    })
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["geometry_quality"] == "exact"
+    assert body["lane_paths"] == [[
+        {"lat": 35.115, "lng": 129.04},
+        {"lat": 35.157, "lng": 129.059},
+    ]]
+    assert body["refined_at"]
+
+
+def test_refine_transit_endpoint_keeps_provider_failure_explicit(monkeypatch):
+    from collectors.base import CollectorError as AiCollectorError
+
+    async def fail_refine(self, map_object, origin, destination):
+        raise AiCollectorError("ODsay loadLane 실패: quota exceeded")
+
+    monkeypatch.setattr(
+        api_router.OdsayRouteCollector,
+        "refine_transit",
+        fail_refine,
+    )
+    response = client.post("/routes/refine-transit", json={
+        "origin_lat": 35.1151,
+        "origin_lng": 129.0414,
+        "dest_lat": 35.1972,
+        "dest_lng": 128.9902,
+        "map_object": "100:1:1:2",
+    })
+
+    assert response.status_code == 502
+    assert "quota" in response.json()["detail"]
+
+
+def _lazy_route_feature(transit_path, *, bus_name="100", quality="estimated"):
+    walk_path = [
+        {"lat": 35.1151, "lng": 129.0414},
+        {"lat": 35.1160, "lng": 129.0420},
+    ]
+    return {
+        "_sources": ["odsay"],
+        "_path": [*walk_path, *transit_path],
+        "_segments": [
+            {
+                "mode": "walk",
+                "description": "보행 이동",
+                "distance_m": 120,
+                "path": walk_path,
+                "geometry_quality": "exact",
+            },
+            {
+                "mode": "bus",
+                "description": f"{bus_name} · 부산역 → 서면역",
+                "bus_route_name": bus_name,
+                "station_name": None,
+                "distance_m": 4900,
+                "path": transit_path,
+                "geometry_quality": quality,
+            },
+        ],
+    }
+
+
+def test_route_id_is_stable_across_transit_refinement():
+    """정밀화 전(정류장 추정선)과 후(도로 선형)의 route ID가 같아야 한다."""
+    estimated = _lazy_route_feature([
+        {"lat": 35.1160, "lng": 129.0420},
+        {"lat": 35.1400, "lng": 129.0500},
+        {"lat": 35.1570, "lng": 129.0590},
+    ])
+    refined = _lazy_route_feature(
+        [
+            {"lat": 35.1160, "lng": 129.0420},
+            {"lat": 35.1201, "lng": 129.0433},
+            {"lat": 35.1298, "lng": 129.0461},
+            {"lat": 35.1405, "lng": 129.0502},
+            {"lat": 35.1570, "lng": 129.0590},
+        ],
+        quality="exact",
+    )
+
+    assert api_router._route_id(estimated) == api_router._route_id(refined)
+
+
+def test_route_id_distinguishes_different_lanes_and_stops():
+    base = _lazy_route_feature([
+        {"lat": 35.1160, "lng": 129.0420},
+        {"lat": 35.1570, "lng": 129.0590},
+    ])
+    other_lane = _lazy_route_feature(
+        [
+            {"lat": 35.1160, "lng": 129.0420},
+            {"lat": 35.1570, "lng": 129.0590},
+        ],
+        bus_name="200",
+    )
+    other_stops = _lazy_route_feature([
+        {"lat": 35.1160, "lng": 129.0420},
+        {"lat": 35.1570, "lng": 129.0590},
+    ])
+    other_stops["_segments"][1]["description"] = "100 · 부산역 → 양정역"
+
+    assert api_router._route_id(base) != api_router._route_id(other_lane)
+    assert api_router._route_id(base) != api_router._route_id(other_stops)

@@ -514,7 +514,10 @@ def test_odsay_normalizes_abbreviated_search_map_object():
     )
 
 
-def test_odsay_collect_uses_search_and_load_lane_contract(monkeypatch):
+def test_odsay_collect_defers_load_lane_and_keeps_refinement_descriptor(
+    monkeypatch,
+):
+    """최초 수집은 search 1회만 호출하고 loadLane은 호출하지 않는다."""
     import collectors.odsay_collector as module
 
     search_payload = {"result": {"path": [{
@@ -522,11 +525,11 @@ def test_odsay_collect_uses_search_and_load_lane_contract(monkeypatch):
         "subPath": [{
             "trafficType": 2, "sectionTime": 18, "distance": 4900,
             "startName": "부산역", "endName": "서면역", "lane": [{"busNo": "100"}],
+            "startX": 129.04, "startY": 35.115,
+            "endX": 129.059, "endY": 35.157,
         }],
     }]}}
-    lane_payload = {"result": {"lane": [{"section": [{"graphPos": [
-        {"x": 129.04, "y": 35.115}, {"x": 129.059, "y": 35.157},
-    ]}]}]}}
+    requested_urls = []
 
     class Response:
         def __init__(self, payload): self.payload = payload
@@ -538,20 +541,64 @@ def test_odsay_collect_uses_search_and_load_lane_contract(monkeypatch):
         async def __aenter__(self): return self
         async def __aexit__(self, *args): return None
         async def get(self, url, **kwargs):
-            if url.endswith("loadLane"):
-                assert kwargs["params"]["mapObject"] == "0:0@100:1:1:2"
-            return Response(lane_payload if url.endswith("loadLane") else search_payload)
+            requested_urls.append(url)
+            assert not url.endswith("loadLane")
+            return Response(search_payload)
 
     monkeypatch.setattr(settings, "ODSAY_API_KEY", "test-key")
     monkeypatch.setattr(settings, "ODSAY_LOAD_LANE_ENABLED", True)
     monkeypatch.setattr(module.httpx, "AsyncClient", Client)
     result = asyncio.run(OdsayRouteCollector().collect(ORIGIN, DEST))
+    assert requested_urls == [OdsayRouteCollector.BASE_URL]
     assert len(result) == 1
     assert result[0].duration_min == 20
     assert result[0].distance_m == 5000
-    assert result[0].geometry_quality == "exact"
+    # 정류장 좌표 기반 표시 선형은 exact로 위장하지 않는다.
+    assert result[0].geometry_quality == "estimated"
     assert result[0].segments[0]["mode"] == "bus"
+    assert result[0].segments[0]["geometry_quality"] == "estimated"
     assert len(result[0].segments[0]["path"]) == 2
+    descriptor = result[0].transit_refinement
+    assert descriptor is not None
+    assert descriptor["map_object"] == "100:1:1:2"
+    assert descriptor["origin"] == {"lat": ORIGIN.lat, "lng": ORIGIN.lng}
+    assert descriptor["destination"] == {"lat": DEST.lat, "lng": DEST.lng}
+
+
+def test_odsay_refine_transit_fetches_exact_lane_geometry(monkeypatch):
+    """선택된 후보 정밀화는 loadLane 1회로 exact 선형만 조회한다."""
+    import collectors.odsay_collector as module
+
+    lane_payload = {"result": {"lane": [{"section": [{"graphPos": [
+        {"x": 129.04, "y": 35.115}, {"x": 129.059, "y": 35.157},
+    ]}]}]}}
+    requested_urls = []
+
+    class Response:
+        def __init__(self, payload): self.payload = payload
+        def raise_for_status(self): return None
+        def json(self): return self.payload
+
+    class Client:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return None
+        async def get(self, url, **kwargs):
+            requested_urls.append(url)
+            assert url.endswith("loadLane")
+            assert kwargs["params"]["mapObject"] == "0:0@100:1:1:2"
+            return Response(lane_payload)
+
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "test-key")
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+    paths = asyncio.run(
+        OdsayRouteCollector().refine_transit("100:1:1:2", ORIGIN, DEST)
+    )
+    assert requested_urls == [OdsayRouteCollector.LANE_URL]
+    assert paths == [[
+        Coordinate(lat=35.115, lng=129.04),
+        Coordinate(lat=35.157, lng=129.059),
+    ]]
 
 
 def test_odsay_labeling_mode_skips_load_lane_and_marks_transit_estimated(
@@ -650,7 +697,7 @@ def test_odsay_respects_requested_candidate_limit_in_batches_of_three(monkeypatc
         async def get(self, *_args, **_kwargs):
             return Response()
 
-    async def fake_build(_client, path, _origin, _destination):
+    async def fake_build(path, _origin, _destination):
         nonlocal active, max_active
         active += 1
         max_active = max(max_active, active)
@@ -734,7 +781,6 @@ def test_odsay_zero_distance_transfer_does_not_create_detour(monkeypatch):
     monkeypatch.setattr(collector, "_walk_geometry", fake_walk)
 
     route = asyncio.run(collector._build_candidate(
-        None,
         path,
         ORIGIN,
         DEST,
@@ -772,6 +818,10 @@ def test_odsay_skips_invalid_candidate_and_keeps_next_valid_one(
             "trafficType": 2,
             "sectionTime": 18,
             "distance": 4900,
+            "startX": 129.04,
+            "startY": 35.115,
+            "endX": 129.059,
+            "endY": 35.157,
         }],
     }
     search_payload = {"result": {"path": [invalid, valid]}}
@@ -920,19 +970,8 @@ def test_odsay_rejects_missing_transit_lane_instead_of_shifting_next_lane():
     }
 
     async def run():
-        async def fake_load_lane(*_args):
-            return [
-                [],
-                [
-                    Coordinate(lat=35.12, lng=129.05),
-                    Coordinate(lat=35.13, lng=129.06),
-                ],
-            ]
-
-        collector._load_lane = fake_load_lane
         with pytest.raises(CollectorError, match="bus 구간"):
             await collector._build_candidate(
-                object(),
                 path,
                 ORIGIN,
                 DEST,
@@ -958,16 +997,8 @@ def test_odsay_rejects_boolean_traffic_type(traffic_type):
     }
 
     async def run():
-        async def fake_load_lane(*_args):
-            return [[
-                Coordinate(lat=35.12, lng=129.05),
-                Coordinate(lat=35.13, lng=129.06),
-            ]]
-
-        collector._load_lane = fake_load_lane
         with pytest.raises(CollectorError, match="trafficType"):
             await collector._build_candidate(
-                object(),
                 path,
                 ORIGIN,
                 DEST,

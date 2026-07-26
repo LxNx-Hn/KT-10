@@ -146,7 +146,11 @@ def test_calculate_uphill_and_downhill_features():
     )
 
 
-def test_extract_elevation_contract_with_mock_transport():
+def test_extract_elevation_contract_with_mock_transport(monkeypatch):
+    monkeypatch.setattr(
+        settings, "ELEVATION_NETWORK_FALLBACK_ENABLED", True
+    )
+
     def handler(request: httpx.Request) -> httpx.Response:
         latitudes = request.url.params.get("latitude", "").split(",")
         assert latitudes[0] == "35.115"
@@ -166,6 +170,9 @@ def test_extract_elevation_contract_with_mock_transport():
 
 
 def test_elevation_cache_avoids_repeated_provider_call(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        settings, "ELEVATION_NETWORK_FALLBACK_ENABLED", True
+    )
     requests = 0
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -257,6 +264,9 @@ def test_fifteen_km_elevation_is_split_into_provider_batches(
 
     monkeypatch.setattr(settings, "ELEVATION_DEM_DIR", "")
     monkeypatch.setattr(settings, "ELEVATION_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        settings, "ELEVATION_NETWORK_FALLBACK_ENABLED", True
+    )
 
     async def run():
         async with httpx.AsyncClient(
@@ -321,7 +331,12 @@ def test_disconnected_parts_do_not_create_artificial_elevation_gain():
     )
 
 
-def test_extract_elevation_parts_preserves_boundaries_in_one_api_batch():
+def test_extract_elevation_parts_preserves_boundaries_in_one_api_batch(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        settings, "ELEVATION_NETWORK_FALLBACK_ENABLED", True
+    )
     requests = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -349,3 +364,29 @@ def test_extract_elevation_parts_preserves_boundaries_in_one_api_batch():
     assert requests == 1
     assert result["elevation_gain_m"] == 0
     assert result["max_slope_percent"] == 0
+
+
+def test_live_default_makes_no_elevation_network_fallback(monkeypatch, tmp_path):
+    """지역 DEM이 응답하지 못해도 기본 설정에서는 network fallback이 없다."""
+    monkeypatch.setattr(settings, "ELEVATION_DEM_DIR", str(tmp_path / "dem"))
+    monkeypatch.setattr(settings, "ELEVATION_CACHE_DIR", "")
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError(
+            "운영 기본 설정에서는 고도 network fallback을 호출하면 안 됩니다."
+        )
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            return await extract_elevation_features(
+                [(35.115, 129.04), (35.116, 129.04)], client
+            )
+
+    result = asyncio.run(run())
+
+    # 누락 고도를 0이나 합성값으로 채우지 않고 미확인으로 명시한다.
+    assert result["elevation_status"] == "unavailable"
+    assert result["avg_slope_percent"] is None
+    assert result["slope_segments"] == []

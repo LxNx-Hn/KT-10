@@ -31,7 +31,7 @@ import {
 import type { Place, ProfileId, ScoredRoute } from '@/types';
 import { preferredScrollBehavior } from '@/utils/motion';
 import { serverRankedRecommendations } from '@/utils/routes';
-import KakaoMap from './KakaoMap';
+import KakaoMap, { SLOPE_COLOR_RAMP } from './KakaoMap';
 import {
   ROUTE_SCORE_DISCLAIMER,
   buildRouteViewModel,
@@ -885,15 +885,6 @@ function LocationIcon() {
   );
 }
 
-function ShadeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="M4 20V8l8-4 8 4v12M8 20v-7h8v7" strokeLinejoin="round" />
-      <path d="M3 20h18" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function FacilityIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -949,14 +940,12 @@ export default function MapFirstApp() {
   const selectRoute = useAppStore((state) => state.selectRoute);
   const useCurrentLocation = useAppStore((state) => state.useCurrentLocation);
   const search = useAppStore((state) => state.search);
-  const refreshEnrichment = useAppStore((state) => state.refreshEnrichment);
   const voiceStatus = useVoiceChatStore((state) => state.status);
   const requestListen = useVoiceChatStore((state) => state.requestListen);
 
   const [drawer, setDrawer] = useState<DrawerId | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('route');
   const [sheetExpanded, setSheetExpanded] = useState(true);
-  const [showShade, setShowShade] = useState(true);
   const [showFacilities, setShowFacilities] = useState(false);
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [facilityHint, setFacilityHint] = useState<string | null>(null);
@@ -966,7 +955,6 @@ export default function MapFirstApp() {
   const originInputRef = useRef<HTMLInputElement>(null);
   const destinationInputRef = useRef<HTMLInputElement>(null);
   const locatingTimerRef = useRef<number>();
-  const enrichmentRefreshRef = useRef({ odKey: '', attempt: 0 });
 
   const ranked = useMemo(
     () => serverRankedRecommendations(recommendations),
@@ -1007,7 +995,6 @@ export default function MapFirstApp() {
     (key) => Boolean(options[key]),
   ).length;
   const showVoiceControl = drawer === null && !(ranked.length > 0 && sheetExpanded);
-  const dataSource = import.meta.env.VITE_DATA_SOURCE === 'mock' ? 'mock' : 'live';
   const profileMeta = PROFILES[profile];
   const showLabeledControls =
     largeUi || profile === 'elderly' || profile === 'child' || profile === 'disabled';
@@ -1046,41 +1033,9 @@ export default function MapFirstApp() {
     setFacilityHint(null);
   }, [selectedRouteId]);
 
-  useEffect(() => {
-    if (
-      dataSource !== 'live'
-      || !origin
-      || !destination
-      || !recommendations.length
-      || recommendations.every(
-        ({ route }) => (
-          route.geometryQuality === 'exact'
-          && route.terrain?.status === 'estimated_90m'
-          && route.shade?.status !== 'unavailable'
-        ),
-      )
-    ) {
-      return undefined;
-    }
-    const odKey = `${origin.id}->${destination.id}`;
-    if (enrichmentRefreshRef.current.odKey !== odKey) {
-      enrichmentRefreshRef.current = { odKey, attempt: 0 };
-    }
-    const delays = [5_000, 10_000, 20_000, 30_000];
-    const attempt = enrichmentRefreshRef.current.attempt;
-    if (attempt >= delays.length) return undefined;
-    const timer = window.setTimeout(() => {
-      enrichmentRefreshRef.current.attempt += 1;
-      void refreshEnrichment();
-    }, delays[attempt]);
-    return () => window.clearTimeout(timer);
-  }, [
-    dataSource,
-    destination,
-    origin,
-    recommendations,
-    refreshEnrichment,
-  ]);
+  // 지연 정밀화 구조에서 2위 이하 후보의 estimated 대중교통 선형·shade
+  // 없음은 정상 상태다. 시간 기반 전체 재추천(refreshEnrichment 타이머)은
+  // 불필요한 전체 /recommend 재실행을 만들므로 두지 않는다.
 
   const closeDrawer = useCallback(() => setDrawer(null), []);
 
@@ -1245,7 +1200,6 @@ export default function MapFirstApp() {
           recommendations={ranked}
           selectedRouteId={selectedRouteId}
           onSelectRoute={selectRoute}
-          showShade={showShade}
           showFacilities={showFacilities}
         />
 
@@ -1411,22 +1365,6 @@ export default function MapFirstApp() {
             <FacilityIcon />
             {showLabeledControls && <span className="map-first__fab-label">편의시설</span>}
           </button>
-          {hasShadeOverlay && (
-            <button
-              type="button"
-              className={`map-first__fab${
-                showShade ? ' map-first__fab--active' : ''
-              }${
-                showLabeledControls ? ' map-first__fab--labeled' : ''
-              }`}
-              aria-label="건물 그늘 오버레이"
-              aria-pressed={showShade}
-              onClick={() => setShowShade((visible) => !visible)}
-            >
-              <ShadeIcon />
-              {showLabeledControls && <span className="map-first__fab-label">그늘</span>}
-            </button>
-          )}
           {facilityHint && (
             <p className="map-first__fab-hint" role="status" aria-live="polite">
               {facilityHint}
@@ -1434,8 +1372,7 @@ export default function MapFirstApp() {
           )}
         </div>
 
-        {showShade &&
-          hasShadeOverlay &&
+        {hasShadeOverlay &&
           selectedShade?.shadeRatio !== undefined && (
             <div className="map-first__map-legend" role="note">
               <strong>
@@ -1458,10 +1395,19 @@ export default function MapFirstApp() {
                 {selectedTerrain.maxSlopePercent !== undefined &&
                   ` (최대 ${selectedTerrain.maxSlopePercent.toFixed(1)}%)`}
               </strong>
-              <span><i className="map-first__legend-dot map-first__legend-dot--slope-flat" />완만 ≤3%</span>
-              <span><i className="map-first__legend-dot map-first__legend-dot--slope-moderate" />보통 ≤6%</span>
-              <span><i className="map-first__legend-dot map-first__legend-dot--slope-steep" />급경사 ≤10%</span>
-              <span><i className="map-first__legend-dot map-first__legend-dot--slope-danger" />위험 &gt;10%</span>
+              {SLOPE_COLOR_RAMP.map((band, index) => (
+                <span key={band.label}>
+                  <i
+                    className="map-first__legend-dot"
+                    style={{ backgroundColor: band.color }}
+                  />
+                  {band.label}
+                  {' '}
+                  {Number.isFinite(band.max)
+                    ? `≤${band.max}%`
+                    : `>${SLOPE_COLOR_RAMP[index - 1]?.max ?? 0}%`}
+                </span>
+              ))}
             </div>
           )}
 

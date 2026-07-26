@@ -224,6 +224,14 @@ class RouteCandidate(CamelModel):
     model_group_id: Optional[str] = Field(default=None, exclude=True)
     model_holdout_group_id: Optional[str] = Field(default=None, exclude=True)
     model_snapshot_hash: Optional[str] = Field(default=None, exclude=True)
+    # 대중교통 지연 정밀화 서술자(원본 mapObj 포함). 서버 내부 전용이며
+    # 어떤 API 응답에도 직렬화되지 않는다.
+    transit_refinement: Optional[dict] = Field(default=None, exclude=True)
+    # 후보별 정밀화 상태: not_loaded | loading | exact | failed
+    transit_refinement_state: Literal[
+        "not_loaded", "loading", "exact", "failed"
+    ] = Field(default="exact", exclude=True)
+    transit_refined_at: Optional[datetime] = Field(default=None, exclude=True)
     characteristics: list[
         Literal[
             "fastest",
@@ -350,11 +358,29 @@ class RecommendRequest(CamelModel):
     profile: ProfileId = "general"
     weather_scenario: WeatherScenarioId = "normal"
     options: ScoringOptions = Field(default_factory=ScoringOptions)
-    top_n: int = Field(default=5, ge=1, le=10)
+    # 생략 시 서버 운영 기본값(ROUTE_DEFAULT_TOP_N)을 사용한다.
+    top_n: int | None = Field(default=None, ge=1, le=10)
 
 
 class ShadeRefreshRequest(CamelModel):
     route_set_token: str = Field(min_length=20, max_length=64)
     profile: ProfileId = "general"
     options: ScoringOptions = Field(default_factory=ScoringOptions)
-    top_n: int = Field(default=5, ge=1, le=10)
+    top_n: int | None = Field(default=None, ge=1, le=10)
+
+
+class TransitRefineRequest(CamelModel):
+    """기존 추천 카드 선택 시 해당 후보의 대중교통 선형만 정밀화한다."""
+
+    route_set_token: str = Field(min_length=20, max_length=64)
+    route_id: str = Field(min_length=1, max_length=200)
+
+
+class TransitRefinementResponse(CamelModel):
+    """표시 geometry만 교체한다. score·rank·model snapshot은 포함하지 않는다."""
+
+    route_id: str
+    path: list[LatLng] = Field(min_length=2, max_length=50_000)
+    segments: list[RouteSegment] = Field(min_length=1, max_length=200)
+    geometry_quality: Literal["exact", "mixed", "estimated"]
+    refined_at: Optional[datetime] = None

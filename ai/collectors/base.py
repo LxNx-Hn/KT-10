@@ -29,6 +29,9 @@ class RouteCandidate:
     raw_response: Optional[dict] = field(default=None)
     segments: list[dict[str, Any]] = field(default_factory=list)
     geometry_quality: Literal["exact", "mixed", "estimated"] = "exact"
+    # 대중교통 표시 선형을 나중에 정밀화하기 위한 공급자 내부 서술자.
+    # 서버 내부 전용이며 공개 API 응답에 원문을 노출하지 않는다.
+    transit_refinement: Optional[dict] = field(default=None)
 
 
 class BaseRouteCollector(ABC):

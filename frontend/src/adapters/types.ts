@@ -5,6 +5,7 @@ import type {
   RouteCandidate,
   ScoredRoute,
   ScoringOptions,
+  TransitRefinement,
   WeatherCondition,
 } from '@/types';
 import type { WeatherScenarioId } from '@/data/weather';
@@ -46,6 +47,15 @@ export interface RouteAdapter {
     options: ScoringOptions,
     topN?: number,
   ): Promise<ScoredRoute[]>;
+  /**
+   * 기존 추천 카드에서 선택한 후보의 대중교통 표시 선형만 정밀화한다.
+   * 재검색·재순위화 없이 해당 후보 geometry만 patch되며,
+   * 정밀화를 지원하지 않는 모드(mock)는 null을 반환한다.
+   */
+  refineTransit(
+    routeSetToken: string,
+    routeId: string,
+  ): Promise<TransitRefinement | null>;
 }
 
 export interface BusAdapter {

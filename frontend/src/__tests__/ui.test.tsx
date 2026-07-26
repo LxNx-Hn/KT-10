@@ -24,28 +24,27 @@ import { recommendRoutes } from '@/scoring/engine';
 import { useAppStore } from '@/store/appStore';
 import type { ScoredRoute } from '@/types';
 
-vi.mock('@/v2/KakaoMap', () => ({
+vi.mock('@/v2/KakaoMap', async () => ({
+  ...(await vi.importActual<object>('@/v2/KakaoMap')),
   default: ({
     recommendations,
     selectedRouteId,
     onSelectRoute,
-    showShade,
     showFacilities,
   }: {
     recommendations: ScoredRoute[];
     selectedRouteId: string | null;
     onSelectRoute: (routeId: string) => void;
-    showShade: boolean;
     showFacilities?: boolean;
   }) => {
     const selected = recommendations.find(
       ({ route }) => route.id === selectedRouteId,
     );
     const shade = selected?.route.shade;
+    // 실제 KakaoMap과 동일하게, shade 결과가 있으면 자동 표시한다.
     const overlayVisible =
-      showShade &&
-      (shade?.status === 'estimated_demo' ||
-        shade?.status === 'estimated_public');
+      shade?.status === 'estimated_demo' ||
+      shade?.status === 'estimated_public';
 
     return (
       <section
@@ -54,7 +53,7 @@ vi.mock('@/v2/KakaoMap', () => ({
         aria-label="지도"
         data-selected-route-id={selectedRouteId ?? ''}
         data-route-count={recommendations.length}
-        data-shade-visible={showShade}
+        data-shade-visible={overlayVisible}
         data-facilities-visible={showFacilities}
         data-shadow-polygons={
           overlayVisible ? shade?.shadowPolygons.length ?? 0 : 0
@@ -789,8 +788,8 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     ).toBeTruthy();
   });
 
-  it('그늘과 경사 레이어를 함께 표시하고 그늘 토글은 그늘만 제어한다', () => {
-    const { container, getByRole } = render(<App />);
+  it('그늘 결과가 있으면 토글 없이 자동 표시하고 경사 레이어와 함께 유지한다', () => {
+    const { container, getByRole, queryByRole } = render(<App />);
     act(() => seedShadedResults());
 
     const map = getByRole('region', { name: '지도' });
@@ -804,23 +803,44 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       container.querySelector('.map-first__map-legend--slope'),
     ).toBeTruthy();
 
-    fireEvent.click(
-      getByRole('button', { name: '건물 그늘 오버레이' }),
-    );
+    // 그늘 토글 버튼과 aria-pressed 상태는 접근성 tree에 존재하지 않는다.
+    expect(
+      queryByRole('button', { name: '건물 그늘 오버레이' }),
+    ).toBeNull();
+    expect(
+      getByRole('button', { name: /편의시설 오버레이/ }),
+    ).toBeTruthy();
+    expect(container.textContent).not.toContain('API 연결 모드');
+    expect(container.textContent).not.toContain('검증용 내장 데이터');
+  });
+
+  it('그늘 결과가 없으면 그늘 레이어와 범례만 조용히 생략한다', () => {
+    const { container, getByRole, queryByRole } = render(<App />);
+    act(() => seedResults());
+
+    const map = getByRole('region', { name: '지도' });
     expect(map.getAttribute('data-shade-visible')).toBe('false');
+    expect(map.getAttribute('data-shadow-polygons')).toBe('0');
     expect(
       container.querySelector(
         '.map-first__map-legend:not(.map-first__map-legend--slope)',
       ),
     ).toBeNull();
     expect(
-      container.querySelector('.map-first__map-legend--slope'),
-    ).toBeTruthy();
-    expect(
-      getByRole('button', { name: /편의시설 오버레이/ }),
-    ).toBeTruthy();
-    expect(container.textContent).not.toContain('API 연결 모드');
-    expect(container.textContent).not.toContain('검증용 내장 데이터');
+      queryByRole('button', { name: '건물 그늘 오버레이' }),
+    ).toBeNull();
+  });
+
+  it('경사 범례는 지도 경사 색상 상수(2·5·8%)와 같은 경계를 표시한다', () => {
+    const { container } = render(<App />);
+    act(() => seedShadedResults());
+
+    const legend = container.querySelector('.map-first__map-legend--slope');
+    expect(legend).toBeTruthy();
+    expect(legend?.textContent).toContain('완만 ≤2%');
+    expect(legend?.textContent).toContain('보통 ≤5%');
+    expect(legend?.textContent).toContain('급경사 ≤8%');
+    expect(legend?.textContent).toContain('매우 급경사 >8%');
   });
 
   it('시설 정보는 있지만 segment 좌표가 없으면 안내만 보이고 오버레이는 켜지지 않는다', () => {

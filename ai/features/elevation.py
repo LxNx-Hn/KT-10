@@ -259,6 +259,9 @@ def _ensure_dem_tile(tile_id: str) -> Path | None:
     with _dem_tile_lock(tile_id):
         if path.is_file() and path.stat().st_size > 0:
             return path
+        if not settings.ELEVATION_NETWORK_FALLBACK_ENABLED:
+            # 운영 live 경로는 준비되지 않은 타일을 원격에서 내려받지 않는다.
+            return None
         directory.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
         url = f"{DEM_BASE_URL}/{tile_id}/{tile_id}.tif"
@@ -560,6 +563,11 @@ async def extract_elevation_features_for_parts(
                     type(exc).__name__,
                 )
         return result
+
+    if not settings.ELEVATION_NETWORK_FALLBACK_ENABLED:
+        # 지역 DEM으로 확인할 수 없는 경사를 외부 고도 API로 대체하지 않고
+        # 미확인 상태를 명시한다.
+        return _empty("unavailable")
 
     owns_client = client is None
     client = client or httpx.AsyncClient(follow_redirects=True)

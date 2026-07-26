@@ -341,7 +341,6 @@ describe('KakaoMap production overlays', () => {
         recommendations={[selected, alternative]}
         selectedRouteId="selected"
         onSelectRoute={onSelectRoute}
-        showShade
       />,
     );
     await waitUntilReady();
@@ -434,7 +433,6 @@ describe('KakaoMap production overlays', () => {
         recommendations={[selected]}
         selectedRouteId="slope-segments"
         onSelectRoute={vi.fn()}
-        showShade={false}
       />,
     );
     await waitUntilReady();
@@ -492,7 +490,6 @@ describe('KakaoMap production overlays', () => {
         recommendations={[selected]}
         selectedRouteId="layer-order"
         onSelectRoute={vi.fn()}
-        showShade
       />,
     );
     await waitUntilReady();
@@ -514,7 +511,7 @@ describe('KakaoMap production overlays', () => {
   });
 
   it.each(['estimated_demo', 'estimated_public'] as const)(
-    '%s 그늘만 건물 폴리곤과 녹색·주황 경로로 올리고 토글을 끄면 제거한다',
+    '%s 그늘만 건물 폴리곤과 녹색·주황 경로로 자동 표시하고 결과가 없으면 제거한다',
     async (status) => {
       const selected = scoredRoute('shade', {
         path: [ORIGIN, MIDPOINT, DESTINATION],
@@ -546,7 +543,6 @@ describe('KakaoMap production overlays', () => {
           recommendations={[selected]}
           selectedRouteId="shade"
           onSelectRoute={vi.fn()}
-          showShade
         />,
       );
       await waitUntilReady();
@@ -579,14 +575,18 @@ describe('KakaoMap production overlays', () => {
       expect(Math.max(...shadeLines.map((line) => line.options.zIndex ?? 0)))
         .toBeLessThan(selectedBaseZ);
 
+      // shade 결과가 없어지면 토글 없이 shade layer만 조용히 제거된다.
+      const withoutShade = {
+        ...selected,
+        route: { ...selected.route, shade: undefined },
+      };
       view.rerender(
         <KakaoMap
           origin={ORIGIN}
           destination={DESTINATION}
-          recommendations={[selected]}
+          recommendations={[withoutShade]}
           selectedRouteId="shade"
           onSelectRoute={vi.fn()}
-          showShade={false}
         />,
       );
 
@@ -633,7 +633,6 @@ describe('KakaoMap production overlays', () => {
         recommendations={[selected]}
         selectedRouteId="facilities"
         onSelectRoute={vi.fn()}
-        showShade={false}
         showFacilities
       />,
     );
@@ -652,7 +651,6 @@ describe('KakaoMap production overlays', () => {
         recommendations={[selected]}
         selectedRouteId="facilities"
         onSelectRoute={vi.fn()}
-        showShade={false}
         showFacilities={false}
       />,
     );
@@ -691,7 +689,6 @@ describe('KakaoMap production overlays', () => {
         recommendations={[selected]}
         selectedRouteId="unknown"
         onSelectRoute={vi.fn()}
-        showShade
       />,
     );
     await waitUntilReady();
@@ -741,7 +738,6 @@ describe('KakaoMap production overlays', () => {
         recommendations={[selected]}
         selectedRouteId="compact"
         onSelectRoute={vi.fn()}
-        showShade={false}
       />,
     );
     await waitUntilReady();
