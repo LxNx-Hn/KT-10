@@ -34,6 +34,21 @@ export const mockAdapters: Adapters = {
         ),
       );
     },
+    // 고정 데모 경로는 이미 확정 geometry이므로 정밀화가 없다.
+    refineTransit: () => Promise.resolve(null),
+    // 데모는 서버 route-set이 없으므로 전달받은 후보를 그대로 재채점한다.
+    rescore: async (current, profile, weatherScenario, options, topN = 5) => {
+      const weather = WEATHER_SCENARIOS[weatherScenario];
+      return delay(
+        recommendRoutes(
+          current.map(({ route }) => route),
+          weather,
+          profile,
+          options,
+          topN,
+        ),
+      );
+    },
   },
   bus: {
     getArrivals: (stopId) => delay(getArrivals(stopId)),

@@ -5,6 +5,7 @@ import type {
   RouteCandidate,
   ScoredRoute,
   ScoringOptions,
+  TransitRefinement,
   WeatherCondition,
 } from '@/types';
 import type { WeatherScenarioId } from '@/data/weather';
@@ -40,6 +41,27 @@ export interface RouteAdapter {
    * 경로 공급자 재호출 없이 서버가 발급한 routeSetToken을 사용한다.
    */
   refreshShade(
+    current: ScoredRoute[],
+    profile: ProfileId,
+    weatherScenario: WeatherScenarioId,
+    options: ScoringOptions,
+    topN?: number,
+  ): Promise<ScoredRoute[]>;
+  /**
+   * 기존 추천 카드에서 선택한 후보의 대중교통 표시 선형만 정밀화한다.
+   * 재검색·재순위화 없이 해당 후보 geometry만 patch되며,
+   * 정밀화를 지원하지 않는 모드(mock)는 null을 반환한다.
+   */
+  refineTransit(
+    routeSetToken: string,
+    routeId: string,
+  ): Promise<TransitRefinement | null>;
+  /**
+   * 프로필·이동 조건 변경을 기존 route-set 재순위화로 처리한다.
+   * 경로 공급자를 다시 호출하지 않으며 route-set token도 유지된다.
+   * score·rank·카드 순서는 새 추천 판단이므로 달라질 수 있다.
+   */
+  rescore(
     current: ScoredRoute[],
     profile: ProfileId,
     weatherScenario: WeatherScenarioId,

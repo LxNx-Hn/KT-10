@@ -248,13 +248,15 @@ def record_network_call(endpoint: str) -> None:
                 "date": today,
                 "observed_service_calls_today": calls,
                 "observed_total_today": total,
+                # 운영 참고선일 뿐 요청을 차단하는 hard limit가 아니다.
+                "warning_only": True,
                 "budget": settings.ODSAY_DAILY_BUDGET,
                 "estimated_remaining_service_budget": max(
                     0, settings.ODSAY_DAILY_BUDGET - total
                 ),
                 "note": (
-                    "이 서비스 프로세스가 관측한 호출만 포함하며 계정 "
-                    "전체 quota가 아니다."
+                    "경고 기준을 넘어도 호출을 차단하지 않는다. 이 서비스 "
+                    "프로세스가 관측한 호출만 포함하며 계정 전체 quota가 아니다."
                 ),
             }
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -277,8 +279,8 @@ def record_network_call(endpoint: str) -> None:
         if total >= threshold and key not in _warned_ratios:
             _warned_ratios.add(key)
             log.warning(
-                "ODsay 일일 관측 호출이 예산의 %d%%에 도달 "
-                "(observed=%d budget=%d)",
+                "ODsay 일일 관측 호출이 경고 기준의 %d%%에 도달 "
+                "(observed=%d warning_reference=%d, 호출 차단 없음)",
                 int(ratio * 100),
                 total,
                 settings.ODSAY_DAILY_BUDGET,

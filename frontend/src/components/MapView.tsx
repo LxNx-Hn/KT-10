@@ -42,7 +42,6 @@ export default function MapView() {
   const [fallback, setFallback] = useState(!hasKakaoKey());
   const [mapLoadFailed, setMapLoadFailed] = useState(false);
   const [mapReady, setMapReady] = useState(false);
-  const [showShade, setShowShade] = useState(true);
 
   const origin = useAppStore((s) => s.origin);
   const destination = useAppStore((s) => s.destination);
@@ -143,8 +142,7 @@ export default function MapView() {
 
     const shade = selectedRoute?.shade;
     if (
-      showShade
-      && (shade?.status === 'estimated_demo' || shade?.status === 'estimated_public')
+      shade?.status === 'estimated_demo' || shade?.status === 'estimated_public'
     ) {
       for (const polygon of shade.shadowPolygons) {
         const overlay = new kakao.maps.Polygon({
@@ -190,8 +188,7 @@ export default function MapView() {
         overlaysRef.current.push(line);
       }
       if (
-        showShade
-        && (shade?.status === 'estimated_demo' || shade?.status === 'estimated_public')
+        shade?.status === 'estimated_demo' || shade?.status === 'estimated_public'
       ) {
         for (const segment of shade.pathSegments) {
           const line = new kakao.maps.Polyline({
@@ -222,7 +219,6 @@ export default function MapView() {
     selectedPath,
     selectedRoute,
     selectedRouteId,
-    showShade,
   ]);
 
   if (!fallback) {
@@ -234,11 +230,7 @@ export default function MapView() {
           selectedRouteId={selectedRouteId}
           onSelect={selectRoute}
         />
-        <ShadeControls
-          shade={selectedRoute?.shade}
-          showShade={showShade}
-          onToggle={() => setShowShade((value) => !value)}
-        />
+        <ShadeControls shade={selectedRoute?.shade} />
         <MapDataNotice route={selectedRoute} mapSource="Kakao Maps" />
       </div>
     );
@@ -248,11 +240,8 @@ export default function MapView() {
   const W = 600;
   const H = 280;
   const shadowPolygons = (
-    showShade
-    && (
-      selectedRoute?.shade?.status === 'estimated_demo'
-      || selectedRoute?.shade?.status === 'estimated_public'
-    )
+    selectedRoute?.shade?.status === 'estimated_demo'
+    || selectedRoute?.shade?.status === 'estimated_public'
   )
     ? selectedRoute.shade.shadowPolygons
     : [];
@@ -325,7 +314,7 @@ export default function MapView() {
               strokeLinejoin="round"
             />
           )}
-          {showShade && shadeSegments.map((segment, index) => {
+          {shadeSegments.map((segment, index) => {
             const start = shadePoints[index * 2];
             const end = shadePoints[index * 2 + 1];
             if (!start || !end) return null;
@@ -366,11 +355,7 @@ export default function MapView() {
           selectedRouteId={selectedRouteId}
           onSelect={selectRoute}
         />
-        <ShadeControls
-          shade={selectedRoute?.shade}
-          showShade={showShade}
-          onToggle={() => setShowShade((value) => !value)}
-        />
+        <ShadeControls shade={selectedRoute?.shade} />
         <MapDataNotice route={selectedRoute} mapSource="내장 경로 약도" />
       </div>
     </div>
@@ -406,19 +391,12 @@ function MapRoutePicker({
 
 function ShadeControls({
   shade,
-  showShade,
-  onToggle,
 }: {
   shade?: import('@/types').RouteCandidate['shade'];
-  showShade: boolean;
-  onToggle: () => void;
 }) {
   if (!shade || shade.status === 'unavailable' || shade.status === 'not_daylight' || shade.shadeRatio === undefined) return null;
   return (
     <div className="map__shade-controls" role="note">
-      <button type="button" className="map__shade-toggle" aria-pressed={showShade} onClick={onToggle}>
-        {showShade ? '그늘 오버레이 숨기기' : '그늘 오버레이 보기'}
-      </button>
       <span className="map__shade-ratio">
         {shade.estimateKind === 'lower_bound' ? '확인된 건물 그늘 최소 ' : '건물 그늘 '}
         {Math.round(shade.shadeRatio * 100)}%

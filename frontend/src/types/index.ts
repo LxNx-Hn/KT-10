@@ -79,6 +79,15 @@ export interface RouteSegment {
   geometryQuality?: 'exact' | 'mixed' | 'estimated';
 }
 
+/** 카드 선택 시 서버가 반환하는 대중교통 표시 선형 정밀화 결과. */
+export interface TransitRefinement {
+  routeId: string;
+  path: LatLng[];
+  segments: RouteSegment[];
+  geometryQuality: 'exact' | 'mixed' | 'estimated';
+  refinedAt?: string;
+}
+
 export interface RouteCandidate {
   id: string;
   summary: string; // 예: "210번 버스 + 도보"

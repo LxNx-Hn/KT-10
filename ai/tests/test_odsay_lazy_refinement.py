@@ -235,6 +235,7 @@ def test_daily_counter_persists_and_warns(tmp_path, monkeypatch, caplog):
 
     counter = instrumentation.read_daily_counter()
     assert counter is not None
+    assert counter["warning_only"] is True
     assert counter["observed_total_today"] == 7
     assert counter["estimated_remaining_service_budget"] == 3
     assert (
@@ -248,6 +249,13 @@ def test_daily_counter_persists_and_warns(tmp_path, monkeypatch, caplog):
     assert counter["observed_total_today"] == 10
     assert counter["estimated_remaining_service_budget"] == 0
     assert any("100%" in message for message in caplog.messages)
+
+    # 100%는 경고 기준일 뿐 hard cap이 아니다. 초과 호출도 계속 기록된다.
+    instrumentation.record_network_call("loadLane")
+    counter = instrumentation.read_daily_counter()
+    assert counter["warning_only"] is True
+    assert counter["observed_total_today"] == 11
+    assert counter["estimated_remaining_service_budget"] == 0
 
     # counter 파일에는 키·좌표·mapObj가 포함되지 않는다.
     raw = json.dumps(counter, ensure_ascii=False)

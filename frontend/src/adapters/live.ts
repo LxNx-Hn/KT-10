@@ -1,5 +1,12 @@
 import type { Adapters } from './types';
-import type { BusStopArrivals, Place, RouteCandidate, ScoredRoute, WeatherCondition } from '@/types';
+import type {
+  BusStopArrivals,
+  Place,
+  RouteCandidate,
+  ScoredRoute,
+  TransitRefinement,
+  WeatherCondition,
+} from '@/types';
 import type { WeatherScenarioId } from '@/data/weather';
 import { API_BASE, throwApiError } from '@/api/http';
 import { hasKakaoKey } from '@/map/kakaoLoader';
@@ -92,16 +99,17 @@ export const liveAdapters: Adapters = {
         origin,
         destination: dest,
       }),
-    recommend: (origin, dest, profile, weatherScenario, options, topN = 5) =>
+    // topN을 명시하지 않으면 서버 운영 기본값(ROUTE_DEFAULT_TOP_N)을 따른다.
+    recommend: (origin, dest, profile, weatherScenario, options, topN) =>
       postJson<ScoredRoute[]>('/api/routes/recommend', {
         origin,
         destination: dest,
         profile,
         weatherScenario,
         options,
-        topN,
+        ...(topN !== undefined ? { topN } : {}),
       }, ROUTE_TIMEOUT_MS),
-    refreshShade: (current, profile, _weatherScenario, options, topN = 5) => {
+    refreshShade: (current, profile, _weatherScenario, options, topN) => {
       const routeSetToken = current[0]?.routeSetToken;
       if (!routeSetToken) {
         return Promise.reject(new Error('ROUTE_SET_TOKEN_MISSING'));
@@ -110,7 +118,25 @@ export const liveAdapters: Adapters = {
         routeSetToken,
         profile,
         options,
-        topN,
+        ...(topN !== undefined ? { topN } : {}),
+      }, ROUTE_TIMEOUT_MS);
+    },
+    refineTransit: (routeSetToken, routeId) =>
+      postJson<TransitRefinement>('/api/routes/refine-transit', {
+        routeSetToken,
+        routeId,
+      }, ROUTE_TIMEOUT_MS),
+    rescore: (current, profile, weatherScenario, options, topN) => {
+      const routeSetToken = current[0]?.routeSetToken;
+      if (!routeSetToken) {
+        return Promise.reject(new Error('ROUTE_SET_TOKEN_MISSING'));
+      }
+      return postJson<ScoredRoute[]>('/api/routes/rescore', {
+        routeSetToken,
+        profile,
+        weatherScenario,
+        options,
+        ...(topN !== undefined ? { topN } : {}),
       }, ROUTE_TIMEOUT_MS);
     },
   },

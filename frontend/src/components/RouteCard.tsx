@@ -92,7 +92,14 @@ export default function RouteCard({
       aria-current={selected ? 'true' : undefined}
       tabIndex={0}
       onClick={() => selectRoute(route.id)}
-      onFocus={() => selectRoute(route.id)}
+      onKeyDown={(event) => {
+        // Tab focus 이동만으로 외부 대중교통 정밀화를 시작하지 않는다.
+        // 비버튼 카드의 키보드 선택은 Enter·Space에서만 명시적으로 처리한다.
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          selectRoute(route.id);
+        }
+      }}
     >
       <header className="route-card__head">
         <div className="route-card__rank"><strong>{rank}</strong>순위</div>
