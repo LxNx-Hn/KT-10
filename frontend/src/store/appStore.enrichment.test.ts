@@ -47,6 +47,7 @@ function seedEstimatedTransitResults() {
     selectedRouteId: recommendations[0].route.id,
     loading: false,
     error: null,
+    refiningRouteKeys: [],
   });
   return recommendations;
 }
@@ -70,6 +71,7 @@ beforeEach(() => {
     selectedRouteId: null,
     loading: false,
     error: null,
+    refiningRouteKeys: [],
   });
 });
 

@@ -126,7 +126,7 @@ export const liveAdapters: Adapters = {
         routeSetToken,
         routeId,
       }, ROUTE_TIMEOUT_MS),
-    rescore: (current, profile, options, topN) => {
+    rescore: (current, profile, weatherScenario, options, topN) => {
       const routeSetToken = current[0]?.routeSetToken;
       if (!routeSetToken) {
         return Promise.reject(new Error('ROUTE_SET_TOKEN_MISSING'));
@@ -134,6 +134,7 @@ export const liveAdapters: Adapters = {
       return postJson<ScoredRoute[]>('/api/routes/rescore', {
         routeSetToken,
         profile,
+        weatherScenario,
         options,
         ...(topN !== undefined ? { topN } : {}),
       }, ROUTE_TIMEOUT_MS);

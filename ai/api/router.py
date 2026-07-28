@@ -23,7 +23,12 @@ from collectors.base import (
     Coordinate,
 )
 from collectors.odsay_collector import OdsayRouteCollector
-from collectors.odsay_instrumentation import adopt_correlation_id
+from collectors.odsay_instrumentation import (
+    adopt_correlation_id,
+    log_rank,
+    provider_candidate_index,
+    route_id_hash,
+)
 from collectors.tmap_collector import TmapRouteCollector
 from config import settings
 from features.extractor import (
@@ -379,6 +384,11 @@ def rank_candidates(req: RankCandidatesRequest) -> dict:
         req.profile,
         top_k=len(feature_rows),
     )
+    for item in ranked:
+        log_rank(
+            route_ids[item["route_index"]],
+            int(item["rank"]),
+        )
     return {
         "ranked": [
             {
@@ -407,6 +417,8 @@ class RefineTransitRequest(BaseModel):
     dest_lat: float = Field(ge=34.8, le=35.5)
     dest_lng: float = Field(ge=128.7, le=129.4)
     map_object: str = Field(min_length=1, max_length=8000)
+    route_id: str | None = Field(default=None, min_length=1, max_length=200)
+    provider_candidate_index: int | None = Field(default=None, ge=1)
 
 
 @router.post("/routes/refine-transit")
@@ -417,28 +429,44 @@ async def refine_transit(req: RefineTransitRequest) -> dict:
     위장하지 않고 명시적 오류로 반환한다.
     """
     collector = OdsayRouteCollector()
+    route_token = route_id_hash.set(
+        hashlib.sha256(req.route_id.encode("utf-8")).hexdigest()[:12]
+        if req.route_id
+        else ""
+    )
+    index_token = provider_candidate_index.set(
+        req.provider_candidate_index
+    )
     try:
-        lane_paths = await collector.refine_transit(
-            req.map_object,
-            Coordinate(lat=req.origin_lat, lng=req.origin_lng),
-            Coordinate(lat=req.dest_lat, lng=req.dest_lng),
-        )
-    except CollectorNotConfigured as exc:
-        raise HTTPException(
-            status_code=503,
-            detail={"message": str(exc), "code": exc.code, "retryable": False},
-        ) from exc
-    except CollectorError as exc:
-        # 오류 분류를 문자열이 아닌 구조로 전달해 Backend가 재시도 정책을
-        # 문자열 검색 없이 결정할 수 있게 한다.
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "message": str(exc),
-                "code": getattr(exc, "code", "provider_error"),
-                "retryable": bool(getattr(exc, "retryable", True)),
-            },
-        ) from exc
+        try:
+            lane_paths = await collector.refine_transit(
+                req.map_object,
+                Coordinate(lat=req.origin_lat, lng=req.origin_lng),
+                Coordinate(lat=req.dest_lat, lng=req.dest_lng),
+            )
+        except CollectorNotConfigured as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "message": str(exc),
+                    "code": exc.code,
+                    "retryable": False,
+                },
+            ) from exc
+        except CollectorError as exc:
+            # 오류 분류를 문자열이 아닌 구조로 전달해 Backend가 재시도 정책을
+            # 문자열 검색 없이 결정할 수 있게 한다.
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "message": str(exc),
+                    "code": getattr(exc, "code", "provider_error"),
+                    "retryable": bool(getattr(exc, "retryable", True)),
+                },
+            ) from exc
+    finally:
+        provider_candidate_index.reset(index_token)
+        route_id_hash.reset(route_token)
     return {
         "geometry_quality": "exact",
         "refined_at": datetime.now(UTC).isoformat(),
@@ -953,8 +981,23 @@ def _route_id(feature: dict) -> str:
             for point in feature["_path"]
         ]
     sampled_walk = sample_path_by_distance(walk_points, n=41) or walk_points
+    descriptor = feature.get("_transit_refinement")
+    raw_map_object = (
+        descriptor.get("map_object")
+        if isinstance(descriptor, dict)
+        else None
+    )
+    normalized_map_object_hash = None
+    if isinstance(raw_map_object, str) and raw_map_object.strip():
+        normalized_map_object = OdsayRouteCollector._load_lane_map_object(
+            raw_map_object
+        )
+        normalized_map_object_hash = hashlib.sha256(
+            normalized_map_object.encode("utf-8")
+        ).hexdigest()
     fingerprint = {
         "sources": sorted(feature["_sources"]),
+        "map_object_hash": normalized_map_object_hash,
         "walk_path": [
             [round(point.lat, 5), round(point.lng, 5)]
             for point in sampled_walk

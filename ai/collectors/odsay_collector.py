@@ -318,31 +318,31 @@ class OdsayRouteCollector(BaseRouteCollector):
                         # semaphore를 얻은 뒤, 실제 transport 직전에만
                         # network 호출로 집계한다. 대기 중 취소·timeout은
                         # 실제 호출이 아니다.
-                        record_network_call("loadLane")
-                        network = True
-                        odsay_counters.record_network_attempt("loadLane")
                         async with httpx.AsyncClient(
                             follow_redirects=True
                         ) as client:
-                            response = await client.get(
-                                self.LANE_URL,
-                                params=request_params,
-                                timeout=8.0,
-                            )
-                        http_status = getattr(
-                            response, "status_code", None
-                        )
-                        try:
-                            response.raise_for_status()
-                            payload = response.json()
-                        except BaseException:
-                            odsay_counters.record_network_result(
-                                "loadLane", completed=False
-                            )
-                            raise
+                            record_network_call("loadLane")
+                            network = True
+                            odsay_counters.record_network_attempt("loadLane")
+                            try:
+                                response = await client.get(
+                                    self.LANE_URL,
+                                    params=request_params,
+                                    timeout=8.0,
+                                )
+                            except BaseException:
+                                odsay_counters.record_network_result(
+                                    "loadLane", completed=False
+                                )
+                                raise
                         odsay_counters.record_network_result(
                             "loadLane", completed=True
                         )
+                        http_status = getattr(
+                            response, "status_code", None
+                        )
+                        response.raise_for_status()
+                        payload = response.json()
                         return payload
 
                     fetched, waited = await with_concurrency_limit(_request)
@@ -396,6 +396,7 @@ class OdsayRouteCollector(BaseRouteCollector):
                 outcome=outcome,
                 call_site=call_site,
                 http_status=http_status,
+                semaphore_wait=semaphore_wait,
             )
 
     async def refine_transit(
@@ -722,35 +723,44 @@ class OdsayRouteCollector(BaseRouteCollector):
                         async def _request() -> dict:
                             nonlocal http_status, network
                             # semaphore 확보 후 실제 transport 직전에만 집계.
-                            record_network_call("searchPubTransPathT")
-                            network = True
-                            odsay_counters.record_network_attempt("searchPubTransPathT")
                             async with httpx.AsyncClient(
                                 follow_redirects=True
                             ) as client:
-                                resp = await client.get(self.BASE_URL, params={
-                                    "SX": origin.lng, "SY": origin.lat,
-                                    "EX": destination.lng,
-                                    "EY": destination.lat,
-                                    "apiKey": settings.ODSAY_API_KEY,
-                                    "OPT": 0,
-                                    "SearchType": 0,
-                                    "SearchPathType": 0,
-                                }, timeout=8.0)
+                                record_network_call("searchPubTransPathT")
+                                network = True
+                                odsay_counters.record_network_attempt(
+                                    "searchPubTransPathT"
+                                )
+                                try:
+                                    resp = await client.get(
+                                        self.BASE_URL,
+                                        params={
+                                            "SX": origin.lng,
+                                            "SY": origin.lat,
+                                            "EX": destination.lng,
+                                            "EY": destination.lat,
+                                            "apiKey": settings.ODSAY_API_KEY,
+                                            "OPT": 0,
+                                            "SearchType": 0,
+                                            "SearchPathType": 0,
+                                        },
+                                        timeout=8.0,
+                                    )
+                                except BaseException:
+                                    odsay_counters.record_network_result(
+                                        "searchPubTransPathT",
+                                        completed=False,
+                                    )
+                                    raise
+                            odsay_counters.record_network_result(
+                                "searchPubTransPathT",
+                                completed=True,
+                            )
                             http_status = getattr(
                                 resp, "status_code", None
                             )
-                            try:
-                                resp.raise_for_status()
-                                payload = resp.json()
-                            except BaseException:
-                                odsay_counters.record_network_result(
-                                    "searchPubTransPathT", completed=False
-                                )
-                                raise
-                            odsay_counters.record_network_result(
-                                "searchPubTransPathT", completed=True
-                            )
+                            resp.raise_for_status()
+                            payload = resp.json()
                             return payload
 
                         fetched, waited = await with_concurrency_limit(
@@ -803,6 +813,7 @@ class OdsayRouteCollector(BaseRouteCollector):
                     outcome=outcome,
                     call_site="collect",
                     http_status=http_status,
+                    semaphore_wait=semaphore_wait,
                 )
 
             candidates = []
@@ -845,6 +856,15 @@ class OdsayRouteCollector(BaseRouteCollector):
                     elif isinstance(result, BaseException):
                         raise result
                     else:
+                        refinement = getattr(
+                            result,
+                            "transit_refinement",
+                            None,
+                        )
+                        if isinstance(refinement, dict):
+                            refinement[
+                                "provider_candidate_index"
+                            ] = index + 1
                         candidates.append(result)
             if not candidates:
                 suffix = f" ({'; '.join(rejected[:3])})" if rejected else ""

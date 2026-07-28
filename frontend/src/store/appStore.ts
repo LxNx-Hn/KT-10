@@ -48,6 +48,7 @@ let recommendationGeneration = 0;
 
 function beginNewCandidateGeneration(): number {
   recommendationGeneration += 1;
+  refinementCooldownUntil.clear();
   return recommendationGeneration;
 }
 
@@ -58,7 +59,10 @@ function beginNewCandidateGeneration(): number {
  */
 const transitRefinementInFlight = new Set<string>();
 
-function refinementKey(routeSetToken: string, routeId: string): string {
+export function routeRefinementKey(
+  routeSetToken: string,
+  routeId: string,
+): string {
   return `${routeSetToken}${routeId}`;
 }
 
@@ -166,8 +170,8 @@ interface AppState {
   loading: boolean;
   error: string | null;
   lastSpoken: string;
-  /** 대중교통 선형 정밀화가 진행 중인 후보 route ID 목록. */
-  refiningRouteIds: string[];
+  /** route-set token + route ID로 구분한 진행 중 정밀화 key 목록. */
+  refiningRouteKeys: string[];
 
   /* 액션 */
   setProfile: (p: ProfileId) => void;
@@ -191,6 +195,7 @@ interface AppState {
   search: () => Promise<void>;
   rescore: () => Promise<void>;
   refreshShade: () => Promise<boolean>;
+  invalidateTransitRefinements: () => void;
 
   /* 음성 챗봇 연동 액션 (요구사항 §9) */
   ensureOrigin: () => void;
@@ -220,7 +225,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   loading: false,
   error: null,
   lastSpoken: '',
-  refiningRouteIds: [],
+  refiningRouteKeys: [],
 
   setProfile: (profile) => {
     const restartPendingSearch = get().loading && !get().candidates.length;
@@ -347,7 +352,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     ) {
       return;
     }
-    const key = refinementKey(routeSetToken, selectedRouteId);
+    const key = routeRefinementKey(routeSetToken, selectedRouteId);
     if (transitRefinementInFlight.has(key)) return;
     // 최근 실패한 후보는 cooldown이 끝날 때까지 다시 요청하지 않는다.
     if (refinementCooldownActive(key)) return;
@@ -374,9 +379,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     function startRefinement() {
     transitRefinementInFlight.add(key);
     set((state) => ({
-      refiningRouteIds: state.refiningRouteIds.includes(capturedRouteId)
-        ? state.refiningRouteIds
-        : [...state.refiningRouteIds, capturedRouteId],
+      refiningRouteKeys: state.refiningRouteKeys.includes(key)
+        ? state.refiningRouteKeys
+        : [...state.refiningRouteKeys, key],
     }));
     void adapters.routes
       .refineTransit(capturedToken, capturedRouteId)
@@ -416,8 +421,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       .finally(() => {
         transitRefinementInFlight.delete(key);
         set((state) => ({
-          refiningRouteIds: state.refiningRouteIds.filter(
-            (routeId) => routeId !== capturedRouteId,
+          refiningRouteKeys: state.refiningRouteKeys.filter(
+            (routeKey) => routeKey !== key,
           ),
         }));
       });
@@ -504,6 +509,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const recommendations = await adapters.routes.rescore(
         previous,
         profile,
+        get().weatherScenario,
         options,
       );
       if (!isLatestRecommendationRequest(requestGeneration)) return;
@@ -533,6 +539,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         error: toUserMessage(error, '변경한 조건으로 경로를 다시 계산하지 못했습니다.'),
       });
     }
+  },
+
+  invalidateTransitRefinements: () => {
+    cancelPendingRefinement();
+    beginNewCandidateGeneration();
   },
 
   /** 기존 후보군을 유지하고 선택 시각의 그늘과 순위만 갱신한다. */

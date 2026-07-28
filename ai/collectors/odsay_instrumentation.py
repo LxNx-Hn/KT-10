@@ -28,6 +28,11 @@ KST = ZoneInfo("Asia/Seoul")
 _BUDGET_WARN_RATIOS = (0.7, 0.8, 0.9, 1.0)
 
 correlation_id: ContextVar[str] = ContextVar("odsay_correlation_id", default="")
+route_id_hash: ContextVar[str] = ContextVar("odsay_route_id_hash", default="")
+provider_candidate_index: ContextVar[int | None] = ContextVar(
+    "odsay_provider_candidate_index",
+    default=None,
+)
 
 
 _ALLOWED_CORRELATION_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -156,22 +161,42 @@ def log_call(
     call_site: str,
     retry_number: int = 0,
     http_status: int | None = None,
+    semaphore_wait: float = 0.0,
 ) -> None:
     """단일 논리 호출의 구조화 로그. 키·좌표·mapObj 원문은 남기지 않는다."""
     log.info(
-        "odsay_call corr=%s endpoint=%s id=%s cache=%s network=%s "
-        "follower=%s retry=%d status=%s duration_ms=%.1f outcome=%s site=%s",
+        "odsay_call corr=%s endpoint=%s site=%s route_id_hash=%s "
+        "candidate_index=%s map_bounds_hash=%s cache=%s single_flight=%s "
+        "semaphore_wait_ms=%.1f network_started=%s retry=%d status=%s "
+        "duration_ms=%.1f outcome=%s",
         correlation_id.get() or "-",
         endpoint,
+        call_site,
+        route_id_hash.get() or "-",
+        (
+            provider_candidate_index.get()
+            if provider_candidate_index.get() is not None
+            else "-"
+        ),
         identity_hash,
         "hit" if cache_hit else "miss",
+        "follower" if follower else "leader",
+        semaphore_wait * 1000,
         "yes" if network else "no",
-        "yes" if follower else "no",
         retry_number,
         http_status if http_status is not None else "-",
         duration_ms,
         outcome,
-        call_site,
+    )
+
+
+def log_rank(route_id: str, final_rank: int) -> None:
+    """순위 결정 로그. route ID 원문은 기록하지 않는다."""
+    log.info(
+        "odsay_route_rank corr=%s route_id_hash=%s final_rank=%d outcome=ranked",
+        correlation_id.get() or "-",
+        anonymized_hash(route_id),
+        final_rank,
     )
 
 

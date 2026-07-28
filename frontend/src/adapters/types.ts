@@ -64,6 +64,7 @@ export interface RouteAdapter {
   rescore(
     current: ScoredRoute[],
     profile: ProfileId,
+    weatherScenario: WeatherScenarioId,
     options: ScoringOptions,
     topN?: number,
   ): Promise<ScoredRoute[]>;

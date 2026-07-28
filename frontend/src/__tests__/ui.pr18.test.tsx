@@ -58,6 +58,7 @@ function seedEstimatedResults(): ScoredRoute[] {
     selectedRouteId: recommendations[0]?.route.id ?? null,
     loading: false,
     error: null,
+    refiningRouteKeys: [],
   });
   return recommendations;
 }
@@ -82,6 +83,7 @@ beforeEach(() => {
     largeUi: false,
     loading: false,
     error: null,
+    refiningRouteKeys: [],
   });
 });
 
@@ -163,5 +165,58 @@ describe('PR #18 재현 — refinement 진행 상태가 접근성 tree에 없음
       pending.resolve(null);
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
+  });
+
+  it('refinement 실패 시에도 aria-busy가 제거되어야 한다', async () => {
+    vi.spyOn(adapters.routes, 'refineTransit').mockRejectedValue(
+      new Error('timeout'),
+    );
+    const { container } = render(<App />);
+    act(() => {
+      seedEstimatedResults();
+    });
+    const target = useAppStore.getState().recommendations[1].route.id;
+
+    await act(async () => {
+      fireEvent.click(cardFor(container, target));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+
+    expect(cardFor(container, target).getAttribute('aria-busy')).toBeNull();
+  });
+
+  it('component unmount 뒤 도착한 응답은 store를 patch하지 않아야 한다', async () => {
+    const pending = deferred<TransitRefinement | null>();
+    vi.spyOn(adapters.routes, 'refineTransit').mockReturnValue(
+      pending.promise,
+    );
+    const rendered = render(<App />);
+    act(() => {
+      seedEstimatedResults();
+    });
+    const target = useAppStore.getState().recommendations[1];
+
+    await act(async () => {
+      fireEvent.click(cardFor(rendered.container, target.route.id));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    rendered.unmount();
+
+    pending.resolve({
+      routeId: target.route.id,
+      path: [
+        { lat: 35.0, lng: 129.0 },
+        { lat: 35.1, lng: 129.1 },
+      ],
+      segments: target.route.segments,
+      geometryQuality: 'exact',
+    });
+    await pending.promise;
+    await Promise.resolve();
+
+    const stored = useAppStore.getState().recommendations.find(
+      ({ route }) => route.id === target.route.id,
+    );
+    expect(stored?.route.geometryQuality).toBe('mixed');
   });
 });

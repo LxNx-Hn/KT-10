@@ -561,6 +561,7 @@ def test_odsay_collect_defers_load_lane_and_keeps_refinement_descriptor(
     descriptor = result[0].transit_refinement
     assert descriptor is not None
     assert descriptor["map_object"] == "100:1:1:2"
+    assert descriptor["provider_candidate_index"] == 1
     assert descriptor["origin"] == {"lat": ORIGIN.lat, "lng": ORIGIN.lng}
     assert descriptor["destination"] == {"lat": DEST.lat, "lng": DEST.lng}
 

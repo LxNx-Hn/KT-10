@@ -380,6 +380,48 @@ def test_public_shade_reports_height_coverage_without_zero_fill():
     assert shade.path_segments == []
 
 
+def test_public_shade_with_99_percent_height_coverage_is_omitted():
+    """높이 coverage 99%는 계산 완료가 아니며 public shade로 노출하지 않는다."""
+    from app.main import _normalize_shade_for_response
+
+    footprint = [
+        {"lat": 35.1792, "lng": 129.0752},
+        {"lat": 35.1792, "lng": 129.0754},
+        {"lat": 35.1794, "lng": 129.0754},
+        {"lat": 35.1794, "lng": 129.0752},
+        {"lat": 35.1792, "lng": 129.0752},
+    ]
+    buildings = {
+        "source": "VWorld LT_C_BLDGINFO WFS",
+        "dataQuality": "public",
+        "buildings": [
+            {
+                "id": f"known-{index}",
+                "heightM": 15.0,
+                "footprint": footprint,
+            }
+            for index in range(99)
+        ]
+        + [{
+            "id": "unknown",
+            "heightM": None,
+            "footprint": footprint,
+        }],
+    }
+    route = _exact_route()
+    route.shade = calculate_shade(
+        route,
+        datetime(2026, 7, 23, 14, 0, tzinfo=KST),
+        buildings,
+    )
+
+    assert route.shade.status == "unavailable"
+    assert route.shade.building_height_coverage == pytest.approx(0.99)
+    assert route.shade.shade_ratio is None
+    _normalize_shade_for_response([route])
+    assert route.shade is None
+
+
 def test_public_shade_computes_ratio_with_complete_heights():
     buildings = {
         "source": "VWorld LT_C_BLDGINFO WFS",

@@ -257,7 +257,13 @@ def test_corrupt_daily_counter_file_does_not_break_route_collection(
 
 # ── 이슈 13: route ID fingerprint 충돌 ──
 
-def _feature_with_lane(lane_id: str, start_id: str, end_id: str) -> dict:
+def _feature_with_lane(
+    lane_id: str,
+    start_id: str,
+    end_id: str,
+    *,
+    map_object: str = "100:1:1:2",
+) -> dict:
     """표시 정보는 같지만 실제 노선 식별자가 다른 후보 피처."""
     return {
         "_sources": ["odsay"],
@@ -298,6 +304,7 @@ def _feature_with_lane(lane_id: str, start_id: str, end_id: str) -> dict:
                 },
             },
         ],
+        "_transit_refinement": {"map_object": map_object},
     }
 
 
@@ -321,6 +328,50 @@ def test_route_id_is_stable_for_same_semantic_candidate():
     assert _route_id(feature) == _route_id(
         _feature_with_lane("BUS-A", "STOP-1", "STOP-9")
     )
+
+
+def test_route_id_distinguishes_different_normalized_map_objects():
+    """표시·노선 정보가 같아도 실제 mapObj가 다르면 ID가 달라야 한다."""
+    from api.router import _route_id
+
+    left = _feature_with_lane(
+        "BUS-A",
+        "STOP-1",
+        "STOP-9",
+        map_object="100:1:1:2",
+    )
+    right = _feature_with_lane(
+        "BUS-A",
+        "STOP-1",
+        "STOP-9",
+        map_object="100:1:1:3",
+    )
+
+    assert _route_id(left) != _route_id(right)
+    # 축약형과 loadLane 정규형은 같은 semantic mapObj다.
+    normalized = _feature_with_lane(
+        "BUS-A",
+        "STOP-1",
+        "STOP-9",
+        map_object="0:0@100:1:1:2",
+    )
+    assert _route_id(left) == _route_id(normalized)
+
+
+def test_route_id_is_independent_of_provider_array_order():
+    from api.router import _route_id
+
+    first = _feature_with_lane("BUS-A", "STOP-1", "STOP-9")
+    second = _feature_with_lane(
+        "BUS-B",
+        "STOP-2",
+        "STOP-8",
+        map_object="200:1:1:2",
+    )
+
+    forward = {_route_id(item) for item in [first, second]}
+    reverse = {_route_id(item) for item in [second, first]}
+    assert forward == reverse
 
 
 # ── 이슈 9: AI private endpoint가 인증 없이 호출 가능 ──
@@ -483,6 +534,60 @@ def test_malformed_correlation_id_is_replaced_not_echoed(monkeypatch):
     assert observed[0]
 
 
+def test_odsay_structured_log_has_required_fields_without_raw_values(caplog):
+    """운영 로그는 추적 필드를 갖되 route ID·mapObj 원문을 남기지 않는다."""
+    raw_route_id = "route-sensitive-value"
+    raw_map_object = "100:1:1:2"
+    corr_token = instrumentation.correlation_id.set("backend-trace-0002")
+    route_token = instrumentation.route_id_hash.set(
+        instrumentation.anonymized_hash(raw_route_id)
+    )
+    index_token = instrumentation.provider_candidate_index.set(3)
+    try:
+        with caplog.at_level(
+            "INFO",
+            logger="collectors.odsay.metrics",
+        ):
+            instrumentation.log_call(
+                "loadLane",
+                identity_hash=instrumentation.anonymized_hash(raw_map_object),
+                cache_hit=False,
+                network=True,
+                follower=False,
+                duration_ms=12.3,
+                outcome="network",
+                call_site="refine_transit",
+                http_status=200,
+                semaphore_wait=0.004,
+            )
+            instrumentation.log_rank(raw_route_id, 2)
+    finally:
+        instrumentation.provider_candidate_index.reset(index_token)
+        instrumentation.route_id_hash.reset(route_token)
+        instrumentation.correlation_id.reset(corr_token)
+
+    text = caplog.text
+    for field in (
+        "corr=backend-trace-0002",
+        "endpoint=loadLane",
+        "site=refine_transit",
+        "route_id_hash=",
+        "candidate_index=3",
+        "map_bounds_hash=",
+        "cache=miss",
+        "single_flight=leader",
+        "semaphore_wait_ms=4.0",
+        "network_started=yes",
+        "status=200",
+        "duration_ms=12.3",
+        "outcome=network",
+        "final_rank=2",
+    ):
+        assert field in text
+    assert raw_route_id not in text
+    assert raw_map_object not in text
+
+
 def test_network_attempt_and_completion_counters_match_transport(
     monkeypatch,
     tmp_path,
@@ -509,6 +614,127 @@ def test_network_attempt_and_completion_counters_match_transport(
     assert snapshot["network_failed"].get("searchPubTransPathT") is None
 
 
+def test_connect_error_counts_attempted_and_failed(monkeypatch, tmp_path):
+    import collectors.odsay_collector as module
+    import httpx
+
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", str(tmp_path))
+    instrumentation.counters.reset()
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, *args, **kwargs):
+            raise httpx.ConnectError("connection failed")
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+
+    with pytest.raises(module.CollectorError):
+        asyncio.run(
+            OdsayRouteCollector().collect(
+                ORIGIN,
+                DEST,
+                max_candidates=1,
+            )
+        )
+
+    snapshot = instrumentation.counters.snapshot()
+    assert snapshot["network_attempted"]["searchPubTransPathT"] == 1
+    assert snapshot["network_failed"]["searchPubTransPathT"] == 1
+    assert snapshot["network_completed"].get("searchPubTransPathT") is None
+
+
+def test_client_setup_failure_is_not_counted_as_network_attempt(
+    monkeypatch,
+    tmp_path,
+):
+    import collectors.odsay_collector as module
+
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", str(tmp_path))
+    instrumentation.counters.reset()
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            raise OSError("client setup failed")
+
+        async def __aexit__(self, *args):
+            return None
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+
+    with pytest.raises(OSError):
+        asyncio.run(
+            OdsayRouteCollector().collect(
+                ORIGIN,
+                DEST,
+                max_candidates=1,
+            )
+        )
+
+    assert instrumentation.counters.snapshot()["network_attempted"] == {}
+
+
+def test_outer_timeout_while_waiting_for_semaphore_is_not_network(
+    monkeypatch,
+    tmp_path,
+):
+    import collectors.odsay_collector as module
+
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "ODSAY_MAX_CONCURRENT_REQUESTS", 1)
+    instrumentation._loop_semaphores.clear()
+    instrumentation.counters.reset()
+
+    release = asyncio.Event()
+    started = asyncio.Event()
+    http_calls: list[int] = []
+
+    async def blocking_get():
+        http_calls.append(1)
+        started.set()
+        await release.wait()
+
+    monkeypatch.setattr(
+        module.httpx,
+        "AsyncClient",
+        _client_returning(_search_payload(1), on_get=blocking_get),
+    )
+
+    async def scenario():
+        holder = asyncio.create_task(
+            OdsayRouteCollector().collect(ORIGIN, DEST, max_candidates=1)
+        )
+        await started.wait()
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(
+                OdsayRouteCollector().collect(
+                    Coordinate(lat=35.2, lng=129.1),
+                    DEST,
+                    max_candidates=1,
+                ),
+                timeout=0.05,
+            )
+        release.set()
+        await holder
+
+    asyncio.run(scenario())
+
+    assert len(http_calls) == 1
+    snapshot = instrumentation.counters.snapshot()
+    assert snapshot["network_attempted"]["searchPubTransPathT"] == 1
 def test_cache_hit_is_not_counted_as_network_attempt(monkeypatch, tmp_path):
     """캐시 적중은 실제 network 시도로 집계되지 않는다."""
     import collectors.odsay_collector as module

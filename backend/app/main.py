@@ -44,6 +44,7 @@ from .models import (
     Place,
     RecommendRequest,
     RouteCandidate,
+    RouteSetRescoreRequest,
     ScoredRoute,
     ShadeRefreshRequest,
     TransitRefineRequest,
@@ -617,38 +618,65 @@ async def _rescore_cached_route_set(
             )
 
         candidates = cached.candidates
+        rescore_weather = cached.weather
+        if (
+            isinstance(req, RouteSetRescoreRequest)
+            and req.weather_scenario is not None
+            and not settings.live_weather
+        ):
+            # 고정 시나리오는 공급자 호출 없이 바꿀 수 있다. live weather는
+            # route-set 생성 시 저장한 실제 관측을 그대로 재사용한다.
+            rescore_weather = WEATHER_SCENARIOS[
+                req.weather_scenario
+            ].model_copy(deep=True)
+        user_preference = user.preference if user and user.preference else None
         try:
             candidates = await _add_configured_shade(
                 candidates,
                 req.options.departure_at,
-                weather=cached.weather,
+                weather=rescore_weather,
                 cache_only_buildings=True,
             )
             if settings.route_mode == "ai":
+                rank_kwargs = {
+                    "top_n": effective_top_n,
+                    "personalization_state": (
+                        user_preference.personalization_state
+                        if user_preference
+                        else None
+                    ),
+                }
+                if user_preference is not None:
+                    rank_kwargs["user_preference"] = user_preference
                 scored = await rank_ai_pipeline_candidates(
                     candidates,
                     req.profile,
                     req.options,
-                    top_n=effective_top_n,
-                    personalization_state=(
-                        user.preference.personalization_state
-                        if user and user.preference
-                        else None
-                    ),
+                    **rank_kwargs,
                 )
                 return _replace_cached_route_set(
                     scored,
                     candidates,
-                    cached.weather,
+                    rescore_weather,
                     token=req.route_set_token,
                     expected_revision=cached.revision,
                 )
 
             if settings.route_mode == "live":
-                await enrich_ai_pipeline_candidates(candidates, req.options)
+                if user_preference is None:
+                    await enrich_ai_pipeline_candidates(
+                        candidates,
+                        req.options,
+                    )
+                else:
+                    await enrich_ai_pipeline_candidates(
+                        candidates,
+                        req.options,
+                        user_preference,
+                    )
             scored = recommend_routes(
                 candidates,
-                cached.weather,
+                rescore_weather,
                 req.profile,
                 req.options,
                 top_n=len(candidates),
@@ -663,7 +691,7 @@ async def _rescore_cached_route_set(
             return _replace_cached_route_set(
                 personalized,
                 candidates,
-                cached.weather,
+                rescore_weather,
                 token=req.route_set_token,
                 expected_revision=cached.revision,
             )
@@ -893,6 +921,7 @@ async def routes_recommend(
                     if user and user.preference
                     else None
                 ),
+                user_preference=(user.preference if user else None),
             )
             # 순위·score·snapshot 확정 후 최종 1위 표시 선형만 정밀화한다.
             await _refine_top_ranked_transit(scored)
@@ -946,7 +975,11 @@ async def routes_recommend(
     )
     if settings.route_mode == "live":
         try:
-            await enrich_ai_pipeline_candidates(candidates, req.options)
+            await enrich_ai_pipeline_candidates(
+                candidates,
+                req.options,
+                user.preference if user else None,
+            )
         except AIProviderError as exc:
             raise HTTPException(
                 status_code=exc.status_code,
@@ -1010,7 +1043,7 @@ async def routes_refresh_shade(
     response_model_exclude_none=True,
 )
 async def routes_rescore(
-    req: ShadeRefreshRequest,
+    req: RouteSetRescoreRequest,
     user: User | None = Depends(optional_current_user),
 ) -> list[ScoredRoute]:
     """프로필·이동 조건 변경을 기존 route-set 재순위화로 처리한다.

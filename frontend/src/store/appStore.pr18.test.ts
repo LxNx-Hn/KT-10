@@ -5,7 +5,7 @@ import { demoCandidates } from '@/data/routes';
 import { WEATHER_SCENARIOS } from '@/data/weather';
 import { recommendRoutes } from '@/scoring/engine';
 import type { ScoredRoute, TransitRefinement } from '@/types';
-import { useAppStore } from './appStore';
+import { routeRefinementKey, useAppStore } from './appStore';
 
 /**
  * PR #18 코드 검토에서 확인된 Frontend 상태 문제의 재현 테스트.
@@ -52,6 +52,7 @@ function seedResults(routeSetToken: string): ScoredRoute[] {
     selectedRouteId: null,
     loading: false,
     error: null,
+    refiningRouteKeys: [],
   });
   return recommendations;
 }
@@ -67,6 +68,7 @@ beforeEach(() => {
     options: {},
     loading: false,
     error: null,
+    refiningRouteKeys: [],
   });
 });
 
@@ -148,6 +150,117 @@ describe('PR #18 재현 — 이전 검색의 refinement 응답이 새 검색을 
     expect(patched?.route.path).toEqual(
       second.find(({ route }) => route.id === targetId)!.route.path,
     );
+  });
+
+  it('응답 route ID가 요청 route ID와 다르면 patch하지 않아야 한다', async () => {
+    const results = seedResults('token-route-id-check-000000');
+    const target = results[1];
+    const pending = deferred<TransitRefinement | null>();
+    vi.spyOn(adapters.routes, 'refineTransit').mockReturnValue(
+      pending.promise,
+    );
+
+    useAppStore.getState().selectRoute(target.route.id);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    pending.resolve({
+      routeId: 'tampered-route-id',
+      path: [
+        { lat: 35.0, lng: 129.0 },
+        { lat: 35.1, lng: 129.1 },
+      ],
+      segments: target.route.segments,
+      geometryQuality: 'exact',
+    });
+    await pending.promise;
+    await Promise.resolve();
+
+    const stored = useAppStore.getState().recommendations.find(
+      ({ route }) => route.id === target.route.id,
+    );
+    expect(stored?.route.geometryQuality).toBe('mixed');
+  });
+
+  it('새 검색이 debounce 중 시작되면 이전 refinement를 시작하지 않는다', async () => {
+    const results = seedResults('token-debounce-search-00000');
+    const refine = vi
+      .spyOn(adapters.routes, 'refineTransit')
+      .mockResolvedValue(null);
+    vi.spyOn(adapters.routes, 'recommend').mockResolvedValue(results);
+    vi.spyOn(adapters.weather, 'getCurrent').mockResolvedValue(
+      WEATHER_SCENARIOS.normal,
+    );
+
+    useAppStore.getState().selectRoute(results[1].route.id);
+    const search = useAppStore.getState().search();
+    await search;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(refine).not.toHaveBeenCalled();
+  });
+
+  it('검색 오류 뒤 도착한 이전 refinement는 현재 store를 patch하지 않는다', async () => {
+    const results = seedResults('token-search-error-00000000');
+    const target = results[1];
+    const pending = deferred<TransitRefinement | null>();
+    vi.spyOn(adapters.routes, 'refineTransit').mockReturnValue(
+      pending.promise,
+    );
+    vi.spyOn(adapters.routes, 'recommend').mockRejectedValue(
+      new Error('search failed'),
+    );
+    vi.spyOn(adapters.weather, 'getCurrent').mockResolvedValue(
+      WEATHER_SCENARIOS.normal,
+    );
+
+    useAppStore.getState().selectRoute(target.route.id);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await useAppStore.getState().search();
+    pending.resolve({
+      routeId: target.route.id,
+      path: [
+        { lat: 35.0, lng: 129.0 },
+        { lat: 35.1, lng: 129.1 },
+      ],
+      segments: target.route.segments,
+      geometryQuality: 'exact',
+    });
+    await pending.promise;
+    await Promise.resolve();
+
+    const stored = useAppStore.getState().recommendations.find(
+      ({ route }) => route.id === target.route.id,
+    );
+    expect(stored?.route.geometryQuality).toBe('mixed');
+  });
+
+  it('이전 route-set 완료가 새 route-set의 동일 route busy를 지우지 않는다', async () => {
+    const first = seedResults('token-busy-search-A-000000');
+    const targetId = first[1].route.id;
+    const oldRequest = deferred<TransitRefinement | null>();
+    const newRequest = deferred<TransitRefinement | null>();
+    vi.spyOn(adapters.routes, 'refineTransit')
+      .mockReturnValueOnce(oldRequest.promise)
+      .mockReturnValueOnce(newRequest.promise);
+
+    useAppStore.getState().selectRoute(targetId);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const second = seedResults('token-busy-search-B-000000');
+    useAppStore.getState().selectRoute(targetId);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    const newKey = routeRefinementKey(
+      second[1].routeSetToken!,
+      targetId,
+    );
+    expect(useAppStore.getState().refiningRouteKeys).toContain(newKey);
+
+    oldRequest.resolve(null);
+    await oldRequest.promise;
+    await Promise.resolve();
+
+    expect(useAppStore.getState().refiningRouteKeys).toContain(newKey);
+    newRequest.resolve(null);
+    await newRequest.promise;
   });
 });
 

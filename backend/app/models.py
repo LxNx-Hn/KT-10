@@ -387,6 +387,12 @@ class ShadeRefreshRequest(CamelModel):
     top_n: int | None = Field(default=None, ge=1, le=10)
 
 
+class RouteSetRescoreRequest(ShadeRefreshRequest):
+    """기존 후보군을 재사용하는 프로필·조건·날씨 재채점 요청."""
+
+    weather_scenario: Optional[WeatherScenarioId] = None
+
+
 class TransitRefineRequest(CamelModel):
     """기존 추천 카드 선택 시 해당 후보의 대중교통 선형만 정밀화한다."""
 

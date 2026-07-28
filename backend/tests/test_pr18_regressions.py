@@ -101,7 +101,7 @@ def test_invalid_route_set_tokens_do_not_leak_locks():
     """임의 token 요청이 서버 메모리의 lock map을 증가시키면 안 된다."""
     before = len(route_set_cache._token_locks)
 
-    for index in range(200):
+    for index in range(10_000):
         response = client.post(
             "/api/routes/refine-transit",
             json={
@@ -113,7 +113,7 @@ def test_invalid_route_set_tokens_do_not_leak_locks():
 
     after = len(route_set_cache._token_locks)
     assert after == before, (
-        f"존재하지 않는 token 200건이 lock map을 {after - before}개 증가시킴"
+        f"존재하지 않는 token 10,000건이 lock map을 {after - before}개 증가시킴"
     )
 
 
@@ -309,6 +309,47 @@ def test_lock_existing_reports_expiry_that_happens_while_waiting():
     assert asyncio.run(scenario()) is None
 
 
+def test_deleted_entry_discards_token_lock_after_last_user():
+    token = route_set_cache.put([_candidate()], _weather())
+
+    async def scenario():
+        async with route_set_cache.lock_existing(token) as cached:
+            assert cached is not None
+            route_set_cache._entries.pop(token, None)
+
+    asyncio.run(scenario())
+    assert token not in route_set_cache._token_locks
+    assert token not in route_set_cache._token_lock_waiters
+
+
+def test_concurrent_lock_get_and_candidate_update_has_no_deadlock():
+    token = route_set_cache.put([_candidate()], _weather())
+
+    async def worker():
+        for _ in range(20):
+            async with route_set_cache.lock_existing(token) as cached:
+                assert cached is not None
+                route_set_cache.update_candidate(
+                    token,
+                    "route-a",
+                    lambda target: setattr(
+                        target,
+                        "transit_refinement_state",
+                        "not_loaded",
+                    ),
+                )
+            assert route_set_cache.get(token) is not None
+            await asyncio.sleep(0)
+
+    async def scenario():
+        await asyncio.wait_for(
+            asyncio.gather(*(worker() for _ in range(8))),
+            timeout=3,
+        )
+
+    asyncio.run(scenario())
+
+
 def test_update_candidate_increments_revision_and_keeps_order():
     first = _candidate("route-a")
     second = _candidate("route-b")
@@ -404,6 +445,200 @@ def test_rescore_reuses_route_set_without_provider_calls(monkeypatch):
     results = response.json()
     assert {item["routeSetToken"] for item in results} == {token}
     assert set(item["route"]["id"] for item in results) <= set(before_ids)
+
+
+def test_rescore_accepts_smaller_top_n_without_collecting_candidates(
+    monkeypatch,
+):
+    import app.main as app_main
+
+    async def fail_if_pipeline(*_args, **_kwargs):
+        raise AssertionError("rescore가 후보 수집을 호출했습니다.")
+
+    monkeypatch.setattr(
+        app_main,
+        "get_ai_pipeline_candidates",
+        fail_if_pipeline,
+    )
+    token, _ = _seeded_route_set()
+
+    response = client.post(
+        "/api/routes/rescore",
+        json={
+            "routeSetToken": token,
+            "profile": "general",
+            "weatherScenario": "normal",
+            "options": {},
+            "topN": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+
+
+def test_rescore_uses_requested_mock_weather_without_weather_network(
+    monkeypatch,
+):
+    import app.main as app_main
+
+    async def fail_if_weather_called(*_args, **_kwargs):
+        raise AssertionError("rescore가 weather 공급자를 호출했습니다.")
+
+    monkeypatch.setattr(app_main, "get_current_weather", fail_if_weather_called)
+    token, _ = _seeded_route_set()
+
+    response = client.post(
+        "/api/routes/rescore",
+        json={
+            "routeSetToken": token,
+            "profile": "general",
+            "weatherScenario": "rain",
+            "options": {"weatherAvoid": True},
+            "topN": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    cached = route_set_cache.get(token)
+    assert cached is not None
+    assert cached.weather.label == WEATHER_SCENARIOS["rain"].label
+    assert (
+        cached.weather.precipitation_mm
+        == WEATHER_SCENARIOS["rain"].precipitation_mm
+    )
+
+
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        ({"avoid_stairs": True}, {"stair_avoidance_burden": 3}),
+        (
+            {"carry_luggage": True},
+            {
+                "luggage_walk_burden": 800.0,
+                "luggage_stair_burden": 3,
+            },
+        ),
+        (
+            {"stroller": True},
+            {
+                "stroller_walk_burden": 800.0,
+                "stroller_stair_burden": 3,
+                "stroller_elevator_gap": 0.75,
+            },
+        ),
+        (
+            {"low_floor_priority": True},
+            {"low_floor_priority_mismatch": 1.0},
+        ),
+        (
+            {"minimize_transfers": True},
+            {"minimize_transfers_burden": 2},
+        ),
+        (
+            {"shade_priority": True},
+            {"shade_priority_unshaded_walk_m": 480.0},
+        ),
+        (
+            {"weather_avoid": True},
+            {"weather_priority_walk_burden": 800.0},
+        ),
+    ],
+)
+def test_rescore_rebuilds_all_context_dependent_features(options, expected):
+    from app.models import ScoringOptions
+    from app.providers.ai_pipeline import _shade_enriched_features
+
+    candidate = _candidate()
+    candidate.total_walk_m = 800
+    candidate.model_features = {
+        "stair_count": 3,
+        "walk_distance_m": 800.0,
+        "elevator_ratio": 0.25,
+        "is_low_floor_bus": False,
+        "transfer_count": 2,
+        # 이전 요청에서 활성화됐던 값을 의도적으로 넣어 새 요청이
+        # 반드시 덮어쓰는지 검증한다.
+        "stair_avoidance_burden": 999.0,
+        "luggage_walk_burden": 999.0,
+        "luggage_stair_burden": 999.0,
+        "low_floor_priority_mismatch": 999.0,
+        "wheelchair_stair_burden": 999.0,
+        "wheelchair_elevator_gap": 999.0,
+        "walking_aid_walk_burden": 999.0,
+        "max_walk_excess_m": 999.0,
+        "weather_priority_walk_burden": 999.0,
+        "stroller_walk_burden": 999.0,
+        "stroller_stair_burden": 999.0,
+        "stroller_elevator_gap": 999.0,
+        "shade_priority_unshaded_walk_m": 999.0,
+        "minimize_transfers_burden": 999.0,
+    }
+    candidate.shade = ShadeSummary(
+        status="estimated_public",
+        evaluated_at="2026-07-27T14:00:00+09:00",
+        shade_ratio=0.4,
+        shaded_walk_m=320,
+        total_walk_m=800,
+        source="VWorld LT_C_BLDGINFO WFS",
+        data_quality="public",
+        calculation_note="",
+    )
+
+    features = _shade_enriched_features(
+        candidate,
+        ScoringOptions(**options),
+    )
+
+    for key, value in expected.items():
+        assert features[key] == value
+    for key in {
+        "stair_avoidance_burden",
+        "luggage_walk_burden",
+        "luggage_stair_burden",
+        "low_floor_priority_mismatch",
+        "weather_priority_walk_burden",
+        "stroller_walk_burden",
+        "stroller_stair_burden",
+        "stroller_elevator_gap",
+        "shade_priority_unshaded_walk_m",
+        "minimize_transfers_burden",
+    } - set(expected):
+        assert features[key] == 0.0
+
+
+def test_rescore_context_features_keep_unknown_observations_unknown():
+    from app.models import ScoringOptions
+    from app.providers.ai_pipeline import _shade_enriched_features
+
+    candidate = _candidate()
+    candidate.model_features = {
+        "stair_count": None,
+        "walk_distance_m": None,
+        "elevator_ratio": None,
+        "is_low_floor_bus": None,
+        "transfer_count": None,
+    }
+    features = _shade_enriched_features(
+        candidate,
+        ScoringOptions(
+            avoid_stairs=True,
+            carry_luggage=True,
+            stroller=True,
+            low_floor_priority=True,
+            minimize_transfers=True,
+            shade_priority=True,
+        ),
+    )
+
+    assert features["stair_avoidance_burden"] is None
+    assert features["luggage_walk_burden"] is None
+    assert features["luggage_stair_burden"] is None
+    assert features["stroller_elevator_gap"] is None
+    assert features["low_floor_priority_mismatch"] is None
+    assert features["minimize_transfers_burden"] is None
+    assert features["shade_priority_unshaded_walk_m"] is None
 
 
 def test_rescore_preserves_already_refined_transit_geometry():
@@ -510,6 +745,7 @@ def _refine(token: str, route_id: str):
         ("auth_failed", 409),
         ("quota_exceeded", 409),
         ("invalid_response", 409),
+        ("empty_geometry", 409),
     ],
 )
 def test_failed_refinement_blocks_immediate_retry(
@@ -578,6 +814,44 @@ def test_cooldown_expiry_allows_one_more_attempt(monkeypatch):
 
     assert _refine(token, route_id).status_code == 502
     assert len(calls) == 2
+
+
+def test_concurrent_failed_refinements_are_single_flight(monkeypatch):
+    import app.main as app_main
+    import httpx
+    from app.providers.ai_pipeline import AIProviderError
+
+    calls = []
+
+    async def failing_refine(route):
+        calls.append(route.id)
+        await asyncio.sleep(0.05)
+        raise AIProviderError(502, "timeout", code="timeout")
+
+    monkeypatch.setattr(app_main, "refine_candidate_transit", failing_refine)
+    token, route_id = _refinable_route_set()
+
+    async def scenario():
+        transport = httpx.ASGITransport(app=app_main.app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as async_client:
+            return await asyncio.gather(*(
+                async_client.post(
+                    "/api/routes/refine-transit",
+                    json={"routeSetToken": token, "routeId": route_id},
+                )
+                for _ in range(10)
+            ))
+
+    responses = asyncio.run(scenario())
+    assert all(response.status_code == 502 for response in responses)
+    assert len(calls) == 1
+    stored = route_set_cache.get(token).candidates[0]
+    assert stored.transit_refinement_state == "failed"
+    assert stored.transit_refinement_failure_count == 1
+    assert stored.transit_refinement_state != "exact"
 
 
 def test_successful_refinement_clears_failure_metadata(monkeypatch):
@@ -673,10 +947,16 @@ def test_concurrent_requests_for_same_candidate_call_provider_once(
 
 
 def test_refinement_and_shade_refresh_both_survive(monkeypatch):
-    """정밀화와 그늘 갱신이 서로의 결과를 덮지 않는다."""
+    """외부 정밀화가 진행 중이어도 rescore와 exact geometry가 모두 보존된다."""
     import app.main as app_main
+    import httpx
+
+    started = None
+    release = None
 
     async def refine(route):
+        started.set()
+        await release.wait()
         route.transit_refinement_state = "exact"
         route.transit_refined_at = datetime.now(KST)
         for segment in route.segments:
@@ -688,20 +968,84 @@ def test_refinement_and_shade_refresh_both_survive(monkeypatch):
     monkeypatch.setattr(app_main, "refine_candidate_transit", refine)
     token, route_id = _refinable_route_set()
 
-    assert _refine(token, route_id).status_code == 200
-    refreshed = client.post(
-        "/api/routes/refresh-shade",
-        json={
-            "routeSetToken": token,
-            "profile": "general",
-            "options": {"departureAt": "2026-07-27T14:00:00+09:00"},
-            "topN": 1,
-        },
-    )
-    assert refreshed.status_code == 200
+    async def scenario():
+        nonlocal started, release
+        started = asyncio.Event()
+        release = asyncio.Event()
+        transport = httpx.ASGITransport(app=app_main.app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as async_client:
+            refinement = asyncio.create_task(
+                async_client.post(
+                    "/api/routes/refine-transit",
+                    json={"routeSetToken": token, "routeId": route_id},
+                )
+            )
+            await asyncio.wait_for(started.wait(), timeout=1)
+            rescored = await async_client.post(
+                "/api/routes/rescore",
+                json={
+                    "routeSetToken": token,
+                    "profile": "general",
+                    "weatherScenario": "rain",
+                    "options": {
+                        "departureAt": "2026-07-27T14:00:00+09:00",
+                    },
+                    "topN": 1,
+                },
+            )
+            release.set()
+            return rescored, await refinement
+
+    rescored, refined = asyncio.run(scenario())
+    assert rescored.status_code == 200
+    assert refined.status_code == 200
 
     stored = route_set_cache.get(token).candidates[0]
+    cached = route_set_cache.get(token)
     assert stored.transit_refinement_state == "exact", (
-        "그늘 갱신이 정밀화된 geometry를 덮어씀"
+        "rescore가 정밀화된 geometry를 덮어씀"
     )
     assert stored.geometry_quality == "exact"
+    assert cached.weather.label == WEATHER_SCENARIOS["rain"].label
+
+
+def test_route_set_expiry_during_refinement_discards_network_result(
+    monkeypatch,
+):
+    import app.main as app_main
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_refine(route):
+        started.set()
+        await release.wait()
+        route.transit_refinement_state = "exact"
+        route.geometry_quality = "exact"
+        return True
+
+    monkeypatch.setattr(app_main, "refine_candidate_transit", slow_refine)
+    token, route_id = _refinable_route_set()
+
+    async def scenario():
+        task = asyncio.create_task(
+            app_main.routes_refine_transit(
+                app_main.TransitRefineRequest(
+                    route_set_token=token,
+                    route_id=route_id,
+                ),
+            )
+        )
+        await started.wait()
+        route_set_cache._entries.pop(token, None)
+        release.set()
+        with pytest.raises(Exception) as exc_info:
+            await task
+        return exc_info.value
+
+    error = asyncio.run(scenario())
+    assert getattr(error, "status_code", None) == 409
+    assert route_set_cache.get(token) is None

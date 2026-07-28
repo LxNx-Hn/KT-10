@@ -17,6 +17,7 @@ from app.models import (
 from app.providers.ai_pipeline import (
     AIProviderError,
     apply_refined_transit_geometry,
+    refine_candidate_transit,
 )
 from app.route_set_cache import (
     StaleRouteSetRevision,
@@ -218,6 +219,34 @@ def test_refine_transit_reuses_cached_exact_geometry_without_ai_call(
     assert "feedbackToken" not in body
 
 
+def test_backend_sends_refinement_trace_identity_to_ai(monkeypatch):
+    """Backend는 route ID와 공급자 후보 번호를 내부 AI 요청에 전달한다."""
+    import app.providers.ai_pipeline as ai_pipeline
+
+    route = _candidate("route-a", refined=False)
+    route.transit_refinement["provider_candidate_index"] = 4
+    captured = {}
+
+    async def fake_post(path, payload):
+        captured["path"] = path
+        captured["payload"] = payload
+        return {
+            "geometry_quality": "exact",
+            "refined_at": "2026-07-29T00:00:00+00:00",
+            "lane_paths": [[
+                {"lat": 35.1162, "lng": 129.0425},
+                {"lat": 35.1570, "lng": 129.0590},
+            ]],
+        }
+
+    monkeypatch.setattr(ai_pipeline, "_post_pipeline", fake_post)
+
+    assert asyncio.run(refine_candidate_transit(route)) is True
+    assert captured["path"] == "/routes/refine-transit"
+    assert captured["payload"]["route_id"] == "route-a"
+    assert captured["payload"]["provider_candidate_index"] == 4
+
+
 def test_refine_transit_patches_only_selected_candidate(monkeypatch):
     first = _candidate("route-a", refined=False)
     second = _candidate("route-b", refined=False)
@@ -368,8 +397,15 @@ def test_concurrent_refinements_of_two_candidates_are_both_preserved(
     second = _candidate("route-b", refined=False)
     token = _seed_route_set([first, second])
 
+    active = 0
+    peak = 0
+
     async def fake_refine(route: RouteCandidate):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
         await asyncio.sleep(0.01)
+        active -= 1
         apply_refined_transit_geometry(
             route,
             [[
@@ -401,6 +437,7 @@ def test_concurrent_refinements_of_two_candidates_are_both_preserved(
     results = asyncio.run(run())
 
     assert {result.route_id for result in results} == {"route-a", "route-b"}
+    assert peak == 2, "서로 다른 후보 refinement가 route-set lock으로 직렬화됨"
     cached = route_set_cache.get(token)
     assert all(
         candidate.transit_refinement_state == "exact"

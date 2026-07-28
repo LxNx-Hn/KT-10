@@ -204,6 +204,22 @@ def test_readiness_reports_exact_walk_geometry_capability(monkeypatch):
     }
 
 
+def test_production_readiness_rejects_short_internal_token(monkeypatch):
+    """production은 32자 미만 내부 토큰이면 다른 준비 조건과 무관하게 실패한다."""
+    monkeypatch.setattr(ai_main.settings, "APP_ENV", "production")
+    monkeypatch.setattr(ai_main.settings, "AI_INTERNAL_SERVICE_TOKEN", "short")
+    monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "configured-key")
+    monkeypatch.setattr(ai_main.settings, "TMAP_API_KEY", "tmap-key")
+    monkeypatch.setattr(ai_main, "_get_layers", lambda: REQUIRED_LAYERS)
+    monkeypatch.setattr(ai_main, "regional_dem_ready", lambda: True)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json()["ready"] is False
+    assert response.json()["checks"]["internal_service_auth"] is False
+
+
 def test_spatial_layer_initialization_is_single_flight(monkeypatch):
     calls = 0
 

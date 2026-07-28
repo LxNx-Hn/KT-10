@@ -25,6 +25,7 @@ import RouteFeedback from '@/components/RouteFeedback';
 import WeatherWarning from '@/components/WeatherWarning';
 import { PROFILE_LIST, PROFILES } from '@/config/profiles';
 import {
+  routeRefinementKey,
   useAppStore,
   type ToggleableScoringOption,
 } from '@/store/appStore';
@@ -554,14 +555,14 @@ function RouteCarousel({
   recommendations,
   profile,
   selectedRouteId,
-  refiningRouteIds,
+  refiningRouteKeys,
   onSelectRoute,
   onDetails,
 }: {
   recommendations: ScoredRoute[];
   profile: ProfileId;
   selectedRouteId: string | null;
-  refiningRouteIds: string[];
+  refiningRouteKeys: string[];
   onSelectRoute: (routeId: string) => void;
   onDetails: () => void;
 }) {
@@ -737,12 +738,17 @@ function RouteCarousel({
           onPointerDown={beginUserScroll}
           onWheel={beginUserScroll}
         >
-          {views.map(({ view }) => (
+          {views.map(({ item, view }) => (
             <RouteSummaryCard
               key={view.routeId}
               view={view}
               selected={view.routeId === selectedRouteId}
-              refining={refiningRouteIds.includes(view.routeId)}
+              refining={Boolean(
+                item.routeSetToken
+                && refiningRouteKeys.includes(
+                  routeRefinementKey(item.routeSetToken, view.routeId),
+                )
+              )}
               onSelect={() => onSelectRoute(view.routeId)}
               onDetails={() => {
                 onSelectRoute(view.routeId);
@@ -940,7 +946,10 @@ export default function MapFirstApp() {
   const options = useAppStore((state) => state.options);
   const recommendations = useAppStore((state) => state.recommendations);
   const selectedRouteId = useAppStore((state) => state.selectedRouteId);
-  const refiningRouteIds = useAppStore((state) => state.refiningRouteIds);
+  const refiningRouteKeys = useAppStore((state) => state.refiningRouteKeys);
+  const invalidateTransitRefinements = useAppStore(
+    (state) => state.invalidateTransitRefinements,
+  );
   const loading = useAppStore((state) => state.loading);
   const error = useAppStore((state) => state.error);
   const largeUi = useAppStore((state) => state.largeUi);
@@ -1018,6 +1027,11 @@ export default function MapFirstApp() {
       window.clearTimeout(locatingTimerRef.current);
     },
     [],
+  );
+
+  useEffect(
+    () => () => invalidateTransitRefinements(),
+    [invalidateTransitRefinements],
   );
 
   useEffect(() => {
@@ -1509,7 +1523,7 @@ export default function MapFirstApp() {
                     recommendations={ranked}
                     profile={profile}
                     selectedRouteId={selectedRouteId}
-                    refiningRouteIds={refiningRouteIds}
+                    refiningRouteKeys={refiningRouteKeys}
                     onSelectRoute={selectRoute}
                     onDetails={openDetails}
                   />

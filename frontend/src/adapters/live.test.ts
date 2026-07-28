@@ -220,4 +220,33 @@ describe('live 경로 요청 제한시간', () => {
       routeId: 'route-1',
     });
   });
+
+  it('재채점은 route-set과 현재 weather scenario를 재사용한다', async () => {
+    const token = 'route-set-token-1234567890';
+    const current = [{ routeSetToken: token }] as ScoredRoute[];
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify([]),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await liveAdapters.routes.rescore(
+      current,
+      'elderly',
+      'rain',
+      { avoidStairs: true },
+    );
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/routes/rescore');
+    expect(JSON.parse(String(init.body))).toEqual({
+      routeSetToken: token,
+      profile: 'elderly',
+      weatherScenario: 'rain',
+      options: { avoidStairs: true },
+    });
+  });
 });

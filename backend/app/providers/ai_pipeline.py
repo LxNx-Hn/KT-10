@@ -245,8 +245,15 @@ async def get_ai_pipeline_candidates(
 def _shade_enriched_features(
     route: RouteCandidate,
     options: ScoringOptions,
+    user_preference=None,
 ) -> dict[str, float | int | bool | None]:
-    """AI 수집 피처에 백엔드에서 검증한 건물 그늘 사실을 결합한다."""
+    """검증된 그늘과 현재 요청의 context-dependent 피처를 다시 결합한다.
+
+    최초 후보 수집 때 계산된 조건 피처를 그대로 재사용하면 profile·option
+    rescore가 새 사용자 조건을 모델 입력에 반영하지 못한다. 아래 계산은
+    AI ``_context_features`` 계약과 동일하며, 누락 관측값은 ``None``으로
+    유지한다.
+    """
     if not route.model_features:
         raise AIProviderError(502, "AI candidate has no fixed model features.")
     features = dict(route.model_features)
@@ -277,6 +284,60 @@ def _shade_enriched_features(
             0.0,
             route.total_walk_m * (1.0 - shade.shade_ratio),
         )
+    stairs = features.get("stair_count")
+    walk = features.get("walk_distance_m")
+    elevator = features.get("elevator_ratio")
+    low_floor = features.get("is_low_floor_bus")
+    transfer_count = features.get("transfer_count")
+    avoid_stairs = options.avoid_stairs or bool(
+        user_preference and user_preference.avoid_stairs_required
+    )
+    uses_wheelchair = bool(
+        user_preference and user_preference.uses_wheelchair
+    )
+    uses_walking_aid = bool(
+        user_preference and user_preference.uses_walking_aid
+    )
+    max_walk_distance_m = (
+        user_preference.max_walk_distance_m if user_preference else None
+    )
+    features.update({
+        "stair_avoidance_burden": stairs if avoid_stairs else 0.0,
+        "luggage_walk_burden": walk if options.carry_luggage else 0.0,
+        "luggage_stair_burden": stairs if options.carry_luggage else 0.0,
+        "low_floor_priority_mismatch": (
+            None
+            if options.low_floor_priority and low_floor is None
+            else float(options.low_floor_priority and low_floor is False)
+        ),
+        "wheelchair_stair_burden": stairs if uses_wheelchair else 0.0,
+        "wheelchair_elevator_gap": (
+            None
+            if uses_wheelchair and elevator is None
+            else (1.0 - float(elevator) if uses_wheelchair else 0.0)
+        ),
+        "walking_aid_walk_burden": walk if uses_walking_aid else 0.0,
+        "max_walk_excess_m": (
+            None
+            if max_walk_distance_m is not None and walk is None
+            else max(0.0, float(walk) - max_walk_distance_m)
+            if max_walk_distance_m is not None
+            else 0.0
+        ),
+        "weather_priority_walk_burden": (
+            walk if options.weather_avoid else 0.0
+        ),
+        "stroller_walk_burden": walk if options.stroller else 0.0,
+        "stroller_stair_burden": stairs if options.stroller else 0.0,
+        "stroller_elevator_gap": (
+            None
+            if options.stroller and elevator is None
+            else (1.0 - float(elevator) if options.stroller else 0.0)
+        ),
+        "minimize_transfers_burden": (
+            transfer_count if options.minimize_transfers else 0.0
+        ),
+    })
     return features
 
 
@@ -311,6 +372,7 @@ def _expected_enriched_snapshot_features(
 async def enrich_ai_pipeline_candidates(
     candidates: list[RouteCandidate],
     options: ScoringOptions,
+    user_preference=None,
 ) -> EnrichedCandidateBundle:
     """같은 그늘 피처·시각·해시를 학습, 추천, 후기에 공통 적용한다."""
     if not candidates:
@@ -368,7 +430,7 @@ async def enrich_ai_pipeline_candidates(
             "AI candidate collection time is invalid.",
         ) from exc
     features_by_id = {
-        route.id: _shade_enriched_features(route, options)
+        route.id: _shade_enriched_features(route, options, user_preference)
         for route in candidates
     }
     data = await _post_pipeline(
@@ -562,11 +624,19 @@ async def rank_ai_pipeline_candidates(
     *,
     top_n: int = 5,
     personalization_state: str | None = None,
+    user_preference=None,
 ) -> list[ScoredRoute]:
     """건물 그늘까지 보강된 후보를 선택된 AI tier로 순위화한다."""
     if not candidates:
         raise AIProviderError(502, "No AI candidates to rank.")
-    await enrich_ai_pipeline_candidates(candidates, options)
+    if user_preference is None:
+        await enrich_ai_pipeline_candidates(candidates, options)
+    else:
+        await enrich_ai_pipeline_candidates(
+            candidates,
+            options,
+            user_preference,
+        )
     features_by_id = {
         route.id: dict(route.model_features)
         for route in candidates
@@ -853,6 +923,13 @@ def _valid_refinement_descriptor(descriptor: dict | None) -> dict | None:
         return None
     if not parsed["map_object"].strip():
         return None
+    provider_candidate_index = descriptor.get("provider_candidate_index")
+    if (
+        isinstance(provider_candidate_index, int)
+        and not isinstance(provider_candidate_index, bool)
+        and provider_candidate_index >= 1
+    ):
+        parsed["provider_candidate_index"] = provider_candidate_index
     return parsed
 
 
@@ -933,6 +1010,10 @@ async def refine_candidate_transit(route: RouteCandidate) -> bool:
             "dest_lat": descriptor["dest_lat"],
             "dest_lng": descriptor["dest_lng"],
             "map_object": descriptor["map_object"],
+            "route_id": route.id,
+            "provider_candidate_index": descriptor.get(
+                "provider_candidate_index"
+            ),
         },
     )
     lane_paths = data.get("lane_paths")
