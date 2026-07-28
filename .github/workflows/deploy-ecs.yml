@@ -273,7 +273,7 @@ jobs:
           test "$desired" = "1"
           test "$running" = "1"
 
-      - name: Smoke test ALB
+      - name: Smoke test ALB core route service
         shell: bash
         run: |
           set -euo pipefail
@@ -283,7 +283,23 @@ jobs:
               && readiness="$(
                 curl --fail --silent --show-error "$PROD_BASE_URL/api/readiness"
               )" \
-              && jq -e '.ready == true' <<<"$readiness" >/dev/null; then
+              && jq -e '
+                . as $readiness
+                | [
+                    "live_route_candidates",
+                    "live_building_shade",
+                    "kakao_place_search",
+                    "live_weather",
+                    "live_bus_arrivals",
+                    "postgresql",
+                    "session_signing",
+                    "personalization_policy",
+                    "labeling_batch_auth",
+                    "ai_internal_service_auth"
+                  ]
+                | all(.[]; $readiness.checks[.] == true)
+              ' <<<"$readiness" >/dev/null; then
+              jq -c '{ready, missing}' <<<"$readiness"
               echo "Production smoke test passed on attempt $attempt."
               exit 0
             fi
