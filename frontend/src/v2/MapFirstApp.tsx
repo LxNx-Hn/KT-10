@@ -422,11 +422,13 @@ function BottomDrawer({
 function RouteSummaryCard({
   view,
   selected,
+  refining,
   onSelect,
   onDetails,
 }: {
   view: V2RouteViewModel;
   selected: boolean;
+  refining: boolean;
   onSelect: () => void;
   onDetails: () => void;
 }) {
@@ -476,9 +478,17 @@ function RouteSummaryCard({
       tabIndex={0}
       data-route-id={view.routeId}
       aria-current={selected ? 'true' : undefined}
+      aria-busy={refining ? 'true' : undefined}
       aria-label={`${view.rank}순위 경로, ${view.scoreKindLabel} ${view.score.rounded}점`}
       onClick={onSelect}
-      onFocus={onSelect}
+      onKeyDown={(event) => {
+        // Tab으로 focus만 옮기는 것은 선택이 아니다. 키보드 선택은
+        // Enter·Space에서만 명시적으로 처리한다.
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
     >
       <header className="map-first__route-card-head">
         <span className="map-first__rank-badge">{view.rank}순위</span>
@@ -544,12 +554,14 @@ function RouteCarousel({
   recommendations,
   profile,
   selectedRouteId,
+  refiningRouteIds,
   onSelectRoute,
   onDetails,
 }: {
   recommendations: ScoredRoute[];
   profile: ProfileId;
   selectedRouteId: string | null;
+  refiningRouteIds: string[];
   onSelectRoute: (routeId: string) => void;
   onDetails: () => void;
 }) {
@@ -730,6 +742,7 @@ function RouteCarousel({
               key={view.routeId}
               view={view}
               selected={view.routeId === selectedRouteId}
+              refining={refiningRouteIds.includes(view.routeId)}
               onSelect={() => onSelectRoute(view.routeId)}
               onDetails={() => {
                 onSelectRoute(view.routeId);
@@ -927,6 +940,7 @@ export default function MapFirstApp() {
   const options = useAppStore((state) => state.options);
   const recommendations = useAppStore((state) => state.recommendations);
   const selectedRouteId = useAppStore((state) => state.selectedRouteId);
+  const refiningRouteIds = useAppStore((state) => state.refiningRouteIds);
   const loading = useAppStore((state) => state.loading);
   const error = useAppStore((state) => state.error);
   const largeUi = useAppStore((state) => state.largeUi);
@@ -1495,6 +1509,7 @@ export default function MapFirstApp() {
                     recommendations={ranked}
                     profile={profile}
                     selectedRouteId={selectedRouteId}
+                    refiningRouteIds={refiningRouteIds}
                     onSelectRoute={selectRoute}
                     onDetails={openDetails}
                   />

@@ -26,6 +26,8 @@ services:
     cap_drop:
       - ALL
     environment:
+      AI_INTERNAL_SERVICE_TOKEN: ${AI_INTERNAL_SERVICE_TOKEN:?AI_INTERNAL_SERVICE_TOKEN is required}
+      APP_ENV: production
       ODSAY_API_KEY: ${ODSAY_API_KEY:?ODSAY_API_KEY is required}
       ODSAY_CACHE_DIR: /app/ai/data/cache/odsay
       ODSAY_CACHE_TTL_SECONDS: ${ODSAY_CACHE_TTL_SECONDS:-1800}
@@ -88,6 +90,7 @@ services:
       ROUTE_MODE: ${ROUTE_MODE:-live}
       BUILDING_SOURCE: ${BUILDING_SOURCE:-vworld}
       AI_SERVER_URL: http://ai:8001
+      AI_INTERNAL_SERVICE_TOKEN: ${AI_INTERNAL_SERVICE_TOKEN:?AI_INTERNAL_SERVICE_TOKEN is required}
       ODSAY_API_KEY: ${ODSAY_API_KEY:?ODSAY_API_KEY is required}
       VWORLD_API_KEY: ${VWORLD_API_KEY:?VWORLD_API_KEY is required}
       VWORLD_API_DOMAIN: ${PUBLIC_ORIGIN:?PUBLIC_ORIGIN is required}

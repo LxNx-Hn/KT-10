@@ -172,7 +172,14 @@ describe('카드 선택 시 대중교통 지연 정밀화', () => {
         } as TransitRefinement);
       });
 
+    // 1번 후보의 정밀화가 실제로 시작되도록 debounce가 지난 뒤 전환한다.
     useAppStore.getState().selectRoute(firstId);
+    await vi.waitFor(() => {
+      expect(refineTransit).toHaveBeenCalledWith(
+        expect.any(String),
+        firstId,
+      );
+    });
     useAppStore.getState().selectRoute(secondId);
     expect(useAppStore.getState().selectedRouteId).toBe(secondId);
 
@@ -193,7 +200,11 @@ describe('카드 선택 시 대중교통 지연 정밀화', () => {
       expect(first?.route.geometryQuality).toBe('exact');
     });
     expect(useAppStore.getState().selectedRouteId).toBe(secondId);
-    expect(refineTransit).toHaveBeenCalledTimes(2);
+    // 2번 후보의 정밀화는 debounce가 지난 뒤 시작된다.
+    await vi.waitFor(() => {
+      expect(refineTransit).toHaveBeenCalledTimes(2);
+    });
+    expect(refineTransit).toHaveBeenCalledWith(expect.any(String), secondId);
   });
 
   it('진행 중인 후보를 다시 선택해도 중복 refinement를 만들지 않는다', async () => {
@@ -204,8 +215,14 @@ describe('카드 선택 시 대중교통 지연 정밀화', () => {
       .spyOn(adapters.routes, 'refineTransit')
       .mockReturnValue(pending.promise);
 
+    // 선택 상태는 즉시 바뀌지만 외부 호출은 debounce 후 한 번만 나간다.
     useAppStore.getState().selectRoute(routeId);
     useAppStore.getState().selectRoute(routeId);
+    await vi.waitFor(() => {
+      expect(refineTransit).toHaveBeenCalledTimes(1);
+    });
+    useAppStore.getState().selectRoute(routeId);
+    await new Promise((resolve) => setTimeout(resolve, 300));
     expect(refineTransit).toHaveBeenCalledTimes(1);
 
     pending.resolve({

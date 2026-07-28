@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from collections import OrderedDict
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import secrets
@@ -51,6 +52,7 @@ class RouteSetCache:
         self._entries: OrderedDict[str, tuple[float, CachedRouteSet]] = OrderedDict()
         self._lock = Lock()
         self._token_locks: dict[str, asyncio.Lock] = {}
+        self._token_lock_waiters: dict[str, int] = {}
         self._token_locks_guard = Lock()
 
     @staticmethod
@@ -73,17 +75,73 @@ class RouteSetCache:
         ]
         for token in expired:
             self._entries.pop(token, None)
-            with self._token_locks_guard:
-                self._token_locks.pop(token, None)
+        # 잠금 항목은 대기자 수가 0이 될 때 _release_token_lock이 정리한다.
+        # 여기서 먼저 제거하면 이미 대기 중인 코루틴과 다른 잠금 객체가
+        # 만들어져 같은 임계 구역에 둘이 동시에 들어갈 수 있다.
+        self._discard_unused_token_locks()
 
-    def token_lock(self, token: str) -> asyncio.Lock:
-        """토큰별 read-modify-write 직렬화 잠금."""
+    def _discard_unused_token_locks(self) -> None:
         with self._token_locks_guard:
-            lock = self._token_locks.get(token)
-            if lock is None:
-                lock = asyncio.Lock()
-                self._token_locks[token] = lock
-            return lock
+            for token in [
+                token
+                for token in self._token_locks
+                if self._token_lock_waiters.get(token, 0) <= 0
+                and token not in self._entries
+            ]:
+                self._token_locks.pop(token, None)
+                self._token_lock_waiters.pop(token, None)
+
+    def _claim_token_lock(self, token: str) -> asyncio.Lock | None:
+        """존재하는 route-set에 대해서만 잠금을 만들고 대기자를 등록한다.
+
+        존재하지 않는 token은 잠금을 만들지 않으므로, 임의 token 요청이
+        서버 메모리의 잠금 맵을 늘릴 수 없다.
+
+        잠금 순서는 항상 entries guard → token locks guard이며 모든
+        호출부가 이 순서를 지킨다.
+        """
+        now = time.monotonic()
+        with self._lock:
+            self._remove_expired(now)
+            if token not in self._entries:
+                return None
+            with self._token_locks_guard:
+                lock = self._token_locks.get(token)
+                if lock is None:
+                    lock = asyncio.Lock()
+                    self._token_locks[token] = lock
+                self._token_lock_waiters[token] = (
+                    self._token_lock_waiters.get(token, 0) + 1
+                )
+                return lock
+
+    def _release_token_lock(self, token: str) -> None:
+        """마지막 사용자가 떠나면 잠금 항목 자체를 정리한다."""
+        with self._token_locks_guard:
+            waiters = self._token_lock_waiters.get(token, 0) - 1
+            if waiters > 0:
+                self._token_lock_waiters[token] = waiters
+                return
+            self._token_lock_waiters.pop(token, None)
+            self._token_locks.pop(token, None)
+
+    @asynccontextmanager
+    async def lock_existing(self, token: str):
+        """존재하는 route-set을 잠그고 최신 사본을 제공한다.
+
+        token이 없거나 잠금 대기 중 만료되면 ``None``을 넘겨준다.
+        외부 공급자 호출 전체를 이 잠금 안에서 기다리지 않는다.
+        """
+        lock = self._claim_token_lock(token)
+        if lock is None:
+            yield None
+            return
+        try:
+            async with lock:
+                # 잠금을 기다리는 동안 만료·삭제됐을 수 있다.
+                yield self.get(token)
+        finally:
+            self._release_token_lock(token)
 
     def put(
         self,
@@ -109,9 +167,8 @@ class RouteSetCache:
             self._entries[token] = (now, self._copy(entry))
             self._entries.move_to_end(token)
             while len(self._entries) > self.max_entries:
-                evicted, _ = self._entries.popitem(last=False)
-                with self._token_locks_guard:
-                    self._token_locks.pop(evicted, None)
+                self._entries.popitem(last=False)
+            self._discard_unused_token_locks()
         return token
 
     def get(self, token: str) -> CachedRouteSet | None:
@@ -199,6 +256,7 @@ class RouteSetCache:
             self._entries.clear()
         with self._token_locks_guard:
             self._token_locks.clear()
+            self._token_lock_waiters.clear()
 
 
 route_set_cache = RouteSetCache()

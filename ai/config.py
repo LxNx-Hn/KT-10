@@ -18,6 +18,12 @@ class Settings(BaseSettings):
         env_file=_ENV_FILE, env_file_encoding="utf-8", env_ignore_empty=True, extra="ignore"
     )
 
+    # Backend 전용 내부 API 인증 토큰. Backend와 같은 값을 주입한다.
+    # 비어 있으면 개발 편의를 위해 인증을 요구하지 않지만, production
+    # 환경에서는 readiness가 실패한다.
+    AI_INTERNAL_SERVICE_TOKEN: str = ""
+    APP_ENV: Literal["development", "production", "test"] = "development"
+
     ODSAY_API_KEY: str = ""
     ODSAY_CACHE_DIR: str = ""
     ODSAY_CACHE_TTL_SECONDS: int = Field(

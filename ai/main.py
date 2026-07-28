@@ -105,6 +105,11 @@ def readiness():
         layer_error = type(exc).__name__
 
     dem_ready = regional_dem_ready()
+    internal_auth_ready = (
+        len(settings.AI_INTERNAL_SERVICE_TOKEN.strip()) >= 32
+        if settings.APP_ENV == "production"
+        else True
+    )
     tmap_key = settings.TMAP_API_KEY.strip()
     tmap_ready = bool(tmap_key and not tmap_key.startswith("YOUR_"))
     exact_walk_geometry_ready = bool(
@@ -115,6 +120,7 @@ def readiness():
         and layers_ready
         and dem_ready
         and exact_walk_geometry_ready
+        and internal_auth_ready
     )
     body = {
         "ready": ready,
@@ -123,6 +129,7 @@ def readiness():
             "odsay_configured": odsay_ready,
             "spatial_layers_loaded": layers_ready,
             "regional_dem_precomputed": dem_ready,
+            "internal_service_auth": internal_auth_ready,
             "exact_walking_geometry_ready": exact_walk_geometry_ready,
         },
         "capabilities": {

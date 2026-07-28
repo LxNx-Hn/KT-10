@@ -5,6 +5,8 @@ import hashlib
 import json
 from datetime import UTC, datetime
 
+from zoneinfo import ZoneInfo
+
 from .feedback_tokens import create_feedback_token
 from .models import ScoredRoute, ScoringOptions
 from .personalization import blended_rank_score, parse_state
@@ -15,6 +17,19 @@ RULE_MODEL_VERSION = "rule-baseline-v2"
 SNAPSHOT_SCHEMA_VERSION = "route-feature-snapshot-v2"
 LIVE_SNAPSHOT_KIND = "live_route_candidate"
 DEMO_SNAPSHOT_KIND = "demo_route_candidate"
+_KST = ZoneInfo("Asia/Seoul")
+
+
+def _reference_evaluation_time(options: ScoringOptions) -> datetime:
+    """그늘이 하나도 계산되지 않았을 때 쓰는 평가 기준시각.
+
+    실제 그늘 계산시각이 아니라 이번 이동 조건의 기준시각이며, 이 값으로
+    그늘 비율을 만들지 않는다.
+    """
+    reference = options.departure_at or datetime.now(_KST)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=_KST)
+    return reference.astimezone(UTC)
 
 
 def _snapshot_hash(snapshot: dict) -> str:
@@ -263,12 +278,19 @@ def personalize_and_sign(
                 for item, _ in rows
                 if item.route.shade is not None
             }
-            if len(shade_times) != 1:
+            # 그늘 미계산은 정상 지원 상태다(0%가 아님). 계산된 후보끼리는
+            # 동일 평가시각을 요구하고, 하나도 없으면 이번 이동 조건의
+            # 출발시각을 기준시각으로 사용한다.
+            if len(shade_times) > 1:
                 raise RuntimeError(
                     "Signed rule feedback requires one fixed shade evaluation time."
                 )
             captured_at = datetime.now(UTC).isoformat()
-            shade_evaluated_at = next(iter(shade_times))
+            shade_evaluated_at = (
+                next(iter(shade_times))
+                if shade_times
+                else _reference_evaluation_time(opts).isoformat()
+            )
             query_context = {
                 "holdout_group_id": holdout_group_id,
                 "captured_at": captured_at,

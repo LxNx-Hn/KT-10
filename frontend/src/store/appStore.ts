@@ -39,8 +39,69 @@ function defaultDepartureAt(): string {
 let recommendationRequestGeneration = 0;
 let weatherRequestGeneration = 0;
 
-/** 후보별 대중교통 정밀화 in-flight 단일화(같은 후보 중복 요청 방지). */
+/**
+ * 후보 집합 자체가 바뀌는 시점(새 검색·OD 변경)마다 증가한다.
+ * 이전 세대에서 시작된 정밀화 응답이 새 결과를 덮지 않게 하는 기준이다.
+ * 재순위화(rescore)는 같은 route-set을 유지하므로 증가시키지 않는다.
+ */
+let recommendationGeneration = 0;
+
+function beginNewCandidateGeneration(): number {
+  recommendationGeneration += 1;
+  return recommendationGeneration;
+}
+
+/**
+ * 후보별 대중교통 정밀화 in-flight 단일화.
+ * route ID만으로는 서로 다른 검색의 동일 semantic 후보를 구분할 수 없어
+ * route-set token을 함께 사용한다.
+ */
 const transitRefinementInFlight = new Set<string>();
+
+function refinementKey(routeSetToken: string, routeId: string): string {
+  return `${routeSetToken}${routeId}`;
+}
+
+/**
+ * 카드 선택이 이 시간만큼 유지된 뒤에만 정밀화를 시작한다.
+ * carousel을 빠르게 넘길 때 지나친 후보마다 loadLane을 호출하지 않는다.
+ */
+const REFINEMENT_DEBOUNCE_MS = 200;
+let pendingRefinementTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * 정밀화가 실패한 후보는 일정 시간 다시 요청하지 않는다.
+ * 실패 카드를 반복 선택하는 것만으로 공급자 호출이 폭주하지 않게 한다.
+ * 서버가 Retry-After를 주면 그 값을 우선한다.
+ */
+const REFINEMENT_FAILURE_COOLDOWN_MS = 60_000;
+const refinementCooldownUntil = new Map<string, number>();
+
+function refinementCooldownActive(key: string): boolean {
+  const until = refinementCooldownUntil.get(key);
+  if (until === undefined) return false;
+  if (Date.now() >= until) {
+    refinementCooldownUntil.delete(key);
+    return false;
+  }
+  return true;
+}
+
+/** 서버가 알려준 재시도 대기시간(초)을 읽는다. 없으면 기본 cooldown. */
+function retryAfterMs(error: unknown): number {
+  const seconds = (error as { retryAfterSeconds?: unknown })
+    ?.retryAfterSeconds;
+  return typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0
+    ? seconds * 1000
+    : REFINEMENT_FAILURE_COOLDOWN_MS;
+}
+
+function cancelPendingRefinement(): void {
+  if (pendingRefinementTimer !== undefined) {
+    clearTimeout(pendingRefinementTimer);
+    pendingRefinementTimer = undefined;
+  }
+}
 
 /** 대중교통 구간이 아직 estimated인 후보만 정밀화 대상이다. */
 function needsTransitRefinement(route: RouteCandidate): boolean {
@@ -105,6 +166,8 @@ interface AppState {
   loading: boolean;
   error: string | null;
   lastSpoken: string;
+  /** 대중교통 선형 정밀화가 진행 중인 후보 route ID 목록. */
+  refiningRouteIds: string[];
 
   /* 액션 */
   setProfile: (p: ProfileId) => void;
@@ -157,6 +220,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   loading: false,
   error: null,
   lastSpoken: '',
+  refiningRouteIds: [],
 
   setProfile: (profile) => {
     const restartPendingSearch = get().loading && !get().candidates.length;
@@ -170,6 +234,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setOrigin: (origin) => {
     beginRecommendationRequest();
+    beginNewCandidateGeneration();
     set({
       origin,
       candidates: [],
@@ -181,6 +246,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setDestination: (destination) => {
     beginRecommendationRequest();
+    beginNewCandidateGeneration();
     set({
       destination,
       candidates: [],
@@ -265,7 +331,9 @@ export const useAppStore = create<AppState>((set, get) => ({
    * 재검색·재순위화·점수 변경은 발생하지 않는다.
    */
   selectRoute: (selectedRouteId) => {
+    // 선택 상태는 즉시 반영하고, 외부 호출만 debounce한다.
     set({ selectedRouteId });
+    cancelPendingRefinement();
     if (!selectedRouteId) return;
     const { recommendations } = get();
     const selected = recommendations.find(
@@ -276,20 +344,53 @@ export const useAppStore = create<AppState>((set, get) => ({
       !selected
       || !routeSetToken
       || !needsTransitRefinement(selected.route)
-      || transitRefinementInFlight.has(selectedRouteId)
     ) {
       return;
     }
-    transitRefinementInFlight.add(selectedRouteId);
+    const key = refinementKey(routeSetToken, selectedRouteId);
+    if (transitRefinementInFlight.has(key)) return;
+    // 최근 실패한 후보는 cooldown이 끝날 때까지 다시 요청하지 않는다.
+    if (refinementCooldownActive(key)) return;
+
+    // 응답 적용 조건을 요청 시작 시점에 고정한다.
+    const capturedGeneration = recommendationGeneration;
+    const capturedToken = routeSetToken;
+    const capturedRouteId = selectedRouteId;
+
+    pendingRefinementTimer = setTimeout(() => {
+      pendingRefinementTimer = undefined;
+      // debounce 대기 중 선택이나 후보 집합이 바뀌었으면 시작하지 않는다.
+      if (
+        get().selectedRouteId !== capturedRouteId
+        || recommendationGeneration !== capturedGeneration
+        || transitRefinementInFlight.has(key)
+        || refinementCooldownActive(key)
+      ) {
+        return;
+      }
+      startRefinement();
+    }, REFINEMENT_DEBOUNCE_MS);
+
+    function startRefinement() {
+    transitRefinementInFlight.add(key);
+    set((state) => ({
+      refiningRouteIds: state.refiningRouteIds.includes(capturedRouteId)
+        ? state.refiningRouteIds
+        : [...state.refiningRouteIds, capturedRouteId],
+    }));
     void adapters.routes
-      .refineTransit(routeSetToken, selectedRouteId)
+      .refineTransit(capturedToken, capturedRouteId)
       .then((refined) => {
-        // 응답 route ID가 일치하는 후보만 patch한다. 순위·점수·카드
-        // 순서는 그대로 유지되며, 늦은 응답도 다른 후보의 지도를
-        // 덮지 않는다(해당 route ID의 저장 geometry만 갱신).
-        if (!refined || refined.routeId !== selectedRouteId) return;
+        if (!refined || refined.routeId !== capturedRouteId) return;
+        // 요청을 시작한 후보 집합이 아직 화면에 남아 있을 때만 반영한다.
+        if (recommendationGeneration !== capturedGeneration) return;
+        const current = get().recommendations.find(
+          ({ route }) => route.id === capturedRouteId,
+        );
+        if (!current || current.routeSetToken !== capturedToken) return;
+
         const patch = (route: RouteCandidate): RouteCandidate =>
-          route.id === refined.routeId
+          route.id === capturedRouteId
             ? {
                 ...route,
                 path: refined.path,
@@ -297,22 +398,30 @@ export const useAppStore = create<AppState>((set, get) => ({
                 geometryQuality: refined.geometryQuality,
               }
             : route;
+        refinementCooldownUntil.delete(key);
         set((state) => ({
           candidates: state.candidates.map(patch),
           recommendations: state.recommendations.map((item) => (
-            item.route.id === refined.routeId
+            item.route.id === capturedRouteId
               ? { ...item, route: patch(item.route) }
               : item
           )),
         }));
       })
-      .catch(() => {
-        // 정밀화 실패 시 estimated 표시를 유지한다. 전체 재검색이나
-        // 오류 화면 전환 없이 다음 명시적 선택에서 다시 시도할 수 있다.
+      .catch((error: unknown) => {
+        // 정밀화 실패 시 estimated 표시를 유지하고 cooldown을 건다.
+        // 전체 재검색이나 오류 화면 전환은 하지 않는다.
+        refinementCooldownUntil.set(key, Date.now() + retryAfterMs(error));
       })
       .finally(() => {
-        transitRefinementInFlight.delete(selectedRouteId);
+        transitRefinementInFlight.delete(key);
+        set((state) => ({
+          refiningRouteIds: state.refiningRouteIds.filter(
+            (routeId) => routeId !== capturedRouteId,
+          ),
+        }));
       });
+    }
   },
   setLastSpoken: (lastSpoken) => set({ lastSpoken }),
 
@@ -321,6 +430,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const origin = findPlace(DEMO_OD.originId) ?? null;
     const destination = findPlace(DEMO_OD.destinationId) ?? null;
     beginRecommendationRequest();
+    beginNewCandidateGeneration();
     set({
       origin,
       destination,
@@ -334,6 +444,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   search: async () => {
     const requestGeneration = beginRecommendationRequest();
+    beginNewCandidateGeneration();
     const { origin, destination, profile, weatherScenario, options } = get();
     if (!origin || !destination) {
       set({ loading: false, error: '출발지와 도착지를 모두 선택해 주세요.' });
@@ -376,13 +487,24 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   /** 프로필/날씨/옵션 변경 시 서버(live) 또는 로컬(mock)에 재채점을 요청 */
   rescore: async () => {
-    const { origin, destination, profile, weatherScenario, options, selectedRouteId } = get();
-    if (!origin || !destination || !get().recommendations.length) return;
+    const {
+      origin,
+      destination,
+      profile,
+      options,
+      selectedRouteId,
+      recommendations: previous,
+    } = get();
+    if (!origin || !destination || !previous.length) return;
     const requestGeneration = beginRecommendationRequest();
     set({ loading: true, error: null });
     try {
-      const recommendations = await adapters.routes.recommend(
-        origin, destination, profile, weatherScenario, options,
+      // 프로필·조건 변경은 경로 후보를 다시 수집하지 않는다. 서버가 보관한
+      // route-set을 그대로 재순위화하므로 ODsay·TMAP 호출이 없다.
+      const recommendations = await adapters.routes.rescore(
+        previous,
+        profile,
+        options,
       );
       if (!isLatestRecommendationRequest(requestGeneration)) return;
       if (!recommendations.length) {

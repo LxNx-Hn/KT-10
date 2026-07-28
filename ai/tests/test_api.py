@@ -135,6 +135,7 @@ def test_readiness_requires_odsay_but_not_model_artifact(monkeypatch):
         "spatial_layers_loaded": True,
         "regional_dem_precomputed": True,
         "exact_walking_geometry_ready": False,
+        "internal_service_auth": True,
     }
     assert body["model_artifact_required"] is False
 
@@ -1230,7 +1231,11 @@ def test_refine_transit_endpoint_keeps_provider_failure_explicit(monkeypatch):
     })
 
     assert response.status_code == 502
-    assert "quota" in response.json()["detail"]
+    detail = response.json()["detail"]
+    # 오류 분류는 문자열 검색이 아니라 구조화된 code로 전달한다.
+    assert "quota" in detail["message"]
+    assert detail["code"] == "provider_error"
+    assert detail["retryable"] is True
 
 
 def _lazy_route_feature(transit_path, *, bus_name="100", quality="estimated"):

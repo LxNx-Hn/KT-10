@@ -12,7 +12,9 @@ from datetime import UTC, datetime
 from threading import Lock
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+import hmac
+
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from collectors.base import (
@@ -21,6 +23,7 @@ from collectors.base import (
     Coordinate,
 )
 from collectors.odsay_collector import OdsayRouteCollector
+from collectors.odsay_instrumentation import adopt_correlation_id
 from collectors.tmap_collector import TmapRouteCollector
 from config import settings
 from features.extractor import (
@@ -46,7 +49,52 @@ from scoring.schema import AUXILIARY_FEATURE_COLS, validate_feature_values
 from scoring.snapshots import build_live_feature_snapshot
 from scoring.train import FEATURE_COLS, ModelNotReady, load_model_metadata, load_rankers
 
-router = APIRouter()
+INTERNAL_TOKEN_HEADER = "X-KT10-Internal-Token"
+CORRELATION_HEADER = "X-Correlation-ID"
+
+
+async def adopt_request_correlation_id(
+    value: str | None = Header(default=None, alias=CORRELATION_HEADER),
+) -> str:
+    """Backend 요청의 correlation ID를 AI 호출 계측에 이어붙인다.
+
+    ContextVar를 endpoint와 같은 실행 컨텍스트에서 설정해야 하므로
+    동기 함수(threadpool 실행)로 두지 않는다.
+    """
+    return adopt_correlation_id(value)
+
+
+def require_internal_token(
+    internal_token: str | None = Header(default=None, alias=INTERNAL_TOKEN_HEADER),
+) -> None:
+    """Backend 전용 endpoint를 내부 토큰으로 보호한다.
+
+    토큰 값은 로그·응답 어디에도 남기지 않는다. production에서 토큰이
+    설정되지 않았다면 열린 상태로 두지 않고 명시적으로 거부한다.
+    """
+    expected = settings.AI_INTERNAL_SERVICE_TOKEN.strip()
+    if not expected:
+        if settings.APP_ENV == "production":
+            raise HTTPException(
+                status_code=503,
+                detail="AI_INTERNAL_SERVICE_TOKEN is not configured.",
+            )
+        # 개발·테스트 환경은 토큰 없이 동작할 수 있다.
+        return
+    if internal_token is None or not hmac.compare_digest(
+        internal_token,
+        expected,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Valid internal service credentials are required.",
+        )
+
+
+router = APIRouter(dependencies=[
+    Depends(require_internal_token),
+    Depends(adopt_request_correlation_id),
+])
 
 _layers = None
 _rankers = None
@@ -376,9 +424,21 @@ async def refine_transit(req: RefineTransitRequest) -> dict:
             Coordinate(lat=req.dest_lat, lng=req.dest_lng),
         )
     except CollectorNotConfigured as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=503,
+            detail={"message": str(exc), "code": exc.code, "retryable": False},
+        ) from exc
     except CollectorError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        # 오류 분류를 문자열이 아닌 구조로 전달해 Backend가 재시도 정책을
+        # 문자열 검색 없이 결정할 수 있게 한다.
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": str(exc),
+                "code": getattr(exc, "code", "provider_error"),
+                "retryable": bool(getattr(exc, "retryable", True)),
+            },
+        ) from exc
     return {
         "geometry_quality": "exact",
         "refined_at": datetime.now(UTC).isoformat(),
@@ -836,6 +896,45 @@ def _summary(feature: dict) -> str:
     return " + ".join(labels) or "경로 후보"
 
 
+def _transit_identity(feature: dict) -> list:
+    """정밀화로 변하지 않는 대중교통 노선·승하차 식별자 sequence.
+
+    lane ID·승하차 정류장 ID·wayCode는 ODsay search 응답에 이미 들어 있고
+    loadLane 정밀화로 바뀌지 않는다. 표시 문자열만으로는 서로 다른 경로가
+    같은 route ID로 충돌할 수 있어 이 값들을 fingerprint에 포함한다.
+    mapObj 원문은 route ID·로그·응답 어디에도 넣지 않는다.
+    """
+    identity: list = []
+    for segment in feature.get("_segments") or []:
+        mode = segment.get("mode")
+        if mode not in {"bus", "subway"}:
+            continue
+        raw = segment.get("raw")
+        raw = raw if isinstance(raw, dict) else {}
+        lanes = raw.get("lane")
+        lane_ids = [
+            _first_known(lane, "busID", "busNo", "subwayCode", "name")
+            for lane in (lanes if isinstance(lanes, list) else [])
+            if isinstance(lane, dict)
+        ]
+        identity.append([
+            mode,
+            [value for value in lane_ids if value],
+            _first_known(raw, "startID", "startName"),
+            _first_known(raw, "endID", "endName"),
+            _first_known(raw, "wayCode", "way"),
+        ])
+    return identity
+
+
+def _first_known(mapping: dict, *keys: str) -> str | None:
+    for key in keys:
+        value = mapping.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
 def _route_id(feature: dict) -> str:
     """대중교통 정밀화 전후 동일한 semantic 경로 식별자.
 
@@ -860,6 +959,8 @@ def _route_id(feature: dict) -> str:
             [round(point.lat, 5), round(point.lng, 5)]
             for point in sampled_walk
         ],
+        # 표시 문자열이 같아도 실제 노선·승하차가 다르면 서로 다른 경로다.
+        "transit": _transit_identity(feature),
         "segments": [
             [
                 segment.get("mode"),

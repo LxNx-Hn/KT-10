@@ -1006,9 +1006,13 @@ describe('store 최신 요청 및 점수 계약', () => {
       ...item,
       score: { ...item.score, finalScore: 0.91 },
     }));
-    vi.spyOn(adapters.routes, 'recommend')
-      .mockImplementationOnce(() => previous.promise)
-      .mockImplementationOnce(() => latest.promise);
+    // 검색은 /recommend, 재채점은 route-set rescore로 분리되었다.
+    vi.spyOn(adapters.routes, 'recommend').mockImplementationOnce(
+      () => previous.promise,
+    );
+    vi.spyOn(adapters.routes, 'rescore').mockImplementationOnce(
+      () => latest.promise,
+    );
 
     const previousRequest = useAppStore.getState().search();
     const latestRequest = useAppStore.getState().rescore();
@@ -1104,7 +1108,7 @@ describe('store 최신 요청 및 점수 계약', () => {
       ...item,
       score: { ...item.score, finalScore: 0.87 },
     }));
-    vi.spyOn(adapters.routes, 'recommend')
+    vi.spyOn(adapters.routes, 'rescore')
       .mockImplementationOnce(() => previous.promise)
       .mockImplementationOnce(() => latest.promise);
 

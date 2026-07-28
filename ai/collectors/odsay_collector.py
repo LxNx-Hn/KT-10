@@ -29,7 +29,7 @@ from collectors.base import (
 )
 from collectors.odsay_instrumentation import (
     anonymized_hash,
-    new_correlation_id,
+    ensure_correlation_id,
     record_network_call,
     single_flight,
     with_concurrency_limit,
@@ -41,7 +41,40 @@ from collectors.odsay_instrumentation import (
     log_call as log_odsay_call,
 )
 
+def _provider_error_code(data: dict) -> str:
+    """ODsay 오류 응답 코드를 재시도 정책 분류로 옮긴다."""
+    error = data.get("error")
+    raw = str(error.get("code") if isinstance(error, dict) else "") or ""
+    # ODsay 규격: 8=일일 사용량 초과, 9=서비스 키 오류, 500대=서버 오류
+    if raw in {"8", "18"}:
+        return "quota_exceeded"
+    if raw in {"9", "10", "11"}:
+        return "auth_failed"
+    if raw.startswith("5"):
+        return "upstream_5xx"
+    return "invalid_response"
+
+
+def _transport_error_code(exc: BaseException) -> str:
+    if isinstance(exc, httpx.TimeoutException):
+        return "timeout"
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if status in {401, 403}:
+            return "auth_failed"
+        if status == 429:
+            return "quota_exceeded"
+        if status >= 500:
+            return "upstream_5xx"
+        return "invalid_response"
+    if isinstance(exc, httpx.TransportError):
+        return "network_error"
+    return "invalid_response"
+
+
 CACHE_SCHEMA_VERSION = 1
+# 후보 조립 병렬 상한. 아직 필요한 후보 수가 이보다 적으면 그 수만큼만 묶는다.
+BUILD_BATCH_SIZE = 3
 log = logging.getLogger("collectors.odsay")
 _walk_geometry_failure_signatures: set[tuple[str, str]] = set()
 _walk_geometry_failure_signatures_guard = Lock()
@@ -281,7 +314,13 @@ class OdsayRouteCollector(BaseRouteCollector):
                         return cached
 
                     async def _request() -> dict:
-                        nonlocal http_status
+                        nonlocal http_status, network
+                        # semaphore를 얻은 뒤, 실제 transport 직전에만
+                        # network 호출로 집계한다. 대기 중 취소·timeout은
+                        # 실제 호출이 아니다.
+                        record_network_call("loadLane")
+                        network = True
+                        odsay_counters.record_network_attempt("loadLane")
                         async with httpx.AsyncClient(
                             follow_redirects=True
                         ) as client:
@@ -293,11 +332,19 @@ class OdsayRouteCollector(BaseRouteCollector):
                         http_status = getattr(
                             response, "status_code", None
                         )
-                        response.raise_for_status()
-                        return response.json()
+                        try:
+                            response.raise_for_status()
+                            payload = response.json()
+                        except BaseException:
+                            odsay_counters.record_network_result(
+                                "loadLane", completed=False
+                            )
+                            raise
+                        odsay_counters.record_network_result(
+                            "loadLane", completed=True
+                        )
+                        return payload
 
-                    record_network_call("loadLane")
-                    network = True
                     fetched, waited = await with_concurrency_limit(_request)
                     semaphore_wait = waited
                     return fetched
@@ -309,16 +356,21 @@ class OdsayRouteCollector(BaseRouteCollector):
                 outcome = "network" if network else "single-flight"
             if not isinstance(data, dict):
                 raise CollectorError(
-                    "ODsay loadLane 응답 본문이 JSON 객체가 아닙니다."
+                    "ODsay loadLane 응답 본문이 JSON 객체가 아닙니다.",
+                    code="invalid_response",
                 )
             api_error = self._api_error(data)
             if api_error:
                 # 공급자 오류 응답은 캐시하지 않고 그대로 실패로 반환한다.
-                raise CollectorError(f"ODsay loadLane 실패: {api_error}")
+                raise CollectorError(
+                    f"ODsay loadLane 실패: {api_error}",
+                    code=_provider_error_code(data),
+                )
             paths = self._lane_paths(data, load_lane_map_object)
             if not paths or not any(paths):
                 raise CollectorError(
-                    "ODsay loadLane 응답에 유효한 경로 좌표가 없습니다."
+                    "ODsay loadLane 응답에 유효한 경로 좌표가 없습니다.",
+                    code="empty_geometry",
                 )
             if network:
                 await _store_payload("lane", cache_identity, data)
@@ -360,7 +412,7 @@ class OdsayRouteCollector(BaseRouteCollector):
             "YOUR_"
         ):
             raise CollectorNotConfigured("ODSAY_API_KEY가 설정되지 않았습니다.")
-        new_correlation_id()
+        ensure_correlation_id()
         try:
             return await asyncio.wait_for(
                 self._load_lane(
@@ -373,7 +425,8 @@ class OdsayRouteCollector(BaseRouteCollector):
             )
         except TimeoutError as exc:
             raise CollectorError(
-                "ODsay 대중교통 정밀 선형 조회가 시간 제한을 초과했습니다."
+                "ODsay 대중교통 정밀 선형 조회가 시간 제한을 초과했습니다.",
+                code="timeout",
             ) from exc
 
     @staticmethod
@@ -667,7 +720,11 @@ class OdsayRouteCollector(BaseRouteCollector):
                             return cached
 
                         async def _request() -> dict:
-                            nonlocal http_status
+                            nonlocal http_status, network
+                            # semaphore 확보 후 실제 transport 직전에만 집계.
+                            record_network_call("searchPubTransPathT")
+                            network = True
+                            odsay_counters.record_network_attempt("searchPubTransPathT")
                             async with httpx.AsyncClient(
                                 follow_redirects=True
                             ) as client:
@@ -683,11 +740,19 @@ class OdsayRouteCollector(BaseRouteCollector):
                             http_status = getattr(
                                 resp, "status_code", None
                             )
-                            resp.raise_for_status()
-                            return resp.json()
+                            try:
+                                resp.raise_for_status()
+                                payload = resp.json()
+                            except BaseException:
+                                odsay_counters.record_network_result(
+                                    "searchPubTransPathT", completed=False
+                                )
+                                raise
+                            odsay_counters.record_network_result(
+                                "searchPubTransPathT", completed=True
+                            )
+                            return payload
 
-                        record_network_call("searchPubTransPathT")
-                        network = True
                         fetched, waited = await with_concurrency_limit(
                             _request
                         )
@@ -742,20 +807,27 @@ class OdsayRouteCollector(BaseRouteCollector):
 
             candidates = []
             rejected: list[str] = []
-            # 후보별 보행 구간은 서로 독립적이다. 세 후보를 한 묶음으로
-            # 조립해 공급자 지연이 직렬로 누적되지 않게 하되, 보행 수집기
-            # 내부 동시성 상한으로 공개 Overpass에 과도한 요청을 보내지 않는다.
+            # 후보별 보행 구간은 서로 독립적이므로 묶어서 조립해 공급자
+            # 지연이 직렬로 누적되지 않게 한다. 다만 batch 크기는 아직
+            # 필요한 후보 수에 맞춰 줄인다. 고정 크기로 묶으면 이미 충분한
+            # 후보를 확보한 뒤에도 남은 후보의 TMAP 보행 geometry·검증·
+            # 파싱을 실행하고 결과를 버리게 된다.
             # 대중교통 loadLane은 이 단계에서 호출하지 않는다.
-            for batch_start in range(0, len(paths), 3):
+            cursor = 0
+            while cursor < len(paths) and len(candidates) < max_candidates:
+                remaining = max_candidates - len(candidates)
+                batch_size = min(BUILD_BATCH_SIZE, remaining)
                 batch: list[tuple[int, dict]] = []
-                for index, path in enumerate(
-                    paths[batch_start:batch_start + 3],
-                    start=batch_start,
-                ):
+                while cursor < len(paths) and len(batch) < batch_size:
+                    index = cursor
+                    path = paths[cursor]
+                    cursor += 1
                     if not isinstance(path, dict):
                         rejected.append(f"{index + 1}번 후보: 객체 아님")
                         continue
                     batch.append((index, path))
+                if not batch:
+                    break
                 results = await asyncio.gather(
                     *(
                         self._build_candidate(
@@ -774,10 +846,6 @@ class OdsayRouteCollector(BaseRouteCollector):
                         raise result
                     else:
                         candidates.append(result)
-                        if len(candidates) >= max_candidates:
-                            break
-                if len(candidates) >= max_candidates:
-                    break
             if not candidates:
                 suffix = f" ({'; '.join(rejected[:3])})" if rejected else ""
                 raise CollectorError(
@@ -788,7 +856,10 @@ class OdsayRouteCollector(BaseRouteCollector):
         except CollectorError:
             raise
         except (httpx.HTTPError, ValueError, TypeError) as exc:
-            raise CollectorError(f"ODsay 호출 또는 응답 처리 실패: {type(exc).__name__}") from exc
+            raise CollectorError(
+                f"ODsay 호출 또는 응답 처리 실패: {type(exc).__name__}",
+                code=_transport_error_code(exc),
+            ) from exc
 
     async def collect(
         self,
@@ -807,7 +878,7 @@ class OdsayRouteCollector(BaseRouteCollector):
                 f"요청한 후보 수 {candidate_limit}개가 서버 상한 "
                 f"{settings.ODSAY_MAX_CANDIDATES}개를 초과합니다."
             )
-        new_correlation_id()
+        ensure_correlation_id()
         try:
             return await asyncio.wait_for(
                 self._collect_live_or_cached(
@@ -819,5 +890,6 @@ class OdsayRouteCollector(BaseRouteCollector):
             )
         except TimeoutError as exc:
             raise CollectorError(
-                "ODsay 경로 수집이 서비스 시간 제한을 초과했습니다."
+                "ODsay 경로 수집이 서비스 시간 제한을 초과했습니다.",
+                code="timeout",
             ) from exc

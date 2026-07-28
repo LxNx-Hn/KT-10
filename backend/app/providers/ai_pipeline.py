@@ -25,6 +25,7 @@ from ..models import (
     ScoringOptions,
     TerrainSummary,
 )
+from ..correlation import CORRELATION_HEADER, current as current_correlation_id
 from ..feedback_tokens import create_feedback_token
 from ..personalization import blended_rank_score, parse_state
 from ..scoring.utils import clamp, round1
@@ -43,9 +44,20 @@ class EnrichedCandidateBundle:
 
 
 class AIProviderError(RuntimeError):
-    def __init__(self, status_code: int, detail: str):
+    def __init__(
+        self,
+        status_code: int,
+        detail: str,
+        *,
+        code: str = "provider_error",
+        retryable: bool = True,
+    ):
         super().__init__(detail)
         self.status_code = status_code
+        # AI가 전달한 구조화 오류 분류. 재시도 정책을 문자열 검색 없이
+        # 결정하기 위해 사용한다.
+        self.code = code
+        self.retryable = retryable
 
 _WEATHER_TO_AI = {
     "normal": "normal", "heatwave": "heatwave", "coldwave": "coldwave",
@@ -103,6 +115,22 @@ def _pipeline_payload(
     }
 
 
+def _response_error_class(response: httpx.Response) -> tuple[str, bool]:
+    """AI 응답의 구조화 오류 분류를 읽는다. 없으면 재시도 가능으로 본다."""
+    try:
+        detail = response.json().get("detail")
+    except (ValueError, TypeError, AttributeError):
+        return "provider_error", True
+    if not isinstance(detail, dict):
+        return "provider_error", True
+    code = detail.get("code")
+    retryable = detail.get("retryable")
+    return (
+        str(code) if isinstance(code, str) and code else "provider_error",
+        bool(retryable) if isinstance(retryable, bool) else True,
+    )
+
+
 def _response_detail(response: httpx.Response) -> str:
     try:
         detail = response.json().get("detail")
@@ -124,6 +152,24 @@ def _response_detail(response: httpx.Response) -> str:
     return f"AI pipeline server returned HTTP {response.status_code}."
 
 
+INTERNAL_TOKEN_HEADER = "X-KT10-Internal-Token"
+
+
+def _internal_headers() -> dict[str, str]:
+    """내부 서비스 토큰과 correlation ID를 header로만 전달한다.
+
+    토큰은 query·log에 남기지 않는다.
+    """
+    headers: dict[str, str] = {}
+    token = settings.ai_internal_service_token.strip()
+    if token:
+        headers[INTERNAL_TOKEN_HEADER] = token
+    trace = current_correlation_id()
+    if trace:
+        headers[CORRELATION_HEADER] = trace
+    return headers
+
+
 async def _post_pipeline(path: str, payload: dict) -> dict:
     if not settings.ai_server_url:
         raise AIProviderError(503, "AI_SERVER_URL is not configured.")
@@ -132,6 +178,7 @@ async def _post_pipeline(path: str, payload: dict) -> dict:
             response = await client.post(
                 f"{settings.ai_server_url.rstrip('/')}{path}",
                 json=payload,
+                headers=_internal_headers(),
             )
             response.raise_for_status()
         data = response.json()
@@ -141,13 +188,21 @@ async def _post_pipeline(path: str, payload: dict) -> dict:
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
         log.warning("AI 경로 서버가 HTTP %s를 반환했습니다.", status)
+        code, retryable = _response_error_class(exc.response)
         raise AIProviderError(
             503 if status == 503 else 502,
             _response_detail(exc.response),
+            code=code,
+            retryable=retryable,
         ) from exc
     except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
         log.warning("AI 경로 서버 호출 실패 (%s)", type(exc).__name__)
-        raise AIProviderError(502, "AI pipeline server request failed.") from exc
+        raise AIProviderError(
+            502,
+            "AI pipeline server request failed.",
+            code="timeout" if isinstance(exc, httpx.TimeoutException)
+            else "network_error",
+        ) from exc
 
 
 async def get_ai_pipeline_candidates(

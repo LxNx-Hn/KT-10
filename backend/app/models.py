@@ -232,6 +232,24 @@ class RouteCandidate(CamelModel):
         "not_loaded", "loading", "exact", "failed"
     ] = Field(default="exact", exclude=True)
     transit_refined_at: Optional[datetime] = Field(default=None, exclude=True)
+    # 실패 재시도 정책 metadata. 서버 내부 전용이며 응답에 노출하지 않는다.
+    transit_refinement_failure_code: Optional[str] = Field(
+        default=None,
+        exclude=True,
+    )
+    transit_refinement_failed_at: Optional[datetime] = Field(
+        default=None,
+        exclude=True,
+    )
+    transit_refinement_retry_after: Optional[datetime] = Field(
+        default=None,
+        exclude=True,
+    )
+    transit_refinement_failure_permanent: bool = Field(
+        default=False,
+        exclude=True,
+    )
+    transit_refinement_failure_count: int = Field(default=0, exclude=True)
     characteristics: list[
         Literal[
             "fastest",

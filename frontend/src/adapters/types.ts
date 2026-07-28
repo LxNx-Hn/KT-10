@@ -56,6 +56,17 @@ export interface RouteAdapter {
     routeSetToken: string,
     routeId: string,
   ): Promise<TransitRefinement | null>;
+  /**
+   * 프로필·이동 조건 변경을 기존 route-set 재순위화로 처리한다.
+   * 경로 공급자를 다시 호출하지 않으며 route-set token도 유지된다.
+   * score·rank·카드 순서는 새 추천 판단이므로 달라질 수 있다.
+   */
+  rescore(
+    current: ScoredRoute[],
+    profile: ProfileId,
+    options: ScoringOptions,
+    topN?: number,
+  ): Promise<ScoredRoute[]>;
 }
 
 export interface BusAdapter {
