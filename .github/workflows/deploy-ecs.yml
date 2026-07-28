@@ -1,0 +1,207 @@
+name: ECS Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Optional image tag override
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ecs-prod-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-2
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID || '819044292803' }}
+  ECS_CLUSTER: kt10-prod
+  PROD_BASE_URL: ${{ vars.PROD_BASE_URL || 'http://kt10-prod-alb-1184252064.ap-northeast-2.elb.amazonaws.com' }}
+
+jobs:
+  deploy:
+    name: Build, Push, and Deploy
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Checkout deploy source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve image tag
+        id: image
+        shell: bash
+        env:
+          IMAGE_TAG_INPUT: ${{ github.event.inputs.image_tag || '' }}
+        run: |
+          set -euo pipefail
+          source_sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+          if [ -n "$IMAGE_TAG_INPUT" ]; then
+            image_tag="$IMAGE_TAG_INPUT"
+          else
+            image_tag="${source_sha:0:7}-${GITHUB_RUN_NUMBER}"
+          fi
+          if ! [[ "$image_tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Invalid Docker image tag: $image_tag" >&2
+            exit 1
+          fi
+          registry="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          {
+            echo "tag=${image_tag}"
+            echo "registry=${registry}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Login to ECR
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "${{ steps.image.outputs.registry }}"
+
+      - name: Build images
+        shell: bash
+        env:
+          KAKAO_BROWSER_APP_ID: ${{ secrets.VITE_KAKAO_MAP_KEY }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.image.outputs.tag }}"
+          registry="${{ steps.image.outputs.registry }}"
+
+          docker build \
+            -f frontend/Dockerfile.prod \
+            --build-arg KAKAO_BROWSER_APP_ID="$KAKAO_BROWSER_APP_ID" \
+            --build-arg VITE_DATA_SOURCE=live \
+            --build-arg VITE_API_BASE= \
+            -t "$registry/kt10-frontend:$tag" \
+            .
+          docker build -f backend/Dockerfile -t "$registry/kt10-backend:$tag" .
+          docker build -f ai/Dockerfile -t "$registry/kt10-ai:$tag" .
+
+      - name: Push images
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.image.outputs.tag }}"
+          registry="${{ steps.image.outputs.registry }}"
+          docker push "$registry/kt10-frontend:$tag"
+          docker push "$registry/kt10-backend:$tag"
+          docker push "$registry/kt10-ai:$tag"
+
+      - name: Register task definitions
+        id: taskdefs
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.image.outputs.tag }}"
+          registry="${{ steps.image.outputs.registry }}"
+
+          register_task_definition() {
+            local family="$1"
+            local container="$2"
+            local image="$3"
+            local output_key="$4"
+
+            aws ecs describe-task-definition \
+              --task-definition "$family" \
+              --query taskDefinition \
+              > "$family.current.json"
+
+            jq \
+              --arg container "$container" \
+              --arg image "$image" \
+              'del(
+                .taskDefinitionArn,
+                .revision,
+                .status,
+                .requiresAttributes,
+                .compatibilities,
+                .registeredAt,
+                .registeredBy
+              )
+              | .containerDefinitions |= map(
+                if .name == $container then .image = $image else . end
+              )' \
+              "$family.current.json" > "$family.next.json"
+
+            arn="$(aws ecs register-task-definition \
+              --cli-input-json "file://$family.next.json" \
+              --query taskDefinition.taskDefinitionArn \
+              --output text)"
+            echo "$output_key=$arn" >> "$GITHUB_OUTPUT"
+          }
+
+          register_task_definition \
+            kt10-ai-task \
+            ai \
+            "$registry/kt10-ai:$tag" \
+            ai_task_definition
+          register_task_definition \
+            kt10-backend-task \
+            backend \
+            "$registry/kt10-backend:$tag" \
+            backend_task_definition
+          register_task_definition \
+            kt10-frontend-task \
+            frontend \
+            "$registry/kt10-frontend:$tag" \
+            frontend_task_definition
+
+      - name: Deploy AI
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service kt10-ai \
+            --task-definition "${{ steps.taskdefs.outputs.ai_task_definition }}" \
+            --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
+            >/dev/null
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services kt10-ai
+
+      - name: Deploy backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service kt10-backend \
+            --task-definition "${{ steps.taskdefs.outputs.backend_task_definition }}" \
+            --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
+            >/dev/null
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services kt10-backend
+
+      - name: Deploy frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service kt10-frontend \
+            --task-definition "${{ steps.taskdefs.outputs.frontend_task_definition }}" \
+            --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
+            >/dev/null
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services kt10-frontend
+
+      - name: Smoke test ALB
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "$PROD_BASE_URL/healthz"
+          curl --fail --silent --show-error "$PROD_BASE_URL/api/health"
