@@ -191,6 +191,25 @@ jobs:
             frontend_task_definition \
             false
 
+          snapshot_desired_count() {
+            local service="$1"
+            local output_key="$2"
+            desired_count="$(aws ecs describe-services \
+              --cluster "$ECS_CLUSTER" \
+              --services "$service" \
+              --query 'services[0].desiredCount' \
+              --output text)"
+            if ! [[ "$desired_count" =~ ^[0-9]+$ ]]; then
+              echo "Invalid desired count for $service: $desired_count" >&2
+              exit 1
+            fi
+            echo "$output_key=$desired_count" >> "$GITHUB_OUTPUT"
+          }
+
+          snapshot_desired_count kt10-ai ai_previous_desired_count
+          snapshot_desired_count kt10-backend backend_previous_desired_count
+          snapshot_desired_count kt10-frontend frontend_previous_desired_count
+
       - name: Deploy AI
         shell: bash
         run: |
@@ -199,15 +218,18 @@ jobs:
             --cluster "$ECS_CLUSTER" \
             --service kt10-ai \
             --task-definition "${{ steps.taskdefs.outputs.ai_task_definition }}" \
+            --desired-count 1 \
             --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
             >/dev/null
           aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services kt10-ai
-          actual="$(aws ecs describe-services \
+          read -r actual desired running < <(aws ecs describe-services \
             --cluster "$ECS_CLUSTER" \
             --services kt10-ai \
-            --query 'services[0].taskDefinition' \
+            --query 'services[0].[taskDefinition,desiredCount,runningCount]' \
             --output text)"
           test "$actual" = "${{ steps.taskdefs.outputs.ai_task_definition }}"
+          test "$desired" = "1"
+          test "$running" = "1"
 
       - name: Deploy backend
         shell: bash
@@ -217,15 +239,18 @@ jobs:
             --cluster "$ECS_CLUSTER" \
             --service kt10-backend \
             --task-definition "${{ steps.taskdefs.outputs.backend_task_definition }}" \
+            --desired-count 1 \
             --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
             >/dev/null
           aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services kt10-backend
-          actual="$(aws ecs describe-services \
+          read -r actual desired running < <(aws ecs describe-services \
             --cluster "$ECS_CLUSTER" \
             --services kt10-backend \
-            --query 'services[0].taskDefinition' \
+            --query 'services[0].[taskDefinition,desiredCount,runningCount]' \
             --output text)"
           test "$actual" = "${{ steps.taskdefs.outputs.backend_task_definition }}"
+          test "$desired" = "1"
+          test "$running" = "1"
 
       - name: Deploy frontend
         shell: bash
@@ -235,15 +260,18 @@ jobs:
             --cluster "$ECS_CLUSTER" \
             --service kt10-frontend \
             --task-definition "${{ steps.taskdefs.outputs.frontend_task_definition }}" \
+            --desired-count 1 \
             --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
             >/dev/null
           aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services kt10-frontend
-          actual="$(aws ecs describe-services \
+          read -r actual desired running < <(aws ecs describe-services \
             --cluster "$ECS_CLUSTER" \
             --services kt10-frontend \
-            --query 'services[0].taskDefinition' \
+            --query 'services[0].[taskDefinition,desiredCount,runningCount]' \
             --output text)"
           test "$actual" = "${{ steps.taskdefs.outputs.frontend_task_definition }}"
+          test "$desired" = "1"
+          test "$running" = "1"
 
       - name: Smoke test ALB
         shell: bash
@@ -275,21 +303,8 @@ jobs:
             aws ecs describe-services \
               --cluster "$ECS_CLUSTER" \
               --services "$service" \
-              --query 'services[0].{status:status,desired:desiredCount,running:runningCount,pending:pendingCount,taskDefinition:taskDefinition,deployments:deployments[*].{status:status,rolloutState:rolloutState,rolloutStateReason:rolloutStateReason,taskDefinition:taskDefinition,running:runningCount,pending:pendingCount,failed:failedTasks},events:events[:10].message}' \
+              --query 'services[0].{status:status,desired:desiredCount,running:runningCount,pending:pendingCount,taskDefinition:taskDefinition,loadBalancers:loadBalancers,deployments:deployments[*].{status:status,rolloutState:rolloutState,rolloutStateReason:rolloutStateReason,taskDefinition:taskDefinition,running:runningCount,pending:pendingCount,failed:failedTasks},events:events[:10].message}' \
               --output json
-            stopped_task="$(aws ecs list-tasks \
-              --cluster "$ECS_CLUSTER" \
-              --service-name "$service" \
-              --desired-status STOPPED \
-              --query 'taskArns[0]' \
-              --output text)"
-            if [ -n "$stopped_task" ] && [ "$stopped_task" != "None" ]; then
-              aws ecs describe-tasks \
-                --cluster "$ECS_CLUSTER" \
-                --tasks "$stopped_task" \
-                --query 'tasks[0].{stopCode:stopCode,stoppedReason:stoppedReason,containers:containers[*].{name:name,lastStatus:lastStatus,exitCode:exitCode,reason:reason}}' \
-                --output json
-            fi
             echo "::endgroup::"
           done
 
@@ -301,26 +316,35 @@ jobs:
           rollback_service() {
             local service="$1"
             local previous_task_definition="$2"
+            local previous_desired_count="$3"
             if [ -z "$previous_task_definition" ]; then
               echo "Missing previous task definition for $service." >&2
+              return 1
+            fi
+            if ! [[ "$previous_desired_count" =~ ^[0-9]+$ ]]; then
+              echo "Invalid previous desired count for $service." >&2
               return 1
             fi
             aws ecs update-service \
               --cluster "$ECS_CLUSTER" \
               --service "$service" \
               --task-definition "$previous_task_definition" \
+              --desired-count "$previous_desired_count" \
               >/dev/null
           }
 
           rollback_service \
             kt10-ai \
-            "${{ steps.taskdefs.outputs.ai_task_definition_previous }}"
+            "${{ steps.taskdefs.outputs.ai_task_definition_previous }}" \
+            "${{ steps.taskdefs.outputs.ai_previous_desired_count }}"
           rollback_service \
             kt10-backend \
-            "${{ steps.taskdefs.outputs.backend_task_definition_previous }}"
+            "${{ steps.taskdefs.outputs.backend_task_definition_previous }}" \
+            "${{ steps.taskdefs.outputs.backend_previous_desired_count }}"
           rollback_service \
             kt10-frontend \
-            "${{ steps.taskdefs.outputs.frontend_task_definition_previous }}"
+            "${{ steps.taskdefs.outputs.frontend_task_definition_previous }}" \
+            "${{ steps.taskdefs.outputs.frontend_previous_desired_count }}"
           aws ecs wait services-stable \
             --cluster "$ECS_CLUSTER" \
             --services kt10-ai kt10-backend kt10-frontend
