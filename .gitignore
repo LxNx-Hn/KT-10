@@ -16,6 +16,7 @@ claude-preview/
 .env
 .env.local
 .env.production
+.deploy-secrets/
 **/.env
 !**/.env.example
 
