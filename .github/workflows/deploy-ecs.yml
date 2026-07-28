@@ -226,7 +226,7 @@ jobs:
             --cluster "$ECS_CLUSTER" \
             --services kt10-ai \
             --query 'services[0].[taskDefinition,desiredCount,runningCount]' \
-            --output text)"
+            --output text)
           test "$actual" = "${{ steps.taskdefs.outputs.ai_task_definition }}"
           test "$desired" = "1"
           test "$running" = "1"
@@ -247,7 +247,7 @@ jobs:
             --cluster "$ECS_CLUSTER" \
             --services kt10-backend \
             --query 'services[0].[taskDefinition,desiredCount,runningCount]' \
-            --output text)"
+            --output text)
           test "$actual" = "${{ steps.taskdefs.outputs.backend_task_definition }}"
           test "$desired" = "1"
           test "$running" = "1"
@@ -268,7 +268,7 @@ jobs:
             --cluster "$ECS_CLUSTER" \
             --services kt10-frontend \
             --query 'services[0].[taskDefinition,desiredCount,runningCount]' \
-            --output text)"
+            --output text)
           test "$actual" = "${{ steps.taskdefs.outputs.frontend_task_definition }}"
           test "$desired" = "1"
           test "$running" = "1"
