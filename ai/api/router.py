@@ -12,11 +12,23 @@ from datetime import UTC, datetime
 from threading import Lock
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+import hmac
+
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from collectors.base import Coordinate
+from collectors.base import (
+    CollectorError,
+    CollectorNotConfigured,
+    Coordinate,
+)
 from collectors.odsay_collector import OdsayRouteCollector
+from collectors.odsay_instrumentation import (
+    adopt_correlation_id,
+    log_rank,
+    provider_candidate_index,
+    route_id_hash,
+)
 from collectors.tmap_collector import TmapRouteCollector
 from config import settings
 from features.extractor import (
@@ -42,7 +54,52 @@ from scoring.schema import AUXILIARY_FEATURE_COLS, validate_feature_values
 from scoring.snapshots import build_live_feature_snapshot
 from scoring.train import FEATURE_COLS, ModelNotReady, load_model_metadata, load_rankers
 
-router = APIRouter()
+INTERNAL_TOKEN_HEADER = "X-KT10-Internal-Token"
+CORRELATION_HEADER = "X-Correlation-ID"
+
+
+async def adopt_request_correlation_id(
+    value: str | None = Header(default=None, alias=CORRELATION_HEADER),
+) -> str:
+    """Backend 요청의 correlation ID를 AI 호출 계측에 이어붙인다.
+
+    ContextVar를 endpoint와 같은 실행 컨텍스트에서 설정해야 하므로
+    동기 함수(threadpool 실행)로 두지 않는다.
+    """
+    return adopt_correlation_id(value)
+
+
+def require_internal_token(
+    internal_token: str | None = Header(default=None, alias=INTERNAL_TOKEN_HEADER),
+) -> None:
+    """Backend 전용 endpoint를 내부 토큰으로 보호한다.
+
+    토큰 값은 로그·응답 어디에도 남기지 않는다. production에서 토큰이
+    설정되지 않았다면 열린 상태로 두지 않고 명시적으로 거부한다.
+    """
+    expected = settings.AI_INTERNAL_SERVICE_TOKEN.strip()
+    if not expected:
+        if settings.APP_ENV == "production":
+            raise HTTPException(
+                status_code=503,
+                detail="AI_INTERNAL_SERVICE_TOKEN is not configured.",
+            )
+        # 개발·테스트 환경은 토큰 없이 동작할 수 있다.
+        return
+    if internal_token is None or not hmac.compare_digest(
+        internal_token,
+        expected,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Valid internal service credentials are required.",
+        )
+
+
+router = APIRouter(dependencies=[
+    Depends(require_internal_token),
+    Depends(adopt_request_correlation_id),
+])
 
 _layers = None
 _rankers = None
@@ -327,6 +384,11 @@ def rank_candidates(req: RankCandidatesRequest) -> dict:
         req.profile,
         top_k=len(feature_rows),
     )
+    for item in ranked:
+        log_rank(
+            route_ids[item["route_index"]],
+            int(item["rank"]),
+        )
     return {
         "ranked": [
             {
@@ -347,6 +409,74 @@ def rank_candidates(req: RankCandidatesRequest) -> dict:
     }
 
 
+class RefineTransitRequest(BaseModel):
+    """백엔드 내부 refinement 서술자. 프론트엔드에 노출되지 않는다."""
+
+    origin_lat: float = Field(ge=34.8, le=35.5)
+    origin_lng: float = Field(ge=128.7, le=129.4)
+    dest_lat: float = Field(ge=34.8, le=35.5)
+    dest_lng: float = Field(ge=128.7, le=129.4)
+    map_object: str = Field(min_length=1, max_length=8000)
+    route_id: str | None = Field(default=None, min_length=1, max_length=200)
+    provider_candidate_index: int | None = Field(default=None, ge=1)
+
+
+@router.post("/routes/refine-transit")
+async def refine_transit(req: RefineTransitRequest) -> dict:
+    """선택된 후보 하나의 대중교통 정밀 선형(loadLane)만 조회한다.
+
+    검색·후보 재수집·순위화를 다시 실행하지 않으며, 실패는 정상 geometry로
+    위장하지 않고 명시적 오류로 반환한다.
+    """
+    collector = OdsayRouteCollector()
+    route_token = route_id_hash.set(
+        hashlib.sha256(req.route_id.encode("utf-8")).hexdigest()[:12]
+        if req.route_id
+        else ""
+    )
+    index_token = provider_candidate_index.set(
+        req.provider_candidate_index
+    )
+    try:
+        try:
+            lane_paths = await collector.refine_transit(
+                req.map_object,
+                Coordinate(lat=req.origin_lat, lng=req.origin_lng),
+                Coordinate(lat=req.dest_lat, lng=req.dest_lng),
+            )
+        except CollectorNotConfigured as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "message": str(exc),
+                    "code": exc.code,
+                    "retryable": False,
+                },
+            ) from exc
+        except CollectorError as exc:
+            # 오류 분류를 문자열이 아닌 구조로 전달해 Backend가 재시도 정책을
+            # 문자열 검색 없이 결정할 수 있게 한다.
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "message": str(exc),
+                    "code": getattr(exc, "code", "provider_error"),
+                    "retryable": bool(getattr(exc, "retryable", True)),
+                },
+            ) from exc
+    finally:
+        provider_candidate_index.reset(index_token)
+        route_id_hash.reset(route_token)
+    return {
+        "geometry_quality": "exact",
+        "refined_at": datetime.now(UTC).isoformat(),
+        "lane_paths": [
+            [{"lat": point.lat, "lng": point.lng} for point in path]
+            for path in lane_paths
+        ],
+    }
+
+
 @router.post("/recommend")
 async def recommend(req: RecommendRequest):
     """그늘 보강을 우회하는 이전 직접 추천 경로는 사용하지 않는다."""
@@ -363,6 +493,16 @@ async def recommend(req: RecommendRequest):
 @router.post("/labeling/candidates")
 async def labeling_candidates(req: RecommendRequest):
     """초기 라벨링용 후보와 당시 피처를 생성한다. 모델 준비 전에도 호출할 수 있다."""
+    if req.candidate_limit > settings.ODSAY_MAX_CANDIDATES:
+        # 요청보다 적게 수집한 결과를 정상 응답처럼 보이지 않게 한다.
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"요청한 후보 수 {req.candidate_limit}개가 서버 상한 "
+                f"{settings.ODSAY_MAX_CANDIDATES}개를 초과합니다. "
+                "후보 수를 줄여 다시 요청해 주세요."
+            ),
+        )
     route_features, collection_metadata = await _collect_featured_routes(req)
     group_id = _group_id(req)
     snapshots = _route_snapshots(
@@ -388,6 +528,7 @@ async def labeling_candidates(req: RecommendRequest):
                 "path": feature["_path"],
                 "segments": feature["_segments"],
                 "slope_segments": feature.get("_slope_segments", []),
+                "transit_refinement": feature.get("_transit_refinement"),
                 "features": {key: value for key, value in feature.items() if not key.startswith("_")},
                 "feature_snapshot": snapshot_by_route[route_id],
                 "trait_labels": traits_by_route[route_id],
@@ -488,6 +629,9 @@ async def _collect_static_featured_routes(
             ),
             "_slope_segments": slope_segments,
             "_geometry_quality": candidate.geometry_quality,
+            # 백엔드 내부 전용 대중교통 정밀화 서술자. 사용자 응답으로
+            # 전달되지 않도록 백엔드에서 직렬화 제외 필드에 보관한다.
+            "_transit_refinement": candidate.transit_refinement,
         }
         route_features.append(feature)
 
@@ -537,10 +681,30 @@ def _apply_request_features(
     return scoped
 
 
+def _walk_geometry_exact(feature: dict) -> bool:
+    """보행·환승 구간 geometry가 모두 exact인지 확인한다."""
+    walk_segments = [
+        segment
+        for segment in feature.get("_segments") or []
+        if segment.get("mode") in {"walk", "transfer"}
+    ]
+    return bool(walk_segments) and all(
+        segment.get("geometry_quality") == "exact"
+        for segment in walk_segments
+    )
+
+
 def _static_features_cacheable(route_features: list[dict]) -> bool:
-    """정확 보행 geometry와 90m 경사가 완성된 후보군을 캐시한다."""
+    """정확 보행 geometry와 90m 경사가 완성된 후보군을 캐시한다.
+
+    대중교통 표시 선형은 선택 시점에 지연 정밀화되므로 estimated여도
+    scoring 피처 캐시 저장을 막지 않는다.
+    """
     return bool(route_features) and all(
-        feature.get("_geometry_quality") == "exact"
+        (
+            feature.get("_geometry_quality") == "exact"
+            or _walk_geometry_exact(feature)
+        )
         and feature.get("elevation_status") == "estimated_90m"
         and bool(feature.get("_slope_segments"))
         for feature in route_features
@@ -760,20 +924,94 @@ def _summary(feature: dict) -> str:
     return " + ".join(labels) or "경로 후보"
 
 
+def _transit_identity(feature: dict) -> list:
+    """정밀화로 변하지 않는 대중교통 노선·승하차 식별자 sequence.
+
+    lane ID·승하차 정류장 ID·wayCode는 ODsay search 응답에 이미 들어 있고
+    loadLane 정밀화로 바뀌지 않는다. 표시 문자열만으로는 서로 다른 경로가
+    같은 route ID로 충돌할 수 있어 이 값들을 fingerprint에 포함한다.
+    mapObj 원문은 route ID·로그·응답 어디에도 넣지 않는다.
+    """
+    identity: list = []
+    for segment in feature.get("_segments") or []:
+        mode = segment.get("mode")
+        if mode not in {"bus", "subway"}:
+            continue
+        raw = segment.get("raw")
+        raw = raw if isinstance(raw, dict) else {}
+        lanes = raw.get("lane")
+        lane_ids = [
+            _first_known(lane, "busID", "busNo", "subwayCode", "name")
+            for lane in (lanes if isinstance(lanes, list) else [])
+            if isinstance(lane, dict)
+        ]
+        identity.append([
+            mode,
+            [value for value in lane_ids if value],
+            _first_known(raw, "startID", "startName"),
+            _first_known(raw, "endID", "endName"),
+            _first_known(raw, "wayCode", "way"),
+        ])
+    return identity
+
+
+def _first_known(mapping: dict, *keys: str) -> str | None:
+    for key in keys:
+        value = mapping.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
 def _route_id(feature: dict) -> str:
-    path = [
+    """대중교통 정밀화 전후 동일한 semantic 경로 식별자.
+
+    전체 정밀 path 해시는 loadLane 정밀화로 값이 바뀌므로 사용하지 않는다.
+    노선·승하차·보행 geometry는 정밀화로 변하지 않는 관측값이다.
+    """
+    walk_points = [
         Coordinate(lat=float(point["lat"]), lng=float(point["lng"]))
-        for point in feature["_path"]
+        for segment in feature["_segments"]
+        if segment.get("mode") in {"walk", "transfer"}
+        for point in segment.get("path") or []
     ]
-    sampled_path = sample_path_by_distance(path, n=41) or path
+    if not walk_points:
+        walk_points = [
+            Coordinate(lat=float(point["lat"]), lng=float(point["lng"]))
+            for point in feature["_path"]
+        ]
+    sampled_walk = sample_path_by_distance(walk_points, n=41) or walk_points
+    descriptor = feature.get("_transit_refinement")
+    raw_map_object = (
+        descriptor.get("map_object")
+        if isinstance(descriptor, dict)
+        else None
+    )
+    normalized_map_object_hash = None
+    if isinstance(raw_map_object, str) and raw_map_object.strip():
+        normalized_map_object = OdsayRouteCollector._load_lane_map_object(
+            raw_map_object
+        )
+        normalized_map_object_hash = hashlib.sha256(
+            normalized_map_object.encode("utf-8")
+        ).hexdigest()
     fingerprint = {
         "sources": sorted(feature["_sources"]),
-        "path": [
+        "map_object_hash": normalized_map_object_hash,
+        "walk_path": [
             [round(point.lat, 5), round(point.lng, 5)]
-            for point in sampled_path
+            for point in sampled_walk
         ],
+        # 표시 문자열이 같아도 실제 노선·승하차가 다르면 서로 다른 경로다.
+        "transit": _transit_identity(feature),
         "segments": [
-            [segment.get("mode"), segment.get("bus_route_name"), segment.get("station_name")]
+            [
+                segment.get("mode"),
+                segment.get("bus_route_name"),
+                segment.get("station_name"),
+                segment.get("description"),
+                segment.get("distance_m"),
+            ]
             for segment in feature["_segments"]
         ],
     }

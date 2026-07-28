@@ -18,6 +18,12 @@ class Settings(BaseSettings):
         env_file=_ENV_FILE, env_file_encoding="utf-8", env_ignore_empty=True, extra="ignore"
     )
 
+    # Backend 전용 내부 API 인증 토큰. Backend와 같은 값을 주입한다.
+    # 비어 있으면 개발 편의를 위해 인증을 요구하지 않지만, production
+    # 환경에서는 readiness가 실패한다.
+    AI_INTERNAL_SERVICE_TOKEN: str = ""
+    APP_ENV: Literal["development", "production", "test"] = "development"
+
     ODSAY_API_KEY: str = ""
     ODSAY_CACHE_DIR: str = ""
     ODSAY_CACHE_TTL_SECONDS: int = Field(
@@ -26,8 +32,15 @@ class Settings(BaseSettings):
         le=31_536_000,
     )
     ODSAY_TIMEOUT_SECONDS: int = Field(default=20, ge=5, le=600)
-    # ODsay 후보 수는 요청별 상한과 서버 상한 중 작은 값으로 결정한다.
+    # ODsay 후보 수의 절대 상한. 요청이 이 값을 넘으면 조용히 자르지 않고
+    # 명시적 오류를 반환한다.
     ODSAY_MAX_CANDIDATES: int = Field(default=10, ge=1, le=10)
+    # AI 프로세스 전체에서 동시에 열 수 있는 ODsay HTTP 요청 수
+    # (search와 loadLane 포함).
+    ODSAY_MAX_CONCURRENT_REQUESTS: int = Field(default=3, ge=1, le=10)
+    # 이 서비스가 하루에 관측한 ODsay network 호출의 운영 경고 기준.
+    # 초과해도 요청을 실패시키지 않고 운영 로그 경고만 남긴다.
+    ODSAY_DAILY_BUDGET: int = Field(default=1000, ge=1, le=1_000_000)
     # 일반 서비스는 ODsay loadLane 정밀 선형을 유지한다. 오프라인 보행망을
     # 쓰는 배치 수집은 정류장 연결선을 estimated로 기록하는 모드를 선택할 수 있다.
     ODSAY_LOAD_LANE_ENABLED: bool = True
@@ -40,6 +53,10 @@ class Settings(BaseSettings):
     # 지역 DEM 범위 밖에서는 영속 캐시의 공개 GLO-90 COG 또는
     # Open-Meteo API를 사용한다.
     ELEVATION_DEM_DIR: str = ""
+    # 운영 live 요청은 지역 DEM이 누락돼도 원격 COG 다운로드나 Open-Meteo
+    # network 호출로 대체하지 않는다(경사 미확인으로 명시). 개발·배치 수집
+    # 컨테이너만 이 값을 명시적으로 켜서 기존 fallback을 사용한다.
+    ELEVATION_NETWORK_FALLBACK_ENABLED: bool = False
     # QGIS에서 생성한 부산 90m DEM. 운영 경사는 이 로컬 파일에서 조회한다.
     ELEVATION_REGIONAL_DEM_PATH: str = ""
     TMAP_API_KEY: str = ""

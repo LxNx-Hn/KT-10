@@ -368,6 +368,18 @@ def _shadow_geometry_for_route(
     return unary_union(shadows) if shadows else Polygon()
 
 
+def building_height_counts(building_data: dict) -> tuple[int, int]:
+    """그림자 계산 없이 (높이 확인 건물 수, 전체 건물 수)만 센다."""
+    building_ids: set[str] = set()
+    known_height_ids: set[str] = set()
+    for building in building_data.get("buildings", []):
+        building_id = str(building.get("buildingId") or building.get("id"))
+        building_ids.add(building_id)
+        if validated_building_height(building.get("heightM")) is not None:
+            known_height_ids.add(building_id)
+    return len(known_height_ids), len(building_ids)
+
+
 def _shadow_polygons(
     azimuth_deg: float,
     elevation_deg: float,
@@ -589,6 +601,40 @@ def calculate_shade(
         for walking_path in walking_paths
     ]
     route_lines = [LineString(points) for points in projected_paths if len(points) >= 2]
+    if prepared_context is not None:
+        known_heights = prepared_context.known_height_buildings
+        total_buildings = prepared_context.total_buildings
+    else:
+        known_heights, total_buildings = building_height_counts(building_data)
+    coverage = (
+        known_heights / total_buildings if total_buildings else None
+    )
+    if (
+        data_quality == "public"
+        and total_buildings > 0
+        and known_heights < total_buildings
+    ):
+        # 관련 건물 높이가 완전하지 않으면 부분 그림자를 실제 그늘 비율처럼
+        # 표시하지 않는다. lower bound 추정도 만들지 않는다.
+        return ShadeSummary(
+            status="unavailable",
+            evaluated_at=evaluated_at,
+            total_walk_m=analyzed_walk_m,
+            solar_azimuth_deg=round(azimuth, 2),
+            solar_elevation_deg=round(elevation, 2),
+            building_height_coverage=round(coverage, 4)
+            if coverage is not None
+            else None,
+            building_count=total_buildings,
+            known_height_building_count=known_heights,
+            source=source,
+            data_quality=data_quality,
+            walking_geometry_quality=walking_quality,
+            calculation_note=(
+                "경로 주변 건물의 확인된 높이가 완전하지 않아 건물 그늘을 "
+                "계산하지 않았습니다."
+            ),
+        )
     if prepared_context is None:
         shadow_geometry, known_heights, total_buildings = _shadow_polygons(
             azimuth,
@@ -603,11 +649,6 @@ def calculate_shade(
             prepared_context,
             route_lines,
         )
-        known_heights = prepared_context.known_height_buildings
-        total_buildings = prepared_context.total_buildings
-    coverage = (
-        known_heights / total_buildings if total_buildings else None
-    )
     if shadow_geometry.is_empty:
         return ShadeSummary(
             status="unavailable",

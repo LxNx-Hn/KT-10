@@ -15,10 +15,29 @@ from app.providers.ai_pipeline import (
 )
 from app.settings import settings
 from app.shade import add_demo_shade
+from app.correlation import correlation_id
 
 
 ORIGIN = Place(id="origin", name="부산역", lat=35.1151, lng=129.0414)
 DESTINATION = Place(id="destination", name="서면역", lat=35.1578, lng=129.0594)
+
+
+def test_internal_ai_headers_preserve_request_correlation_id(monkeypatch):
+    """Backend→AI 호출은 내부 토큰과 동일한 요청 correlation ID를 보낸다."""
+    internal_token = "internal-service-token-for-tests-0123456789"
+    monkeypatch.setattr(
+        settings,
+        "ai_internal_service_token",
+        internal_token,
+    )
+    context_token = correlation_id.set("backend-trace-0003")
+    try:
+        headers = ai_pipeline._internal_headers()
+    finally:
+        correlation_id.reset(context_token)
+
+    assert headers["X-Correlation-ID"] == "backend-trace-0003"
+    assert headers["X-KT10-Internal-Token"] == internal_token
 
 
 def _candidate_payload() -> dict:

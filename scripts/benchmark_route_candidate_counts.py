@@ -1,4 +1,4 @@
-"""운영 API에서 후보 3·5·10개의 cold/warm 응답시간을 비교한다."""
+"""운영 API에서 후보 3·5·7·10개의 cold/warm 응답시간을 비교한다."""
 from __future__ import annotations
 
 import argparse
@@ -210,7 +210,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://localhost:8080")
     parser.add_argument("--od-catalog", type=Path, default=DEFAULT_OD_CATALOG)
-    parser.add_argument("--candidate-counts", default="3,5,10")
+    parser.add_argument("--candidate-counts", default="3,5,7,10")
     parser.add_argument("--cold-runs", type=int, default=20)
     parser.add_argument("--warm-runs", type=int, default=20)
     parser.add_argument("--timeout-seconds", type=float, default=120)

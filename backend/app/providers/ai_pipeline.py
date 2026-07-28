@@ -7,10 +7,12 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 
 from ..models import (
+    LatLng,
     LowFloorStatus,
     Place,
     RouteCandidate,
@@ -23,6 +25,7 @@ from ..models import (
     ScoringOptions,
     TerrainSummary,
 )
+from ..correlation import CORRELATION_HEADER, current as current_correlation_id
 from ..feedback_tokens import create_feedback_token
 from ..personalization import blended_rank_score, parse_state
 from ..scoring.utils import clamp, round1
@@ -41,9 +44,20 @@ class EnrichedCandidateBundle:
 
 
 class AIProviderError(RuntimeError):
-    def __init__(self, status_code: int, detail: str):
+    def __init__(
+        self,
+        status_code: int,
+        detail: str,
+        *,
+        code: str = "provider_error",
+        retryable: bool = True,
+    ):
         super().__init__(detail)
         self.status_code = status_code
+        # AI가 전달한 구조화 오류 분류. 재시도 정책을 문자열 검색 없이
+        # 결정하기 위해 사용한다.
+        self.code = code
+        self.retryable = retryable
 
 _WEATHER_TO_AI = {
     "normal": "normal", "heatwave": "heatwave", "coldwave": "coldwave",
@@ -101,6 +115,22 @@ def _pipeline_payload(
     }
 
 
+def _response_error_class(response: httpx.Response) -> tuple[str, bool]:
+    """AI 응답의 구조화 오류 분류를 읽는다. 없으면 재시도 가능으로 본다."""
+    try:
+        detail = response.json().get("detail")
+    except (ValueError, TypeError, AttributeError):
+        return "provider_error", True
+    if not isinstance(detail, dict):
+        return "provider_error", True
+    code = detail.get("code")
+    retryable = detail.get("retryable")
+    return (
+        str(code) if isinstance(code, str) and code else "provider_error",
+        bool(retryable) if isinstance(retryable, bool) else True,
+    )
+
+
 def _response_detail(response: httpx.Response) -> str:
     try:
         detail = response.json().get("detail")
@@ -122,6 +152,24 @@ def _response_detail(response: httpx.Response) -> str:
     return f"AI pipeline server returned HTTP {response.status_code}."
 
 
+INTERNAL_TOKEN_HEADER = "X-KT10-Internal-Token"
+
+
+def _internal_headers() -> dict[str, str]:
+    """내부 서비스 토큰과 correlation ID를 header로만 전달한다.
+
+    토큰은 query·log에 남기지 않는다.
+    """
+    headers: dict[str, str] = {}
+    token = settings.ai_internal_service_token.strip()
+    if token:
+        headers[INTERNAL_TOKEN_HEADER] = token
+    trace = current_correlation_id()
+    if trace:
+        headers[CORRELATION_HEADER] = trace
+    return headers
+
+
 async def _post_pipeline(path: str, payload: dict) -> dict:
     if not settings.ai_server_url:
         raise AIProviderError(503, "AI_SERVER_URL is not configured.")
@@ -130,6 +178,7 @@ async def _post_pipeline(path: str, payload: dict) -> dict:
             response = await client.post(
                 f"{settings.ai_server_url.rstrip('/')}{path}",
                 json=payload,
+                headers=_internal_headers(),
             )
             response.raise_for_status()
         data = response.json()
@@ -139,13 +188,21 @@ async def _post_pipeline(path: str, payload: dict) -> dict:
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
         log.warning("AI 경로 서버가 HTTP %s를 반환했습니다.", status)
+        code, retryable = _response_error_class(exc.response)
         raise AIProviderError(
             503 if status == 503 else 502,
             _response_detail(exc.response),
+            code=code,
+            retryable=retryable,
         ) from exc
     except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
         log.warning("AI 경로 서버 호출 실패 (%s)", type(exc).__name__)
-        raise AIProviderError(502, "AI pipeline server request failed.") from exc
+        raise AIProviderError(
+            502,
+            "AI pipeline server request failed.",
+            code="timeout" if isinstance(exc, httpx.TimeoutException)
+            else "network_error",
+        ) from exc
 
 
 async def get_ai_pipeline_candidates(
@@ -188,8 +245,15 @@ async def get_ai_pipeline_candidates(
 def _shade_enriched_features(
     route: RouteCandidate,
     options: ScoringOptions,
+    user_preference=None,
 ) -> dict[str, float | int | bool | None]:
-    """AI 수집 피처에 백엔드에서 검증한 건물 그늘 사실을 결합한다."""
+    """검증된 그늘과 현재 요청의 context-dependent 피처를 다시 결합한다.
+
+    최초 후보 수집 때 계산된 조건 피처를 그대로 재사용하면 profile·option
+    rescore가 새 사용자 조건을 모델 입력에 반영하지 못한다. 아래 계산은
+    AI ``_context_features`` 계약과 동일하며, 누락 관측값은 ``None``으로
+    유지한다.
+    """
     if not route.model_features:
         raise AIProviderError(502, "AI candidate has no fixed model features.")
     features = dict(route.model_features)
@@ -220,6 +284,60 @@ def _shade_enriched_features(
             0.0,
             route.total_walk_m * (1.0 - shade.shade_ratio),
         )
+    stairs = features.get("stair_count")
+    walk = features.get("walk_distance_m")
+    elevator = features.get("elevator_ratio")
+    low_floor = features.get("is_low_floor_bus")
+    transfer_count = features.get("transfer_count")
+    avoid_stairs = options.avoid_stairs or bool(
+        user_preference and user_preference.avoid_stairs_required
+    )
+    uses_wheelchair = bool(
+        user_preference and user_preference.uses_wheelchair
+    )
+    uses_walking_aid = bool(
+        user_preference and user_preference.uses_walking_aid
+    )
+    max_walk_distance_m = (
+        user_preference.max_walk_distance_m if user_preference else None
+    )
+    features.update({
+        "stair_avoidance_burden": stairs if avoid_stairs else 0.0,
+        "luggage_walk_burden": walk if options.carry_luggage else 0.0,
+        "luggage_stair_burden": stairs if options.carry_luggage else 0.0,
+        "low_floor_priority_mismatch": (
+            None
+            if options.low_floor_priority and low_floor is None
+            else float(options.low_floor_priority and low_floor is False)
+        ),
+        "wheelchair_stair_burden": stairs if uses_wheelchair else 0.0,
+        "wheelchair_elevator_gap": (
+            None
+            if uses_wheelchair and elevator is None
+            else (1.0 - float(elevator) if uses_wheelchair else 0.0)
+        ),
+        "walking_aid_walk_burden": walk if uses_walking_aid else 0.0,
+        "max_walk_excess_m": (
+            None
+            if max_walk_distance_m is not None and walk is None
+            else max(0.0, float(walk) - max_walk_distance_m)
+            if max_walk_distance_m is not None
+            else 0.0
+        ),
+        "weather_priority_walk_burden": (
+            walk if options.weather_avoid else 0.0
+        ),
+        "stroller_walk_burden": walk if options.stroller else 0.0,
+        "stroller_stair_burden": stairs if options.stroller else 0.0,
+        "stroller_elevator_gap": (
+            None
+            if options.stroller and elevator is None
+            else (1.0 - float(elevator) if options.stroller else 0.0)
+        ),
+        "minimize_transfers_burden": (
+            transfer_count if options.minimize_transfers else 0.0
+        ),
+    })
     return features
 
 
@@ -254,6 +372,7 @@ def _expected_enriched_snapshot_features(
 async def enrich_ai_pipeline_candidates(
     candidates: list[RouteCandidate],
     options: ScoringOptions,
+    user_preference=None,
 ) -> EnrichedCandidateBundle:
     """같은 그늘 피처·시각·해시를 학습, 추천, 후기에 공통 적용한다."""
     if not candidates:
@@ -270,14 +389,26 @@ async def enrich_ai_pipeline_candidates(
     if None in holdout_group_ids or len(holdout_group_ids) != 1:
         raise AIProviderError(502, "AI candidates do not share one holdout OD group.")
 
+    # 그늘 없음(None)은 오류가 아니라 정상 지원 상태다(0%와 구분).
+    # 계산된 그늘이 있는 후보끼리는 동일 평가시각을 요구하고, 하나도 없으면
+    # 이번 이동 조건의 평가 기준시각을 사용한다.
     evaluated_values = {
         route.shade.evaluated_at.astimezone(UTC).isoformat()
         for route in candidates
         if route.shade is not None
     }
-    if len(evaluated_values) != 1 or any(route.shade is None for route in candidates):
+    if len(evaluated_values) > 1:
         raise AIProviderError(502, "AI candidate shade evaluation time is inconsistent.")
-    shade_evaluated_at = next(iter(evaluated_values))
+    if evaluated_values:
+        shade_evaluated_at = next(iter(evaluated_values))
+    else:
+        reference = options.departure_at or datetime.now(UTC)
+        if reference.tzinfo is None:
+            # ScoringOptions.departure_at는 KST 로컬 시각으로 들어온다.
+            reference = reference.replace(
+                tzinfo=ZoneInfo("Asia/Seoul")
+            )
+        shade_evaluated_at = reference.astimezone(UTC).isoformat()
     raw_captured_values = {
         str(route.model_snapshot.get("captured_at") or "")
         for route in candidates
@@ -299,7 +430,7 @@ async def enrich_ai_pipeline_candidates(
             "AI candidate collection time is invalid.",
         ) from exc
     features_by_id = {
-        route.id: _shade_enriched_features(route, options)
+        route.id: _shade_enriched_features(route, options, user_preference)
         for route in candidates
     }
     data = await _post_pipeline(
@@ -315,7 +446,11 @@ async def enrich_ai_pipeline_candidates(
                     "base_snapshot_hash": route.model_snapshot_hash,
                     "sources": list(dict.fromkeys([
                         *route.sources,
-                        str(route.shade.source),
+                        *(
+                            [str(route.shade.source)]
+                            if route.shade is not None
+                            else []
+                        ),
                     ])),
                     "geometry_quality": route.geometry_quality,
                     "features": features_by_id[route.id],
@@ -489,11 +624,19 @@ async def rank_ai_pipeline_candidates(
     *,
     top_n: int = 5,
     personalization_state: str | None = None,
+    user_preference=None,
 ) -> list[ScoredRoute]:
     """건물 그늘까지 보강된 후보를 선택된 AI tier로 순위화한다."""
     if not candidates:
         raise AIProviderError(502, "No AI candidates to rank.")
-    await enrich_ai_pipeline_candidates(candidates, options)
+    if user_preference is None:
+        await enrich_ai_pipeline_candidates(candidates, options)
+    else:
+        await enrich_ai_pipeline_candidates(
+            candidates,
+            options,
+            user_preference,
+        )
     features_by_id = {
         route.id: dict(route.model_features)
         for route in candidates
@@ -708,6 +851,23 @@ def _to_route_candidate(
     ]
     if len(path) < 2:
         raise RuntimeError("ai pipeline route has no truthful geometry")
+    transit_refinement = r.get("transit_refinement")
+    if transit_refinement is not None and not isinstance(
+        transit_refinement, dict
+    ):
+        raise RuntimeError("ai pipeline transit refinement shape is invalid")
+    transit_segments = [
+        segment for segment in segments if segment.mode in ("bus", "subway")
+    ]
+    if not transit_segments or all(
+        segment.geometry_quality == "exact" for segment in transit_segments
+    ):
+        refinement_state = "exact"
+    elif transit_refinement is not None:
+        refinement_state = "not_loaded"
+    else:
+        # estimated 대중교통 선형이 있으나 정밀화 서술자가 없는 배치 모드.
+        refinement_state = "failed"
     return RouteCandidate(
         id=route_id,
         summary=summary,
@@ -739,7 +899,147 @@ def _to_route_candidate(
         model_holdout_group_id=model_holdout_group_id,
         model_snapshot_hash=model_snapshot_hash,
         model_snapshot=dict(snapshot) if isinstance(snapshot, dict) else {},
+        transit_refinement=transit_refinement,
+        transit_refinement_state=refinement_state,
     )
+
+
+def _valid_refinement_descriptor(descriptor: dict | None) -> dict | None:
+    """수집 시점에 저장한 서버 내부 refinement 서술자를 검증한다."""
+    if not isinstance(descriptor, dict):
+        return None
+    map_object = descriptor.get("map_object")
+    origin = descriptor.get("origin")
+    destination = descriptor.get("destination")
+    try:
+        parsed = {
+            "map_object": str(map_object),
+            "origin_lat": float(origin["lat"]),
+            "origin_lng": float(origin["lng"]),
+            "dest_lat": float(destination["lat"]),
+            "dest_lng": float(destination["lng"]),
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not parsed["map_object"].strip():
+        return None
+    provider_candidate_index = descriptor.get("provider_candidate_index")
+    if (
+        isinstance(provider_candidate_index, int)
+        and not isinstance(provider_candidate_index, bool)
+        and provider_candidate_index >= 1
+    ):
+        parsed["provider_candidate_index"] = provider_candidate_index
+    return parsed
+
+
+def apply_refined_transit_geometry(
+    route: RouteCandidate,
+    lane_paths: list[list[dict]],
+    *,
+    refined_at: datetime,
+) -> None:
+    """정밀 선형을 대중교통 구간에만 반영한다.
+
+    score·rank·model snapshot·feedback token·terrain·shade는 변경하지 않는다.
+    """
+    transit_segments = [
+        segment
+        for segment in route.segments
+        if segment.mode in ("bus", "subway")
+    ]
+    usable_paths = [path for path in lane_paths if len(path) >= 2]
+    if len(usable_paths) != len(transit_segments):
+        raise AIProviderError(
+            502,
+            "정밀 선형 수가 대중교통 구간 수와 일치하지 않습니다.",
+        )
+    for segment, lane_path in zip(transit_segments, usable_paths):
+        segment.path = [
+            LatLng(lat=float(point["lat"]), lng=float(point["lng"]))
+            for point in lane_path
+        ]
+        segment.geometry_quality = "exact"
+    merged_path: list[LatLng] = []
+    for segment in route.segments:
+        for point in segment.path or []:
+            candidate_point = (
+                point
+                if isinstance(point, LatLng)
+                else LatLng.model_validate(point)
+            )
+            if (
+                not merged_path
+                or merged_path[-1].lat != candidate_point.lat
+                or merged_path[-1].lng != candidate_point.lng
+            ):
+                merged_path.append(candidate_point)
+    if len(merged_path) >= 2:
+        route.path = merged_path
+    qualities = {
+        segment.geometry_quality
+        for segment in route.segments
+        if segment.geometry_quality is not None
+    }
+    route.geometry_quality = (
+        next(iter(qualities)) if len(qualities) == 1 else "mixed"
+    )
+    route.transit_refinement_state = "exact"
+    route.transit_refined_at = refined_at
+
+
+async def refine_candidate_transit(route: RouteCandidate) -> bool:
+    """선택된 후보의 대중교통 표시 선형만 AI 서버로 정밀화한다.
+
+    이미 exact이거나 정밀화 대상이 없으면 외부 호출 없이 False를 반환한다.
+    실패는 AIProviderError로 그대로 전달하며 가짜 성공으로 바꾸지 않는다.
+    """
+    if route.transit_refinement_state == "exact":
+        return False
+    descriptor = _valid_refinement_descriptor(route.transit_refinement)
+    if descriptor is None:
+        raise AIProviderError(
+            409,
+            "이 후보는 대중교통 정밀화를 지원하지 않습니다.",
+        )
+    data = await _post_pipeline(
+        "/routes/refine-transit",
+        {
+            "origin_lat": descriptor["origin_lat"],
+            "origin_lng": descriptor["origin_lng"],
+            "dest_lat": descriptor["dest_lat"],
+            "dest_lng": descriptor["dest_lng"],
+            "map_object": descriptor["map_object"],
+            "route_id": route.id,
+            "provider_candidate_index": descriptor.get(
+                "provider_candidate_index"
+            ),
+        },
+    )
+    lane_paths = data.get("lane_paths")
+    if (
+        str(data.get("geometry_quality") or "") != "exact"
+        or not isinstance(lane_paths, list)
+        or not lane_paths
+        or any(not isinstance(path, list) for path in lane_paths)
+    ):
+        raise AIProviderError(502, "AI 정밀 선형 응답이 유효하지 않습니다.")
+    refined_at_raw = str(data.get("refined_at") or "")
+    try:
+        refined_at = datetime.fromisoformat(
+            refined_at_raw.replace("Z", "+00:00")
+        )
+    except ValueError as exc:
+        raise AIProviderError(
+            502,
+            "AI 정밀 선형 완료시각이 유효하지 않습니다.",
+        ) from exc
+    apply_refined_transit_geometry(
+        route,
+        lane_paths,
+        refined_at=refined_at,
+    )
+    return True
 
 
 def _derive_low_floor_status(bus_used: bool, is_low_floor) -> LowFloorStatus:

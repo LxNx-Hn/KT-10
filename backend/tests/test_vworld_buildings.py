@@ -367,13 +367,91 @@ def test_public_shade_reports_height_coverage_without_zero_fill():
         datetime(2026, 7, 23, 14, 0, tzinfo=KST),
         buildings,
     )
-    assert shade.status == "estimated_public"
+    # 관련 건물 높이가 완전하지 않으면 부분 그림자를 실제 그늘처럼
+    # 표시하지 않고, lower bound 추정도 만들지 않는다.
+    assert shade.status == "unavailable"
     assert shade.data_quality == "public"
     assert shade.building_height_coverage == 0.5
-    assert shade.estimate_kind == "lower_bound"
     assert shade.known_height_building_count == 1
     assert shade.building_count == 2
-    assert shade.includes_tree_shade is False
+    assert shade.shade_ratio is None
+    assert shade.shaded_walk_m is None
+    assert shade.shadow_polygons == []
+    assert shade.path_segments == []
+
+
+def test_public_shade_with_99_percent_height_coverage_is_omitted():
+    """높이 coverage 99%는 계산 완료가 아니며 public shade로 노출하지 않는다."""
+    from app.main import _normalize_shade_for_response
+
+    footprint = [
+        {"lat": 35.1792, "lng": 129.0752},
+        {"lat": 35.1792, "lng": 129.0754},
+        {"lat": 35.1794, "lng": 129.0754},
+        {"lat": 35.1794, "lng": 129.0752},
+        {"lat": 35.1792, "lng": 129.0752},
+    ]
+    buildings = {
+        "source": "VWorld LT_C_BLDGINFO WFS",
+        "dataQuality": "public",
+        "buildings": [
+            {
+                "id": f"known-{index}",
+                "heightM": 15.0,
+                "footprint": footprint,
+            }
+            for index in range(99)
+        ]
+        + [{
+            "id": "unknown",
+            "heightM": None,
+            "footprint": footprint,
+        }],
+    }
+    route = _exact_route()
+    route.shade = calculate_shade(
+        route,
+        datetime(2026, 7, 23, 14, 0, tzinfo=KST),
+        buildings,
+    )
+
+    assert route.shade.status == "unavailable"
+    assert route.shade.building_height_coverage == pytest.approx(0.99)
+    assert route.shade.shade_ratio is None
+    _normalize_shade_for_response([route])
+    assert route.shade is None
+
+
+def test_public_shade_computes_ratio_with_complete_heights():
+    buildings = {
+        "source": "VWorld LT_C_BLDGINFO WFS",
+        "dataQuality": "public",
+        "buildings": [
+            {
+                "id": "known",
+                "heightM": 15.0,
+                "footprint": [
+                    {"lat": 35.1792, "lng": 129.0752},
+                    {"lat": 35.1792, "lng": 129.0754},
+                    {"lat": 35.1794, "lng": 129.0754},
+                    {"lat": 35.1794, "lng": 129.0752},
+                    {"lat": 35.1792, "lng": 129.0752},
+                ],
+            },
+        ],
+    }
+    shade = calculate_shade(
+        _exact_route(),
+        datetime(2026, 7, 23, 14, 0, tzinfo=KST),
+        buildings,
+    )
+    assert shade.status == "estimated_public"
+    assert shade.data_quality == "public"
+    assert shade.building_height_coverage == 1.0
+    assert shade.estimate_kind == "estimate"
+    assert shade.known_height_building_count == 1
+    assert shade.building_count == 1
+    assert shade.shade_ratio is not None
     assert shade.shadow_polygons
 
 

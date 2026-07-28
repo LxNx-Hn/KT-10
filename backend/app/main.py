@@ -10,7 +10,8 @@ import asyncio
 import hmac
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from threading import Lock
+from datetime import datetime, timedelta
 from functools import partial
 
 from fastapi import (
@@ -25,6 +26,11 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.auth import optional_current_user, router as auth_router
+from .correlation import (
+    CORRELATION_HEADER,
+    correlation_id,
+    normalize as normalize_correlation_id,
+)
 from .api.feedback import router as feedback_router
 from .config import DISTRICT
 from .database import init_database
@@ -38,14 +44,18 @@ from .models import (
     Place,
     RecommendRequest,
     RouteCandidate,
+    RouteSetRescoreRequest,
     ScoredRoute,
     ShadeRefreshRequest,
+    TransitRefineRequest,
+    TransitRefinementResponse,
     WeatherCondition,
 )
 from .providers import (
     enrich_ai_pipeline_candidates,
     get_ai_pipeline_candidates,
     rank_ai_pipeline_candidates,
+    refine_candidate_transit,
     get_current_weather,
     get_bus_arrivals,
     search_bus_stops,
@@ -54,7 +64,7 @@ from .providers import (
 from .providers.ai_pipeline import AIProviderError
 from .providers.vworld_buildings import get_vworld_buildings
 from .rule_demo import personalize_and_sign, select_representative_routes
-from .route_set_cache import route_set_cache
+from .route_set_cache import StaleRouteSetRevision, route_set_cache
 from .shade_cache import get_or_compute as get_or_compute_shade
 from .shade_cache import read as read_shade_cache
 from .scoring import recommend_routes
@@ -64,6 +74,7 @@ from .shade import (
     VWORLD_SHADE_SOURCE,
     add_demo_shade,
     assign_characteristics,
+    building_height_counts,
     calculate_shade,
     prepare_shade_context,
     resolve_shade_without_buildings,
@@ -98,8 +109,21 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
-    expose_headers=["X-Place-Search-Source"],
+    expose_headers=["X-Place-Search-Source", CORRELATION_HEADER],
 )
+
+@app.middleware("http")
+async def attach_correlation_id(request, call_next):
+    """요청 하나에서 발생한 Backend·AI·공급자 호출을 같은 ID로 묶는다."""
+    value = normalize_correlation_id(request.headers.get(CORRELATION_HEADER))
+    token = correlation_id.set(value)
+    try:
+        response = await call_next(request)
+    finally:
+        correlation_id.reset(token)
+    response.headers[CORRELATION_HEADER] = value
+    return response
+
 
 app.include_router(auth_router)
 app.include_router(feedback_router)
@@ -110,6 +134,54 @@ def _effective_departure(departure_at=None):
     if effective_at.tzinfo is None:
         return effective_at.replace(tzinfo=KST)
     return effective_at.astimezone(KST)
+
+
+def _effective_top_n(requested: int | None) -> int:
+    """요청 topN이 없을 때만 서버 운영 기본값을 적용한다."""
+    return requested if requested is not None else settings.route_default_top_n
+
+
+def _shade_gate_reason(
+    weather: WeatherCondition | None,
+    effective_at: datetime,
+) -> str | None:
+    """VWorld 조회 전에 저비용으로 그늘 계산 필요성을 판정한다.
+
+    None을 반환하면 계산을 진행하고, 사유 문자열을 반환하면 건물 조회와
+    그림자 계산 없이 그늘을 생략(None)한다. 태양 고도와 exact 보행
+    geometry는 이후 단계에서 검증한다.
+    """
+    if not 10 <= effective_at.hour < 18:
+        return "departure-outside-10-18-kst"
+    if weather is None:
+        return "no-weather-context"
+    observed_at = weather.observed_at
+    air_observed_at = weather.air_quality_observed_at
+    if (
+        observed_at is None
+        or observed_at.tzinfo is None
+        or air_observed_at is None
+        or air_observed_at.tzinfo is None
+    ):
+        return "invalid-weather-observation"
+    ttl_seconds = settings.weather_cache_ttl_seconds
+    if ttl_seconds <= 0:
+        # 관측 유효기간을 정의할 수 없으면 현재 관측을 임의로 유효하다고
+        # 가정하지 않는다.
+        return "weather-validity-window-disabled"
+    now = datetime.now(KST)
+    observation_age = (now - observed_at.astimezone(KST)).total_seconds()
+    if observation_age > ttl_seconds:
+        return "weather-observation-expired"
+    departure_offset = (
+        effective_at - observed_at.astimezone(KST)
+    ).total_seconds()
+    if departure_offset > ttl_seconds:
+        # 현재 관측값을 미래 예보처럼 사용하지 않는다.
+        return "departure-beyond-observation-validity"
+    if weather.feels_like_c is None or weather.feels_like_c < 25:
+        return "feels-like-below-25"
+    return None
 
 
 def _has_reusable_shade(
@@ -137,6 +209,7 @@ async def _add_configured_shade(
     candidates: list[RouteCandidate],
     departure_at=None,
     *,
+    weather: WeatherCondition | None = None,
     wait_for_buildings: bool = False,
     cache_only_buildings: bool = False,
 ) -> list[RouteCandidate]:
@@ -172,6 +245,14 @@ async def _add_configured_shade(
             status_code=503,
             detail="BUILDING_SOURCE=vworld requires VWORLD_API_KEY.",
         )
+    gate_reason = _shade_gate_reason(weather, effective_at)
+    if gate_reason is not None:
+        # 그늘 없음은 0%가 아니라 미계산 상태다. VWorld 조회·그림자 생성·
+        # 경로 교차 계산을 모두 생략하고 응답에서 shade를 생략한다.
+        for candidate in candidates:
+            candidate.shade = None
+        log.info("그늘 계산 생략 (%s): VWorld 호출 0회", gate_reason)
+        return assign_characteristics(candidates)
     cached_summaries = await asyncio.gather(*(
         asyncio.to_thread(
             read_shade_cache,
@@ -214,12 +295,19 @@ async def _add_configured_shade(
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    prepared_context = await asyncio.to_thread(
-        prepare_shade_context,
-        pending,
-        effective_at,
-        buildings,
-    )
+    known_heights, total_buildings = building_height_counts(buildings)
+    if total_buildings > 0 and known_heights < total_buildings:
+        # 관련 건물 높이가 불완전하면 그림자 폴리곤을 만들지 않는다.
+        # calculate_shade가 coverage gate에서 그림자 계산 없이
+        # unavailable을 반환한다.
+        prepared_context = None
+    else:
+        prepared_context = await asyncio.to_thread(
+            prepare_shade_context,
+            pending,
+            effective_at,
+            buildings,
+        )
     summaries = await asyncio.gather(*(
         asyncio.to_thread(
             get_or_compute_shade,
@@ -244,20 +332,411 @@ async def _add_configured_shade(
     return assign_characteristics(candidates)
 
 
-def _cache_scored_routes(
+
+#: public 응답에 남길 수 있는 그늘 상태. 나머지는 미계산으로 본다.
+_DISPLAYABLE_SHADE_STATUSES = frozenset({
+    "estimated_public",
+    "estimated_demo",
+    "not_daylight",
+})
+
+
+def _normalize_shade_for_response(
+    candidates: list[RouteCandidate],
+) -> list[RouteCandidate]:
+    """계산하지 못한 그늘을 응답 조립 단계에서 None으로 정규화한다.
+
+    ``unavailable``은 내부 계산 결과를 설명하는 상태일 뿐이며, 사용자
+    응답에 남기면 "그늘 정보가 있는데 값이 없는" 것처럼 보인다. 미계산은
+    필드 자체를 생략하고 0%로 바꾸지 않는다.
+    """
+    for candidate in candidates:
+        shade = candidate.shade
+        if shade is not None and shade.status not in _DISPLAYABLE_SHADE_STATUSES:
+            candidate.shade = None
+    return candidates
+
+
+def _create_cached_route_set(
     scored: list[ScoredRoute],
     candidates: list[RouteCandidate],
     weather: WeatherCondition,
     *,
-    token: str | None = None,
+    metadata: dict | None = None,
 ) -> list[ScoredRoute]:
-    if token is not None and route_set_cache.replace(token, candidates, weather):
-        route_set_token = token
-    else:
-        route_set_token = route_set_cache.put(candidates, weather)
+    """새 검색에서만 새 route-set token을 발급한다."""
+    route_set_token = route_set_cache.put(
+        candidates,
+        weather,
+        metadata=metadata,
+    )
     for item in scored:
         item.route_set_token = route_set_token
+    _normalize_shade_for_response([item.route for item in scored])
     return scored
+
+
+def _replace_cached_route_set(
+    scored: list[ScoredRoute],
+    candidates: list[RouteCandidate],
+    weather: WeatherCondition,
+    *,
+    token: str,
+    expected_revision: int | None = None,
+) -> list[ScoredRoute]:
+    """기존 route-set을 갱신한다. 실패를 새 token 발급으로 위장하지 않는다.
+
+    만료되었거나 다른 갱신이 앞선 경우 409로 새 검색이 필요함을 알린다.
+    """
+    try:
+        replaced = route_set_cache.replace(
+            token,
+            candidates,
+            weather,
+            expected_revision=expected_revision,
+        )
+    except StaleRouteSetRevision as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not replaced:
+        raise HTTPException(
+            status_code=409,
+            detail="경로 계산 정보가 만료되었습니다. 경로를 다시 검색해 주세요.",
+        )
+    for item in scored:
+        item.route_set_token = token
+    _normalize_shade_for_response([item.route for item in scored])
+    return scored
+
+
+#: 오류 분류별 재시도 대기시간(초). 영구 실패는 route-set 수명 동안 금지.
+_REFINEMENT_COOLDOWN_SECONDS = {
+    "timeout": 60,
+    "network_error": 30,
+    "upstream_5xx": 60,
+}
+_PERMANENT_REFINEMENT_FAILURES = frozenset({
+    "auth_failed",
+    "quota_exceeded",
+    "invalid_response",
+    "empty_geometry",
+    "not_configured",
+})
+
+
+def _record_refinement_failure(
+    candidate: RouteCandidate,
+    exc: AIProviderError,
+) -> None:
+    """실패 분류와 재시도 가능 시각을 후보에 기록한다."""
+    code = getattr(exc, "code", "provider_error")
+    permanent = code in _PERMANENT_REFINEMENT_FAILURES or not getattr(
+        exc, "retryable", True
+    )
+    now = datetime.now(KST)
+    candidate.transit_refinement_state = "failed"
+    candidate.transit_refinement_failure_code = code
+    candidate.transit_refinement_failed_at = now
+    candidate.transit_refinement_failure_permanent = permanent
+    candidate.transit_refinement_failure_count += 1
+    candidate.transit_refinement_retry_after = (
+        None
+        if permanent
+        else now
+        + timedelta(seconds=_REFINEMENT_COOLDOWN_SECONDS.get(code, 60))
+    )
+
+
+def _refinement_cooldown_response(candidate: RouteCandidate) -> None:
+    """cooldown·영구 실패 상태면 외부 호출 없이 명시적 오류를 낸다."""
+    if candidate.transit_refinement_state != "failed":
+        return
+    if candidate.transit_refinement_failure_permanent:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "이 후보의 대중교통 정밀화는 현재 경로 정보로는 다시 "
+                "시도할 수 없습니다. 경로를 다시 검색해 주세요."
+            ),
+        )
+    retry_after = candidate.transit_refinement_retry_after
+    if retry_after is None:
+        return
+    remaining = (retry_after - datetime.now(KST)).total_seconds()
+    if remaining <= 0:
+        return
+    raise HTTPException(
+        status_code=429,
+        detail="대중교통 정밀화를 잠시 후 다시 시도할 수 있습니다.",
+        headers={"Retry-After": str(max(1, int(remaining)))},
+    )
+
+
+_refinement_flights: dict[str, asyncio.Task] = {}
+_refinement_flights_guard = Lock()
+
+
+def _validated_refinement_candidate(cached, route_id: str) -> RouteCandidate:
+    candidate = next(
+        (item for item in cached.candidates if item.id == route_id),
+        None,
+    )
+    if candidate is None:
+        raise HTTPException(
+            status_code=422,
+            detail="요청한 경로가 이 route-set에 속하지 않습니다.",
+        )
+    if candidate.path is None or len(candidate.path) < 2:
+        raise HTTPException(
+            status_code=409,
+            detail="이 후보는 대중교통 정밀화를 지원하지 않습니다.",
+        )
+    return candidate
+
+
+def _refinement_response(candidate: RouteCandidate) -> TransitRefinementResponse:
+    return TransitRefinementResponse(
+        route_id=candidate.id,
+        path=list(candidate.path or []),
+        segments=list(candidate.segments),
+        geometry_quality=candidate.geometry_quality or "mixed",
+        refined_at=candidate.transit_refined_at,
+    )
+
+
+def _refinement_patch(refined: RouteCandidate):
+    def _apply(target: RouteCandidate) -> None:
+        target.path = refined.path
+        target.segments = refined.segments
+        target.geometry_quality = refined.geometry_quality
+        target.transit_refinement_state = refined.transit_refinement_state
+        target.transit_refined_at = refined.transit_refined_at
+        # 성공하면 이전 실패 metadata를 지운다.
+        target.transit_refinement_failure_code = None
+        target.transit_refinement_failed_at = None
+        target.transit_refinement_retry_after = None
+        target.transit_refinement_failure_permanent = False
+        target.transit_refinement_failure_count = 0
+
+    return _apply
+
+
+def _failure_patch(failed: RouteCandidate):
+    def _mark_failed(target: RouteCandidate) -> None:
+        target.transit_refinement_state = "failed"
+        target.transit_refinement_failure_code = (
+            failed.transit_refinement_failure_code
+        )
+        target.transit_refinement_failed_at = (
+            failed.transit_refinement_failed_at
+        )
+        target.transit_refinement_retry_after = (
+            failed.transit_refinement_retry_after
+        )
+        target.transit_refinement_failure_permanent = (
+            failed.transit_refinement_failure_permanent
+        )
+        target.transit_refinement_failure_count = (
+            failed.transit_refinement_failure_count
+        )
+
+    return _mark_failed
+
+
+async def _single_flight_refinement(
+    token: str,
+    route_id: str,
+    candidate: RouteCandidate,
+) -> RouteCandidate:
+    """같은 후보의 동시 정밀화 요청을 하나의 외부 호출로 합친다."""
+    key = f"{token}\u001f{route_id}"
+
+    async def _run() -> RouteCandidate:
+        try:
+            await refine_candidate_transit(candidate)
+        except AIProviderError as exc:
+            _record_refinement_failure(candidate, exc)
+            route_set_cache.update_candidate(
+                token,
+                route_id,
+                _failure_patch(candidate),
+            )
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail=str(exc),
+            ) from exc
+        return candidate
+
+    with _refinement_flights_guard:
+        task = _refinement_flights.get(key)
+        if task is None:
+            task = asyncio.get_running_loop().create_task(_run())
+            _refinement_flights[key] = task
+            task.add_done_callback(
+                lambda finished, flight_key=key: (
+                    _refinement_flights.pop(flight_key, None)
+                    if _refinement_flights.get(flight_key) is finished
+                    else None
+                )
+            )
+    return await asyncio.shield(task)
+
+
+async def _rescore_cached_route_set(
+    req: ShadeRefreshRequest,
+    user: User | None,
+) -> list[ScoredRoute]:
+    """저장된 route-set만으로 그늘·순위를 다시 계산한다.
+
+    같은 route-set의 refinement·다른 갱신과 토큰 잠금으로 직렬화해 서로의
+    결과를 덮어쓰지 않는다. 새 ODsay·TMAP·VWorld corridor·고도 조회는
+    수행하지 않는다.
+    """
+    async with route_set_cache.lock_existing(req.route_set_token) as cached:
+        if cached is None:
+            raise HTTPException(
+                status_code=409,
+                detail="경로 계산 정보가 만료되었습니다. 경로를 다시 검색해 주세요.",
+            )
+        stored_effective = cached.metadata.get("effectiveTopN")
+        effective_top_n = (
+            req.top_n
+            if req.top_n is not None
+            else stored_effective
+            if isinstance(stored_effective, int)
+            else settings.route_default_top_n
+        )
+        if effective_top_n > len(cached.candidates):
+            # 기존 route-set이 수집한 후보 수를 넘는 topN은 새 후보를
+            # 조용히 만들지 않고 새 검색을 명시적으로 요구한다.
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"이 route-set은 후보 {len(cached.candidates)}개로 "
+                    f"생성되었습니다. 후보 {effective_top_n}개가 필요하면 "
+                    "경로를 다시 검색해 주세요."
+                ),
+            )
+
+        candidates = cached.candidates
+        rescore_weather = cached.weather
+        if (
+            isinstance(req, RouteSetRescoreRequest)
+            and req.weather_scenario is not None
+            and not settings.live_weather
+        ):
+            # 고정 시나리오는 공급자 호출 없이 바꿀 수 있다. live weather는
+            # route-set 생성 시 저장한 실제 관측을 그대로 재사용한다.
+            rescore_weather = WEATHER_SCENARIOS[
+                req.weather_scenario
+            ].model_copy(deep=True)
+        user_preference = user.preference if user and user.preference else None
+        try:
+            candidates = await _add_configured_shade(
+                candidates,
+                req.options.departure_at,
+                weather=rescore_weather,
+                cache_only_buildings=True,
+            )
+            if settings.route_mode == "ai":
+                rank_kwargs = {
+                    "top_n": effective_top_n,
+                    "personalization_state": (
+                        user_preference.personalization_state
+                        if user_preference
+                        else None
+                    ),
+                }
+                if user_preference is not None:
+                    rank_kwargs["user_preference"] = user_preference
+                scored = await rank_ai_pipeline_candidates(
+                    candidates,
+                    req.profile,
+                    req.options,
+                    **rank_kwargs,
+                )
+                return _replace_cached_route_set(
+                    scored,
+                    candidates,
+                    rescore_weather,
+                    token=req.route_set_token,
+                    expected_revision=cached.revision,
+                )
+
+            if settings.route_mode == "live":
+                if user_preference is None:
+                    await enrich_ai_pipeline_candidates(
+                        candidates,
+                        req.options,
+                    )
+                else:
+                    await enrich_ai_pipeline_candidates(
+                        candidates,
+                        req.options,
+                        user_preference,
+                    )
+            scored = recommend_routes(
+                candidates,
+                rescore_weather,
+                req.profile,
+                req.options,
+                top_n=len(candidates),
+            )
+            selected = select_representative_routes(scored, effective_top_n)
+            personalized = personalize_and_sign(
+                selected,
+                req.profile,
+                user.preference.personalization_state if user and user.preference else None,
+                req.options,
+            )
+            return _replace_cached_route_set(
+                personalized,
+                candidates,
+                rescore_weather,
+                token=req.route_set_token,
+                expected_revision=cached.revision,
+            )
+        except StaleRouteSetRevision as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except AIProviderError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+def _route_set_metadata(
+    *,
+    requested_top_n: int | None,
+    effective_top_n: int,
+    candidates: list[RouteCandidate],
+) -> dict:
+    return {
+        "originalRequestedTopN": requested_top_n,
+        "effectiveTopN": effective_top_n,
+        "collectedCandidateCount": len(candidates),
+        "routeDefaultTopNAtCreation": settings.route_default_top_n,
+    }
+
+
+async def _refine_top_ranked_transit(scored: list[ScoredRoute]) -> None:
+    """최종 1위 후보의 대중교통 표시 선형만 최초 1회 정밀화한다.
+
+    실패 정책 B: 기존 UI가 estimated geometry를 점선과 품질 라벨로 구분해
+    표시하므로, 1위 정밀화 실패는 estimated 상태의 부분 성공으로 반환하고
+    오류는 로그·계측에만 기록한다. 가짜 exact geometry는 만들지 않는다.
+    """
+    if not scored:
+        return
+    top = scored[0].route
+    if top.transit_refinement_state == "exact":
+        return
+    try:
+        await refine_candidate_transit(top)
+    except AIProviderError as exc:
+        top.transit_refinement_state = "failed"
+        log.warning(
+            "최초 1위 대중교통 정밀화 실패(HTTP %s): estimated 선형으로 응답",
+            exc.status_code,
+        )
 
 
 @app.get("/api/health")
@@ -378,9 +857,11 @@ async def routes_candidates(req: CandidatesRequest) -> list[RouteCandidate]:
             candidates = await get_ai_pipeline_candidates(req.origin, req.destination)
         except AIProviderError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-        return await _add_configured_shade(
-            _filter_viable_candidates(candidates),
-            wait_for_buildings=True,
+        return _normalize_shade_for_response(
+            await _add_configured_shade(
+                _filter_viable_candidates(candidates),
+                wait_for_buildings=True,
+            )
         )
     if settings.route_mode == "ai":
         raise HTTPException(
@@ -388,7 +869,9 @@ async def routes_candidates(req: CandidatesRequest) -> list[RouteCandidate]:
             detail="AI mode exposes ranked routes through /api/routes/recommend.",
         )
     candidates = get_route_candidates(req.origin, req.destination)
-    return await _add_configured_shade(_filter_viable_candidates(candidates))
+    return _normalize_shade_for_response(
+        await _add_configured_shade(_filter_viable_candidates(candidates))
+    )
 
 
 @app.post(
@@ -404,6 +887,8 @@ async def routes_recommend(
     상위 N 추천(이유/주의/음성요약 포함) 반환.
     ROUTE_MODE에 따라 demo/live/ai 공급자를 명시적으로 선택한다.
     """
+    requested_top_n = req.top_n
+    effective_top_n = _effective_top_n(requested_top_n)
     if settings.route_mode == "ai":
         if not settings.live_ai_pipeline:
             raise HTTPException(status_code=503, detail="ROUTE_MODE=ai requires AI_SERVER_URL.")
@@ -417,29 +902,38 @@ async def routes_recommend(
                 req.options,
                 user_preference=(user.preference if user else None),
                 weather_condition=current_weather,
-                candidate_limit=req.top_n,
+                candidate_limit=effective_top_n,
             )
             candidates = _filter_viable_candidates(candidates)
             candidates = await _add_configured_shade(
                 candidates,
                 req.options.departure_at,
+                weather=current_weather,
                 wait_for_buildings=True,
             )
             scored = await rank_ai_pipeline_candidates(
                 candidates,
                 req.profile,
                 req.options,
-                top_n=req.top_n,
+                top_n=effective_top_n,
                 personalization_state=(
                     user.preference.personalization_state
                     if user and user.preference
                     else None
                 ),
+                user_preference=(user.preference if user else None),
             )
-            return _cache_scored_routes(
+            # 순위·score·snapshot 확정 후 최종 1위 표시 선형만 정밀화한다.
+            await _refine_top_ranked_transit(scored)
+            return _create_cached_route_set(
                 scored,
                 candidates,
                 current_weather,
+                metadata=_route_set_metadata(
+                    requested_top_n=requested_top_n,
+                    effective_top_n=effective_top_n,
+                    candidates=candidates,
+                ),
             )
         except AIProviderError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -464,7 +958,7 @@ async def routes_recommend(
                 req.options,
                 user_preference=(user.preference if user else None),
                 weather_condition=current_weather,
-                candidate_limit=req.top_n,
+                candidate_limit=effective_top_n,
             )
             candidates = _filter_viable_candidates(candidates)
         except AIProviderError as exc:
@@ -476,11 +970,16 @@ async def routes_recommend(
     candidates = await _add_configured_shade(
         candidates,
         req.options.departure_at,
+        weather=weather,
         wait_for_buildings=(settings.route_mode == "live"),
     )
     if settings.route_mode == "live":
         try:
-            await enrich_ai_pipeline_candidates(candidates, req.options)
+            await enrich_ai_pipeline_candidates(
+                candidates,
+                req.options,
+                user.preference if user else None,
+            )
         except AIProviderError as exc:
             raise HTTPException(
                 status_code=exc.status_code,
@@ -496,7 +995,7 @@ async def routes_recommend(
     )
     # 대표 특성은 배지로만 보존하고 결과 순서는 프로필·이번 이동 조건의
     # 비교 적합 점수순으로 유지한다.
-    selected = select_representative_routes(scored, req.top_n)
+    selected = select_representative_routes(scored, effective_top_n)
     try:
         personalized = personalize_and_sign(
             selected,
@@ -504,10 +1003,17 @@ async def routes_recommend(
             user.preference.personalization_state if user and user.preference else None,
             req.options,
         )
-        return _cache_scored_routes(
+        if settings.route_mode == "live":
+            await _refine_top_ranked_transit(personalized)
+        return _create_cached_route_set(
             personalized,
             candidates,
             weather,
+            metadata=_route_set_metadata(
+                requested_top_n=requested_top_n,
+                effective_top_n=effective_top_n,
+                candidates=candidates,
+            ),
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -522,66 +1028,89 @@ async def routes_refresh_shade(
     req: ShadeRefreshRequest,
     user: User | None = Depends(optional_current_user),
 ) -> list[ScoredRoute]:
-    """기존 서버 후보로 시각별 그늘만 갱신하고 동일 후보군을 재순위화한다."""
-    cached = route_set_cache.get(req.route_set_token)
-    if cached is None:
+    """기존 서버 후보로 시각별 그늘만 갱신하고 동일 후보군을 재순위화한다.
+
+    같은 route-set의 refinement·다른 갱신과 토큰 잠금으로 직렬화해 서로의
+    결과를 덮어쓰지 않는다. 새 ODsay·TMAP·VWorld corridor·고도 조회는
+    수행하지 않는다.
+    """
+    return await _rescore_cached_route_set(req, user)
+
+
+@app.post(
+    "/api/routes/rescore",
+    response_model=list[ScoredRoute],
+    response_model_exclude_none=True,
+)
+async def routes_rescore(
+    req: RouteSetRescoreRequest,
+    user: User | None = Depends(optional_current_user),
+) -> list[ScoredRoute]:
+    """프로필·이동 조건 변경을 기존 route-set 재순위화로 처리한다.
+
+    후보 재수집 없이 저장된 후보 metadata·exact 보행 geometry·terrain·
+    이미 정밀화된 대중교통 선형을 그대로 재사용한다. ODsay search,
+    ODsay loadLane, TMAP, 고도 공급자 호출은 발생하지 않으며 route-set
+    token도 바뀌지 않는다.
+
+    새 추천 판단이므로 score·rank·model snapshot·feedback token·카드
+    순서는 달라질 수 있다. 날씨는 route-set 생성 시점의 관측값을
+    재사용하며 새 OpenWeather 호출을 만들지 않는다.
+    """
+    return await _rescore_cached_route_set(req, user)
+
+
+@app.post(
+    "/api/routes/refine-transit",
+    response_model=TransitRefinementResponse,
+    response_model_exclude_none=True,
+)
+async def routes_refine_transit(
+    req: TransitRefineRequest,
+) -> TransitRefinementResponse:
+    """기존 추천 카드에서 선택한 후보의 대중교통 표시 선형만 정밀화한다.
+
+    ODsay search·전체 recommend·score 재계산은 수행하지 않으며, route ID·
+    카드 순서·model snapshot·feedback token은 변경하지 않는다. 이미
+    정밀화된 후보 재선택은 캐시를 재사용해 외부 호출을 만들지 않는다.
+
+    외부 공급자 호출은 route-set 전체 잠금 밖에서 수행한다. 서로 다른
+    후보의 정밀화가 불필요하게 직렬화되지 않고, 같은 후보의 동시 요청만
+    single-flight로 합쳐진다.
+    """
+    # 1) 짧은 잠금: 존재·소속·상태·cooldown 확인과 revision 캡처
+    async with route_set_cache.lock_existing(req.route_set_token) as cached:
+        if cached is None:
+            raise HTTPException(
+                status_code=409,
+                detail="경로 계산 정보가 만료되었습니다. 경로를 다시 검색해 주세요.",
+            )
+        candidate = _validated_refinement_candidate(cached, req.route_id)
+        if candidate.transit_refinement_state == "exact":
+            return _refinement_response(candidate)
+        _refinement_cooldown_response(candidate)
+        pending = candidate.model_copy(deep=True)
+
+    # 2) 잠금 밖에서 외부 호출. 같은 후보 동시 요청은 하나로 합친다.
+    refined = await _single_flight_refinement(
+        req.route_set_token,
+        req.route_id,
+        pending,
+    )
+
+    # 3) 짧은 잠금: 해당 후보만 원자적으로 patch
+    updated = route_set_cache.update_candidate(
+        req.route_set_token,
+        req.route_id,
+        _refinement_patch(refined),
+    )
+    if updated is None:
+        # 응답이 늦게 도착했고 route-set이 이미 만료됐다면 결과를 버린다.
         raise HTTPException(
             status_code=409,
             detail="경로 계산 정보가 만료되었습니다. 경로를 다시 검색해 주세요.",
         )
-
-    candidates = cached.candidates
-    try:
-        candidates = await _add_configured_shade(
-            candidates,
-            req.options.departure_at,
-            cache_only_buildings=True,
-        )
-        if settings.route_mode == "ai":
-            scored = await rank_ai_pipeline_candidates(
-                candidates,
-                req.profile,
-                req.options,
-                top_n=req.top_n,
-                personalization_state=(
-                    user.preference.personalization_state
-                    if user and user.preference
-                    else None
-                ),
-            )
-            return _cache_scored_routes(
-                scored,
-                candidates,
-                cached.weather,
-                token=req.route_set_token,
-            )
-
-        if settings.route_mode == "live":
-            await enrich_ai_pipeline_candidates(candidates, req.options)
-        scored = recommend_routes(
-            candidates,
-            cached.weather,
-            req.profile,
-            req.options,
-            top_n=len(candidates),
-        )
-        selected = select_representative_routes(scored, req.top_n)
-        personalized = personalize_and_sign(
-            selected,
-            req.profile,
-            user.preference.personalization_state if user and user.preference else None,
-            req.options,
-        )
-        return _cache_scored_routes(
-            personalized,
-            candidates,
-            cached.weather,
-            token=req.route_set_token,
-        )
-    except AIProviderError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return _refinement_response(refined)
 
 
 @app.post("/api/routes/labeling-candidates")
@@ -616,11 +1145,12 @@ async def routes_labeling_candidates(
             req.weather_scenario,
             req.options,
             weather_condition=current_weather,
-            candidate_limit=req.top_n,
+            candidate_limit=_effective_top_n(req.top_n),
         )
         candidates = await _add_configured_shade(
             candidates,
             req.options.departure_at,
+            weather=current_weather,
             wait_for_buildings=True,
         )
         bundle = await enrich_ai_pipeline_candidates(candidates, req.options)

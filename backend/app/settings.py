@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # ai/ 파이프라인 서버(경로 수집+XGB 순위화). 설정 시 /api/routes/recommend가
     # 자체 scoring 엔진 대신 이 서버로 위임한다.
     ai_server_url: str = ""
+    # AI 내부 API 인증 토큰. AI 서비스에 같은 값을 주입한다.
+    ai_internal_service_token: str = ""
 
     # PostgreSQL + Kakao 로그인. 실제 값은 배포 환경변수로만 주입한다.
     database_url: str = ""
@@ -61,6 +63,10 @@ class Settings(BaseSettings):
     allowed_origins: str = (
         "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173"
     )
+
+    # 운영 기본 추천 후보 수. 요청 body의 topN이 없을 때만 적용하며,
+    # 변경은 서비스 재시작 후 새 검색부터 반영된다(기존 route-set 소급 없음).
+    route_default_top_n: int = Field(default=5, ge=1, le=10)
 
     # 외부 호출 타임아웃(초)
     request_timeout: float = Field(default=4.0, gt=0, le=60)
@@ -231,6 +237,11 @@ class Settings(BaseSettings):
             "kakao_login": self.kakao_login_configured,
             "personalization_policy": self.personalization_configured,
             "labeling_batch_auth": len(self.labeling_api_token.strip()) >= 32,
+            "ai_internal_service_auth": (
+                len(self.ai_internal_service_token.strip()) >= 32
+                if self.ai_server_url.strip()
+                else True
+            ),
         }
 
     def active_sources(self) -> dict[str, str]:

@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "reportKind": "main-selective-route-optimization-verification",
+  "generatedAt": "2026-07-29T06:04:32+09:00",
+  "git": {
+    "branch": "main",
+    "baseSha": "d9f8392f7f39ea8518098ea6c49488ff254e3899",
+    "workingTreeDiffHash": "ec878c9581a4ec87d42b69fa8aa3ab5f1c9dd10a",
+    "comparisonShas": {
+      "v1.0.0Commit": "f56f414c89e8435797e86b420b926017cb91f979",
+      "v1.0.1Commit": "eb77e3fd321772f3aa360fef00b8d07f31863f93",
+      "lazyRefinementHead": "ee84e4f27726cc34e0099cb5489cf4015060d884"
+    },
+    "committedOnPublish": true,
+    "codePushedTo": "origin/main",
+    "gitRefCleanupPushed": true
+  },
+  "scope": {
+    "frontendSourceChanged": false,
+    "frontendPreservedFrom": "origin/main",
+    "applied": [
+      "ODsay adaptive candidate collection and lazy transit refinement APIs",
+      "route-set rescore and concurrency controls",
+      "10:00-18:00 KST shade and weather-validity gate",
+      "ODsay cache, single-flight, semaphore, counters and private API authentication"
+    ]
+  },
+  "branchCleanup": {
+    "localBranches": ["main"],
+    "remoteBranches": ["main"],
+    "archivedNonMainTipsAsTags": true,
+    "pullRequest18State": "CLOSED_UNMERGED"
+  },
+  "environment": {
+    "os": "Windows PowerShell",
+    "python": "3.12.7",
+    "node": "22.18.0",
+    "npm": "10.9.3",
+    "backendWorkers": 1,
+    "aiWorkers": 1,
+    "routeSetTtlSeconds": 1800
+  },
+  "tests": {
+    "ai": {"passed": 231, "skipped": 2, "failed": 0},
+    "backend": {"passed": 274, "skipped": 1, "failed": 0},
+    "frontend": {"passed": 108, "failed": 0},
+    "frontendA11y": {"passed": 5, "skipped": 1, "failed": 0},
+    "typescript": "PASS",
+    "viteProductionBuild": "PASS",
+    "compileall": "PASS",
+    "ruffCiRules": "PASS",
+    "bandit": "PASS",
+    "pipCheck": "PASS",
+    "pipAuditAi": "PASS",
+    "pipAuditBackend": "PASS",
+    "npmAudit": "PASS"
+  },
+  "mockOdsayMatrix": {
+    "topN3": {"search": 1, "initialRankOneLoadLane": 1, "total": 2},
+    "topN5": {"search": 1, "initialRankOneLoadLane": 1, "total": 2},
+    "topN7": {"search": 1, "initialRankOneLoadLane": 1, "total": 2},
+    "topN10": {"search": 1, "initialRankOneLoadLane": 1, "total": 2},
+    "sameOdConcurrent10Search": 1,
+    "sameCandidateConcurrent10LoadLane": 1,
+    "reselectionAdditionalLoadLane": 0,
+    "verification": "mock HTTP transport; no live provider calls"
+  },
+  "latency": {
+    "status": "NOT MEASURED",
+    "reason": "No valid staging provider run was performed in this integration turn."
+  },
+  "docker": {
+    "composeConfig": "PASS_WITH_EPHEMERAL_VALIDATION_TOKEN",
+    "imageBuild": "NOT MEASURED",
+    "runtimeHealth": "NOT MEASURED",
+    "reason": "Docker Desktop Linux engine pipe was unavailable."
+  },
+  "liveProviders": {
+    "odsay": "NOT MEASURED",
+    "tmap": "NOT MEASURED",
+    "vworld": "NOT MEASURED",
+    "openweather": "NOT MEASURED"
+  }
+}
