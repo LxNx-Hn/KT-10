@@ -29,8 +29,8 @@ import { serverRankedRecommendations } from '@/utils/routes';
 import KakaoMap, { SLOPE_COLOR_RAMP } from './KakaoMap';
 import BottomDrawer from './components/BottomDrawer';
 import PlaceCombobox from './components/PlaceCombobox';
-import RouteCarousel from './components/RouteCarousel';
 import RouteDetails from './components/RouteDetails';
+import RouteResultList from './components/RouteResultList';
 import {
   buildRouteViewModel,
 } from './routeViewModel';
@@ -699,7 +699,7 @@ export default function MapFirstApp() {
                       ▾
                     </span>
                   </button>
-                  <RouteCarousel
+                  <RouteResultList
                     recommendations={ranked}
                     profile={profile}
                     selectedRouteId={selectedRouteId}

@@ -456,7 +456,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(details?.textContent).toContain('계단 3개');
   });
 
-  it('서버 순위 카드와 지도 선택이 동기화되고 스크롤·버튼·키보드로 이동한다', async () => {
+  it('서버 순위 카드와 지도 선택이 동기화되고 카드·지도·키보드로 이동한다', async () => {
     const { container, getByLabelText, getByRole } = render(<App />);
     act(() => seedResults());
     const ranked = useAppStore.getState().recommendations;
@@ -468,23 +468,13 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(cards.map((card) => card.dataset.routeId)).toEqual(
       ranked.map(({ route }) => route.id),
     );
+    expect(
+      container.querySelector('.map-first__route-stack')?.getAttribute(
+        'role',
+      ),
+    ).toBe('list');
 
-    const viewport = container.querySelector<HTMLElement>(
-      '.map-first__route-viewport',
-    )!;
-    fireEvent.click(getByLabelText('다음 경로 보기'));
-    expect(useAppStore.getState().selectedRouteId).toBe(
-      ranked[1].route.id,
-    );
-    // 브라우저의 즉시 스크롤 이벤트가 프로그램 선택을 첫 카드로
-    // 되돌리지 않아야 한다.
-    fireEvent.scroll(viewport);
-    await act(
-      () =>
-        new Promise<void>((resolve) => {
-          window.setTimeout(resolve, 220);
-        }),
-    );
+    fireEvent.click(cards[1]);
     expect(useAppStore.getState().selectedRouteId).toBe(
       ranked[1].route.id,
     );
@@ -493,8 +483,11 @@ describe('프로덕션 v2 지도 중심 UI', () => {
         'data-selected-route-id',
       ),
     ).toBe(ranked[1].route.id);
+    expect(
+      cards[1].classList.contains('map-first__route-card--selected'),
+    ).toBe(true);
 
-    fireEvent.keyDown(viewport, { key: 'End' });
+    fireEvent.keyDown(cards[cards.length - 1], { key: 'Enter' });
     expect(useAppStore.getState().selectedRouteId).toBe(
       ranked[ranked.length - 1].route.id,
     );
@@ -513,71 +506,14 @@ describe('프로덕션 v2 지도 중심 UI', () => {
         ?.classList.contains('map-first__route-card--selected'),
     ).toBe(true);
 
-    Object.defineProperty(viewport, 'clientWidth', {
-      configurable: true,
-      value: 300,
-    });
-    const positions = [-160, 110, 380, 650];
-    vi.spyOn(
-      HTMLElement.prototype,
-      'getBoundingClientRect',
-    ).mockImplementation(function mockRect(this: HTMLElement) {
-      const routeIndex = ranked.findIndex(
-        ({ route }) => route.id === this.dataset.routeId,
-      );
-      const left =
-        this === viewport
-          ? 0
-          : routeIndex >= 0
-            ? positions[routeIndex]
-            : 0;
-      const width = this === viewport ? 300 : 80;
-      return {
-        left,
-        width,
-        right: left + width,
-        top: 0,
-        bottom: 100,
-        height: 100,
-        x: left,
-        y: 0,
-        toJSON: () => ({}),
-      } as DOMRect;
-    });
-    const requestFrame = vi
-      .spyOn(globalThis, 'requestAnimationFrame')
-      .mockImplementation(
-      (callback) => {
-        callback(0);
-        return 1;
-      },
-      );
-    expect(
-      Array.from(
-        viewport.querySelectorAll<HTMLElement>('[data-route-id]'),
-      ).map((card) => ({
-        id: card.dataset.routeId,
-        left: card.getBoundingClientRect().left,
-      })),
-    ).toEqual(
-      ranked.map(({ route }, index) => ({
-        id: route.id,
-        left: positions[index],
-      })),
-    );
-    expect(viewport.isConnected).toBe(true);
-    fireEvent.pointerDown(viewport);
-    fireEvent.scroll(viewport);
-    expect(requestFrame).toHaveBeenCalled();
-    await waitFor(() => {
-      expect(useAppStore.getState().selectedRouteId).toBe(
-        ranked[1].route.id,
-      );
-    });
-
-    fireEvent.keyDown(viewport, { key: 'ArrowLeft' });
+    fireEvent.focus(cards[1]);
     expect(useAppStore.getState().selectedRouteId).toBe(
       ranked[0].route.id,
+    );
+
+    fireEvent.keyDown(cards[1], { key: ' ' });
+    expect(useAppStore.getState().selectedRouteId).toBe(
+      ranked[1].route.id,
     );
   });
 
