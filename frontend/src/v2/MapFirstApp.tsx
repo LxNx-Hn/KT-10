@@ -350,6 +350,7 @@ export default function MapFirstApp() {
           item={selectedItem}
           rank={selectedIndex + 1}
           profile={profile}
+          peers={ranked}
         />
       ) : (
         <p>먼저 경로를 검색해 주세요.</p>

@@ -8,6 +8,7 @@ import type {
 import {
   ROUTE_SCORE_DISCLAIMER,
   buildRouteViewModel,
+  formatRouteSourceLabel,
 } from './routeViewModel';
 
 const BASE_SEGMENT: RouteSegment = {
@@ -271,5 +272,117 @@ describe('v2 경로 표시 모델', () => {
     expect(view.characteristicLabels).toEqual(['제일 빠른 길']);
     expect(view.facts.find((f) => f.id === 'elevator')).toBeUndefined();
     expect(view.facts.find((f) => f.id === 'low-floor')).toBeUndefined();
+  });
+
+  it('점수 추정 추천 이유 대신 구조화 근거만 표시한다', () => {
+    const bare = buildRouteViewModel(makeItem({
+      // score.reasons는 "보행 부담을 비교했습니다."지만 구조화 비교 근거는 없음
+    }), 1, 'general');
+    expect(bare.reasons).toEqual([
+      '도보 거리 420m예요.',
+      '소요시간 18분이에요.',
+      '환승 1회예요.',
+    ]);
+    expect(bare.reasons.join(' ')).not.toMatch(/가장 |안전|편안|비교적/);
+
+    const evidenced = buildRouteViewModel(
+      makeItem({
+        segments: [{
+          ...BASE_SEGMENT,
+          hasStairs: false,
+          stairsCount: 0,
+        }],
+        lowFloorStatus: 'confirmed',
+        terrain: {
+          status: 'estimated_90m',
+          avgSlopePercent: 1.5,
+          source: 'test',
+          resolutionM: 90,
+        },
+      }),
+      1,
+      'general',
+    );
+    expect(evidenced.reasons).toEqual(
+      expect.arrayContaining([
+        '확인된 구간에서 계단이 없어요.',
+        '경로의 버스가 저상버스로 확인됐어요.',
+        '평균 경사 1.5%로 추정돼요.',
+      ]),
+    );
+    expect(evidenced.reasons.join(' ')).not.toContain(
+      '보행 부담을 비교했습니다.',
+    );
+    expect(evidenced.reasons.join(' ')).not.toMatch(/가장 /);
+  });
+
+  it('후보가 1개면 절대 사실만, 복수일 때만 실제 비교 표현을 쓴다', () => {
+    const short = makeItem({
+      segments: [BASE_SEGMENT],
+    });
+    short.route.id = 'short';
+    short.route.totalDurationMin = 10;
+    short.route.totalWalkM = 100;
+    short.route.transferCount = 0;
+    short.score.routeId = 'short';
+    short.score.reasons = ['후보 중 소요시간이 가장 짧은 편이에요.'];
+
+    const long = makeItem({
+      segments: [BASE_SEGMENT],
+    });
+    long.route.id = 'long';
+    long.route.totalDurationMin = 30;
+    long.route.totalWalkM = 800;
+    long.route.transferCount = 2;
+    long.score.routeId = 'long';
+    long.score.reasons = ['현재 날씨 조건에서 비교적 안전해요.'];
+
+    const alone = buildRouteViewModel(short, 1, 'general', [short]);
+    expect(alone.reasons.join(' ')).not.toMatch(/가장 /);
+    expect(alone.reasons).toEqual(
+      expect.arrayContaining([
+        '환승 없이 이동해요.',
+        '도보 거리 100m예요.',
+        '소요시간 10분이에요.',
+      ]),
+    );
+
+    const compared = buildRouteViewModel(short, 1, 'general', [short, long]);
+    expect(compared.reasons).toEqual(
+      expect.arrayContaining([
+        '환승 없이 이동해요.',
+        '후보 중 소요시간이 가장 짧아요 (10분).',
+        '후보 중 도보가 가장 짧아요 (100m).',
+      ]),
+    );
+    expect(compared.reasons.join(' ')).not.toContain('환승이 가장 적어요');
+    expect(compared.reasons.join(' ')).not.toContain('비교적 안전');
+  });
+
+  it('동일 사실 특징은 한 번만 표시한다', () => {
+    const zeroTransfer = makeItem();
+    zeroTransfer.route.transferCount = 0;
+    zeroTransfer.route.characteristics = ['fewest_transfers', 'shortest_walk'];
+    const peer = makeItem();
+    peer.route.id = 'peer';
+    peer.route.totalWalkM = 900;
+    peer.route.transferCount = 2;
+    peer.score.routeId = 'peer';
+
+    const reasons = buildRouteViewModel(
+      zeroTransfer,
+      1,
+      'general',
+      [zeroTransfer, peer],
+    ).reasons;
+    const transferLines = reasons.filter((line) => line.includes('환승'));
+    expect(transferLines).toEqual(['환승 없이 이동해요.']);
+    expect(reasons.join(' ')).not.toContain('환승이 가장 적어요');
+    expect(reasons.filter((line) => line.includes('도보')).length).toBe(1);
+  });
+
+  it('경로 출처 라벨을 정규화한다', () => {
+    expect(formatRouteSourceLabel('odsay')).toBe('경로 제공: ODsay');
+    expect(formatRouteSourceLabel('경로 제공: ODsay')).toBe('경로 제공: ODsay');
   });
 });

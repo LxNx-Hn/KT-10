@@ -3,6 +3,7 @@ import type { ProfileId, ScoredRoute } from '@/types';
 import {
   ROUTE_SCORE_DISCLAIMER,
   buildRouteViewModel,
+  formatRouteSourceLabel,
   type V2RouteFactKind,
 } from '../routeViewModel';
 
@@ -18,14 +19,16 @@ export default function RouteDetails({
   item,
   rank,
   profile,
+  peers,
 }: {
   item: ScoredRoute;
   rank: number;
   profile: ProfileId;
+  peers?: ScoredRoute[];
 }) {
   const view = useMemo(
-    () => buildRouteViewModel(item, rank, profile),
-    [item, profile, rank],
+    () => buildRouteViewModel(item, rank, profile, peers ?? [item]),
+    [item, peers, profile, rank],
   );
   const sources = item.route.sources ?? [];
 
@@ -60,7 +63,7 @@ export default function RouteDetails({
 
       {view.reasons.length > 0 && (
         <div className="map-first__detail-section">
-          <h4>추천 이유</h4>
+          <h4>이 경로의 특징</h4>
           <ul>{view.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
         </div>
       )}
@@ -90,7 +93,11 @@ export default function RouteDetails({
                 : '공공 보행 경로'}
         </p>
         {sources.length > 0 ? (
-          <ul>{sources.map((source) => <li key={source}>{source}</li>)}</ul>
+          <ul>
+            {sources.map((source) => (
+              <li key={source}>{formatRouteSourceLabel(source)}</li>
+            ))}
+          </ul>
         ) : (
           <p>공공 보행 경로망 데이터 기준</p>
         )}

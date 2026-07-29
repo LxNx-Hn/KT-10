@@ -290,6 +290,7 @@ export function buildRouteViewModel(
   item: ScoredRoute,
   rank: number,
   profile: ProfileId,
+  peers: ScoredRoute[] = [item],
 ): V2RouteViewModel {
   const { route, score } = item;
   const scoreKind = score.scoreKind ?? 'rule_baseline';
@@ -344,8 +345,182 @@ export function buildRouteViewModel(
     traitLabels,
     facts,
     needsConfirmation,
-    reasons: [...score.reasons],
+    reasons: buildDisplayReasons(item, peers),
     cautions: [...score.cautions],
     voiceSummary: score.voiceSummary,
   };
+}
+
+const DISPLAY_REASON_FALLBACK =
+  '경로 상세에서 이동 정보를 확인해 주세요';
+
+/**
+ * 화면에 보이는 경로 특징만 만든다.
+ * 점수 임계값 추정 문구(score.reasons)는 쓰지 않고,
+ * 경로 구조화 필드·후보 간 실제 비교·근거 있는 trait만 사용한다.
+ * 동일 사실은 key로 한 번만 넣는다.
+ */
+export function buildDisplayReasons(
+  item: ScoredRoute,
+  peers: ScoredRoute[] = [item],
+): string[] {
+  const { route, score } = item;
+  const out: string[] = [];
+  const usedKeys = new Set<string>();
+  const peerRoutes = peers.length > 0 ? peers : [item];
+  const canCompare = peerRoutes.length > 1;
+
+  const add = (key: string, text: string) => {
+    if (usedKeys.has(key)) return;
+    usedKeys.add(key);
+    out.push(text);
+  };
+
+  const durationMin = Math.round(route.totalDurationMin);
+  const walkM = route.totalWalkM;
+
+  // 1) 환승: 0회는 절대 사실만. 비교 “가장 적어요(0회)”와 중복하지 않는다.
+  if (route.transferCount === 0) {
+    add('transfer', '환승 없이 이동해요.');
+  } else if (canCompare) {
+    const transfers = peerRoutes.map(({ route: peer }) => peer.transferCount);
+    const minTransfer = Math.min(...transfers);
+    if (
+      route.transferCount === minTransfer
+      && transfers.filter((value) => value === minTransfer).length === 1
+      && Math.max(...transfers) > minTransfer
+    ) {
+      add('transfer', `후보 중 환승이 가장 적어요 (${route.transferCount}회).`);
+    }
+  }
+
+  // 2) 시간·도보: 복수 후보에서만 최상급 비교, 단일/비교 실패 시 절대 사실
+  if (canCompare) {
+    const durations = peerRoutes.map(({ route: peer }) => peer.totalDurationMin);
+    const walks = peerRoutes.map(({ route: peer }) => peer.totalWalkM);
+    const minDuration = Math.min(...durations);
+    const minWalk = Math.min(...walks);
+
+    if (
+      route.totalDurationMin === minDuration
+      && durations.filter((value) => value === minDuration).length === 1
+    ) {
+      add('duration', `후보 중 소요시간이 가장 짧아요 (${durationMin}분).`);
+    }
+    if (
+      route.totalWalkM === minWalk
+      && walks.filter((value) => value === minWalk).length === 1
+    ) {
+      add('walk', `후보 중 도보가 가장 짧아요 (${walkM}m).`);
+    }
+  }
+
+  // 3) 시설·지형·그늘 등 경로별 구조화 사실
+  const stairs = stairFact(route);
+  if (stairs?.kind === 'advantage') {
+    add('stairs', '확인된 구간에서 계단이 없어요.');
+  } else if (stairs?.kind === 'caution') {
+    add(
+      'stairs',
+      stairs.label.startsWith('계단 ')
+        ? `${stairs.label}가 있어요.`
+        : '계단이 포함돼요.',
+    );
+  }
+
+  const elevator = elevatorFact(route);
+  if (elevator?.kind === 'advantage') {
+    if (elevator.label === '승강기 이용 가능') {
+      add('elevator', '승강기 이용이 확인됐어요.');
+    } else if (elevator.label === '역 승강기 접근성 확인') {
+      add('elevator', '역 승강기 접근성이 확인됐어요.');
+    } else {
+      add('elevator', `${elevator.label}예요.`);
+    }
+  }
+
+  if (score.lowFloorStatus === 'confirmed') {
+    add('lowFloor', '경로의 버스가 저상버스로 확인됐어요.');
+  }
+
+  const terrain = route.terrain;
+  if (
+    terrain?.status === 'estimated_90m'
+    && terrain.avgSlopePercent !== undefined
+  ) {
+    add(
+      'terrain',
+      `평균 경사 ${terrain.avgSlopePercent.toFixed(1)}%로 추정돼요.`,
+    );
+  }
+
+  const shade = route.shade;
+  if (
+    shade
+    && (shade.status === 'estimated_demo' || shade.status === 'estimated_public')
+    && shade.shadeRatio !== undefined
+  ) {
+    const ratio = Math.round(shade.shadeRatio * 100);
+    add(
+      'shade',
+      shade.estimateKind === 'lower_bound'
+        ? `확인된 건물 그늘이 최소 ${ratio}%예요.`
+        : `건물 그늘이 약 ${ratio}%로 추정돼요.`,
+    );
+  }
+
+  const characteristicKey: Partial<
+    Record<NonNullable<RouteCandidate['characteristics']>[number], string>
+  > = {
+    fastest: 'duration',
+    shortest_walk: 'walk',
+    fewest_transfers: 'transfer',
+    stair_free: 'stairs',
+    low_floor_confirmed: 'lowFloor',
+    lowest_slope: 'terrain',
+    most_shade: 'shade',
+  };
+
+  for (const characteristic of route.characteristics ?? []) {
+    const overlapKey = characteristicKey[characteristic];
+    if (overlapKey && usedKeys.has(overlapKey)) continue;
+    add(
+      `characteristic:${characteristic}`,
+      `${CHARACTERISTIC_LABEL[characteristic]}로 표시된 후보예요.`,
+    );
+  }
+
+  for (const trait of route.traitLabels ?? []) {
+    if (trait.evidenceStatus === 'unavailable') continue;
+    if (trait.evidence.length === 0) continue;
+    add(`trait:${trait.labelId}`, `${trait.displayLabel} 근거가 있어요.`);
+  }
+
+  // 4) 아직 비어 있는 기본 절대 사실로 보강 (단일 후보·비교 탈락 시)
+  if (!usedKeys.has('walk')) {
+    add('walk', `도보 거리 ${walkM}m예요.`);
+  }
+  if (!usedKeys.has('duration')) {
+    add('duration', `소요시간 ${durationMin}분이에요.`);
+  }
+  if (!usedKeys.has('transfer') && route.transferCount > 0) {
+    add('transfer', `환승 ${route.transferCount}회예요.`);
+  }
+
+  const limited = out.slice(0, 4);
+  return limited.length > 0 ? limited : [DISPLAY_REASON_FALLBACK];
+}
+
+/** 경로 sources 항목을 출처 안내 문장으로 정규화한다. */
+export function formatRouteSourceLabel(source: string): string {
+  const trimmed = source.trim();
+  if (!trimmed) return trimmed;
+  if (/^경로 제공\s*:/.test(trimmed)) return trimmed;
+
+  const lower = trimmed.toLowerCase();
+  if (lower === 'odsay') return '경로 제공: ODsay';
+  if (lower === 'tmap' || lower === '티맵') return '경로 제공: TMAP';
+  if (lower === 'kakao' || lower === '카카오') return '경로 제공: Kakao';
+
+  return `경로 제공: ${trimmed}`;
 }

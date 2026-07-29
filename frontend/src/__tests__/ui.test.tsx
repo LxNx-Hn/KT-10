@@ -499,7 +499,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
     expect(
       getByRole('heading', {
-        name: `추천 경로 ${useAppStore.getState().recommendations.length}개`,
+        name: `경로 ${useAppStore.getState().recommendations.length}개를 찾았어요`,
       }),
     ).toBeTruthy();
     expect(
@@ -753,7 +753,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
     const details = openSelectedRouteDetails(container);
     const text = details?.textContent ?? '';
-    expect(text).toContain('odsay');
+    expect(text).toContain('경로 제공: ODsay');
     expect(text).toContain('주 경로·연결 경로 포함');
     expect(text).not.toContain('Copernicus');
     expect(text).not.toContain('Open-Meteo');
@@ -1364,6 +1364,100 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     fireEvent.click(getByRole('button', { name: '내 설정' }));
     expect(queryByRole('dialog', { name: '이동 프로필 선택' })).toBeNull();
     expect(getByRole('dialog', { name: '내 설정' })).toBeTruthy();
+  });
+
+  it('경로가 1개이면 단수 안내만 보이고 비교 안내·위치 표시는 숨긴다', () => {
+    act(() => {
+      seedResults();
+      const [first] = useAppStore.getState().recommendations;
+      useAppStore.setState({
+        recommendations: [first],
+        candidates: [first.route],
+        selectedRouteId: first.route.id,
+      });
+    });
+    const { container, getByRole, queryByRole } = render(<App />);
+
+    expect(getByRole('heading', { name: '경로 1개를 찾았어요' })).toBeTruthy();
+    expect(container.textContent).not.toContain(
+      '위아래로 스크롤해 다른 길의 특성과 적합 점수를 비교하세요.',
+    );
+    expect(
+      container.querySelector('.map-first__route-list-heading output'),
+    ).toBeNull();
+    expect(queryByRole('button', { name: /이전 경로|다음 경로/ })).toBeNull();
+    expect(getByRole('button', { name: '상세 정보 보기' })).toBeTruthy();
+  });
+
+  it('경로가 여러 개이면 실제 개수 안내와 비교 안내를 표시한다', () => {
+    act(() => seedResults());
+    const { container, getByRole } = render(<App />);
+    const count = useAppStore.getState().recommendations.length;
+    expect(count).toBeGreaterThan(1);
+
+    expect(
+      getByRole('heading', { name: `경로 ${count}개를 찾았어요` }),
+    ).toBeTruthy();
+    expect(container.textContent).toContain(
+      '위아래로 스크롤해 다른 길의 특성과 적합 점수를 비교하세요.',
+    );
+    expect(
+      container.querySelector('.map-first__route-list-heading output'),
+    ).toBeTruthy();
+  });
+
+  it('상세 경로 특징은 구조화 근거만 쓰고 단일 후보에서는 비교 최상급을 쓰지 않는다', () => {
+    act(() => {
+      seedResults();
+      const [first] = useAppStore.getState().recommendations;
+      const stripped = {
+        ...first,
+        route: {
+          ...first.route,
+          characteristics: undefined,
+          traitLabels: undefined,
+          terrain: undefined,
+          shade: undefined,
+          transferCount: 0,
+          totalWalkM: 309,
+          sources: ['odsay'],
+          segments: first.route.segments.map((segment) => ({
+            ...segment,
+            hasStairs: undefined,
+            stairsCount: undefined,
+            needsVerticalMove: undefined,
+            hasElevator: undefined,
+            isLowFloorBus: undefined,
+          })),
+        },
+        score: {
+          ...first.score,
+          lowFloorStatus: 'none' as const,
+          reasons: [
+            '현재 날씨 조건에서 비교적 안전해요.',
+            '횡단과 환승 부담이 낮은 편이에요.',
+          ],
+        },
+      };
+      useAppStore.setState({
+        recommendations: [stripped],
+        candidates: [stripped.route],
+        selectedRouteId: stripped.route.id,
+      });
+    });
+
+    const { container, getByRole } = render(<App />);
+    const details = openSelectedRouteDetails(container);
+    expect(
+      getByRole('heading', { name: '이 경로의 특징' }),
+    ).toBeTruthy();
+    expect(details?.textContent).toContain('환승 없이 이동해요');
+    expect(details?.textContent).toContain('도보 거리 309m예요');
+    expect(details?.textContent).not.toMatch(/가장 /);
+    expect(details?.textContent).not.toContain('비교적 안전해요');
+    expect(details?.textContent).not.toContain('특성 +');
+    expect(details?.textContent).toContain('경로 제공: ODsay');
+    expect(details?.textContent).not.toContain('특성 +');
   });
 });
 

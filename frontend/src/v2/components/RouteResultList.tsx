@@ -31,7 +31,7 @@ export default function RouteResultList({
     () =>
       ranked.map((item, index) => ({
         item,
-        view: buildRouteViewModel(item, index + 1, profile),
+        view: buildRouteViewModel(item, index + 1, profile, ranked),
       })),
     [profile, ranked],
   );
@@ -39,17 +39,32 @@ export default function RouteResultList({
     ({ view }) => view.routeId === selectedRouteId,
   );
   const activeIndex = selectedIndex >= 0 ? selectedIndex : null;
+  const routeCount = views.length;
+  const listLabel =
+    routeCount > 1 ? '적합 점수순 비교 경로' : '추천 경로';
+  const heading =
+    routeCount === 1
+      ? '경로 1개를 찾았어요'
+      : `경로 ${routeCount}개를 찾았어요`;
 
   return (
-    <section className="map-first__route-list" aria-label="적합 점수순 비교 경로">
+    <section className="map-first__route-list" aria-label={listLabel}>
       <div className="map-first__route-list-heading">
         <div>
-          <h2>추천 경로 {views.length}개</h2>
-          <p>위아래로 스크롤해 다른 길의 특성과 적합 점수를 비교하세요.</p>
+          <h2>{heading}</h2>
+          {routeCount > 1 && (
+            <p>위아래로 스크롤해 다른 길의 특성과 적합 점수를 비교하세요.</p>
+          )}
         </div>
-        <output aria-live="polite">
-          <strong>{activeIndex === null ? '–' : activeIndex + 1}</strong> / {views.length}
-        </output>
+        {routeCount > 1 && (
+          <output aria-live="polite" aria-label={`선택 경로 ${activeIndex === null ? '없음' : activeIndex + 1}, 전체 ${routeCount}`}>
+            <strong>{activeIndex === null ? '–' : activeIndex + 1}</strong>
+            {' '}
+            /
+            {' '}
+            {routeCount}
+          </output>
+        )}
       </div>
 
       <div

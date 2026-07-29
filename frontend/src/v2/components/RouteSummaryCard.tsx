@@ -111,9 +111,6 @@ export default function RouteSummaryCard({
             {badge.label}
           </span>
         ))}
-        {badges.length > 4 && (
-          <span className="map-first__badge">특성 +{badges.length - 4}</span>
-        )}
       </div>
 
       {shadeReason && (
