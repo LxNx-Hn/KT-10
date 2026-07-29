@@ -21,6 +21,7 @@ type RouteSearchPanelProps = {
   error: string | null;
   profileLabel: string;
   profileDrawerOpen: boolean;
+  settingsDrawerOpen: boolean;
   situationConditions: QuickCondition[];
   routeOptionConditions: QuickCondition[];
   optionState: Partial<Record<ToggleableScoringOption, boolean | undefined>>;
@@ -36,6 +37,7 @@ type RouteSearchPanelProps = {
   onSearch: () => void;
   onEditSearch: () => void;
   onOpenProfile: () => void;
+  onOpenSettings: () => void;
   onToggleOption: (key: ToggleableScoringOption, enabled: boolean) => void;
   onToggleLargeUi: () => void;
   onOpenConditions: () => void;
@@ -61,6 +63,26 @@ function SwapIcon() {
   );
 }
 
+function SettingsIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path
+        d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function ChipCheck() {
   return (
     <span className="map-first__chip-check" aria-hidden="true">
@@ -80,6 +102,7 @@ export default function RouteSearchPanel({
   error,
   profileLabel,
   profileDrawerOpen,
+  settingsDrawerOpen,
   situationConditions,
   routeOptionConditions,
   optionState,
@@ -95,6 +118,7 @@ export default function RouteSearchPanel({
   onSearch,
   onEditSearch,
   onOpenProfile,
+  onOpenSettings,
   onToggleOption,
   onToggleLargeUi,
   onOpenConditions,
@@ -194,6 +218,37 @@ export default function RouteSearchPanel({
         </div>
       )}
 
+      <div
+        className="map-first__account-row"
+        role="group"
+        aria-label="프로필과 설정"
+      >
+        <button
+          type="button"
+          className="map-first__profile"
+          aria-haspopup="dialog"
+          aria-expanded={profileDrawerOpen}
+          aria-label={`프로필 선택, 현재 ${profileLabel}`}
+          onClick={onOpenProfile}
+        >
+          <span className="map-first__profile-label">{profileLabel}</span>
+          <span className="map-first__profile-chevron" aria-hidden="true">
+            ▾
+          </span>
+        </button>
+        <button
+          type="button"
+          className="map-first__settings-entry"
+          aria-haspopup="dialog"
+          aria-expanded={settingsDrawerOpen}
+          aria-label="내 설정"
+          onClick={onOpenSettings}
+        >
+          <SettingsIcon />
+          <span className="map-first__settings-entry-label">내 설정</span>
+        </button>
+      </div>
+
       {!compact && (
         <div className="map-first__context">
           <div
@@ -201,19 +256,6 @@ export default function RouteSearchPanel({
             role="group"
             aria-label="이동 조건"
           >
-            <button
-              type="button"
-              className="map-first__profile"
-              aria-haspopup="dialog"
-              aria-expanded={profileDrawerOpen}
-              aria-label={`프로필 선택, 현재 ${profileLabel}`}
-              onClick={onOpenProfile}
-            >
-              {profileLabel}
-              <span className="map-first__profile-chevron" aria-hidden="true">
-                ▾
-              </span>
-            </button>
             {situationConditions.map(({ key, label }) => {
               const active = Boolean(optionState[key]);
               return (

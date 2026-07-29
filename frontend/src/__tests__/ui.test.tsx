@@ -1144,7 +1144,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
   it('쉬운 화면 칩과 내 설정 큰 글씨 버튼은 aria-pressed와 선택 스타일을 공유한다', () => {
     act(() => seedResults());
-    const { container, getByRole } = render(<App />);
+    const { getByRole } = render(<App />);
     const easy = getByRole('button', { name: '쉬운 화면' });
 
     expect(easy.getAttribute('aria-pressed')).toBe('false');
@@ -1155,8 +1155,8 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(easy.getAttribute('aria-pressed')).toBe('true');
     expect(easy.classList.contains('map-first__chip--active')).toBe(true);
 
-    openSelectedRouteDetails(container);
-    fireEvent.click(getByRole('tab', { name: '내 설정' }));
+    fireEvent.click(getByRole('button', { name: '내 설정' }));
+    expect(getByRole('dialog', { name: '내 설정' })).toBeTruthy();
     const settingsLarge = getByRole('button', { name: '기본 글씨로 보기' });
     expect(settingsLarge.getAttribute('aria-pressed')).toBe('true');
     expect(
@@ -1176,7 +1176,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
   });
 
   it('고령자 프로필 선택 시 큰 글씨 모드 선택 상태가 두 컨트롤에 반영된다', () => {
-    const { container, getByRole } = render(<App />);
+    const { getByRole } = render(<App />);
 
     fireEvent.click(
       getByRole('button', { name: /프로필 선택, 현재/ }),
@@ -1196,9 +1196,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       ),
     ).toBe(true);
 
-    act(() => seedResults());
-    openSelectedRouteDetails(container);
-    fireEvent.click(getByRole('tab', { name: '내 설정' }));
+    fireEvent.click(getByRole('button', { name: '내 설정' }));
     const settingsLarge = getByRole('button', { name: '기본 글씨로 보기' });
     expect(settingsLarge.getAttribute('aria-pressed')).toBe('true');
     expect(
@@ -1221,11 +1219,10 @@ describe('프로덕션 v2 지도 중심 UI', () => {
   it('프로필 표시 텍스트에 불필요한 쉼표가 없고 칩은 불투명 그림자로 구분된다', () => {
     const { container, getByRole } = render(<App />);
     const profile = getByRole('button', { name: /프로필 선택, 현재/ });
-    const visibleLabel = Array.from(profile.childNodes)
-      .filter((node) => node.nodeType === Node.TEXT_NODE)
-      .map((node) => node.textContent?.trim() ?? '')
-      .join('');
-    expect(visibleLabel).toBe('일반');
+    const visibleLabel = profile
+      .querySelector('.map-first__profile-label')
+      ?.textContent?.trim();
+    expect(visibleLabel).toBe('일반 프로필');
     expect(visibleLabel).not.toContain(',');
 
     const chip = getByRole('button', { name: '쉬운 화면' });
@@ -1234,6 +1231,139 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(chipStyles.backgroundColor).not.toBe('transparent');
     expect(chipStyles.boxShadow).not.toBe('none');
     expect(container.querySelector('.map-first__chip-row')).toBeTruthy();
+  });
+
+  it('검색 전에도 내 설정 버튼이 보이고 독립 dialog를 연다', () => {
+    const { getByRole, queryByRole } = render(<App />);
+    const settingsEntry = getByRole('button', { name: '내 설정' });
+    expect(settingsEntry.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(settingsEntry.getAttribute('aria-expanded')).toBe('false');
+    expect(settingsEntry.textContent).toContain('내 설정');
+
+    fireEvent.click(settingsEntry);
+    expect(settingsEntry.getAttribute('aria-expanded')).toBe('true');
+    expect(getByRole('dialog', { name: '내 설정' })).toBeTruthy();
+    expect(getByRole('button', { name: '큰 글씨와 큰 버튼 사용' })).toBeTruthy();
+    expect(queryByRole('tab', { name: '내 설정' })).toBeNull();
+  });
+
+  it('compact 상태에서도 프로필과 내 설정 진입점이 유지된다', async () => {
+    const origin = findPlace('gu-office')!;
+    const destination = findPlace('seomyeon-stn')!;
+    const recommendations = recommendRoutes(
+      demoCandidates(),
+      WEATHER_SCENARIOS.normal,
+      'general',
+    );
+    vi.spyOn(adapters.routes, 'recommend').mockResolvedValue(recommendations);
+    vi.spyOn(adapters.places, 'searchPlaces')
+      .mockResolvedValueOnce([origin])
+      .mockResolvedValueOnce([destination]);
+
+    const { container, getByLabelText, getByRole } = render(<App />);
+    fireEvent.change(getByLabelText('출발지'), {
+      target: { value: origin.name },
+    });
+    await waitFor(() => {
+      expect(getByRole('option', { name: new RegExp(origin.name) })).toBeTruthy();
+    });
+    fireEvent.click(getByRole('option', { name: new RegExp(origin.name) }));
+    fireEvent.change(getByLabelText('도착지'), {
+      target: { value: destination.name },
+    });
+    await waitFor(() => {
+      expect(
+        getByRole('option', { name: new RegExp(destination.name) }),
+      ).toBeTruthy();
+    });
+    fireEvent.click(
+      getByRole('option', { name: new RegExp(destination.name) }),
+    );
+    fireEvent.click(getByRole('button', { name: '경로 찾기' }));
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-search-panel="compact"]'),
+      ).toBeTruthy();
+    });
+
+    expect(getByRole('button', { name: /프로필 선택, 현재/ }).textContent).toContain(
+      '일반 프로필',
+    );
+    expect(getByRole('button', { name: '내 설정' })).toBeTruthy();
+    expect(container.querySelector('.map-first__chip-row')).toBeNull();
+  });
+
+  it('내 설정 dialog는 Escape와 닫기로 닫히고 버튼으로 focus가 복귀한다', async () => {
+    const { getByRole, queryByRole } = render(<App />);
+    const openSettings = () => {
+      const settingsEntry = getByRole('button', { name: '내 설정' });
+      settingsEntry.focus();
+      fireEvent.click(settingsEntry);
+      return settingsEntry;
+    };
+
+    openSettings();
+    expect(getByRole('dialog', { name: '내 설정' })).toBeTruthy();
+
+    fireEvent.keyDown(getByRole('dialog', { name: '내 설정' }), {
+      key: 'Escape',
+    });
+    expect(queryByRole('dialog', { name: '내 설정' })).toBeNull();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(
+        getByRole('button', { name: '내 설정' }),
+      );
+    });
+
+    openSettings();
+    fireEvent.click(
+      within(getByRole('dialog', { name: '내 설정' })).getByRole('button', {
+        name: '내 설정 닫기',
+      }),
+    );
+    expect(queryByRole('dialog', { name: '내 설정' })).toBeNull();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(
+        getByRole('button', { name: '내 설정' }),
+      );
+    });
+  });
+
+  it('경로 상세에는 내 설정 탭이 없고 설정 패널을 열어도 검색 결과를 유지한다', () => {
+    act(() => seedResults());
+    const { container, getByRole, queryByRole } = render(<App />);
+    const selectedId = useAppStore.getState().selectedRouteId;
+    const routeCount = useAppStore.getState().recommendations.length;
+
+    openSelectedRouteDetails(container);
+    expect(getByRole('dialog', { name: '경로 상세 정보' })).toBeTruthy();
+    expect(queryByRole('tab', { name: '내 설정' })).toBeNull();
+    expect(getByRole('tab', { name: '경로' })).toBeTruthy();
+    expect(getByRole('tab', { name: '날씨·버스' })).toBeTruthy();
+    expect(getByRole('tab', { name: '후기·신고' })).toBeTruthy();
+
+    fireEvent.keyDown(getByRole('dialog', { name: '경로 상세 정보' }), {
+      key: 'Escape',
+    });
+    fireEvent.click(getByRole('button', { name: '내 설정' }));
+    expect(getByRole('dialog', { name: '내 설정' })).toBeTruthy();
+    expect(useAppStore.getState().recommendations).toHaveLength(routeCount);
+    expect(useAppStore.getState().selectedRouteId).toBe(selectedId);
+
+    fireEvent.keyDown(getByRole('dialog', { name: '내 설정' }), { key: 'Escape' });
+    expect(useAppStore.getState().recommendations).toHaveLength(routeCount);
+    expect(useAppStore.getState().selectedRouteId).toBe(selectedId);
+  });
+
+  it('프로필과 설정 패널은 동시에 열리지 않는다', () => {
+    const { getByRole, queryByRole } = render(<App />);
+    fireEvent.click(getByRole('button', { name: /프로필 선택, 현재/ }));
+    expect(getByRole('dialog', { name: '이동 프로필 선택' })).toBeTruthy();
+
+    fireEvent.click(getByRole('button', { name: '내 설정' }));
+    expect(queryByRole('dialog', { name: '이동 프로필 선택' })).toBeNull();
+    expect(getByRole('dialog', { name: '내 설정' })).toBeTruthy();
   });
 });
 

@@ -14,8 +14,6 @@ import DepartureTimePicker, {
 } from '@/components/DepartureTimePicker';
 import FacilityReport from '@/components/FacilityReport';
 import InstallPrompt from '@/components/InstallPrompt';
-import KakaoLoginButton from '@/components/KakaoLoginButton';
-import ProfilePreferences from '@/components/ProfilePreferences';
 import RouteConditions, {
   ROUTE_CONDITION_KEYS,
 } from '@/components/RouteConditions';
@@ -32,13 +30,14 @@ import BottomDrawer from './components/BottomDrawer';
 import RouteDetails from './components/RouteDetails';
 import RouteResultList from './components/RouteResultList';
 import RouteSearchPanel from './components/RouteSearchPanel';
+import SettingsPanel from './components/SettingsPanel';
 import {
   buildRouteViewModel,
 } from './routeViewModel';
 import './map-first.css';
 
-type DrawerId = 'profile' | 'conditions' | 'details' | 'departure';
-type DetailTab = 'route' | 'environment' | 'feedback' | 'settings';
+type DrawerId = 'profile' | 'conditions' | 'details' | 'departure' | 'settings';
+type DetailTab = 'route' | 'environment' | 'feedback';
 
 const SITUATION_CONDITIONS: Array<{
   key: ToggleableScoringOption;
@@ -58,8 +57,13 @@ const DETAIL_TABS: Array<[DetailTab, string]> = [
   ['route', '경로'],
   ['environment', '날씨·버스'],
   ['feedback', '후기·신고'],
-  ['settings', '내 설정'],
 ];
+
+/** 트리거 표시용. 내부 profile id/서버 값은 바꾸지 않는다. */
+function profileTriggerLabel(label: string): string {
+  const display = label === '청소년' ? '청년' : label;
+  return `${display} 프로필`;
+}
 
 function LocationIcon() {
   return (
@@ -369,22 +373,7 @@ export default function MapFirstApp() {
         <p>경로를 선택하면 이용 후기를 남길 수 있습니다.</p>
       );
     }
-    return (
-      <section className="map-first__settings" aria-label="로그인과 개인 설정">
-        <KakaoLoginButton />
-        <button
-          type="button"
-          className={`map-first__settings-large${
-            largeUi ? ' map-first__settings-large--active' : ''
-          }`}
-          aria-pressed={largeUi}
-          onClick={toggleLargeUi}
-        >
-          {largeUi ? '기본 글씨로 보기' : '큰 글씨와 큰 버튼 사용'}
-        </button>
-        <ProfilePreferences />
-      </section>
-    );
+    return null;
   };
 
   const frameClass = [
@@ -439,8 +428,9 @@ export default function MapFirstApp() {
           loading={loading}
           searchHint={searchHint}
           error={error}
-          profileLabel={profileMeta.label}
+          profileLabel={profileTriggerLabel(profileMeta.label)}
           profileDrawerOpen={drawer === 'profile'}
+          settingsDrawerOpen={drawer === 'settings'}
           situationConditions={SITUATION_CONDITIONS}
           routeOptionConditions={ROUTE_OPTION_CONDITIONS}
           optionState={options}
@@ -456,6 +446,7 @@ export default function MapFirstApp() {
           onSearch={() => void runRouteSearch()}
           onEditSearch={editSearchConditions}
           onOpenProfile={() => setDrawer('profile')}
+          onOpenSettings={() => setDrawer('settings')}
           onToggleOption={setScoringOption}
           onToggleLargeUi={toggleLargeUi}
           onOpenConditions={() => setDrawer('conditions')}
@@ -680,6 +671,19 @@ export default function MapFirstApp() {
                 </button>
               ))}
             </div>
+          </BottomDrawer>
+        )}
+
+        {drawer === 'settings' && (
+          <BottomDrawer
+            drawerId="settings-drawer"
+            title="내 설정"
+            onClose={closeDrawer}
+          >
+            <SettingsPanel
+              largeUi={largeUi}
+              onToggleLargeUi={toggleLargeUi}
+            />
           </BottomDrawer>
         )}
 
