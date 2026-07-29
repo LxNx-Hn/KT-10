@@ -548,17 +548,25 @@
 }
 
 .map-first__account-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-width: 0;
   width: 100%;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--mf-surface);
+  box-shadow: var(--mf-shadow);
+  box-sizing: border-box;
 }
 
 .map-first__account-row .map-first__profile {
-  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
+  box-shadow: none;
+  background: var(--mf-chip);
 }
 
 .map-first__profile-label {
@@ -569,24 +577,26 @@
 }
 
 .map-first__settings-entry {
-  flex: 0 0 auto;
+  flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   min-height: var(--mf-tap);
   min-width: var(--mf-tap);
+  height: auto;
   padding: 0 12px;
   border: none;
   border-radius: 14px;
-  background: var(--mf-surface);
-  box-shadow: var(--mf-shadow);
+  background: #fff;
+  box-shadow: none;
   color: var(--mf-ink);
   font-size: 13px;
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
   white-space: nowrap;
+  box-sizing: border-box;
 }
 
 .map-first__settings-entry svg {
@@ -597,6 +607,39 @@
   flex: none;
 }
 
+.map-first__context-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--mf-surface);
+  box-shadow: var(--mf-shadow);
+  box-sizing: border-box;
+}
+
+.map-first__chip-scroll {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  padding-block: 2px;
+  /* 다음 chip이 일부 보이도록 끝 여백 */
+  padding-inline: 2px 16px;
+}
+
+/* 구 selector 호환: chip-row가 남아 있어도 동일 동작 */
 .map-first__chip-row {
   display: flex;
   align-items: center;
@@ -608,14 +651,8 @@
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
-  scrollbar-width: none;
+  scrollbar-width: thin;
   -webkit-overflow-scrolling: touch;
-}
-
-.map-first__chip-row::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
 }
 
 .map-first__easy-hint {
@@ -683,6 +720,8 @@
 .map-first__chip {
   min-height: var(--mf-tap);
   min-width: var(--mf-tap);
+  width: max-content;
+  height: auto;
   padding: 0 12px;
   border: none;
   border-radius: 999px;
@@ -691,19 +730,29 @@
   font-size: 12px;
   font-weight: 500;
   font-family: inherit;
+  line-height: 1.25;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  box-shadow: var(--mf-shadow);
+  box-shadow: none;
   flex: 0 0 auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.map-first__chip-text {
+  flex: none;
+  white-space: nowrap;
 }
 
 .map-first__chip-check {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -718,7 +767,13 @@
   background: rgba(49, 130, 246, 0.14);
   color: var(--mf-blue);
   font-weight: 600;
-  box-shadow: var(--mf-shadow), inset 0 0 0 1px rgba(49, 130, 246, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(49, 130, 246, 0.35);
+}
+
+.map-first__context-bar .map-first__chip--conditions {
+  box-shadow: none;
+  background: #fff;
+  border: 1px solid var(--mf-line);
 }
 
 /* ── Map side controls ── */
@@ -916,13 +971,16 @@
   right: 0;
   bottom: 0;
   z-index: var(--mf-z-sheet);
+  display: flex;
+  flex-direction: column;
   background: var(--mf-surface);
   border-radius: 24px 24px 0 0;
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.1);
   padding: 0 20px calc(16px + env(safe-area-inset-bottom, 0px));
   transition: max-height 0.2s ease;
   pointer-events: auto;
-  overflow: auto;
+  /* 카드 목록만 스크롤하도록 outer sheet는 스크롤하지 않는다. */
+  overflow: hidden;
 }
 
 .map-first__sheet--expanded {
@@ -943,7 +1001,10 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  min-height: 0;
   width: 100%;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 /* PWA 배너는 시트 스택 안에서 상대 배치한다 (고정 오버레이 금지). */
@@ -1024,6 +1085,19 @@
 
 .map-first__sheet-body {
   padding-top: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.map-first__sheet-body > .map-first__departure-btn {
+  flex: none;
+}
+
+.map-first__sheet--empty .map-first__sheet-body {
+  overflow-y: auto;
 }
 
 .map-first__alt-toggle {
@@ -1517,6 +1591,11 @@
 
 .map-first__route-list {
   min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .map-first__route-list-heading {
@@ -1525,6 +1604,7 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
+  flex: none;
 }
 
 .map-first__route-list-heading h2 {
@@ -1555,12 +1635,18 @@
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-  max-height: min(36vh, 320px);
+  min-height: 0;
+  flex: 1 1 auto;
   overflow-x: hidden;
   overflow-y: auto;
   padding: 2px 0 8px;
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.map-first__route-list > .map-first__score-note {
+  flex: none;
 }
 
 .map-first__route-card {
@@ -2021,25 +2107,32 @@
 
 .map-first__tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   position: sticky;
-  top: -14px;
+  top: 0;
   z-index: 2;
-  margin: -14px -2px 14px;
-  padding: 12px 2px 8px;
+  flex: none;
+  margin: 0 0 12px;
+  padding: 0 0 8px;
   background: var(--mf-surface);
 }
 
 .map-first__tabs button {
-  min-height: 44px;
-  padding: 4px;
+  min-height: var(--mf-tap);
+  min-width: 0;
+  width: 100%;
+  padding: 6px 4px;
   border: 0;
   border-radius: 11px;
   background: #f2f4f6;
   color: var(--mf-ink-soft);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
 }
 
 .map-first__tabs .map-first__tab--active {
@@ -2226,6 +2319,54 @@
 
 .map-first__tab-panel .weather + .bus {
   margin-top: 12px;
+}
+
+.map-first__tab-panel .bus__search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.map-first__tab-panel .bus__search input,
+.map-first__tab-panel .bus__search .btn {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.map-first__tab-panel .bus__controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+  max-width: 100%;
+}
+
+.map-first__tab-panel .bus__select,
+.map-first__tab-panel .bus__controls .btn {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+  min-height: var(--mf-tap);
+  height: auto;
+}
+
+@media (max-width: 430px) {
+  .map-first__tab-panel .bus__controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+.map-first__frame--easy .map-first__tab-panel .bus__search,
+.map-first__frame[data-profile='elderly'] .map-first__tab-panel .bus__search,
+.map-first__frame--easy .map-first__tab-panel .bus__controls,
+.map-first__frame[data-profile='elderly'] .map-first__tab-panel .bus__controls {
+  grid-template-columns: 1fr;
 }
 
 .map-first__tab-panel input,

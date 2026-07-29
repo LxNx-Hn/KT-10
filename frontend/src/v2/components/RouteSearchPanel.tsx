@@ -251,57 +251,59 @@ export default function RouteSearchPanel({
 
       {!compact && (
         <div className="map-first__context">
-          <div
-            className="map-first__chip-row"
-            role="group"
-            aria-label="이동 조건"
-          >
-            {situationConditions.map(({ key, label }) => {
-              const active = Boolean(optionState[key]);
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  className={`map-first__chip${
-                    active ? ' map-first__chip--active' : ''
-                  }`}
-                  aria-pressed={active}
-                  onClick={() => onToggleOption(key, !active)}
-                >
-                  {active && <ChipCheck />}
-                  {label}
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              className={`map-first__chip map-first__chip--easy${
-                largeUi ? ' map-first__chip--active' : ''
-              }`}
-              aria-label="쉬운 화면"
-              aria-pressed={largeUi}
-              onClick={onToggleLargeUi}
+          <div className="map-first__context-bar">
+            <div
+              className="map-first__chip-scroll"
+              role="group"
+              aria-label="이동 조건"
             >
-              {largeUi && <ChipCheck />}
-              쉬운 화면
-            </button>
-            {routeOptionConditions.map(({ key, label }) => {
-              const active = Boolean(optionState[key]);
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  className={`map-first__chip${
-                    active ? ' map-first__chip--active' : ''
-                  }`}
-                  aria-pressed={active}
-                  onClick={() => onToggleOption(key, !active)}
-                >
-                  {active && <ChipCheck />}
-                  {label}
-                </button>
-              );
-            })}
+              {situationConditions.map(({ key, label }) => {
+                const active = Boolean(optionState[key]);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`map-first__chip${
+                      active ? ' map-first__chip--active' : ''
+                    }`}
+                    aria-pressed={active}
+                    onClick={() => onToggleOption(key, !active)}
+                  >
+                    {active && <ChipCheck />}
+                    <span className="map-first__chip-text">{label}</span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                className={`map-first__chip map-first__chip--easy${
+                  largeUi ? ' map-first__chip--active' : ''
+                }`}
+                aria-label="쉬운 화면"
+                aria-pressed={largeUi}
+                onClick={onToggleLargeUi}
+              >
+                {largeUi && <ChipCheck />}
+                <span className="map-first__chip-text">쉬운 화면</span>
+              </button>
+              {routeOptionConditions.map(({ key, label }) => {
+                const active = Boolean(optionState[key]);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`map-first__chip${
+                      active ? ' map-first__chip--active' : ''
+                    }`}
+                    aria-pressed={active}
+                    onClick={() => onToggleOption(key, !active)}
+                  >
+                    {active && <ChipCheck />}
+                    <span className="map-first__chip-text">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
             <button
               type="button"
               className="map-first__chip map-first__chip--conditions"

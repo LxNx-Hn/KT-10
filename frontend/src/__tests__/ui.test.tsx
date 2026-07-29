@@ -378,7 +378,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
   it('조건 칩은 aria-pressed로 선택 상태를 표현한다', () => {
     const { container, getByRole } = render(<App />);
-    expect(container.querySelectorAll('.map-first__chip-row')).toHaveLength(1);
+    expect(container.querySelectorAll('.map-first__chip-scroll')).toHaveLength(1);
     const luggage = getByRole('button', { name: '짐 많음' });
     const stairs = getByRole('button', { name: '계단 회피' });
     const easy = getByRole('button', { name: '쉬운 화면' });
@@ -1216,7 +1216,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(hint?.className).toBe('map-first__easy-hint');
   });
 
-  it('프로필 표시 텍스트에 불필요한 쉼표가 없고 칩은 불투명 그림자로 구분된다', () => {
+  it('프로필 표시 텍스트에 불필요한 쉼표가 없고 조건 바는 불투명 표면으로 지도를 가린다', () => {
     const { container, getByRole } = render(<App />);
     const profile = getByRole('button', { name: /프로필 선택, 현재/ });
     const visibleLabel = profile
@@ -1229,8 +1229,8 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     const chipStyles = getComputedStyle(chip);
     expect(chipStyles.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
     expect(chipStyles.backgroundColor).not.toBe('transparent');
-    expect(chipStyles.boxShadow).not.toBe('none');
-    expect(container.querySelector('.map-first__chip-row')).toBeTruthy();
+    expect(container.querySelector('.map-first__chip-scroll')).toBeTruthy();
+    expect(container.querySelector('.map-first__context-bar')).toBeTruthy();
   });
 
   it('검색 전에도 내 설정 버튼이 보이고 독립 dialog를 연다', () => {
@@ -1291,7 +1291,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       '일반 프로필',
     );
     expect(getByRole('button', { name: '내 설정' })).toBeTruthy();
-    expect(container.querySelector('.map-first__chip-row')).toBeNull();
+    expect(container.querySelector('.map-first__chip-scroll')).toBeNull();
   });
 
   it('내 설정 dialog는 Escape와 닫기로 닫히고 버튼으로 focus가 복귀한다', async () => {
@@ -1407,6 +1407,70 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(getByRole('tab', { name: '날씨·버스' }).getAttribute('aria-selected')).toBe(
       'true',
     );
+  });
+
+  it('짐 많음 선택 후에도 조건 chip은 축소되지 않고 조건 버튼은 스크롤 밖에 고정된다', () => {
+    const { container, getByRole } = render(<App />);
+    const luggage = getByRole('button', { name: '짐 많음' });
+    const conditions = getByRole('button', { name: '조건' });
+
+    fireEvent.click(luggage);
+
+    expect(luggage.getAttribute('aria-pressed')).toBe('true');
+    expect(luggage.classList.contains('map-first__chip--active')).toBe(true);
+    expect(luggage.classList.contains('map-first__chip')).toBe(true);
+    expect(luggage.textContent).toContain('짐 많음');
+    const chipScroll = container.querySelector('.map-first__chip-scroll');
+    const contextBar = container.querySelector('.map-first__context-bar');
+    expect(chipScroll?.contains(luggage)).toBe(true);
+    expect(chipScroll?.contains(conditions)).toBe(false);
+    expect(contextBar?.contains(conditions)).toBe(true);
+    expect(conditions.classList.contains('map-first__chip--conditions')).toBe(
+      true,
+    );
+  });
+
+  it('상단 프로필·조건 바는 불투명 표면 클래스로 지도를 가린다', () => {
+    const { container } = render(<App />);
+    expect(container.querySelector('.map-first__account-row')).toBeTruthy();
+    expect(container.querySelector('.map-first__context-bar')).toBeTruthy();
+    // 배경은 CSS 클래스에 고정한다(jsdom은 stylesheet 색을 계산하지 않음).
+    expect(
+      container.querySelector('.map-first__account-row')?.className,
+    ).toContain('map-first__account-row');
+    expect(
+      container.querySelector('.map-first__context-bar')?.className,
+    ).toContain('map-first__context-bar');
+  });
+
+  it('경로 결과와 상세 drawer는 각각 하나의 세로 스크롤 소유자를 가진다', () => {
+    act(() => seedResults());
+    const { container } = render(<App />);
+    expect(container.querySelector('.map-first__sheet')).toBeTruthy();
+    expect(container.querySelector('.map-first__route-stack')).toBeTruthy();
+    expect(
+      container.querySelector('.map-first__sheet-body .map-first__route-list'),
+    ).toBeTruthy();
+
+    openSelectedRouteDetails(container);
+    expect(
+      container.querySelector('.map-first__drawer-panel--details'),
+    ).toBeTruthy();
+    expect(container.querySelector('.map-first__details-panels')).toBeTruthy();
+    expect(
+      container.querySelector(
+        '.map-first__drawer-panel--details .map-first__drawer-body',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('상세 탭은 3개이며 전체 폭 그리드 훅을 사용한다', () => {
+    act(() => seedResults());
+    const { container, getAllByRole } = render(<App />);
+    openSelectedRouteDetails(container);
+    const tabs = getAllByRole('tab');
+    expect(tabs).toHaveLength(3);
+    expect(container.querySelector('.map-first__tabs')).toBeTruthy();
   });
 
   it('프로필과 설정 패널은 동시에 열리지 않는다', () => {
