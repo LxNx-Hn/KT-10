@@ -28,9 +28,9 @@ import {
 import { serverRankedRecommendations } from '@/utils/routes';
 import KakaoMap, { SLOPE_COLOR_RAMP } from './KakaoMap';
 import BottomDrawer from './components/BottomDrawer';
-import PlaceCombobox from './components/PlaceCombobox';
 import RouteDetails from './components/RouteDetails';
 import RouteResultList from './components/RouteResultList';
+import RouteSearchPanel from './components/RouteSearchPanel';
 import {
   buildRouteViewModel,
 } from './routeViewModel';
@@ -39,11 +39,17 @@ import './map-first.css';
 type DrawerId = 'profile' | 'conditions' | 'details' | 'departure';
 type DetailTab = 'route' | 'environment' | 'feedback' | 'settings';
 
-const QUICK_CONDITIONS: Array<{
+const SITUATION_CONDITIONS: Array<{
   key: ToggleableScoringOption;
   label: string;
 }> = [
   { key: 'carryLuggage', label: '짐 많음' },
+];
+
+const ROUTE_OPTION_CONDITIONS: Array<{
+  key: ToggleableScoringOption;
+  label: string;
+}> = [
   { key: 'avoidStairs', label: '계단 회피' },
 ];
 
@@ -53,26 +59,6 @@ const DETAIL_TABS: Array<[DetailTab, string]> = [
   ['feedback', '후기·신고'],
   ['settings', '내 설정'],
 ];
-
-function SwapIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="20"
-      height="20"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      aria-hidden="true"
-    >
-      <path
-        d="M7 7h11M7 7l3-3M7 7l3 3M17 17H6M17 17l-3-3M17 17l-3 3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function LocationIcon() {
   return (
@@ -149,6 +135,7 @@ export default function MapFirstApp() {
   const [drawer, setDrawer] = useState<DrawerId | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('route');
   const [sheetExpanded, setSheetExpanded] = useState(true);
+  const [searchPanelExpanded, setSearchPanelExpanded] = useState(true);
   const [showFacilities, setShowFacilities] = useState(false);
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [facilityHint, setFacilityHint] = useState<string | null>(null);
@@ -197,6 +184,14 @@ export default function MapFirstApp() {
   const activeConditionCount = ROUTE_CONDITION_KEYS.filter(
     (key) => Boolean(options[key]),
   ).length;
+  const summaryConditionCount =
+    SITUATION_CONDITIONS.filter(({ key }) => Boolean(options[key])).length
+    + ROUTE_OPTION_CONDITIONS.filter(({ key }) => Boolean(options[key])).length
+    + activeConditionCount;
+  const searchPanelMode =
+    !searchPanelExpanded && ranked.length > 0 && origin && destination
+      ? 'compact'
+      : 'expanded';
   const showVoiceControl = drawer === null && !(ranked.length > 0 && sheetExpanded);
   const profileMeta = PROFILES[profile];
   const showLabeledControls =
@@ -241,6 +236,12 @@ export default function MapFirstApp() {
     setFacilityHint(null);
   }, [selectedRouteId]);
 
+  useEffect(() => {
+    if (ranked.length === 0) {
+      setSearchPanelExpanded(true);
+    }
+  }, [ranked.length]);
+
   // 지연 정밀화 구조에서 2위 이하 후보의 estimated 대중교통 선형·shade
   // 없음은 정상 상태다. 시간 기반 전체 재추천(refreshEnrichment 타이머)은
   // 불필요한 전체 /recommend 재실행을 만들므로 두지 않는다.
@@ -260,17 +261,29 @@ export default function MapFirstApp() {
   const runRouteSearch = async () => {
     if (!origin || !destination) {
       setSearchHint('검색 결과에서 출발지와 도착지를 모두 선택해 주세요.');
+      setSearchPanelExpanded(true);
       return;
     }
     if (origin.id === destination.id) {
       setSearchHint('출발지와 도착지가 같습니다. 다른 장소를 선택해 주세요.');
+      setSearchPanelExpanded(true);
       return;
     }
     setSearchHint(null);
     await search();
-    if (useAppStore.getState().recommendations.length > 0) {
+    // render closure의 ranked/recommendations가 아니라 store 최신 snapshot으로 판정한다.
+    const latestState = useAppStore.getState();
+    const searchSucceeded =
+      latestState.recommendations.length > 0
+      && latestState.error === null;
+    if (searchSucceeded) {
       setSheetExpanded(true);
     }
+    setSearchPanelExpanded(!searchSucceeded);
+  };
+
+  const editSearchConditions = () => {
+    setSearchPanelExpanded(true);
   };
 
   const locate = () => {
@@ -409,131 +422,41 @@ export default function MapFirstApp() {
           selectedRouteId={selectedRouteId}
           onSelectRoute={selectRoute}
           showFacilities={showFacilities}
+          layoutFitKey={`${searchPanelMode}|${
+            sheetExpanded ? 'sheet-expanded' : 'sheet-collapsed'
+          }|${drawer ?? 'none'}`}
         />
 
-        <div className="map-first__top">
-          <div className="map-first__search">
-            <div className="map-first__search-body">
-              <PlaceCombobox
-                fieldId="map-first-origin"
-                label="출발지"
-                place={origin}
-                onSelectPlace={setOrigin}
-                onClearPlace={() => setOrigin(null)}
-                inputRef={originInputRef}
-                onSelected={() => destinationInputRef.current?.focus()}
-              />
-              <div className="map-first__search-divider" />
-              <PlaceCombobox
-                fieldId="map-first-destination"
-                label="도착지"
-                place={destination}
-                onSelectPlace={setDestination}
-                onClearPlace={() => setDestination(null)}
-                inputRef={destinationInputRef}
-              />
-              <button
-                type="button"
-                className="map-first__search-swap"
-                aria-label="출발지와 도착지 바꾸기"
-                onClick={swapPlaces}
-              >
-                <SwapIcon />
-              </button>
-            </div>
-
-            <button
-              type="button"
-              className="map-first__search-submit"
-              onClick={() => void runRouteSearch()}
-              disabled={loading || !origin || !destination || origin.id === destination.id}
-              aria-label="경로 찾기"
-            >
-              {loading ? '경로 찾는 중…' : '경로 찾기'}
-            </button>
-
-            {(searchHint || error) && (
-              <p
-                className={`map-first__search-message${
-                  error ? ' map-first__search-message--error' : ''
-                }`}
-                role={error ? 'alert' : 'status'}
-              >
-                {searchHint ?? error}
-              </p>
-            )}
-          </div>
-
-          <div className="map-first__context">
-            <button
-              type="button"
-              className="map-first__profile"
-              aria-haspopup="dialog"
-              aria-expanded={drawer === 'profile'}
-              aria-label={`프로필 선택, 현재 ${profileMeta.label}`}
-              onClick={() => setDrawer('profile')}
-            >
-              {profileMeta.label}
-              <span className="map-first__profile-chevron" aria-hidden="true">▾</span>
-            </button>
-            {QUICK_CONDITIONS.map(({ key, label }) => {
-              const active = Boolean(options[key]);
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  className={`map-first__chip${
-                    active ? ' map-first__chip--active' : ''
-                  }`}
-                  aria-pressed={active}
-                  onClick={() => setScoringOption(key, !active)}
-                >
-                  {label}
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              className={`map-first__chip map-first__chip--easy${
-                largeUi ? ' map-first__chip--active' : ''
-              }`}
-              aria-label="쉬운 화면"
-              aria-pressed={largeUi}
-              onClick={toggleLargeUi}
-            >
-              쉬운 화면
-            </button>
-            <button
-              type="button"
-              className="map-first__chip map-first__chip--conditions"
-              aria-haspopup="dialog"
-              aria-expanded={drawer === 'conditions'}
-              aria-label={
-                activeConditionCount > 0
-                  ? `조건, 활성 ${activeConditionCount}개`
-                  : '조건'
-              }
-              onClick={() => setDrawer('conditions')}
-            >
-              <span className="map-first__chip-label">조건</span>
-              <span
-                className={`map-first__condition-count${
-                  activeConditionCount > 0
-                    ? ''
-                    : ' map-first__condition-count--empty'
-                }`}
-                aria-hidden="true"
-              >
-                {activeConditionCount > 0 ? activeConditionCount : 0}
-              </span>
-            </button>
-          </div>
-          {largeUi && (
-            <p className="map-first__easy-hint" role="status">
-              큰 글씨와 큰 버튼을 사용해요
-            </p>
-          )}
-        </div>
+        <RouteSearchPanel
+          mode={searchPanelMode}
+          origin={origin}
+          destination={destination}
+          originInputRef={originInputRef}
+          destinationInputRef={destinationInputRef}
+          loading={loading}
+          searchHint={searchHint}
+          error={error}
+          profileLabel={profileMeta.label}
+          profileDrawerOpen={drawer === 'profile'}
+          situationConditions={SITUATION_CONDITIONS}
+          routeOptionConditions={ROUTE_OPTION_CONDITIONS}
+          optionState={options}
+          largeUi={largeUi}
+          activeConditionCount={activeConditionCount}
+          summaryConditionCount={summaryConditionCount}
+          conditionsDrawerOpen={drawer === 'conditions'}
+          onSelectOrigin={setOrigin}
+          onClearOrigin={() => setOrigin(null)}
+          onSelectDestination={setDestination}
+          onClearDestination={() => setDestination(null)}
+          onSwap={swapPlaces}
+          onSearch={() => void runRouteSearch()}
+          onEditSearch={editSearchConditions}
+          onOpenProfile={() => setDrawer('profile')}
+          onToggleOption={setScoringOption}
+          onToggleLargeUi={toggleLargeUi}
+          onOpenConditions={() => setDrawer('conditions')}
+        />
 
         <div className="map-first__fab-stack">
           <button

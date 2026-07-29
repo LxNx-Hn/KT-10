@@ -30,6 +30,8 @@ export type KakaoMapProps = {
   selectedRouteId: string | null;
   onSelectRoute: (routeId: string) => void;
   showFacilities?: boolean;
+  /** Overlay layout signature (search panel / sheet / drawer) for visible-area fits. */
+  layoutFitKey?: string;
 };
 
 type GeometryQuality = NonNullable<RouteCandidate['geometryQuality']>;
@@ -255,6 +257,148 @@ function alternativeRoutePathParts(route: RouteCandidate): RoutePathPart[] {
     : segmentPathParts(route);
 }
 
+function collectSelectedRoutePoints(route: RouteCandidate | undefined): LatLng[] {
+  if (!route) return [];
+  const main = validPath(route.path);
+  if (main) return [...main];
+  return segmentPathParts(route).flatMap((part) => part.path);
+}
+
+function buildFitPoints(
+  origin: Place | null,
+  destination: Place | null,
+  selectedRoute: RouteCandidate | undefined,
+): LatLng[] {
+  const points: LatLng[] = [];
+  // Origin/destination markers must always stay inside the fitted bounds.
+  if (origin && isValidPoint(origin)) points.push(origin);
+  if (destination && isValidPoint(destination)) points.push(destination);
+  points.push(...collectSelectedRoutePoints(selectedRoute));
+  return points;
+}
+
+function routeGeometryFitKey(route: RouteCandidate | undefined): string {
+  const points = collectSelectedRoutePoints(route);
+  if (!route || points.length === 0) {
+    return `${route?.id ?? 'none'}|empty|${route?.geometryQuality ?? ''}`;
+  }
+  const first = points[0];
+  const mid = points[Math.floor(points.length / 2)];
+  const last = points[points.length - 1];
+  return [
+    route.id,
+    route.geometryQuality ?? '',
+    String(points.length),
+    `${first.lat.toFixed(5)},${first.lng.toFixed(5)}`,
+    `${mid.lat.toFixed(5)},${mid.lng.toFixed(5)}`,
+    `${last.lat.toFixed(5)},${last.lng.toFixed(5)}`,
+  ].join('|');
+}
+
+const TOP_MARKER_SAFE_PAD = 24;
+const BOTTOM_MARKER_SAFE_PAD = 32;
+const SIDE_PAD = 24;
+const MIN_VISIBLE_MAP_PX = 100;
+
+const TOP_OVERLAY_SELECTORS = [
+  '.map-first__top',
+  '.map-first__search',
+  '.map-first__search--compact',
+  '.map-first__context',
+  '.map-first__chip-row',
+] as const;
+
+const BOTTOM_OVERLAY_SELECTORS = [
+  '.map-first__drawer-panel',
+  '.map-first__sheet',
+] as const;
+
+function isDisplayedOverlay(el: Element): el is HTMLElement {
+  if (!(el instanceof HTMLElement)) return false;
+  const style = window.getComputedStyle(el);
+  if (style.display === 'none' || style.visibility === 'hidden') return false;
+  if (Number(style.opacity) === 0) return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function queryVisibleOverlays(selectors: readonly string[]): HTMLElement[] {
+  const found: HTMLElement[] = [];
+  selectors.forEach((selector) => {
+    document.querySelectorAll(selector).forEach((el) => {
+      if (isDisplayedOverlay(el)) found.push(el);
+    });
+  });
+  return found;
+}
+
+function computeVisibleAreaPaddings(mapEl: HTMLElement): {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+} {
+  const mapRect = mapEl.getBoundingClientRect();
+  const height = mapEl.clientHeight || mapRect.height || 0;
+
+  let topCovered = 0;
+  queryVisibleOverlays(TOP_OVERLAY_SELECTORS).forEach((overlay) => {
+    const rect = overlay.getBoundingClientRect();
+    const overlap =
+      Math.min(rect.bottom, mapRect.bottom) - Math.max(rect.top, mapRect.top);
+    if (overlap <= 0) return;
+    topCovered = Math.max(topCovered, rect.bottom - mapRect.top);
+  });
+
+  let bottomCovered = 0;
+  // Prefer an open drawer panel over the route sheet when both exist.
+  const bottomOverlays = queryVisibleOverlays(BOTTOM_OVERLAY_SELECTORS);
+  const drawer = bottomOverlays.find((el) =>
+    el.classList.contains('map-first__drawer-panel'),
+  );
+  const sheet = bottomOverlays.find((el) =>
+    el.classList.contains('map-first__sheet'),
+  );
+  const bottomOverlay = drawer ?? sheet ?? null;
+  if (bottomOverlay) {
+    const rect = bottomOverlay.getBoundingClientRect();
+    const overlap =
+      Math.min(rect.bottom, mapRect.bottom) - Math.max(rect.top, mapRect.top);
+    if (overlap > 0) {
+      bottomCovered = Math.max(0, mapRect.bottom - rect.top);
+    }
+  }
+
+  let top = Math.max(
+    TOP_MARKER_SAFE_PAD,
+    Math.round(Math.max(0, topCovered) + TOP_MARKER_SAFE_PAD),
+  );
+  let bottom = Math.max(
+    BOTTOM_MARKER_SAFE_PAD,
+    Math.round(Math.max(0, bottomCovered) + BOTTOM_MARKER_SAFE_PAD),
+  );
+
+  // Keep a usable map strip, but prefer preserving overlay clearance over
+  // the older height-120 clamp that trimmed needed padding too aggressively.
+  const minVisible = Math.min(
+    Math.max(MIN_VISIBLE_MAP_PX, Math.round(height * 0.2)),
+    Math.max(MIN_VISIBLE_MAP_PX, height - 40),
+  );
+  const maximumCombinedPadding = Math.max(0, height - minVisible);
+  if (height > 0 && top + bottom > maximumCombinedPadding) {
+    const scale = maximumCombinedPadding / (top + bottom);
+    top = Math.max(0, Math.round(top * scale));
+    bottom = Math.max(0, Math.round(bottom * scale));
+  }
+
+  return {
+    top,
+    right: SIDE_PAD,
+    bottom,
+    left: SIDE_PAD,
+  };
+}
+
 function toKakaoLatLng(maps: KakaoMapsApi, point: LatLng): KakaoLatLng {
   return new maps.LatLng(point.lat, point.lng);
 }
@@ -330,6 +474,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showFacilities = false,
+    layoutFitKey = '',
   },
   ref,
 ) {
@@ -342,6 +487,8 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
   const userRef = useRef<KakaoCustomOverlay | null>(null);
   const pendingUserLocationRef = useRef<LngLatTuple | null>(null);
   const locationRafRef = useRef<number | null>(null);
+  const fitRafRef = useRef<number | null>(null);
+  const lastFitKeyRef = useRef<string | null>(null);
   const propsRef = useRef({
     origin,
     destination,
@@ -349,6 +496,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showFacilities,
+    layoutFitKey,
   });
   propsRef.current = {
     origin,
@@ -357,6 +505,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showFacilities,
+    layoutFitKey,
   };
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -365,6 +514,13 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     if (locationRafRef.current !== null) {
       cancelAnimationFrame(locationRafRef.current);
       locationRafRef.current = null;
+    }
+  };
+
+  const cancelFitRaf = () => {
+    if (fitRafRef.current !== null) {
+      cancelAnimationFrame(fitRafRef.current);
+      fitRafRef.current = null;
     }
   };
 
@@ -566,34 +722,47 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     maps: KakaoMapsApi,
     map: KakaoMapInstance,
     points: LatLng[],
+    fitKey: string,
   ) => {
-    if (points.length === 0) {
-      map.setCenter(new maps.LatLng(DISTRICT.center.lat, DISTRICT.center.lng));
-      map.setLevel(DISTRICT.defaultZoom);
-      return;
-    }
-    if (points.length === 1) {
-      map.setCenter(toKakaoLatLng(maps, points[0]));
-      map.setLevel(4);
-      return;
-    }
+    if (lastFitKeyRef.current === fitKey) return;
+    lastFitKeyRef.current = fitKey;
+    cancelFitRaf();
 
-    const bounds = new maps.LatLngBounds();
-    points.forEach((point) => bounds.extend(toKakaoLatLng(maps, point)));
-    const height = containerRef.current?.clientHeight ?? 0;
-    let paddingTop = height > 0
-      ? Math.min(270, Math.max(120, Math.round(height * 0.34)))
-      : 240;
-    let paddingBottom = height > 0
-      ? Math.min(320, Math.max(120, Math.round(height * 0.4)))
-      : 280;
-    const maximumCombinedPadding = Math.max(80, height - 120);
-    if (height > 0 && paddingTop + paddingBottom > maximumCombinedPadding) {
-      const scale = maximumCombinedPadding / (paddingTop + paddingBottom);
-      paddingTop = Math.round(paddingTop * scale);
-      paddingBottom = Math.round(paddingBottom * scale);
-    }
-    map.setBounds(bounds, paddingTop, 48, paddingBottom, 48);
+    fitRafRef.current = requestAnimationFrame(() => {
+      fitRafRef.current = null;
+      if (mapRef.current !== map || mapsRef.current !== maps) return;
+      map.relayout();
+
+      if (points.length === 0) {
+        map.setCenter(new maps.LatLng(DISTRICT.center.lat, DISTRICT.center.lng));
+        map.setLevel(DISTRICT.defaultZoom);
+        return;
+      }
+      if (points.length === 1) {
+        map.setCenter(toKakaoLatLng(maps, points[0]));
+        map.setLevel(4);
+        return;
+      }
+
+      const bounds = new maps.LatLngBounds();
+      points.forEach((point) => bounds.extend(toKakaoLatLng(maps, point)));
+      const mapEl = containerRef.current;
+      const padding = mapEl
+        ? computeVisibleAreaPaddings(mapEl)
+        : {
+            top: TOP_MARKER_SAFE_PAD,
+            right: SIDE_PAD,
+            bottom: BOTTOM_MARKER_SAFE_PAD,
+            left: SIDE_PAD,
+          };
+      map.setBounds(
+        bounds,
+        padding.top,
+        padding.right,
+        padding.bottom,
+        padding.left,
+      );
+    });
   };
 
   const renderMapData = (
@@ -603,6 +772,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedId: string | null,
     selectRoute: (routeId: string) => void,
     facilitiesVisible: boolean,
+    nextLayoutFitKey: string,
   ) => {
     const maps = mapsRef.current;
     const map = mapRef.current;
@@ -610,9 +780,6 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
 
     clearRouteGraphics();
     const boundsPoints: LatLng[] = [];
-    if (nextOrigin && isValidPoint(nextOrigin)) boundsPoints.push(nextOrigin);
-    if (nextDestination && isValidPoint(nextDestination)) boundsPoints.push(nextDestination);
-
     const selectedRoute = routes.find(({ route }) => route.id === selectedId)?.route;
     addShadeOverlay(maps, selectedRoute, boundsPoints);
     addAlternativeRoutes(maps, routes, selectedId, selectRoute, boundsPoints);
@@ -620,7 +787,16 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     addFacilityOverlays(maps, selectedRoute, facilitiesVisible);
     addEndpoint(maps, nextOrigin, 'origin');
     addEndpoint(maps, nextDestination, 'dest');
-    fitDataBounds(maps, map, boundsPoints);
+
+    const fitPoints = buildFitPoints(nextOrigin, nextDestination, selectedRoute);
+    const heightBucket = Math.round((containerRef.current?.clientHeight ?? 0) / 40);
+    const fitKey = [
+      selectedId ?? 'none',
+      routeGeometryFitKey(selectedRoute),
+      nextLayoutFitKey,
+      String(heightBucket),
+    ].join('\u001f');
+    fitDataBounds(maps, map, fitPoints, fitKey);
   };
 
   const removeUserOverlay = () => {
@@ -730,6 +906,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
           current.selectedRouteId,
           current.onSelectRoute,
           current.showFacilities,
+          current.layoutFitKey,
         );
         const pending = pendingUserLocationRef.current;
         if (pending && applyUserLocation(pending)) {
@@ -737,7 +914,32 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
         }
         setStatus('ready');
 
-        resizeObserver = new ResizeObserver(() => map.relayout());
+        resizeObserver = new ResizeObserver(() => {
+          map.relayout();
+          const latest = propsRef.current;
+          const selected = latest.recommendations.find(
+            ({ route }) => route.id === latest.selectedRouteId,
+          )?.route;
+          const fitPoints = buildFitPoints(
+            latest.origin,
+            latest.destination,
+            selected,
+          );
+          const heightBucket = Math.round(
+            (containerRef.current?.clientHeight ?? 0) / 40,
+          );
+          const fitKey = [
+            latest.selectedRouteId ?? 'none',
+            routeGeometryFitKey(selected),
+            latest.layoutFitKey,
+            String(heightBucket),
+          ].join('\u001f');
+          // Allow a fresh fit when the viewport bucket changes.
+          if (lastFitKeyRef.current !== fitKey) {
+            lastFitKeyRef.current = null;
+            fitDataBounds(maps, map, fitPoints, fitKey);
+          }
+        });
         resizeObserver.observe(containerRef.current);
       })
       .catch(fail);
@@ -746,7 +948,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       cancelled = true;
       resizeObserver?.disconnect();
       cancelLocationRaf();
+      cancelFitRaf();
       readyRef.current = false;
+      lastFitKeyRef.current = null;
       pendingUserLocationRef.current = null;
       clearRouteGraphics();
       removeUserOverlay();
@@ -767,6 +971,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       selectedRouteId,
       onSelectRoute,
       showFacilities,
+      layoutFitKey,
     );
     // Map data helpers use refs and are intentionally recreated with the latest props.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -777,6 +982,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showFacilities,
+    layoutFitKey,
     status,
   ]);
 

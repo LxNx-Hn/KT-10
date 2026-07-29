@@ -307,6 +307,10 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(
     () => viewportHeight,
   );
+  vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+    callback(0);
+    return 1;
+  });
 });
 
 afterEach(() => {
@@ -747,10 +751,154 @@ describe('KakaoMap production overlays', () => {
     expect(boundsCall).toBeDefined();
     const top = boundsCall?.paddingTop ?? 0;
     const bottom = boundsCall?.paddingBottom ?? 0;
+    expect(top).toBeGreaterThanOrEqual(24);
+    expect(bottom).toBeGreaterThanOrEqual(32);
     expect(top + bottom).toBeLessThanOrEqual(80);
     expect(viewportHeight - top - bottom).toBeGreaterThanOrEqual(100);
-    expect(boundsCall?.paddingRight).toBe(48);
-    expect(boundsCall?.paddingLeft).toBe(48);
+    expect(boundsCall?.paddingRight).toBe(24);
+    expect(boundsCall?.paddingLeft).toBe(24);
     expect(boundsCall?.bounds.points.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('상단 칩·하단 시트가 가리는 높이를 padding에 반영하고 OD를 bounds에 포함한다', async () => {
+    viewportHeight = 640;
+    const selected = scoredRoute('padded', {
+      path: [MIDPOINT],
+      geometryQuality: 'exact',
+    });
+
+    const mapRect = {
+      top: 0,
+      bottom: 640,
+      left: 0,
+      right: 390,
+      width: 390,
+      height: 640,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function mockRect(this: HTMLElement) {
+        if (this.classList.contains('map-first__kakao-canvas')) {
+          return mapRect;
+        }
+        if (this.classList.contains('map-first__chip-row')) {
+          return {
+            top: 80,
+            bottom: 140,
+            left: 12,
+            right: 378,
+            width: 366,
+            height: 60,
+            x: 12,
+            y: 80,
+            toJSON: () => ({}),
+          } as DOMRect;
+        }
+        if (this.classList.contains('map-first__sheet')) {
+          return {
+            top: 400,
+            bottom: 640,
+            left: 0,
+            right: 390,
+            width: 390,
+            height: 240,
+            x: 0,
+            y: 400,
+            toJSON: () => ({}),
+          } as DOMRect;
+        }
+        return {
+          top: 0,
+          bottom: 0,
+          left: 0,
+          right: 0,
+          width: 0,
+          height: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        } as DOMRect;
+      },
+    );
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(
+      () =>
+        ({
+          display: 'block',
+          visibility: 'visible',
+          opacity: '1',
+        }) as CSSStyleDeclaration,
+    );
+
+    const topHost = document.createElement('div');
+    topHost.className = 'map-first__top';
+    const chipRow = document.createElement('div');
+    chipRow.className = 'map-first__chip-row';
+    topHost.append(chipRow);
+    const sheet = document.createElement('div');
+    sheet.className = 'map-first__sheet';
+    document.body.append(topHost, sheet);
+
+    render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="padded"
+        onSelectRoute={vi.fn()}
+      />,
+    );
+    await waitUntilReady();
+
+    const map = sdkRecords.maps[0];
+    const boundsCall = map?.boundsCalls[map.boundsCalls.length - 1];
+    expect(boundsCall?.paddingTop).toBe(164); // 140 - 0 + 24
+    expect(boundsCall?.paddingBottom).toBe(272); // 640 - 400 + 32
+    const lats = boundsCall?.bounds.points.map((point) => point.getLat()) ?? [];
+    expect(lats).toContain(ORIGIN.lat);
+    expect(lats).toContain(DESTINATION.lat);
+
+    topHost.remove();
+    sheet.remove();
+  });
+
+  it('같은 선택 경로·geometry·레이아웃이면 자동 fit을 중복 실행하지 않는다', async () => {
+    const selected = scoredRoute('stable', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+    });
+    const onSelectRoute = vi.fn();
+    const { rerender } = render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="stable"
+        onSelectRoute={onSelectRoute}
+        layoutFitKey="compact|sheet-expanded|none"
+        showFacilities={false}
+      />,
+    );
+    await waitUntilReady();
+    const map = sdkRecords.maps[0];
+    const firstCount = map.boundsCalls.length;
+    expect(firstCount).toBeGreaterThanOrEqual(1);
+
+    rerender(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="stable"
+        onSelectRoute={vi.fn()}
+        layoutFitKey="compact|sheet-expanded|none"
+        showFacilities={true}
+      />,
+    );
+    await waitFor(() => {
+      expect(sdkRecords.maps).toHaveLength(1);
+    });
+    expect(map.boundsCalls.length).toBe(firstCount);
   });
 });

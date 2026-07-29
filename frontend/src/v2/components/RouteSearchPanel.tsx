@@ -1,0 +1,298 @@
+import type { RefObject } from 'react';
+import type { Place } from '@/types';
+import type { ToggleableScoringOption } from '@/store/appStore';
+import PlaceCombobox from './PlaceCombobox';
+
+export type SearchPanelMode = 'expanded' | 'compact';
+
+type QuickCondition = {
+  key: ToggleableScoringOption;
+  label: string;
+};
+
+type RouteSearchPanelProps = {
+  mode: SearchPanelMode;
+  origin: Place | null;
+  destination: Place | null;
+  originInputRef?: RefObject<HTMLInputElement>;
+  destinationInputRef?: RefObject<HTMLInputElement>;
+  loading: boolean;
+  searchHint: string | null;
+  error: string | null;
+  profileLabel: string;
+  profileDrawerOpen: boolean;
+  situationConditions: QuickCondition[];
+  routeOptionConditions: QuickCondition[];
+  optionState: Partial<Record<ToggleableScoringOption, boolean | undefined>>;
+  largeUi: boolean;
+  activeConditionCount: number;
+  summaryConditionCount: number;
+  conditionsDrawerOpen: boolean;
+  onSelectOrigin: (place: Place) => void;
+  onClearOrigin: () => void;
+  onSelectDestination: (place: Place) => void;
+  onClearDestination: () => void;
+  onSwap: () => void;
+  onSearch: () => void;
+  onEditSearch: () => void;
+  onOpenProfile: () => void;
+  onToggleOption: (key: ToggleableScoringOption, enabled: boolean) => void;
+  onToggleLargeUi: () => void;
+  onOpenConditions: () => void;
+};
+
+function SwapIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <path
+        d="M7 7h11M7 7l3-3M7 7l3 3M17 17H6M17 17l-3-3M17 17l-3 3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ChipCheck() {
+  return (
+    <span className="map-first__chip-check" aria-hidden="true">
+      ✓
+    </span>
+  );
+}
+
+export default function RouteSearchPanel({
+  mode,
+  origin,
+  destination,
+  originInputRef,
+  destinationInputRef,
+  loading,
+  searchHint,
+  error,
+  profileLabel,
+  profileDrawerOpen,
+  situationConditions,
+  routeOptionConditions,
+  optionState,
+  largeUi,
+  activeConditionCount,
+  summaryConditionCount,
+  conditionsDrawerOpen,
+  onSelectOrigin,
+  onClearOrigin,
+  onSelectDestination,
+  onClearDestination,
+  onSwap,
+  onSearch,
+  onEditSearch,
+  onOpenProfile,
+  onToggleOption,
+  onToggleLargeUi,
+  onOpenConditions,
+}: RouteSearchPanelProps) {
+  const compact = mode === 'compact';
+
+  return (
+    <div className="map-first__top" data-search-panel={mode}>
+      {compact ? (
+        <div
+          className="map-first__search map-first__search--compact"
+          role="status"
+          aria-label={`${origin?.name ?? '출발지'}에서 ${destination?.name ?? '도착지'}까지`}
+        >
+          <div className="map-first__search-summary">
+            <span className="map-first__summary-od">
+              <span className="map-first__summary-place">
+                {origin?.name ?? '출발지'}
+              </span>
+              <span className="map-first__summary-arrow" aria-hidden="true">
+                →
+              </span>
+              <span className="map-first__summary-place">
+                {destination?.name ?? '도착지'}
+              </span>
+            </span>
+            {summaryConditionCount > 0 && (
+              <span className="map-first__summary-conditions">
+                조건 {summaryConditionCount}개
+              </span>
+            )}
+            <button
+              type="button"
+              className="map-first__search-edit"
+              onClick={onEditSearch}
+            >
+              검색 조건 수정
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="map-first__search">
+          <div className="map-first__search-body">
+            <PlaceCombobox
+              fieldId="map-first-origin"
+              label="출발지"
+              place={origin}
+              onSelectPlace={onSelectOrigin}
+              onClearPlace={onClearOrigin}
+              inputRef={originInputRef}
+              onSelected={() => destinationInputRef?.current?.focus()}
+            />
+            <div className="map-first__search-divider" />
+            <PlaceCombobox
+              fieldId="map-first-destination"
+              label="도착지"
+              place={destination}
+              onSelectPlace={onSelectDestination}
+              onClearPlace={onClearDestination}
+              inputRef={destinationInputRef}
+            />
+            <button
+              type="button"
+              className="map-first__search-swap"
+              aria-label="출발지와 도착지 바꾸기"
+              onClick={onSwap}
+            >
+              <SwapIcon />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="map-first__search-submit"
+            onClick={onSearch}
+            disabled={
+              loading
+              || !origin
+              || !destination
+              || origin.id === destination.id
+            }
+            aria-label="경로 찾기"
+          >
+            {loading ? '경로 찾는 중…' : '경로 찾기'}
+          </button>
+
+          {(searchHint || error) && (
+            <p
+              className={`map-first__search-message${
+                error ? ' map-first__search-message--error' : ''
+              }`}
+              role={error ? 'alert' : 'status'}
+            >
+              {searchHint ?? error}
+            </p>
+          )}
+        </div>
+      )}
+
+      {!compact && (
+        <div className="map-first__context">
+          <div
+            className="map-first__chip-row"
+            role="group"
+            aria-label="이동 조건"
+          >
+            <button
+              type="button"
+              className="map-first__profile"
+              aria-haspopup="dialog"
+              aria-expanded={profileDrawerOpen}
+              aria-label={`프로필 선택, 현재 ${profileLabel}`}
+              onClick={onOpenProfile}
+            >
+              {profileLabel}
+              <span className="map-first__profile-chevron" aria-hidden="true">
+                ▾
+              </span>
+            </button>
+            {situationConditions.map(({ key, label }) => {
+              const active = Boolean(optionState[key]);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className={`map-first__chip${
+                    active ? ' map-first__chip--active' : ''
+                  }`}
+                  aria-pressed={active}
+                  onClick={() => onToggleOption(key, !active)}
+                >
+                  {active && <ChipCheck />}
+                  {label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              className={`map-first__chip map-first__chip--easy${
+                largeUi ? ' map-first__chip--active' : ''
+              }`}
+              aria-label="쉬운 화면"
+              aria-pressed={largeUi}
+              onClick={onToggleLargeUi}
+            >
+              {largeUi && <ChipCheck />}
+              쉬운 화면
+            </button>
+            {routeOptionConditions.map(({ key, label }) => {
+              const active = Boolean(optionState[key]);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className={`map-first__chip${
+                    active ? ' map-first__chip--active' : ''
+                  }`}
+                  aria-pressed={active}
+                  onClick={() => onToggleOption(key, !active)}
+                >
+                  {active && <ChipCheck />}
+                  {label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              className="map-first__chip map-first__chip--conditions"
+              aria-haspopup="dialog"
+              aria-expanded={conditionsDrawerOpen}
+              aria-label={
+                activeConditionCount > 0
+                  ? `조건, 활성 ${activeConditionCount}개`
+                  : '조건'
+              }
+              onClick={onOpenConditions}
+            >
+              <span className="map-first__chip-label">조건</span>
+              <span
+                className={`map-first__condition-count${
+                  activeConditionCount > 0
+                    ? ''
+                    : ' map-first__condition-count--empty'
+                }`}
+                aria-hidden="true"
+              >
+                {activeConditionCount > 0 ? activeConditionCount : 0}
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!compact && largeUi && (
+        <p className="map-first__easy-hint" role="status">
+          큰 글씨와 큰 버튼을 사용해요
+        </p>
+      )}
+    </div>
+  );
+}

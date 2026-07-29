@@ -210,6 +210,9 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     const search = container.querySelector('.map-first__search');
 
     expect(container.querySelector('.map-first__frame')).toBeTruthy();
+    expect(
+      container.querySelector('[data-search-panel="expanded"]'),
+    ).toBeTruthy();
     expect(search).toBeTruthy();
     expect(precedes(map, search!)).toBe(true);
     expect(getByLabelText('출발지').getAttribute('placeholder')).toBe(
@@ -219,6 +222,170 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       '도착지 검색',
     );
     expect(getByRole('button', { name: '경로 찾기' })).toBeTruthy();
+  });
+
+  it('검색 성공 후 compact summary를 보여주고 수정 시 API를 호출하지 않는다', async () => {
+    const origin = findPlace('gu-office')!;
+    const destination = findPlace('seomyeon-stn')!;
+    const recommendations = recommendRoutes(
+      demoCandidates(),
+      WEATHER_SCENARIOS.normal,
+      'general',
+    );
+    expect(recommendations.length).toBeGreaterThan(0);
+    const pending = deferred<ScoredRoute[]>();
+    const recommend = vi
+      .spyOn(adapters.routes, 'recommend')
+      .mockReturnValue(pending.promise);
+    vi.spyOn(adapters.weather, 'getCurrent').mockResolvedValue(
+      WEATHER_SCENARIOS.normal,
+    );
+    const refine = vi
+      .spyOn(adapters.routes, 'refineTransit')
+      .mockResolvedValue(null);
+
+    const { container, getByRole, getByLabelText, queryByRole } = render(
+      <App />,
+    );
+    act(() => {
+      useAppStore.setState({
+        origin,
+        destination,
+        candidates: [],
+        recommendations: [],
+        selectedRouteId: null,
+        loading: false,
+        error: null,
+      });
+    });
+
+    expect(useAppStore.getState().recommendations).toHaveLength(0);
+    expect(
+      container.querySelector('[data-search-panel="expanded"]'),
+    ).toBeTruthy();
+    expect(getByLabelText('출발지')).toBeTruthy();
+    expect(getByLabelText('도착지')).toBeTruthy();
+    expect(getByRole('button', { name: '경로 찾기' })).toBeTruthy();
+
+    fireEvent.click(getByRole('button', { name: '경로 찾기' }));
+    await waitFor(() => {
+      expect(useAppStore.getState().loading).toBe(true);
+    });
+    expect(
+      container.querySelector('[data-search-panel="expanded"]'),
+    ).toBeTruthy();
+    expect(queryByRole('button', { name: '경로 찾기' })).toBeTruthy();
+
+    await act(async () => {
+      pending.resolve(recommendations);
+    });
+
+    await waitFor(() => {
+      expect(useAppStore.getState().recommendations.length).toBe(
+        recommendations.length,
+      );
+      expect(useAppStore.getState().error).toBeNull();
+      expect(
+        container.querySelector('[data-search-panel="compact"]'),
+      ).toBeTruthy();
+    });
+
+    const summary = container.querySelector('.map-first__search--compact');
+    expect(summary?.textContent).toContain(origin.name);
+    expect(summary?.textContent).toContain(destination.name);
+    expect(queryByRole('button', { name: '경로 찾기' })).toBeNull();
+    expect(container.querySelector('#map-first-origin')).toBeNull();
+    expect(container.querySelector('#map-first-destination')).toBeNull();
+
+    const beforeSelected = useAppStore.getState().selectedRouteId;
+    const beforeCount = useAppStore.getState().recommendations.length;
+    recommend.mockClear();
+    refine.mockClear();
+
+    fireEvent.click(getByRole('button', { name: '검색 조건 수정' }));
+    expect(
+      container.querySelector('[data-search-panel="expanded"]'),
+    ).toBeTruthy();
+    expect(getByRole('button', { name: '경로 찾기' })).toBeTruthy();
+    expect(recommend).not.toHaveBeenCalled();
+    expect(refine).not.toHaveBeenCalled();
+    expect(useAppStore.getState().selectedRouteId).toBe(beforeSelected);
+    expect(useAppStore.getState().recommendations).toHaveLength(beforeCount);
+    expect(container.querySelectorAll('.map-first__route-card').length).toBe(
+      beforeCount,
+    );
+  });
+
+  it('검색 실패나 결과 없음이면 expanded 검색 UI를 유지한다', async () => {
+    const origin = findPlace('gu-office')!;
+    const destination = findPlace('seomyeon-stn')!;
+    const emptyPending = deferred<ScoredRoute[]>();
+    vi.spyOn(adapters.routes, 'recommend').mockReturnValue(
+      emptyPending.promise,
+    );
+    vi.spyOn(adapters.weather, 'getCurrent').mockResolvedValue(
+      WEATHER_SCENARIOS.normal,
+    );
+
+    const { container, getByRole } = render(<App />);
+    act(() => {
+      useAppStore.setState({
+        origin,
+        destination,
+        candidates: [],
+        recommendations: [],
+        selectedRouteId: null,
+        loading: false,
+        error: null,
+      });
+    });
+
+    fireEvent.click(getByRole('button', { name: '경로 찾기' }));
+    await act(async () => {
+      emptyPending.resolve([]);
+    });
+    await waitFor(() => {
+      expect(useAppStore.getState().loading).toBe(false);
+    });
+
+    expect(useAppStore.getState().recommendations).toHaveLength(0);
+    expect(useAppStore.getState().error).toBeTruthy();
+    expect(
+      container.querySelector('[data-search-panel="expanded"]'),
+    ).toBeTruthy();
+    expect(getByRole('button', { name: '경로 찾기' })).toBeTruthy();
+    expect(
+      container.querySelector('.map-first__search--compact'),
+    ).toBeNull();
+  });
+
+  it('조건 칩은 aria-pressed로 선택 상태를 표현한다', () => {
+    const { container, getByRole } = render(<App />);
+    expect(container.querySelectorAll('.map-first__chip-row')).toHaveLength(1);
+    const luggage = getByRole('button', { name: '짐 많음' });
+    const stairs = getByRole('button', { name: '계단 회피' });
+    const easy = getByRole('button', { name: '쉬운 화면' });
+
+    expect(luggage.getAttribute('aria-pressed')).toBe('false');
+    expect(stairs.getAttribute('aria-pressed')).toBe('false');
+    expect(easy.getAttribute('aria-pressed')).toBe('false');
+
+    fireEvent.click(luggage);
+    fireEvent.click(stairs);
+    fireEvent.click(easy);
+
+    expect(getByRole('button', { name: '짐 많음' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(getByRole('button', { name: '계단 회피' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(getByRole('button', { name: '쉬운 화면' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(useAppStore.getState().options.carryLuggage).toBe(true);
+    expect(useAppStore.getState().options.avoidStairs).toBe(true);
+    expect(useAppStore.getState().largeUi).toBe(true);
   });
 
   it('장소명 입력은 카카오 장소 어댑터 결과를 선택된 Place로 저장한다', async () => {
