@@ -13,6 +13,7 @@ import DepartureTimePicker, {
   formatDepartureButtonLabel,
 } from '@/components/DepartureTimePicker';
 import FacilityReport from '@/components/FacilityReport';
+import InstallPrompt from '@/components/InstallPrompt';
 import KakaoLoginButton from '@/components/KakaoLoginButton';
 import ProfilePreferences from '@/components/ProfilePreferences';
 import RouteConditions, {
@@ -373,7 +374,9 @@ export default function MapFirstApp() {
         <KakaoLoginButton />
         <button
           type="button"
-          className="map-first__settings-large"
+          className={`map-first__settings-large${
+            largeUi ? ' map-first__settings-large--active' : ''
+          }`}
           aria-pressed={largeUi}
           onClick={toggleLargeUi}
         >
@@ -583,13 +586,15 @@ export default function MapFirstApp() {
           }${ranked.length === 0 ? ' map-first__sheet--empty' : ''}`}
           aria-label="경로 결과"
         >
-          <button
-            type="button"
-            className="map-first__sheet-toggle"
-            aria-expanded={sheetExpanded}
-            aria-label={sheetExpanded ? '경로 결과 접기' : '경로 결과 펼치기'}
-            onClick={() => setSheetExpanded((expanded) => !expanded)}
-          >
+          <div className="map-first__sheet-stack">
+            <InstallPrompt />
+            <button
+              type="button"
+              className="map-first__sheet-toggle"
+              aria-expanded={sheetExpanded}
+              aria-label={sheetExpanded ? '경로 결과 접기' : '경로 결과 펼치기'}
+              onClick={() => setSheetExpanded((expanded) => !expanded)}
+            >
             <span className="map-first__sheet-handle" aria-hidden="true">
               <span className="map-first__sheet-handle-bar" />
             </span>
@@ -640,6 +645,7 @@ export default function MapFirstApp() {
               )}
             </div>
           )}
+          </div>
         </section>
 
         {drawer === 'profile' && (

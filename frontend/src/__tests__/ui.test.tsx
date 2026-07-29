@@ -172,6 +172,23 @@ function openSelectedRouteDetails(container: HTMLElement) {
   );
 }
 
+function dispatchInstallPrompt() {
+  const event = new Event('beforeinstallprompt', {
+    cancelable: true,
+  }) as Event & {
+    prompt: () => Promise<void>;
+    userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+  };
+  event.prompt = () => Promise.resolve();
+  event.userChoice = Promise.resolve({
+    outcome: 'dismissed',
+    platform: '',
+  });
+  act(() => {
+    window.dispatchEvent(event);
+  });
+}
+
 beforeEach(() => {
   useAppStore.setState({
     profile: 'general',
@@ -1092,6 +1109,131 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       key: 'Escape',
     });
     expect(getByRole('button', { name: '음성 챗봇' })).toBeTruthy();
+  });
+
+  it('PWA 설치 배너는 하단 시트 스택 안에서 제목 위에 배치된다', () => {
+    const { container, getByRole } = render(<App />);
+    dispatchInstallPrompt();
+
+    const sheet = getByRole('region', { name: '경로 결과' });
+    const stack = sheet.querySelector('.map-first__sheet-stack');
+    const install = sheet.querySelector('.install-prompt');
+    const title = sheet.querySelector('.map-first__sheet-title');
+
+    expect(stack).toBeTruthy();
+    expect(install).toBeTruthy();
+    expect(title).toBeTruthy();
+    expect(stack?.contains(install!)).toBe(true);
+    expect(precedes(install!, title!)).toBe(true);
+    expect(container.querySelector('main > .install-prompt')).toBeNull();
+    expect(getByRole('complementary', { name: '앱 설치 안내' })).toBeTruthy();
+  });
+
+  it('PWA 설치 배너를 닫으면 시트 레이아웃이 복귀한다', () => {
+    const { container, getByRole } = render(<App />);
+    dispatchInstallPrompt();
+    expect(container.querySelector('.install-prompt')).toBeTruthy();
+
+    fireEvent.click(getByRole('button', { name: '설치 안내 닫기' }));
+
+    expect(container.querySelector('.install-prompt')).toBeNull();
+    expect(getByRole('region', { name: '경로 결과' }).textContent).toContain(
+      '출발지와 도착지를 검색하세요',
+    );
+  });
+
+  it('쉬운 화면 칩과 내 설정 큰 글씨 버튼은 aria-pressed와 선택 스타일을 공유한다', () => {
+    act(() => seedResults());
+    const { container, getByRole } = render(<App />);
+    const easy = getByRole('button', { name: '쉬운 화면' });
+
+    expect(easy.getAttribute('aria-pressed')).toBe('false');
+    expect(easy.classList.contains('map-first__chip--active')).toBe(false);
+
+    fireEvent.click(easy);
+    expect(useAppStore.getState().largeUi).toBe(true);
+    expect(easy.getAttribute('aria-pressed')).toBe('true');
+    expect(easy.classList.contains('map-first__chip--active')).toBe(true);
+
+    openSelectedRouteDetails(container);
+    fireEvent.click(getByRole('tab', { name: '내 설정' }));
+    const settingsLarge = getByRole('button', { name: '기본 글씨로 보기' });
+    expect(settingsLarge.getAttribute('aria-pressed')).toBe('true');
+    expect(
+      settingsLarge.classList.contains('map-first__settings-large--active'),
+    ).toBe(true);
+
+    fireEvent.click(settingsLarge);
+    expect(useAppStore.getState().largeUi).toBe(false);
+    expect(
+      getByRole('button', { name: '쉬운 화면' }).getAttribute('aria-pressed'),
+    ).toBe('false');
+    expect(
+      getByRole('button', { name: '큰 글씨와 큰 버튼 사용' }).getAttribute(
+        'aria-pressed',
+      ),
+    ).toBe('false');
+  });
+
+  it('고령자 프로필 선택 시 큰 글씨 모드 선택 상태가 두 컨트롤에 반영된다', () => {
+    const { container, getByRole } = render(<App />);
+
+    fireEvent.click(
+      getByRole('button', { name: /프로필 선택, 현재/ }),
+    );
+    fireEvent.click(getByRole('radio', { name: /고령자/ }));
+
+    expect(useAppStore.getState()).toMatchObject({
+      profile: 'elderly',
+      largeUi: true,
+    });
+    expect(
+      getByRole('button', { name: '쉬운 화면' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(
+      getByRole('button', { name: '쉬운 화면' }).classList.contains(
+        'map-first__chip--active',
+      ),
+    ).toBe(true);
+
+    act(() => seedResults());
+    openSelectedRouteDetails(container);
+    fireEvent.click(getByRole('tab', { name: '내 설정' }));
+    const settingsLarge = getByRole('button', { name: '기본 글씨로 보기' });
+    expect(settingsLarge.getAttribute('aria-pressed')).toBe('true');
+    expect(
+      settingsLarge.classList.contains('map-first__settings-large--active'),
+    ).toBe(true);
+  });
+
+  it('큰 글씨 안내 토스트는 role=status와 카드 스타일 훅을 가진다', () => {
+    const { container, getByRole } = render(<App />);
+    fireEvent.click(getByRole('button', { name: '쉬운 화면' }));
+
+    const hint = container.querySelector('.map-first__easy-hint');
+    expect(hint).toBeTruthy();
+    expect(hint?.getAttribute('role')).toBe('status');
+    expect(hint?.textContent).toBe('큰 글씨와 큰 버튼을 사용해요');
+    // 카드 스타일 훅: 불투명 배경·테두리·그림자는 CSS 클래스로 고정한다.
+    expect(hint?.className).toBe('map-first__easy-hint');
+  });
+
+  it('프로필 표시 텍스트에 불필요한 쉼표가 없고 칩은 불투명 그림자로 구분된다', () => {
+    const { container, getByRole } = render(<App />);
+    const profile = getByRole('button', { name: /프로필 선택, 현재/ });
+    const visibleLabel = Array.from(profile.childNodes)
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent?.trim() ?? '')
+      .join('');
+    expect(visibleLabel).toBe('일반');
+    expect(visibleLabel).not.toContain(',');
+
+    const chip = getByRole('button', { name: '쉬운 화면' });
+    const chipStyles = getComputedStyle(chip);
+    expect(chipStyles.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(chipStyles.backgroundColor).not.toBe('transparent');
+    expect(chipStyles.boxShadow).not.toBe('none');
+    expect(container.querySelector('.map-first__chip-row')).toBeTruthy();
   });
 });
 

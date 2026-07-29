@@ -569,11 +569,41 @@
 }
 
 .map-first__easy-hint {
+  position: relative;
+  z-index: var(--mf-z-toast);
   margin: 0;
-  padding: 0 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--mf-ink-soft);
+  padding: 12px 14px;
+  border: 1px solid var(--mf-line);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(25, 31, 40, 0.16);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mf-ink);
+  line-height: 1.4;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .map-first__easy-hint {
+    animation: map-first-easy-hint-in 180ms ease-out;
+  }
+}
+
+@keyframes map-first-easy-hint-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-first__easy-hint {
+    animation: none;
+  }
 }
 
 .map-first__profile {
@@ -856,6 +886,36 @@
 
 .map-first__sheet--collapsed {
   max-height: 120px;
+}
+
+.map-first__sheet-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+/* PWA 배너는 시트 스택 안에서 상대 배치한다 (고정 오버레이 금지). */
+.map-first__sheet .install-prompt {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  transform: none;
+  z-index: 1;
+  width: 100%;
+  max-width: none;
+  margin: 10px 0 0;
+  box-sizing: border-box;
+}
+
+.map-first__sheet--collapsed:has(.install-prompt) {
+  max-height: min(52%, 280px);
+}
+
+.map-first__sheet--empty.map-first__sheet--collapsed:has(.install-prompt) {
+  max-height: min(58%, 320px);
 }
 
 .map-first__sheet-toggle {
@@ -2049,6 +2109,13 @@
   font-weight: 700;
 }
 
+.map-first__settings-large--active {
+  border-color: var(--mf-blue);
+  background: rgba(49, 130, 246, 0.1);
+  color: var(--mf-blue);
+  box-shadow: inset 0 0 0 1px rgba(49, 130, 246, 0.28);
+}
+
 .map-first__tab-panel .weather,
 .map-first__tab-panel .bus,
 .map-first__tab-panel .route-feedback,
@@ -2102,23 +2169,6 @@
   border: 1px solid var(--mf-line, #e5e8eb);
   border-radius: 24px 24px 0 0;
   box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.18);
-}
-
-.install-prompt {
-  z-index: 65;
-  width: min(calc(100% - 24px), 406px);
-}
-
-body:has(.map-first__sheet--empty) .install-prompt {
-  bottom: calc(224px + env(safe-area-inset-bottom, 0px));
-}
-
-body:has(.map-first__sheet--collapsed:not(.map-first__sheet--empty)) .install-prompt {
-  bottom: calc(142px + env(safe-area-inset-bottom, 0px));
-}
-
-body:has(.map-first__sheet--expanded:not(.map-first__sheet--empty)) .install-prompt {
-  bottom: calc(42dvh + 18px);
 }
 
 @media (max-width: 370px) {
