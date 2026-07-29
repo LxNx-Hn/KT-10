@@ -9,11 +9,13 @@ export default function BottomDrawer({
   title,
   onClose,
   children,
+  panelClassName,
 }: {
   drawerId: string;
   title: string;
   onClose: () => void;
   children: ReactNode;
+  panelClassName?: string;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -39,7 +41,12 @@ export default function BottomDrawer({
         panelRef.current.querySelectorAll<HTMLElement>(
           'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
         ),
-      ).filter((element) => !element.hidden);
+      ).filter(
+        (element) =>
+          !element.hidden
+          && !element.closest('[hidden]')
+          && element.getAttribute('aria-hidden') !== 'true',
+      );
       if (focusable.length === 0) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -70,7 +77,9 @@ export default function BottomDrawer({
       />
       <div
         ref={panelRef}
-        className="map-first__drawer-panel"
+        className={['map-first__drawer-panel', panelClassName]
+          .filter(Boolean)
+          .join(' ')}
         role="dialog"
         aria-modal="true"
         aria-labelledby={`${drawerId}-title`}

@@ -483,31 +483,47 @@ summary:focus-visible,
 .route-feedback { margin-top: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; background: #f8fbff; }
 .route-feedback__route { margin: -.25rem 0 .25rem; }
 .route-feedback__login-note { margin: 0 0 .8rem; color: var(--ink-soft); font-size: .88rem; }
+.route-feedback__usable { margin: 0 0 .75rem; }
+.route-feedback__usable-options,
+.route-feedback__chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
 .route-feedback__actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .75rem; }
 .route-feedback label { display: block; margin-top: .55rem; }
 .route-feedback select,
 .route-feedback input[type='number'],
 .route-feedback textarea {
-  display: block; width: 100%; min-height: 44px; margin: .3rem 0 0;
+  display: block; width: 100%; max-width: 100%; min-width: 0; min-height: 44px; margin: .3rem 0 0;
   padding: .55rem .65rem; border: 1px solid var(--line); border-radius: 8px; font: inherit;
+  box-sizing: border-box;
 }
 .route-feedback textarea { resize: vertical; }
 .route-feedback fieldset {
   margin: .8rem 0 0; padding: .7rem; border: 1px solid var(--line); border-radius: 10px;
 }
-.route-feedback fieldset .chip + .chip { margin-left: .5rem; }
-.route-feedback__details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; }
+.route-feedback fieldset .chip + .chip { margin-left: 0; }
+.route-feedback__details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
 .route-feedback__consent { font-size: .9rem; color: var(--ink-soft); }
 .route-feedback__consent input { width: 22px; height: 22px; vertical-align: middle; }
+.route-feedback__submit {
+  display: flex;
+  margin-top: .9rem;
+}
+.route-feedback__submit .btn {
+  width: 100%;
+  min-height: 48px;
+}
 .route-feedback__message { margin: .55rem 0 0; font-weight: 700; }
 .facility-report { margin-top: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 14px; }
 .facility-report > p { margin: .25rem 0 .7rem; color: var(--ink-soft); }
 .facility-report label { display: block; margin-top: .65rem; font-weight: 700; }
-.facility-report input, .facility-report select, .facility-report textarea { box-sizing: border-box; width: 100%; margin: .3rem 0; padding: .6rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.facility-report input, .facility-report select, .facility-report textarea { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; margin: .3rem 0; padding: .6rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
 .facility-report textarea { min-height: 4.5rem; resize: vertical; }
 .facility-report .btn { margin-top: .35rem; }
 .facility-report__actions { display: flex; flex-wrap: wrap; gap: .6rem; }
-.facility-report__actions .btn--primary { flex: 1; }
+.facility-report__actions .btn--primary { flex: 1; min-height: 48px; }
 
 .install-prompt {
   position: fixed; z-index: 30; left: 50%; bottom: 82px; transform: translateX(-50%);

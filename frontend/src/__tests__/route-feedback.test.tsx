@@ -59,16 +59,44 @@ describe('실제 경로 이용 후기', () => {
       target: { value: '2' },
     });
     fireEvent.click(getByRole('button', { name: '이용 가능했어요' }));
+    fireEvent.click(getByRole('button', { name: '후기 등록' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     const request = fetchMock.mock.calls[1]?.[1] as RequestInit;
     const payload = JSON.parse(String(request.body)) as Record<string, unknown>;
     expect(payload).toMatchObject({
+      wasUsable: true,
       issueType: 'crowding',
       crowdingDifficulty: 4,
       transferInformationDifficulty: 3,
       accessibilityFacilityDifficulty: 2,
       trainingConsent: false,
     });
+  });
+
+  it('이용 가능 여부를 고르지 않으면 후기를 전송하지 않는다', async () => {
+    const recommendations = recommendRoutes(
+      demoCandidates(),
+      WEATHER_SCENARIOS.normal,
+      'general',
+    );
+    const selected = {
+      ...recommendations[0],
+      score: {
+        ...recommendations[0].score,
+        feedbackToken: 'signed-feedback-token-for-ui-contract',
+      },
+    };
+    useAppStore.setState({
+      recommendations: [selected, ...recommendations.slice(1)],
+      selectedRouteId: selected.route.id,
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { getByRole } = render(<RouteFeedback />);
+    fireEvent.click(getByRole('button', { name: '후기 등록' }));
+    expect(getByRole('status').textContent).toContain('이용 가능 여부');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

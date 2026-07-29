@@ -366,10 +366,10 @@ export default function MapFirstApp() {
     }
     if (tab === 'feedback') {
       return selectedItem ? (
-        <>
+        <div className="map-first__feedback-tab">
           <RouteFeedback key={selectedRouteId ?? 'no-route'} />
           <FacilityReport />
-        </>
+        </div>
       ) : (
         <p>경로를 선택하면 이용 후기를 남길 수 있습니다.</p>
       );
@@ -730,38 +730,43 @@ export default function MapFirstApp() {
             drawerId="details-drawer"
             title="경로 상세 정보"
             onClose={closeDrawer}
+            panelClassName="map-first__drawer-panel--details"
           >
-            <div className="map-first__tabs" role="tablist" aria-label="상세 정보 종류">
-              {DETAIL_TABS.map(([id, label], index) => (
-                <button
-                  key={id}
-                  id={`detail-tab-${id}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={detailTab === id}
-                  aria-controls={`detail-panel-${id}`}
-                  tabIndex={detailTab === id ? 0 : -1}
-                  className={detailTab === id ? 'map-first__tab--active' : ''}
-                  onClick={() => setDetailTab(id)}
-                  onKeyDown={(event) => handleDetailTabKeyDown(event, index)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {DETAIL_TABS.map(([id]) => (
-              <div
-                key={id}
-                id={`detail-panel-${id}`}
-                className="map-first__tab-panel"
-                role="tabpanel"
-                aria-labelledby={`detail-tab-${id}`}
-                hidden={detailTab !== id}
-              >
-                {detailTab === id ? renderDetailContent(id) : null}
+            <div className="map-first__details-layout">
+              <div className="map-first__tabs" role="tablist" aria-label="상세 정보 종류">
+                {DETAIL_TABS.map(([id, label], index) => (
+                  <button
+                    key={id}
+                    id={`detail-tab-${id}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={detailTab === id}
+                    aria-controls={`detail-panel-${id}`}
+                    tabIndex={detailTab === id ? 0 : -1}
+                    className={detailTab === id ? 'map-first__tab--active' : ''}
+                    onClick={() => setDetailTab(id)}
+                    onKeyDown={(event) => handleDetailTabKeyDown(event, index)}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-            ))}
+
+              <div className="map-first__details-panels">
+                {DETAIL_TABS.map(([id]) => (
+                  <div
+                    key={id}
+                    id={`detail-panel-${id}`}
+                    className="map-first__tab-panel"
+                    role="tabpanel"
+                    aria-labelledby={`detail-tab-${id}`}
+                    hidden={detailTab !== id}
+                  >
+                    {detailTab === id ? renderDetailContent(id) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
           </BottomDrawer>
         )}
       </div>

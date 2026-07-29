@@ -109,7 +109,7 @@ export default function FacilityReport() {
           disabled={submitting}
           onClick={() => void submit()}
         >
-          {submitting ? '신고 저장 중…' : '시설물 오류 신고'}
+          {submitting ? '신고 접수 중…' : '신고 접수'}
         </button>
       </div>
       {message && <p role="status" aria-live="polite">{message}</p>}

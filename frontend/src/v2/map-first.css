@@ -1752,6 +1752,53 @@
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.16);
 }
 
+/* 상세 탭 전환 시 외곽 높이 점프를 막기 위해 viewport 비율로 고정한다. */
+.map-first__drawer-panel--details {
+  height: min(78dvh, 680px);
+  max-height: min(88dvh, 760px);
+}
+
+.map-first__drawer-panel--details .map-first__drawer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.map-first__details-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  height: 100%;
+}
+
+.map-first__details-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.map-first__tab-panel[hidden] {
+  display: none;
+}
+
+.map-first__feedback-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.map-first__feedback-tab .route-feedback,
+.map-first__feedback-tab .facility-report {
+  margin-top: 0;
+}
+
 .map-first__drawer-head {
   display: flex;
   align-items: center;
@@ -2198,6 +2245,16 @@
 .map-first__tab-panel .route-feedback__details select {
   max-width: 100%;
   min-width: 0;
+}
+
+.map-first__tab-panel .route-feedback__submit .btn,
+.map-first__tab-panel .facility-report__actions .btn--primary {
+  min-height: var(--mf-tap);
+}
+
+.map-first__frame--easy .map-first__tab-panel .route-feedback__details,
+.map-first__frame[data-profile='elderly'] .map-first__tab-panel .route-feedback__details {
+  grid-template-columns: 1fr;
 }
 
 @media (max-width: 359px) {

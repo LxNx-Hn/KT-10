@@ -1356,6 +1356,59 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(useAppStore.getState().selectedRouteId).toBe(selectedId);
   });
 
+  it('후기·신고 탭은 영역을 구분하고 등록·접수 버튼이 분리된다', () => {
+    act(() => seedResults());
+    const { container, getByRole, getByLabelText } = render(<App />);
+    openSelectedRouteDetails(container);
+
+    fireEvent.click(getByRole('tab', { name: '후기·신고' }));
+    expect(getByRole('tab', { name: '후기·신고' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    expect(getByRole('tab', { name: '경로' }).getAttribute('aria-selected')).toBe(
+      'false',
+    );
+
+    expect(getByRole('region', { name: '경로 이용 후기' })).toBeTruthy();
+    expect(getByRole('region', { name: '시설물 정보 오류 신고' })).toBeTruthy();
+    expect(getByLabelText('만족도')).toBeTruthy();
+    expect(getByLabelText('시설물 이름')).toBeTruthy();
+    expect(getByRole('button', { name: '후기 등록' })).toBeTruthy();
+    expect(getByRole('button', { name: '신고 접수' })).toBeTruthy();
+
+    expect(container.querySelector('.map-first__drawer-panel--details')).toBeTruthy();
+    expect(container.querySelector('.map-first__details-panels')).toBeTruthy();
+
+    // 숨겨진 경로 탭 입력은 focus 대상이 아니다.
+    expect(container.querySelector('#detail-panel-route[hidden]')).toBeTruthy();
+    expect(
+      container.querySelector('#detail-panel-route input, #detail-panel-route textarea'),
+    ).toBeNull();
+  });
+
+  it('상세 탭 전환 시 숨겨진 패널의 컨트롤은 focus 순서에 없다', () => {
+    act(() => seedResults());
+    const { container, getByRole } = render(<App />);
+    openSelectedRouteDetails(container);
+
+    fireEvent.click(getByRole('tab', { name: '후기·신고' }));
+    const feedbackPanel = container.querySelector('#detail-panel-feedback');
+    const routePanel = container.querySelector('#detail-panel-route');
+    expect(feedbackPanel?.hasAttribute('hidden')).toBe(false);
+    expect(routePanel?.hasAttribute('hidden')).toBe(true);
+
+    fireEvent.click(getByRole('tab', { name: '날씨·버스' }));
+    expect(
+      container.querySelector('#detail-panel-feedback')?.hasAttribute('hidden'),
+    ).toBe(true);
+    expect(
+      container.querySelector('#detail-panel-feedback .route-feedback'),
+    ).toBeNull();
+    expect(getByRole('tab', { name: '날씨·버스' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+  });
+
   it('프로필과 설정 패널은 동시에 열리지 않는다', () => {
     const { getByRole, queryByRole } = render(<App />);
     fireEvent.click(getByRole('button', { name: /프로필 선택, 현재/ }));
