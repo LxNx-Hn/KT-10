@@ -93,7 +93,8 @@ export default function MapFirstApp() {
   const [drawer, setDrawer] = useState<DrawerId | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('route');
   const [sheetExpanded, setSheetExpanded] = useState(true);
-  const [searchPanelExpanded, setSearchPanelExpanded] = useState(true);
+  // 최초 진입은 collapsed 한 줄 검색. true일 때만 전체 패널을 연다.
+  const [searchPanelExpanded, setSearchPanelExpanded] = useState(false);
   const [showFacilities, setShowFacilities] = useState(false);
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [facilityHint, setFacilityHint] = useState<string | null>(null);
@@ -146,10 +147,15 @@ export default function MapFirstApp() {
     SITUATION_CONDITIONS.filter(({ key }) => Boolean(options[key])).length
     + ROUTE_OPTION_CONDITIONS.filter(({ key }) => Boolean(options[key])).length
     + activeConditionCount;
+  // collapsed: 결과 없음 + 패널 닫힘
+  // summary: 결과·OD 있음 + 패널 닫힘
+  // expanded: 사용자가 검색창을 연 상태 (오류/빈 결과 포함)
   const searchPanelMode =
-    !searchPanelExpanded && ranked.length > 0 && origin && destination
-      ? 'compact'
-      : 'expanded';
+    searchPanelExpanded
+      ? 'expanded'
+      : ranked.length > 0 && origin && destination
+        ? 'summary'
+        : 'collapsed';
   const showVoiceControl = drawer === null && !(ranked.length > 0 && sheetExpanded);
   const profileMeta = PROFILES[profile];
   const showLabeledControls =
@@ -194,15 +200,10 @@ export default function MapFirstApp() {
     setFacilityHint(null);
   }, [selectedRouteId]);
 
-  useEffect(() => {
-    if (ranked.length === 0) {
-      setSearchPanelExpanded(true);
-    }
-  }, [ranked.length]);
-
   // 지연 정밀화 구조에서 2위 이하 후보의 estimated 대중교통 선형·shade
   // 없음은 정상 상태다. 시간 기반 전체 재추천(refreshEnrichment 타이머)은
   // 불필요한 전체 /recommend 재실행을 만들므로 두지 않는다.
+  // ranked.length === 0만으로 expanded를 강제하지 않는다(최초 진입은 collapsed).
 
   const closeDrawer = useCallback(() => setDrawer(null), []);
 
@@ -240,8 +241,20 @@ export default function MapFirstApp() {
     setSearchPanelExpanded(!searchSucceeded);
   };
 
-  const editSearchConditions = () => {
+  const expandSearchPanel = () => {
     setSearchPanelExpanded(true);
+    window.requestAnimationFrame(() => {
+      if (!origin) originInputRef.current?.focus();
+      else if (!destination) destinationInputRef.current?.focus();
+    });
+  };
+
+  const collapseSearchPanel = () => {
+    setSearchPanelExpanded(false);
+  };
+
+  const editSearchConditions = () => {
+    expandSearchPanel();
   };
 
   const locate = () => {
@@ -335,6 +348,8 @@ export default function MapFirstApp() {
           activeConditionCount={activeConditionCount}
           summaryConditionCount={summaryConditionCount}
           conditionsDrawerOpen={drawer === 'conditions'}
+          onExpand={expandSearchPanel}
+          onCollapse={collapseSearchPanel}
           onSelectOrigin={setOrigin}
           onClearOrigin={() => setOrigin(null)}
           onSelectDestination={setDestination}

@@ -5,6 +5,9 @@ import PlaceCombobox from './PlaceCombobox';
 
 export type SearchPanelMode = 'expanded' | 'compact';
 
+/** SearchHeader collapsed/summary 트리거와 expanded 패널을 연결한다. */
+export const SEARCH_PANEL_ID = 'map-first-search-panel';
+
 type QuickCondition = {
   key: ToggleableScoringOption;
   label: string;
@@ -29,6 +32,7 @@ type RouteSearchPanelProps = {
   activeConditionCount: number;
   summaryConditionCount: number;
   conditionsDrawerOpen: boolean;
+  onCollapse?: () => void;
   onSelectOrigin: (place: Place) => void;
   onClearOrigin: () => void;
   onSelectDestination: (place: Place) => void;
@@ -110,6 +114,7 @@ export default function RouteSearchPanel({
   activeConditionCount,
   summaryConditionCount,
   conditionsDrawerOpen,
+  onCollapse,
   onSelectOrigin,
   onClearOrigin,
   onSelectDestination,
@@ -124,16 +129,22 @@ export default function RouteSearchPanel({
   onOpenConditions,
 }: RouteSearchPanelProps) {
   const compact = mode === 'compact';
+  const summaryLabel = `${origin?.name ?? '출발지'}에서 ${
+    destination?.name ?? '도착지'
+  }까지, 검색 조건 수정`;
 
   return (
-    <div className="map-first__top" data-search-panel={mode}>
+    <>
       {compact ? (
-        <div
-          className="map-first__search map-first__search--compact"
-          role="status"
-          aria-label={`${origin?.name ?? '출발지'}에서 ${destination?.name ?? '도착지'}까지`}
-        >
-          <div className="map-first__search-summary">
+        <div className="map-first__search map-first__search--compact">
+          <button
+            type="button"
+            className="map-first__search-summary"
+            aria-expanded={false}
+            aria-controls={SEARCH_PANEL_ID}
+            aria-label={summaryLabel}
+            onClick={onEditSearch}
+          >
             <span className="map-first__summary-od">
               <span className="map-first__summary-place">
                 {origin?.name ?? '출발지'}
@@ -150,17 +161,26 @@ export default function RouteSearchPanel({
                 조건 {summaryConditionCount}개
               </span>
             )}
-            <button
-              type="button"
-              className="map-first__search-edit"
-              onClick={onEditSearch}
-            >
-              검색 조건 수정
-            </button>
-          </div>
+            <span className="map-first__search-edit">검색 조건 수정</span>
+          </button>
         </div>
       ) : (
         <div className="map-first__search">
+          {onCollapse && (
+            <div className="map-first__search-toolbar">
+              <button
+                type="button"
+                className="map-first__search-collapse"
+                aria-label="검색창 접기"
+                aria-expanded={true}
+                aria-controls={SEARCH_PANEL_ID}
+                onClick={onCollapse}
+              >
+                <span aria-hidden="true">⌃</span>
+                <span className="map-first__search-collapse-label">접기</span>
+              </button>
+            </div>
+          )}
           <div className="map-first__search-body">
             <PlaceCombobox
               fieldId="map-first-origin"
@@ -337,6 +357,6 @@ export default function RouteSearchPanel({
           큰 글씨와 큰 버튼을 사용해요
         </p>
       )}
-    </div>
+    </>
   );
 }

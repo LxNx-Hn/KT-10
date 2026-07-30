@@ -172,6 +172,13 @@ function openSelectedRouteDetails(container: HTMLElement) {
   );
 }
 
+/** 최초 collapsed 한 줄 검색을 열어 expanded 패널을 표시한다. */
+function expandSearchFromCollapsed(
+  getByRole: ReturnType<typeof render>['getByRole'],
+) {
+  fireEvent.click(getByRole('button', { name: '어디로 갈까요?' }));
+}
+
 function dispatchInstallPrompt() {
   const event = new Event('beforeinstallprompt', {
     cancelable: true,
@@ -221,17 +228,34 @@ afterEach(() => {
 });
 
 describe('프로덕션 v2 지도 중심 UI', () => {
-  it('첫 화면은 지도 위에 카카오 장소 선택 입력을 제공한다', () => {
-    const { container, getByLabelText, getByRole } = render(<App />);
+  it('첫 화면은 지도 위에 한 줄 검색창만 제공한다', () => {
+    const { container, getByRole, queryByLabelText, queryByRole } = render(
+      <App />,
+    );
     const map = getByRole('region', { name: '지도' });
-    const search = container.querySelector('.map-first__search');
+    const collapsed = getByRole('button', { name: '어디로 갈까요?' });
 
     expect(container.querySelector('.map-first__frame')).toBeTruthy();
     expect(
+      container.querySelector('[data-search-panel="collapsed"]'),
+    ).toBeTruthy();
+    expect(container.querySelector('[data-search-header="collapsed"]')).toBeTruthy();
+    expect(precedes(map, collapsed)).toBe(true);
+    expect(collapsed.getAttribute('aria-expanded')).toBe('false');
+    expect(collapsed.getAttribute('aria-controls')).toBe('map-first-search-panel');
+    expect(queryByLabelText('출발지')).toBeNull();
+    expect(queryByLabelText('도착지')).toBeNull();
+    expect(queryByRole('button', { name: '경로 찾기' })).toBeNull();
+    expect(container.querySelector('.map-first__chip-scroll')).toBeNull();
+  });
+
+  it('한 줄 검색창을 누르면 expanded 패널이 열린다', () => {
+    const { container, getByRole, getByLabelText } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
+
+    expect(
       container.querySelector('[data-search-panel="expanded"]'),
     ).toBeTruthy();
-    expect(search).toBeTruthy();
-    expect(precedes(map, search!)).toBe(true);
     expect(getByLabelText('출발지').getAttribute('placeholder')).toBe(
       '출발지 검색',
     );
@@ -239,6 +263,9 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       '도착지 검색',
     );
     expect(getByRole('button', { name: '경로 찾기' })).toBeTruthy();
+    expect(getByRole('button', { name: '검색창 접기' }).getAttribute('aria-expanded')).toBe(
+      'true',
+    );
   });
 
   it('검색 성공 후 compact summary를 보여주고 수정 시 API를 호출하지 않는다', async () => {
@@ -264,6 +291,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     const { container, getByRole, getByLabelText, queryByRole } = render(
       <App />,
     );
+    expandSearchFromCollapsed(getByRole);
     act(() => {
       useAppStore.setState({
         origin,
@@ -305,6 +333,9 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       expect(
         container.querySelector('[data-search-panel="compact"]'),
       ).toBeTruthy();
+      expect(
+        container.querySelector('[data-search-header="summary"]'),
+      ).toBeTruthy();
     });
 
     const summary = container.querySelector('.map-first__search--compact');
@@ -319,7 +350,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     recommend.mockClear();
     refine.mockClear();
 
-    fireEvent.click(getByRole('button', { name: '검색 조건 수정' }));
+    fireEvent.click(getByRole('button', { name: /검색 조건 수정/ }));
     expect(
       container.querySelector('[data-search-panel="expanded"]'),
     ).toBeTruthy();
@@ -331,6 +362,27 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(container.querySelectorAll('.map-first__route-card').length).toBe(
       beforeCount,
     );
+  });
+
+  it('검색창 접기는 입력값을 유지하고 collapsed로 돌아간다', () => {
+    const origin = findPlace('gu-office')!;
+    const { container, getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
+    act(() => {
+      useAppStore.setState({ origin, destination: null });
+    });
+
+    fireEvent.click(getByRole('button', { name: '검색창 접기' }));
+    expect(
+      container.querySelector('[data-search-panel="collapsed"]'),
+    ).toBeTruthy();
+    expect(useAppStore.getState().origin?.id).toBe(origin.id);
+
+    expandSearchFromCollapsed(getByRole);
+    expect(
+      container.querySelector('[data-search-panel="expanded"]'),
+    ).toBeTruthy();
+    expect(useAppStore.getState().origin?.id).toBe(origin.id);
   });
 
   it('검색 실패나 결과 없음이면 expanded 검색 UI를 유지한다', async () => {
@@ -345,6 +397,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     );
 
     const { container, getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
     act(() => {
       useAppStore.setState({
         origin,
@@ -378,6 +431,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
   it('조건 칩은 aria-pressed로 선택 상태를 표현한다', () => {
     const { container, getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
     expect(container.querySelectorAll('.map-first__chip-scroll')).toHaveLength(1);
     const luggage = getByRole('button', { name: '짐 많음' });
     const stairs = getByRole('button', { name: '계단 회피' });
@@ -411,6 +465,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       .spyOn(adapters.places, 'searchPlaces')
       .mockResolvedValue([place]);
     const { getByLabelText, getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
 
     fireEvent.change(getByLabelText('출발지'), {
       target: { value: '북구청' },
@@ -433,6 +488,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
   it('프로필 drawer에서 6개 프로필을 선택할 수 있다', () => {
     const { container, getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
     expect(container.querySelector('[role="radiogroup"]')).toBeNull();
 
     fireEvent.click(
@@ -786,6 +842,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
   it('빠른 토글과 중복되지 않는 4개 이동 조건을 drawer에서 조정한다', () => {
     const { container, getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
     const quickLuggage = getByRole('button', { name: '짐 많음' });
     const quickStairs = getByRole('button', { name: '계단 회피' });
     const easyScreen = getByRole('button', { name: '쉬운 화면' });
@@ -826,6 +883,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
   it('활성 조건이 생겨도 조건 버튼 폭과 접근 가능한 이름이 안정적이다', () => {
     const { getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
     const conditions = getByRole('button', { name: '조건' });
     const widthBefore = conditions.getBoundingClientRect().width;
 
@@ -1145,6 +1203,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
   it('쉬운 화면 칩과 내 설정 큰 글씨 버튼은 aria-pressed와 선택 스타일을 공유한다', () => {
     act(() => seedResults());
     const { getByRole } = render(<App />);
+    fireEvent.click(getByRole('button', { name: /검색 조건 수정/ }));
     const easy = getByRole('button', { name: '쉬운 화면' });
 
     expect(easy.getAttribute('aria-pressed')).toBe('false');
@@ -1177,6 +1236,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
   it('고령자 프로필 선택 시 큰 글씨 모드 선택 상태가 두 컨트롤에 반영된다', () => {
     const { getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
 
     fireEvent.click(
       getByRole('button', { name: /프로필 선택, 현재/ }),
@@ -1206,6 +1266,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
   it('큰 글씨 안내 토스트는 role=status와 카드 스타일 훅을 가진다', () => {
     const { container, getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
     fireEvent.click(getByRole('button', { name: '쉬운 화면' }));
 
     const hint = container.querySelector('.map-first__easy-hint');
@@ -1218,6 +1279,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
   it('프로필 표시 텍스트에 불필요한 쉼표가 없고 조건 바는 불투명 표면으로 지도를 가린다', () => {
     const { container, getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
     const profile = getByRole('button', { name: /프로필 선택, 현재/ });
     const visibleLabel = profile
       .querySelector('.map-first__profile-label')
@@ -1233,8 +1295,9 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(container.querySelector('.map-first__context-bar')).toBeTruthy();
   });
 
-  it('검색 전에도 내 설정 버튼이 보이고 독립 dialog를 연다', () => {
+  it('검색 패널을 열면 내 설정 버튼이 보이고 독립 dialog를 연다', () => {
     const { getByRole, queryByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
     const settingsEntry = getByRole('button', { name: '내 설정' });
     expect(settingsEntry.getAttribute('aria-haspopup')).toBe('dialog');
     expect(settingsEntry.getAttribute('aria-expanded')).toBe('false');
@@ -1261,6 +1324,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       .mockResolvedValueOnce([destination]);
 
     const { container, getByLabelText, getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
     fireEvent.change(getByLabelText('출발지'), {
       target: { value: origin.name },
     });
@@ -1296,6 +1360,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
   it('내 설정 dialog는 Escape와 닫기로 닫히고 버튼으로 focus가 복귀한다', async () => {
     const { getByRole, queryByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
     const openSettings = () => {
       const settingsEntry = getByRole('button', { name: '내 설정' });
       settingsEntry.focus();
@@ -1411,6 +1476,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
   it('짐 많음 선택 후에도 조건 chip은 축소되지 않고 조건 버튼은 스크롤 밖에 고정된다', () => {
     const { container, getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
     const luggage = getByRole('button', { name: '짐 많음' });
     const conditions = getByRole('button', { name: '조건' });
 
@@ -1431,7 +1497,8 @@ describe('프로덕션 v2 지도 중심 UI', () => {
   });
 
   it('상단 프로필·조건 바는 불투명 표면 클래스로 지도를 가린다', () => {
-    const { container } = render(<App />);
+    const { container, getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
     expect(container.querySelector('.map-first__account-row')).toBeTruthy();
     expect(container.querySelector('.map-first__context-bar')).toBeTruthy();
     // 배경은 CSS 클래스에 고정한다(jsdom은 stylesheet 색을 계산하지 않음).
@@ -1475,6 +1542,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
   it('프로필과 설정 패널은 동시에 열리지 않는다', () => {
     const { getByRole, queryByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
     fireEvent.click(getByRole('button', { name: /프로필 선택, 현재/ }));
     expect(getByRole('dialog', { name: '이동 프로필 선택' })).toBeTruthy();
 

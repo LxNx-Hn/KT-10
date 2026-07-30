@@ -313,8 +313,23 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   min-width: 0;
   min-height: var(--mf-tap);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.map-first__search-summary:focus-visible {
+  outline: 3px solid rgba(49, 130, 246, 0.55);
+  outline-offset: 2px;
+  border-radius: 12px;
 }
 
 .map-first__summary-od {
@@ -356,7 +371,10 @@
 
 .map-first__search-edit {
   flex: none;
-  min-height: var(--mf-tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(var(--mf-tap) - 8px);
   min-width: var(--mf-tap);
   padding: 0 12px;
   border: 1px solid var(--mf-line);
@@ -366,8 +384,9 @@
   font-family: inherit;
   font-size: 12px;
   font-weight: 700;
-  cursor: pointer;
   white-space: nowrap;
+  box-sizing: border-box;
+  pointer-events: none;
 }
 
 .map-first__demo-hint {
@@ -776,11 +795,110 @@
   border: 1px solid var(--mf-line);
 }
 
-/* ── Screen shell roots (Step 5-B; layout via existing selectors) ── */
-.map-first__search-header,
-.map-first__search-header-body,
+/* ── Screen shell roots (Step 5-B/5-C) ── */
 .map-first__detail-sheet {
   display: contents;
+}
+
+.map-first__search-header-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mf-content-gap);
+  min-width: 0;
+}
+
+.map-first__search-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  margin: 0 4px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 18px;
+  background: var(--mf-surface);
+  box-shadow: var(--mf-shadow);
+  color: var(--mf-ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.map-first__search-collapsed:focus-visible {
+  outline: 3px solid rgba(49, 130, 246, 0.55);
+  outline-offset: 2px;
+}
+
+.map-first__search-collapsed-icon {
+  flex: none;
+  color: var(--mf-blue);
+}
+
+.map-first__search-collapsed-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.map-first__search-collapsed-title {
+  color: var(--mf-ink);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.map-first__search-collapsed-hint {
+  color: var(--mf-ink-soft);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.map-first__search-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 4px;
+}
+
+.map-first__search-collapse {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--mf-ink-soft);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.map-first__search-collapse:focus-visible {
+  outline: 3px solid rgba(49, 130, 246, 0.55);
+  outline-offset: 2px;
+}
+
+@media (max-width: 360px) {
+  .map-first__search-collapsed {
+    margin-inline: 0;
+    min-height: 54px;
+    padding-inline: 14px;
+  }
+
+  .map-first__search-collapsed-title {
+    font-size: 15px;
+  }
+
+  .map-first__search-collapsed-hint {
+    font-size: 11px;
+  }
 }
 
 /* ── Map side controls ── */
