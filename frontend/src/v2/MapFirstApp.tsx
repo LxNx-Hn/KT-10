@@ -4,21 +4,14 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
 } from 'react';
 import { useVoiceChatStore } from '@/chat/voiceChatStore';
-import BusArrivalCard from '@/components/BusArrivalCard';
 import DepartureTimePicker, {
   formatDepartureButtonLabel,
 } from '@/components/DepartureTimePicker';
-import FacilityReport from '@/components/FacilityReport';
-import InstallPrompt from '@/components/InstallPrompt';
 import RouteConditions, {
   ROUTE_CONDITION_KEYS,
 } from '@/components/RouteConditions';
-import RouteFeedback from '@/components/RouteFeedback';
-import WeatherWarning from '@/components/WeatherWarning';
 import { PROFILE_LIST, PROFILES } from '@/config/profiles';
 import {
   useAppStore,
@@ -27,9 +20,12 @@ import {
 import { serverRankedRecommendations } from '@/utils/routes';
 import KakaoMap, { SLOPE_COLOR_RAMP } from './KakaoMap';
 import BottomDrawer from './components/BottomDrawer';
-import RouteDetails from './components/RouteDetails';
-import RouteResultList from './components/RouteResultList';
-import RouteSearchPanel from './components/RouteSearchPanel';
+import MapControls from './components/MapControls';
+import RouteDetailSheet, {
+  type DetailTab,
+} from './components/RouteDetailSheet';
+import RouteResultsSheet from './components/RouteResultsSheet';
+import SearchHeader from './components/SearchHeader';
 import SettingsPanel from './components/SettingsPanel';
 import {
   buildRouteViewModel,
@@ -37,7 +33,6 @@ import {
 import './map-first.css';
 
 type DrawerId = 'profile' | 'conditions' | 'details' | 'departure' | 'settings';
-type DetailTab = 'route' | 'environment' | 'feedback';
 
 const SITUATION_CONDITIONS: Array<{
   key: ToggleableScoringOption;
@@ -53,35 +48,10 @@ const ROUTE_OPTION_CONDITIONS: Array<{
   { key: 'avoidStairs', label: '계단 회피' },
 ];
 
-const DETAIL_TABS: Array<[DetailTab, string]> = [
-  ['route', '경로'],
-  ['environment', '날씨·버스'],
-  ['feedback', '후기·신고'],
-];
-
 /** 트리거 표시용. 내부 profile id/서버 값은 바꾸지 않는다. */
 function profileTriggerLabel(label: string): string {
   const display = label === '청소년' ? '청년' : label;
   return `${display} 프로필`;
-}
-
-function LocationIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" strokeLinecap="round" />
-      <circle cx="12" cy="12" r="8" />
-    </svg>
-  );
-}
-
-function FacilityIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="M12 2l9 5-9 5-9-5 9-5z" strokeLinejoin="round" />
-      <path d="M3 12l9 5 9-5M3 17l9 5 9-5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
 }
 
 function VoiceIcon() {
@@ -89,23 +59,6 @@ function VoiceIcon() {
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3z" />
       <path d="M19 11a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.93V21a1 1 0 1 0 2 0v-3.07A7 7 0 0 0 19 11z" />
-    </svg>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="18"
-      height="18"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="8" />
-      <path d="M12 8v5l3 2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -320,63 +273,6 @@ export default function MapFirstApp() {
     setFacilityHint('선택한 경로의 편의시설 정보를 안내해 드립니다.');
   };
 
-  const handleDetailTabKeyDown = (
-    event: ReactKeyboardEvent<HTMLButtonElement>,
-    index: number,
-  ) => {
-    let nextIndex: number | null = null;
-    if (event.key === 'ArrowRight') {
-      nextIndex = (index + 1) % DETAIL_TABS.length;
-    } else if (event.key === 'ArrowLeft') {
-      nextIndex = (index - 1 + DETAIL_TABS.length) % DETAIL_TABS.length;
-    } else if (event.key === 'Home') {
-      nextIndex = 0;
-    } else if (event.key === 'End') {
-      nextIndex = DETAIL_TABS.length - 1;
-    }
-    if (nextIndex === null) return;
-    event.preventDefault();
-    const nextTab = DETAIL_TABS[nextIndex][0];
-    setDetailTab(nextTab);
-    window.requestAnimationFrame(() => {
-      document.getElementById(`detail-tab-${nextTab}`)?.focus();
-    });
-  };
-
-  const renderDetailContent = (tab: DetailTab): ReactNode => {
-    if (tab === 'route') {
-      return selectedItem ? (
-        <RouteDetails
-          item={selectedItem}
-          rank={selectedIndex + 1}
-          profile={profile}
-          peers={ranked}
-        />
-      ) : (
-        <p>먼저 경로를 검색해 주세요.</p>
-      );
-    }
-    if (tab === 'environment') {
-      return (
-        <>
-          <WeatherWarning />
-          <BusArrivalCard />
-        </>
-      );
-    }
-    if (tab === 'feedback') {
-      return selectedItem ? (
-        <div className="map-first__feedback-tab">
-          <RouteFeedback key={selectedRouteId ?? 'no-route'} />
-          <FacilityReport />
-        </div>
-      ) : (
-        <p>경로를 선택하면 이용 후기를 남길 수 있습니다.</p>
-      );
-    }
-    return null;
-  };
-
   const frameClass = [
     'map-first__frame',
     largeUi ? 'map-first__frame--easy' : '',
@@ -420,7 +316,7 @@ export default function MapFirstApp() {
           }|${drawer ?? 'none'}`}
         />
 
-        <RouteSearchPanel
+        <SearchHeader
           mode={searchPanelMode}
           origin={origin}
           destination={destination}
@@ -453,50 +349,16 @@ export default function MapFirstApp() {
           onOpenConditions={() => setDrawer('conditions')}
         />
 
-        <div className="map-first__fab-stack">
-          <button
-            type="button"
-            className={`map-first__fab${locating ? ' map-first__fab--busy' : ''}${
-              showLabeledControls ? ' map-first__fab--labeled' : ''
-            }`}
-            aria-label="현재 위치를 출발지로 사용"
-            aria-busy={locating}
-            disabled={locating}
-            onClick={locate}
-          >
-            {locating ? (
-              <span className="map-first__fab-spinner" aria-hidden="true" />
-            ) : (
-              <LocationIcon />
-            )}
-            {showLabeledControls && <span className="map-first__fab-label">내 위치</span>}
-          </button>
-          <button
-            type="button"
-            className={`map-first__fab${
-              showFacilities && hasFacilityOverlay ? ' map-first__fab--active' : ''
-            }${
-              showLabeledControls ? ' map-first__fab--labeled' : ''
-            }`}
-            aria-label={
-              hasFacilityOverlay
-                ? '편의시설 오버레이'
-                : hasFacilityInfo
-                  ? '편의시설 오버레이, 위치 데이터 없음'
-                  : '편의시설 오버레이 자료 없음'
-            }
-            aria-pressed={hasFacilityOverlay ? showFacilities : undefined}
-            onClick={handleFacilityLayerClick}
-          >
-            <FacilityIcon />
-            {showLabeledControls && <span className="map-first__fab-label">편의시설</span>}
-          </button>
-          {facilityHint && (
-            <p className="map-first__fab-hint" role="status" aria-live="polite">
-              {facilityHint}
-            </p>
-          )}
-        </div>
+        <MapControls
+          locating={locating}
+          showLabeledControls={showLabeledControls}
+          showFacilities={showFacilities}
+          hasFacilityOverlay={hasFacilityOverlay}
+          hasFacilityInfo={hasFacilityInfo}
+          facilityHint={facilityHint}
+          onLocate={locate}
+          onFacilityLayerClick={handleFacilityLayerClick}
+        />
 
         {hasShadeOverlay &&
           selectedShade?.shadeRatio !== undefined && (
@@ -572,73 +434,34 @@ export default function MapFirstApp() {
           </div>
         )}
 
-        <section
-          className={`map-first__sheet map-first__sheet--${
-            sheetExpanded ? 'expanded' : 'collapsed'
-          }${ranked.length === 0 ? ' map-first__sheet--empty' : ''}`}
-          aria-label="경로 결과"
-        >
-          <div className="map-first__sheet-stack">
-            <InstallPrompt />
-            <button
-              type="button"
-              className="map-first__sheet-toggle"
-              aria-expanded={sheetExpanded}
-              aria-label={sheetExpanded ? '경로 결과 접기' : '경로 결과 펼치기'}
-              onClick={() => setSheetExpanded((expanded) => !expanded)}
-            >
-            <span className="map-first__sheet-handle" aria-hidden="true">
-              <span className="map-first__sheet-handle-bar" />
-            </span>
-            <span className="map-first__sheet-header">
-              <span className="map-first__sheet-title">{sheetTitle}</span>
-              <span className="map-first__sheet-meta">{sheetMeta}</span>
-            </span>
-          </button>
+        <RouteResultsSheet
+          sheetExpanded={sheetExpanded}
+          loading={loading}
+          ranked={ranked}
+          profile={profile}
+          selectedRouteId={selectedRouteId}
+          refiningRouteKeys={refiningRouteKeys}
+          sheetTitle={sheetTitle}
+          sheetMeta={sheetMeta}
+          departureButtonLabel={departureButtonLabel}
+          departureDrawerOpen={drawer === 'departure'}
+          onToggleSheet={() => setSheetExpanded((expanded) => !expanded)}
+          onOpenDeparture={() => setDrawer('departure')}
+          onSelectRoute={selectRoute}
+          onDetails={openDetails}
+        />
 
-          {sheetExpanded && (
-            <div className="map-first__sheet-body">
-              {loading && <p className="map-first__empty-state" role="status">경로를 찾고 있어요…</p>}
-              {!loading && ranked.length > 0 && (
-                <>
-                  <button
-                    type="button"
-                    className="map-first__departure-btn"
-                    aria-haspopup="dialog"
-                    aria-expanded={drawer === 'departure'}
-                    disabled={loading}
-                    onClick={() => setDrawer('departure')}
-                  >
-                    <span className="map-first__departure-btn-icon" aria-hidden="true">
-                      <ClockIcon />
-                    </span>
-                    <span className="map-first__departure-btn-label">
-                      {departureButtonLabel}
-                    </span>
-                    <span className="map-first__departure-btn-chevron" aria-hidden="true">
-                      ▾
-                    </span>
-                  </button>
-                  <RouteResultList
-                    recommendations={ranked}
-                    profile={profile}
-                    selectedRouteId={selectedRouteId}
-                    refiningRouteKeys={refiningRouteKeys}
-                    onSelectRoute={selectRoute}
-                    onDetails={openDetails}
-                  />
-                </>
-              )}
-              {!loading && ranked.length === 0 && (
-                <div className="map-first__empty-state">
-                  <strong>검색 전에는 경로 수치나 편의 특성을 표시하지 않습니다.</strong>
-                  <p>출발지와 도착지를 선택하면 비교 가능한 경로만 보여드려요.</p>
-                </div>
-              )}
-            </div>
-          )}
-          </div>
-        </section>
+        <RouteDetailSheet
+          open={drawer === 'details'}
+          detailTab={detailTab}
+          selectedItem={selectedItem}
+          selectedIndex={selectedIndex}
+          selectedRouteId={selectedRouteId}
+          profile={profile}
+          peers={ranked}
+          onClose={closeDrawer}
+          onDetailTabChange={setDetailTab}
+        />
 
         {drawer === 'profile' && (
           <BottomDrawer
@@ -722,51 +545,6 @@ export default function MapFirstApp() {
                 }
               }}
             />
-          </BottomDrawer>
-        )}
-
-        {drawer === 'details' && (
-          <BottomDrawer
-            drawerId="details-drawer"
-            title="경로 상세 정보"
-            onClose={closeDrawer}
-            panelClassName="map-first__drawer-panel--details"
-          >
-            <div className="map-first__details-layout">
-              <div className="map-first__tabs" role="tablist" aria-label="상세 정보 종류">
-                {DETAIL_TABS.map(([id, label], index) => (
-                  <button
-                    key={id}
-                    id={`detail-tab-${id}`}
-                    type="button"
-                    role="tab"
-                    aria-selected={detailTab === id}
-                    aria-controls={`detail-panel-${id}`}
-                    tabIndex={detailTab === id ? 0 : -1}
-                    className={detailTab === id ? 'map-first__tab--active' : ''}
-                    onClick={() => setDetailTab(id)}
-                    onKeyDown={(event) => handleDetailTabKeyDown(event, index)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="map-first__details-panels">
-                {DETAIL_TABS.map(([id]) => (
-                  <div
-                    key={id}
-                    id={`detail-panel-${id}`}
-                    className="map-first__tab-panel"
-                    role="tabpanel"
-                    aria-labelledby={`detail-tab-${id}`}
-                    hidden={detailTab !== id}
-                  >
-                    {detailTab === id ? renderDetailContent(id) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
           </BottomDrawer>
         )}
       </div>

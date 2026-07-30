@@ -776,6 +776,13 @@
   border: 1px solid var(--mf-line);
 }
 
+/* ── Screen shell roots (Step 5-B; layout via existing selectors) ── */
+.map-first__search-header,
+.map-first__search-header-body,
+.map-first__detail-sheet {
+  display: contents;
+}
+
 /* ── Map side controls ── */
 .map-first__fab-stack {
   position: absolute;
