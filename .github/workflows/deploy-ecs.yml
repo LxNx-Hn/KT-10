@@ -24,7 +24,7 @@ env:
   AWS_REGION: ap-northeast-2
   AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID || '819044292803' }}
   ECS_CLUSTER: kt10-prod
-  PROD_BASE_URL: ${{ vars.PROD_BASE_URL || 'http://kt10-prod-alb-1184252064.ap-northeast-2.elb.amazonaws.com' }}
+  PROD_BASE_URL: ${{ vars.PROD_BASE_URL || 'https://dongnet.kr' }}
 
 jobs:
   deploy:
