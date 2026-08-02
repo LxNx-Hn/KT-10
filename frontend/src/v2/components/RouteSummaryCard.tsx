@@ -1,8 +1,35 @@
 import {
-  type V2RouteFactKind,
+  type V2RouteFact,
   type V2RouteViewModel,
 } from '../routeViewModel';
-import type { SlopeLevelId } from '../utils/slopeLevel';
+
+const ATTENTION_FACT_IDS = new Set([
+  'terrain',
+  'stairs',
+  'elevator',
+  'low-floor',
+  'shade',
+]);
+
+/** 추천 근거 문장과 겹치는 배지 라벨은 숨긴다. */
+function overlapsReason(label: string, reasons: string[]): boolean {
+  const compact = label.replace(/\s+/g, '');
+  return reasons.some((reason) => {
+    const text = reason.replace(/\s+/g, '');
+    return text.includes(compact) || compact.includes(text.slice(0, 8));
+  });
+}
+
+function pickAttentionFacts(
+  facts: V2RouteFact[],
+  reasons: string[],
+): V2RouteFact[] {
+  return facts
+    .filter((fact) => ATTENTION_FACT_IDS.has(fact.id))
+    .filter((fact) => fact.kind !== 'neutral')
+    .filter((fact) => !overlapsReason(fact.label, reasons))
+    .slice(0, 3);
+}
 
 export default function RouteSummaryCard({
   view,
@@ -17,46 +44,12 @@ export default function RouteSummaryCard({
   onSelect: () => void;
   onDetails: () => void;
 }) {
-  const prioritizedFacts = [...view.facts].sort((left, right) => {
-    const priority = (id: string) => {
-      if (id === 'shade') return 0;
-      if (id === 'terrain' || id === 'elevation-gain') return 1;
-      if (id === 'stairs') return 2;
-      if (id === 'elevator') return 3;
-      return 4;
-    };
-    return priority(left.id) - priority(right.id);
-  });
-  const badgeCandidates: Array<{
-    label: string;
-    kind: V2RouteFactKind;
-    slopeLevel?: SlopeLevelId;
-    title?: string;
-  }> = [
-    ...prioritizedFacts.map((fact) => ({
-      label: fact.label,
-      kind: fact.kind,
-      slopeLevel: fact.slopeLevel,
-      title: fact.title,
-    })),
-    ...view.characteristicLabels.map((label) => ({
-      label,
-      kind: 'advantage' as const,
-    })),
-    ...view.traitLabels.map((label) => ({
-      label,
-      kind: 'advantage' as const,
-    })),
-  ];
-  const badges = badgeCandidates.filter(
-    (badge, index, all) =>
-      all.findIndex((candidate) => candidate.label === badge.label) === index,
-  );
-  const shadeFact = view.facts.find((fact) => fact.id === 'shade');
-  const shadeReason =
-    shadeFact && (shadeFact.kind === 'unknown' || shadeFact.kind === 'neutral')
-      ? shadeFact.detail
-      : undefined;
+  const displayReasons = view.reasons.slice(0, 3);
+  const attentionFacts = pickAttentionFacts(view.facts, displayReasons);
+  const durationLabel = `${view.stats.durationMin}분`;
+  const scoreText = view.score.available && view.score.rounded !== null
+    ? `${view.scoreKindLabel} ${view.score.rounded}점`
+    : view.score.summaryLabel;
 
   return (
     <article
@@ -68,7 +61,7 @@ export default function RouteSummaryCard({
       data-route-id={view.routeId}
       aria-current={selected ? 'true' : undefined}
       aria-busy={refining ? 'true' : undefined}
-      aria-label={`${view.rank}순위 경로, ${view.score.ariaLabel}`}
+      aria-label={`${view.rank}순위 경로, 소요 ${durationLabel}, ${view.score.ariaLabel}`}
       onClick={onSelect}
       onKeyDown={(event) => {
         // Tab으로 focus만 옮기는 것은 선택이 아니다. 키보드 선택은
@@ -79,36 +72,41 @@ export default function RouteSummaryCard({
         }
       }}
     >
-      <header className="map-first__route-card-head">
+      <div className="map-first__route-card-topline">
         <span className="map-first__rank-badge">{view.rank}순위</span>
-        <div className="map-first__route-card-title">
-          <h3>{view.summary}</h3>
-          <p>{view.title}</p>
-        </div>
+        <span className="map-first__route-card-type">
+          {view.profileLabel}
+          {' '}
+          맞춤
+        </span>
+      </div>
+
+      <h3 className="map-first__route-card-summary">{view.summary}</h3>
+
+      <div className="map-first__route-card-metrics">
+        <p
+          className="map-first__route-card-duration"
+          aria-label={`소요시간 ${durationLabel}`}
+        >
+          <strong>{view.stats.durationMin}</strong>
+          <span>분</span>
+        </p>
         <div
           className="map-first__route-score"
           title={view.score.ariaLabel}
           aria-label={view.score.ariaLabel}
         >
           {view.score.available && view.score.rounded !== null ? (
-            <>
-              <small>{view.scoreKindLabel}</small>
-              <strong>{view.score.rounded}</strong>
-              <span>점</span>
-            </>
+            <span className="map-first__route-score-text">{scoreText}</span>
           ) : (
-            <small className="map-first__route-score-unavailable">
+            <span className="map-first__route-score-unavailable">
               {view.score.summaryLabel}
-            </small>
+            </span>
           )}
         </div>
-      </header>
+      </div>
 
       <ul className="map-first__route-stats" aria-label="경로 요약">
-        <li>
-          <strong>{view.stats.durationMin}</strong>
-          <span>분</span>
-        </li>
         <li>
           <strong>{view.stats.walkM}</strong>
           <span>m 도보</span>
@@ -119,30 +117,36 @@ export default function RouteSummaryCard({
         </li>
       </ul>
 
-      <div className="map-first__badges" aria-label="경로 사실 특성">
-        {badges.slice(0, 4).map((badge) => (
-          <span
-            key={badge.label}
-            className={[
-              'map-first__badge',
-              `map-first__badge--${badge.kind}`,
-              badge.slopeLevel
-                ? `map-first__badge--slope-${badge.slopeLevel}`
-                : '',
-            ]
-              .filter(Boolean)
-              .join(' ')}
-            {...(badge.slopeLevel && badge.title
-              ? { title: badge.title, 'aria-label': badge.title }
-              : {})}
-          >
-            {badge.label}
-          </span>
-        ))}
-      </div>
+      {displayReasons.length > 0 && (
+        <ul className="map-first__route-card-reasons" aria-label="추천 근거">
+          {displayReasons.map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+      )}
 
-      {shadeReason && (
-        <p className="map-first__shade-reason">{shadeReason}</p>
+      {attentionFacts.length > 0 && (
+        <div className="map-first__badges" aria-label="경사·접근성 정보">
+          {attentionFacts.map((fact) => (
+            <span
+              key={fact.id}
+              className={[
+                'map-first__badge',
+                `map-first__badge--${fact.kind}`,
+                fact.slopeLevel
+                  ? `map-first__badge--slope-${fact.slopeLevel}`
+                  : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              {...(fact.slopeLevel && fact.title
+                ? { title: fact.title, 'aria-label': fact.title }
+                : {})}
+            >
+              {fact.label}
+            </span>
+          ))}
+        </div>
       )}
 
       <button

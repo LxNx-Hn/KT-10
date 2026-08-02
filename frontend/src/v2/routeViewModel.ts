@@ -707,15 +707,8 @@ export function buildDisplayReasons(
     );
   }
 
-  for (const trait of route.traitLabels ?? []) {
-    if (trait.evidenceStatus === 'unavailable') continue;
-    if (trait.evidence.length === 0) continue;
-    if (!canCompare && RELATIVE_TRAIT_IDS.has(trait.labelId)) continue;
-    if (!canCompare && looksRelativeComparisonLabel(trait.displayLabel)) {
-      continue;
-    }
-    add(`trait:${trait.labelId}`, `${trait.displayLabel} 근거가 있어요.`);
-  }
+  // traitLabels의 "… 근거가 있어요."는 구체 사실이 없어 화면 근거로 쓰지 않는다.
+  // 동일 주제(최단시간·도보 등)는 위 구조화 key로 이미 중복 제거된다.
 
   // 4) 아직 비어 있는 기본 절대 사실로 보강 (단일 후보·비교 탈락 시)
   if (!usedKeys.has('walk')) {
@@ -728,7 +721,7 @@ export function buildDisplayReasons(
     add('transfer', `환승 ${route.transferCount}회예요.`);
   }
 
-  const limited = out.slice(0, 4);
+  const limited = out.slice(0, 3);
   return limited.length > 0 ? limited : [DISPLAY_REASON_FALLBACK];
 }
 

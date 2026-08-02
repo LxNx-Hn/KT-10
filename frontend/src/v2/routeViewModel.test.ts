@@ -732,6 +732,34 @@ describe('v2 경로 표시 모델', () => {
     expect(reasons.filter((line) => line.includes('도보')).length).toBe(1);
   });
 
+  it('최단시간 근거는 한 번만 노출하고 generic trait 문구는 숨긴다', () => {
+    const fast = makeItem();
+    fast.route.id = 'fast';
+    fast.route.totalDurationMin = 31;
+    fast.route.characteristics = ['fastest'];
+    fast.route.traitLabels = [{
+      labelId: 'fastest',
+      displayLabel: '제일 빠른 길',
+      evidenceStatus: 'derived',
+      evidence: [{
+        feature: 'duration',
+        value: 31,
+        unit: 'min',
+        source: 'test',
+      }],
+    }];
+    const slow = makeItem();
+    slow.route.id = 'slow';
+    slow.route.totalDurationMin = 50;
+    slow.score.routeId = 'slow';
+
+    const reasons = buildRouteViewModel(fast, 1, 'general', [fast, slow]).reasons;
+    const durationLines = reasons.filter((line) => line.includes('소요시간') || line.includes('빠른'));
+    expect(durationLines).toEqual(['후보 중 소요시간이 가장 짧아요 (31분).']);
+    expect(reasons.join(' ')).not.toContain('근거가 있어요');
+    expect(reasons.length).toBeLessThanOrEqual(3);
+  });
+
   it('경로 출처 라벨을 정규화한다', () => {
     expect(formatRouteSourceLabel('odsay')).toBe('경로 제공: ODsay');
     expect(formatRouteSourceLabel('경로 제공: ODsay')).toBe('경로 제공: ODsay');

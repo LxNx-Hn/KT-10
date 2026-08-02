@@ -4,10 +4,21 @@ import { API_BASE, toUserMessage } from '@/api/http';
 
 type AuthView = 'loading' | ResolvedAuth['status'];
 
+export type FacilityReportProps = {
+  /** 부모가 인증 상태를 넘기면 내부 auth/me 조회를 생략한다. */
+  authStatus?: AuthView;
+  /** 후기·신고 탭에서 공통 로그인 CTA를 쓸 때 개별 게스트 안내를 숨긴다. */
+  hideGuestPrompt?: boolean;
+};
+
 /** 시설물 위치·운영상태 오류를 검토 대기열로 전달한다. 사용자 신고만으로 데이터는 바뀌지 않는다. */
-export default function FacilityReport() {
+export default function FacilityReport({
+  authStatus,
+  hideGuestPrompt = false,
+}: FacilityReportProps = {}) {
   const formId = useId();
-  const [authView, setAuthView] = useState<AuthView>('loading');
+  const [internalAuthView, setInternalAuthView] = useState<AuthView>('loading');
+  const authView = authStatus ?? internalAuthView;
   const [facilityName, setFacilityName] = useState('');
   const [facilityType, setFacilityType] = useState('승강기');
   const [issueType, setIssueType] = useState('relocated');
@@ -18,14 +29,15 @@ export default function FacilityReport() {
   const [locating, setLocating] = useState(false);
 
   useEffect(() => {
+    if (authStatus !== undefined) return;
     let cancelled = false;
     void resolveCurrentAuth().then((resolved) => {
-      if (!cancelled) setAuthView(resolved.status);
+      if (!cancelled) setInternalAuthView(resolved.status);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authStatus]);
 
   async function submit() {
     if (authView !== 'authenticated' || submitting) return;
@@ -95,13 +107,13 @@ export default function FacilityReport() {
       <h2 className="section-title">시설물 위치나 정보가 다른가요?</h2>
       <p>신고는 검토 후 데이터에 반영됩니다.</p>
 
-      {authView === 'loading' && (
+      {authView === 'loading' && !hideGuestPrompt && (
         <p role="status" aria-live="polite">로그인 상태를 확인하는 중입니다.</p>
       )}
 
-      {authView === 'guest' && (
+      {authView === 'guest' && !hideGuestPrompt && (
         <>
-          <p>신고하려면 카카오 로그인이 필요합니다.</p>
+          <p>후기와 신고 기능을 이용하려면 카카오 로그인이 필요해요.</p>
           <div className="facility-report__actions">
             <button type="button" className="btn btn--ghost" onClick={startKakaoLogin}>
               카카오 로그인
@@ -110,7 +122,7 @@ export default function FacilityReport() {
         </>
       )}
 
-      {authView === 'unavailable' && (
+      {authView === 'unavailable' && !hideGuestPrompt && (
         <p role="status" aria-live="polite">
           지금은 로그인 상태를 확인하기 어렵습니다. 잠시 후 다시 시도해 주세요.
         </p>

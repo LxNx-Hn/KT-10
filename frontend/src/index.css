@@ -396,6 +396,7 @@ summary:focus-visible,
 /* 날씨 경고 배너 */
 .weather__banner { padding: 12px 14px; border-radius: 12px; margin-bottom: 12px; font-size: 0.95rem; }
 .weather__banner--good { background: var(--good-bg); color: var(--good); }
+.weather__banner--neutral { background: var(--neutral-bg); color: var(--ink); }
 .weather__banner--warn { background: var(--warn-bg); color: var(--warn); }
 .weather__banner--bad { background: var(--bad-bg); color: var(--bad); }
 

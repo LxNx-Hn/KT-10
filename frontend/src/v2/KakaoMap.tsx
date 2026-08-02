@@ -35,6 +35,10 @@ export type KakaoMapProps = {
   selectedRouteId: string | null;
   onSelectRoute: (routeId: string) => void;
   showFacilities?: boolean;
+  /** 선택 경로 shade geometry가 있을 때만 의미가 있다. 기본 ON(기존 자동 표시). */
+  showShade?: boolean;
+  /** terrain.slopeSegments가 있을 때만 경사색 도보선을 그린다. 기본 ON. */
+  showSlope?: boolean;
   /** Overlay layout signature (search panel / sheet / drawer) for visible-area fits. */
   layoutFitKey?: string;
 };
@@ -455,6 +459,8 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showFacilities = false,
+    showShade = true,
+    showSlope = true,
     layoutFitKey = '',
   },
   ref,
@@ -477,6 +483,8 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showFacilities,
+    showShade,
+    showSlope,
     layoutFitKey,
   });
   propsRef.current = {
@@ -486,6 +494,8 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showFacilities,
+    showShade,
+    showSlope,
     layoutFitKey,
   };
 
@@ -571,6 +581,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
   const addSelectedRoute = (
     maps: KakaoMapsApi,
     route: RouteCandidate | undefined,
+    slopeVisible: boolean,
   ) => {
     if (!route) return;
     const routePath = validPath(route.path);
@@ -583,7 +594,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     const transitParts = segmentParts.filter(
       (part) => part.mode === 'bus' || part.mode === 'subway' || part.mode === 'transfer',
     );
-    const hasSlopeWalk = slopeWalkParts.length > 0;
+    const hasSlopeWalk = slopeVisible && slopeWalkParts.length > 0;
 
     const colorForPart = ({
       mode,
@@ -659,9 +670,10 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     maps: KakaoMapsApi,
     route: RouteCandidate | undefined,
     boundsPoints: LatLng[],
+    shadeVisible: boolean,
   ) => {
-    // 실제 shade 결과가 있으면 자동 표시하고, 없으면 layer만 조용히 생략한다.
-    if (!route?.shade) return;
+    // 실제 shade geometry가 있고 사용자가 ON일 때만 표시한다.
+    if (!shadeVisible || !route?.shade) return;
     if (
       route.shade.status !== 'estimated_demo'
       && route.shade.status !== 'estimated_public'
@@ -791,6 +803,8 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedId: string | null,
     selectRoute: (routeId: string) => void,
     facilitiesVisible: boolean,
+    shadeVisible: boolean,
+    slopeVisible: boolean,
     nextLayoutFitKey: string,
   ) => {
     const maps = mapsRef.current;
@@ -800,9 +814,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     clearRouteGraphics();
     const boundsPoints: LatLng[] = [];
     const selectedRoute = routes.find(({ route }) => route.id === selectedId)?.route;
-    addShadeOverlay(maps, selectedRoute, boundsPoints);
+    addShadeOverlay(maps, selectedRoute, boundsPoints, shadeVisible);
     addAlternativeRoutes(maps, routes, selectedId, selectRoute, boundsPoints);
-    addSelectedRoute(maps, selectedRoute);
+    addSelectedRoute(maps, selectedRoute, slopeVisible);
     addFacilityOverlays(maps, selectedRoute, facilitiesVisible);
     addEndpoint(maps, nextOrigin, 'origin');
     addEndpoint(maps, nextDestination, 'dest');
@@ -928,6 +942,8 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
           current.selectedRouteId,
           current.onSelectRoute,
           current.showFacilities,
+          current.showShade,
+          current.showSlope,
           current.layoutFitKey,
         );
         const pending = pendingUserLocationRef.current;
@@ -993,6 +1009,8 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       selectedRouteId,
       onSelectRoute,
       showFacilities,
+      showShade,
+      showSlope,
       layoutFitKey,
     );
     // Map data helpers use refs and are intentionally recreated with the latest props.
@@ -1004,6 +1022,8 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showFacilities,
+    showShade,
+    showSlope,
     layoutFitKey,
     status,
   ]);

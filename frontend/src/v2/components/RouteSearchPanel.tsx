@@ -87,9 +87,12 @@ function SettingsIcon() {
   );
 }
 
-function ChipCheck() {
+function ChipCheck({ active }: { active: boolean }) {
   return (
-    <span className="map-first__chip-check" aria-hidden="true">
+    <span
+      className={`map-first__chip-check${active ? '' : ' map-first__chip-check--idle'}`}
+      aria-hidden="true"
+    >
       ✓
     </span>
   );
@@ -291,7 +294,7 @@ export default function RouteSearchPanel({
                     aria-pressed={active}
                     onClick={() => onToggleOption(key, !active)}
                   >
-                    {active && <ChipCheck />}
+                    <ChipCheck active={active} />
                     <span className="map-first__chip-text">{label}</span>
                   </button>
                 );
@@ -305,7 +308,7 @@ export default function RouteSearchPanel({
                 aria-pressed={largeUi}
                 onClick={onToggleLargeUi}
               >
-                {largeUi && <ChipCheck />}
+                <ChipCheck active={largeUi} />
                 <span className="map-first__chip-text">쉬운 화면</span>
               </button>
               {routeOptionConditions.map(({ key, label }) => {
@@ -320,7 +323,7 @@ export default function RouteSearchPanel({
                     aria-pressed={active}
                     onClick={() => onToggleOption(key, !active)}
                   >
-                    {active && <ChipCheck />}
+                    <ChipCheck active={active} />
                     <span className="map-first__chip-text">{label}</span>
                   </button>
                 );

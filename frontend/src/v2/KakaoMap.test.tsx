@@ -801,6 +801,61 @@ describe('KakaoMap production overlays', () => {
     },
   );
 
+  it('showShade=false이면 그늘 geometry가 있어도 시각화만 숨긴다', async () => {
+    const selected = scoredRoute('shade-off', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+      shade: {
+        status: 'estimated_demo',
+        evaluatedAt: '2026-07-23T14:00:00+09:00',
+        shadeRatio: 0.5,
+        source: 'test',
+        dataQuality: 'demo',
+        shadowPolygons: [[ORIGIN, MIDPOINT, DESTINATION]],
+        pathSegments: [
+          { start: ORIGIN, end: MIDPOINT, shaded: true },
+          { start: MIDPOINT, end: DESTINATION, shaded: false },
+        ],
+        calculationNote: 'test',
+      },
+    });
+    const scoreBefore = selected.score.finalScore;
+
+    const view = render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="shade-off"
+        onSelectRoute={vi.fn()}
+        showShade
+      />,
+    );
+    await waitUntilReady();
+    expect(activePolygons().length).toBeGreaterThan(0);
+
+    view.rerender(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="shade-off"
+        onSelectRoute={vi.fn()}
+        showShade={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(activePolygons()).toHaveLength(0);
+      expect(
+        activePolylines().filter((line) =>
+          ['#00b84a', '#ff5a1f'].includes(line.options.strokeColor),
+        ),
+      ).toHaveLength(0);
+    });
+    expect(selected.score.finalScore).toBe(scoreBefore);
+  });
+
   it('확인된 승강기와 저상버스만 편의시설 레이어에 표시하고 토글을 끄면 제거한다', async () => {
     const selected = scoredRoute('facilities', {
       path: [ORIGIN, MIDPOINT, DESTINATION],

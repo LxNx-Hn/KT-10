@@ -17,6 +17,7 @@ import {
   useAppStore,
   type ToggleableScoringOption,
 } from '@/store/appStore';
+import type { RouteCandidate } from '@/types';
 import { serverRankedRecommendations } from '@/utils/routes';
 import KakaoMap from './KakaoMap';
 import {
@@ -57,6 +58,51 @@ const ROUTE_OPTION_CONDITIONS: Array<{
 function profileTriggerLabel(label: string): string {
   const display = label === '청소년' ? '청년' : label;
   return `${display} 프로필`;
+}
+
+function hasValidLatLng(point: { lat?: number; lng?: number } | undefined): boolean {
+  return (
+    typeof point?.lat === 'number'
+    && Number.isFinite(point.lat)
+    && typeof point?.lng === 'number'
+    && Number.isFinite(point.lng)
+  );
+}
+
+/** 지도에 그릴 수 있는 shade geometry가 있는지 (점수·수치와 별개). */
+function routeHasShadeOverlay(shade: RouteCandidate['shade']): boolean {
+  if (!shade) return false;
+  if (shade.status !== 'estimated_demo' && shade.status !== 'estimated_public') {
+    return false;
+  }
+  const hasPolygon = shade.shadowPolygons.some(
+    (polygon) => polygon.filter(hasValidLatLng).length >= 3,
+  );
+  const hasPath = shade.pathSegments.some(
+    (segment) => hasValidLatLng(segment.start) && hasValidLatLng(segment.end),
+  );
+  return hasPolygon || hasPath;
+}
+
+/** 지도 경사색에 쓰는 slopeSegments geometry 존재 여부. */
+function routeHasSlopeOverlay(terrain: RouteCandidate['terrain']): boolean {
+  if (terrain?.status !== 'estimated_90m') return false;
+  return (terrain.slopeSegments ?? []).some(
+    (segment) =>
+      hasValidLatLng(segment.start)
+      && hasValidLatLng(segment.end)
+      && typeof segment.slopePercent === 'number'
+      && Number.isFinite(segment.slopePercent),
+  );
+}
+
+function shadeUnavailableHint(shade: RouteCandidate['shade']): string {
+  // status가 명시적 불가일 때만 calculationNote를 노출. 야간·날씨 등은 추측하지 않는다.
+  if (shade?.status === 'not_daylight' || shade?.status === 'unavailable') {
+    const note = shade.calculationNote?.trim();
+    if (note) return note;
+  }
+  return '현재 경로에서는 그늘 정보를 표시할 수 없어요';
 }
 
 function VoiceIcon() {
@@ -101,8 +147,9 @@ export default function MapFirstApp() {
   // 최초 진입은 collapsed 한 줄 검색. true일 때만 전체 패널을 연다.
   const [searchPanelExpanded, setSearchPanelExpanded] = useState(false);
   const [showFacilities, setShowFacilities] = useState(false);
+  const [showShade, setShowShade] = useState(true);
+  const [showSlope, setShowSlope] = useState(true);
   const [searchHint, setSearchHint] = useState<string | null>(null);
-  const [facilityHint, setFacilityHint] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [departureIsNow, setDepartureIsNow] = useState(true);
   const [departureRefreshing, setDepartureRefreshing] = useState(false);
@@ -122,14 +169,9 @@ export default function MapFirstApp() {
     ? buildRouteViewModel(selectedItem, selectedIndex + 1, profile)
     : null;
   const selectedShade = selectedItem?.route.shade;
-  const hasShadeOverlay = Boolean(
-    selectedShade &&
-      (selectedShade.status === 'estimated_demo' ||
-        selectedShade.status === 'estimated_public') &&
-      (selectedShade.shadowPolygons.length > 0 ||
-        selectedShade.pathSegments.length > 0),
-  );
+  const hasShadeOverlay = routeHasShadeOverlay(selectedShade);
   const selectedTerrain = selectedItem?.route.terrain;
+  const hasSlopeOverlay = routeHasSlopeOverlay(selectedTerrain);
   const selectedTerrainAvgText =
     selectedTerrain?.status === 'estimated_90m'
       ? formatSlopePercent(selectedTerrain.avgSlopePercent)
@@ -142,13 +184,6 @@ export default function MapFirstApp() {
     );
     return peak === null ? null : formatSlopePercent(peak);
   })();
-  const hasFacilityInfo = Boolean(
-    selectedItem?.route.segments.some(
-      (segment) =>
-        (segment.mode === 'subway' && segment.hasElevator === true) ||
-        (segment.mode === 'bus' && segment.isLowFloorBus === true),
-    ),
-  );
   const hasFacilityOverlay = Boolean(
     selectedItem?.route.segments.some(
       (segment) =>
@@ -157,6 +192,17 @@ export default function MapFirstApp() {
           (segment.mode === 'bus' && segment.isLowFloorBus === true)),
     ),
   );
+  const facilityDisabledHint = hasFacilityOverlay
+    ? ''
+    : '표시할 편의시설 정보가 없어요';
+  const shadeDisabledHint = hasShadeOverlay
+    ? ''
+    : shadeUnavailableHint(selectedShade);
+  const slopeDisabledHint = hasSlopeOverlay
+    ? ''
+    : '경로 상세에서 경사 수치를 확인할 수 있어요';
+  const shadeLayerVisible = showShade && hasShadeOverlay;
+  const slopeLayerVisible = showSlope && hasSlopeOverlay;
   const activeConditionCount = ROUTE_CONDITION_KEYS.filter(
     (key) => Boolean(options[key]),
   ).length;
@@ -213,9 +259,8 @@ export default function MapFirstApp() {
     }
   }, [hasFacilityOverlay, showFacilities]);
 
-  useEffect(() => {
-    setFacilityHint(null);
-  }, [selectedRouteId]);
+  // 그늘·경사가 없는 경로는 geometry가 없어 오버레이가 남지 않는다.
+  // 사용자 ON/OFF 선호는 경로 변경 후에도 유지하고, 편의시설과 같이 가능 범위에서만 적용한다.
 
   // 지연 정밀화 구조에서 2위 이하 후보의 estimated 대중교통 선형·shade
   // 없음은 정상 상태다. 시간 기반 전체 재추천(refreshEnrichment 타이머)은
@@ -288,25 +333,9 @@ export default function MapFirstApp() {
     setDrawer('details');
   };
 
-  const handleFacilityLayerClick = () => {
-    if (hasFacilityOverlay) {
-      setFacilityHint(null);
-      setShowFacilities((visible) => !visible);
-      return;
-    }
-    if (hasFacilityInfo) {
-      setFacilityHint(
-        '시설 이용 정보는 경로 세부 카드 항목에서 확인할 수 있어요.',
-      );
-      return;
-    }
-    setFacilityHint('선택한 경로의 편의시설 정보를 안내해 드립니다.');
-  };
-
   const frameClass = [
     'map-first__frame',
     largeUi ? 'map-first__frame--easy' : '',
-    options.carryLuggage ? 'map-first__frame--heavy' : '',
     showLabeledControls ? 'map-first__frame--labeled' : '',
     ranked.length > 0 ? 'map-first__frame--results' : '',
   ]
@@ -341,6 +370,8 @@ export default function MapFirstApp() {
           selectedRouteId={selectedRouteId}
           onSelectRoute={selectRoute}
           showFacilities={showFacilities}
+          showShade={shadeLayerVisible}
+          showSlope={slopeLayerVisible}
           layoutFitKey={`${searchPanelMode}|${
             sheetExpanded ? 'sheet-expanded' : 'sheet-collapsed'
           }|${drawer ?? 'none'}`}
@@ -386,13 +417,29 @@ export default function MapFirstApp() {
           showLabeledControls={showLabeledControls}
           showFacilities={showFacilities}
           hasFacilityOverlay={hasFacilityOverlay}
-          hasFacilityInfo={hasFacilityInfo}
-          facilityHint={facilityHint}
+          facilityDisabledHint={facilityDisabledHint}
+          showShade={showShade}
+          hasShadeOverlay={hasShadeOverlay}
+          shadeDisabledHint={shadeDisabledHint}
+          showSlope={showSlope}
+          hasSlopeOverlay={hasSlopeOverlay}
+          slopeDisabledHint={slopeDisabledHint}
           onLocate={locate}
-          onFacilityLayerClick={handleFacilityLayerClick}
+          onToggleFacilities={() => {
+            if (!hasFacilityOverlay) return;
+            setShowFacilities((visible) => !visible);
+          }}
+          onToggleShade={() => {
+            if (!hasShadeOverlay) return;
+            setShowShade((visible) => !visible);
+          }}
+          onToggleSlope={() => {
+            if (!hasSlopeOverlay) return;
+            setShowSlope((visible) => !visible);
+          }}
         />
 
-        {hasShadeOverlay &&
+        {shadeLayerVisible &&
           selectedShade?.shadeRatio !== undefined && (
             <div className="map-first__map-legend" role="note">
               <strong>
@@ -407,7 +454,7 @@ export default function MapFirstApp() {
             </div>
           )}
 
-        {selectedTerrainAvgText !== null && (
+        {slopeLayerVisible && selectedTerrainAvgText !== null && (
             <div className="map-first__map-legend map-first__map-legend--slope" role="note">
               <strong>
                 도보 경사 {selectedTerrainAvgText}%

@@ -27,58 +27,70 @@ export default function BusArrivalCard() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [searchingStops, setSearchingStops] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [arrivalRefresh, setArrivalRefresh] = useState(0);
   const [error, setError] = useState('');
   const stopSearchRequest = useRef(0);
+  const arrivalRequest = useRef(0);
   const lowFloorPriority = useAppStore((s) => s.options.lowFloorPriority);
   const toggleLowFloorPriority = useAppStore((s) => s.toggleLowFloorPriority);
 
   useEffect(() => {
-    const request = ++stopSearchRequest.current;
-    void adapters.bus.listStops().then((results) => {
-      if (request !== stopSearchRequest.current) return;
-      setStops(results);
-      setStopId(results[0]?.stopId ?? '');
-    }).catch(() => {
-      if (request === stopSearchRequest.current) {
-        setError('정류장 목록을 불러오지 못했습니다.');
-      }
-    });
-    return () => {
-      stopSearchRequest.current += 1;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!stopId) return;
+    if (!stopId || !hasSearched) return;
+    const request = ++arrivalRequest.current;
     let active = true;
     setLoading(true);
     setError('');
     void adapters.bus.getArrivals(stopId).then((result) => {
-      if (!active || !result) return;
-      setStops((current) => current.map((stop) => stop.stopId === stopId ? result : stop));
+      if (!active || request !== arrivalRequest.current || !result) return;
+      setStops((current) => current.map((stop) => (
+        stop.stopId === stopId ? result : stop
+      )));
     }).catch(() => {
-      if (active) setError('실시간 도착 정보를 불러오지 못했습니다.');
+      if (active && request === arrivalRequest.current) {
+        setError('실시간 도착 정보를 불러오지 못했습니다.');
+      }
     }).finally(() => {
-      if (active) setLoading(false);
+      if (active && request === arrivalRequest.current) setLoading(false);
     });
     return () => { active = false; };
-  }, [stopId]);
+  }, [stopId, hasSearched, arrivalRefresh]);
 
-  const searchStops = async (event: FormEvent) => {
-    event.preventDefault();
+  const runStopSearch = async () => {
     const request = ++stopSearchRequest.current;
     setSearchingStops(true);
+    setHasSearched(true);
     setError('');
     try {
       const results = await adapters.bus.listStops(query);
       if (request !== stopSearchRequest.current) return;
       setStops(results);
       setStopId(results[0]?.stopId ?? '');
-      if (!results.length) setError('검색된 정류장이 없습니다.');
+      if (!results.length) {
+        setError('검색된 정류장이 없습니다.');
+        setLoading(false);
+      }
     } catch {
-      if (request === stopSearchRequest.current) setError('정류장 검색에 실패했습니다.');
+      if (request === stopSearchRequest.current) {
+        setError('정류장 검색에 실패했습니다.');
+      }
     } finally {
       if (request === stopSearchRequest.current) setSearchingStops(false);
+    }
+  };
+
+  const searchStops = (event: FormEvent) => {
+    event.preventDefault();
+    void runStopSearch();
+  };
+
+  const retryLastAction = () => {
+    if (query.trim()) {
+      void runStopSearch();
+      return;
+    }
+    if (stopId) {
+      setArrivalRefresh((value) => value + 1);
     }
   };
 
@@ -96,6 +108,14 @@ export default function BusArrivalCard() {
     const etaPrefix = arrival.arrivalMin !== undefined ? `${arrival.arrivalMin}분 뒤 도착하는 ` : '';
     speak(`${etaPrefix}${arrival.routeName}번 버스는 ${lowFloorText}.`);
   };
+
+  const showInitial = !hasSearched && !loading && !searchingStops;
+  const showLoading = searchingStops || loading;
+  const showEmptyResult =
+    hasSearched
+    && !showLoading
+    && !error
+    && arrivals.length === 0;
 
   return (
     <section className="bus" aria-label="저상버스 도착 조회">
@@ -118,28 +138,68 @@ export default function BusArrivalCard() {
       </form>
 
       <div className="bus__controls">
-        <select className="bus__select" value={stopId} onChange={(event) => setStopId(event.target.value)} aria-label="정류장 선택">
+        <select
+          className="bus__select"
+          value={stopId}
+          onChange={(event) => {
+            setHasSearched(true);
+            setStopId(event.target.value);
+          }}
+          aria-label="정류장 선택"
+          disabled={!stops.length}
+        >
           {!stops.length && <option value="">정류장을 검색해 주세요</option>}
-          {stops.map((stop) => <option key={stop.stopId} value={stop.stopId}>{stop.stopName}</option>)}
+          {stops.map((stop) => (
+            <option key={stop.stopId} value={stop.stopId}>{stop.stopName}</option>
+          ))}
         </select>
-        <button type="button" className={`btn btn--toggle ${lowFloorPriority ? 'btn--toggle-on' : ''}`} aria-pressed={!!lowFloorPriority} onClick={toggleLowFloorPriority}>
+        <button
+          type="button"
+          className={`btn btn--toggle ${lowFloorPriority ? 'btn--toggle-on' : ''}`}
+          aria-pressed={!!lowFloorPriority}
+          onClick={toggleLowFloorPriority}
+        >
           ♿ 저상버스 우선 {lowFloorPriority ? 'ON' : 'OFF'}
         </button>
       </div>
 
       <ul className="bus__list">
-        {!loading && arrivals.length === 0 && <li className="bus__empty">도착 정보가 없습니다.</li>}
+        {showInitial && (
+          <li className="bus__empty">정류장을 검색하면 도착 정보가 표시돼요.</li>
+        )}
+        {showEmptyResult && (
+          <li className="bus__empty">현재 확인되는 도착 정보가 없어요.</li>
+        )}
         {arrivals.map((arrival) => (
-          <li key={`${arrival.routeName}-${arrival.vehicleNo ?? ''}-${arrival.arrivalMin ?? arrival.arrivalMessage ?? ''}`} className="bus__item">
+          <li
+            key={`${arrival.routeName}-${arrival.vehicleNo ?? ''}-${arrival.arrivalMin ?? arrival.arrivalMessage ?? ''}`}
+            className="bus__item"
+          >
             <span className="bus__route">{arrival.routeName}번</span>
-            {arrival.arrivalMin !== undefined && <span className="bus__eta">{arrival.arrivalMin}분 후</span>}
+            {arrival.arrivalMin !== undefined && (
+              <span className="bus__eta">{arrival.arrivalMin}분 후</span>
+            )}
             {lowFloorBadge(arrival.isLowFloor)}
-            <button type="button" className="bus__speak" aria-label={`${arrival.routeName}번 버스 도착 음성 안내`} onClick={() => speakArrival(arrival)}>🔊</button>
+            <button
+              type="button"
+              className="bus__speak"
+              aria-label={`${arrival.routeName}번 버스 도착 음성 안내`}
+              onClick={() => speakArrival(arrival)}
+            >
+              🔊
+            </button>
           </li>
         ))}
       </ul>
-      {loading && <p role="status">버스 정보를 불러오는 중입니다.</p>}
-      {error && <p role="alert">{error}</p>}
+      {showLoading && <p role="status">도착 정보를 불러오고 있어요.</p>}
+      {error && (
+        <div className="bus__error" role="alert">
+          <p>{error}</p>
+          <button type="button" className="btn btn--ghost" onClick={retryLastAction}>
+            다시 시도
+          </button>
+        </div>
+      )}
     </section>
   );
 }

@@ -6,13 +6,24 @@ import { serverRankedRecommendations } from '@/utils/routes';
 
 type AuthView = 'loading' | ResolvedAuth['status'];
 
+export type RouteFeedbackProps = {
+  /** 부모가 인증 상태를 넘기면 내부 auth/me 조회를 생략한다. */
+  authStatus?: AuthView;
+  /** 후기·신고 탭에서 공통 로그인 CTA를 쓸 때 개별 게스트 안내를 숨긴다. */
+  hideGuestPrompt?: boolean;
+};
+
 /** 로그인 사용자의 실제 이용 결과를 수집한다. 동의한 데이터만 다음 전역 학습에 쓴다. */
-export default function RouteFeedback() {
+export default function RouteFeedback({
+  authStatus,
+  hideGuestPrompt = false,
+}: RouteFeedbackProps = {}) {
   const selectedId = useAppStore((s) => s.selectedRouteId);
   const recommendations = useAppStore((s) => s.recommendations);
   const selected = recommendations.find((item) => item.route.id === selectedId);
   const formId = useId();
-  const [authView, setAuthView] = useState<AuthView>('loading');
+  const [internalAuthView, setInternalAuthView] = useState<AuthView>('loading');
+  const authView = authStatus ?? internalAuthView;
   const [wasUsable, setWasUsable] = useState<boolean | null>(null);
   const [rating, setRating] = useState(5);
   const [trainingConsent, setTrainingConsent] = useState(false);
@@ -31,14 +42,15 @@ export default function RouteFeedback() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (authStatus !== undefined) return;
     let cancelled = false;
     void resolveCurrentAuth().then((resolved) => {
-      if (!cancelled) setAuthView(resolved.status);
+      if (!cancelled) setInternalAuthView(resolved.status);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authStatus]);
 
   if (!selected) return null;
   const selectedRoute = selected;
@@ -117,16 +129,16 @@ export default function RouteFeedback() {
         현재 선택: <strong>{selectedRoute.route.summary}</strong>
       </p>
 
-      {authView === 'loading' && (
+      {authView === 'loading' && !hideGuestPrompt && (
         <p className="route-feedback__login-note" role="status" aria-live="polite">
           로그인 상태를 확인하는 중입니다.
         </p>
       )}
 
-      {authView === 'guest' && (
+      {authView === 'guest' && !hideGuestPrompt && (
         <>
           <p className="route-feedback__login-note">
-            후기를 저장하려면 카카오 로그인이 필요합니다. 로그인하지 않으면 등록이 거절됩니다.
+            후기와 신고 기능을 이용하려면 카카오 로그인이 필요해요.
           </p>
           <div className="route-feedback__submit">
             <button type="button" className="btn btn--ghost" onClick={startKakaoLogin}>
@@ -136,7 +148,7 @@ export default function RouteFeedback() {
         </>
       )}
 
-      {authView === 'unavailable' && (
+      {authView === 'unavailable' && !hideGuestPrompt && (
         <p className="route-feedback__login-note" role="status" aria-live="polite">
           지금은 로그인 상태를 확인하기 어렵습니다. 잠시 후 다시 시도해 주세요.
         </p>
@@ -145,7 +157,7 @@ export default function RouteFeedback() {
       {authView === 'authenticated' && (
         <>
           <p className="route-feedback__login-note">
-            후기를 저장하려면 카카오 로그인이 필요합니다. 로그인하지 않으면 등록이 거절됩니다.
+            이용한 경로에 대한 후기를 남겨 주세요.
           </p>
 
           <fieldset className="route-feedback__usable">

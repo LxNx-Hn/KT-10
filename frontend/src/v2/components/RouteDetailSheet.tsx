@@ -3,11 +3,10 @@ import {
   type ReactNode,
 } from 'react';
 import BusArrivalCard from '@/components/BusArrivalCard';
-import FacilityReport from '@/components/FacilityReport';
-import RouteFeedback from '@/components/RouteFeedback';
 import WeatherWarning from '@/components/WeatherWarning';
 import type { ProfileId, ScoredRoute } from '@/types';
 import BottomDrawer from './BottomDrawer';
+import FeedbackTabPanel from './FeedbackTabPanel';
 import RouteDetails from './RouteDetails';
 
 export type DetailTab = 'route' | 'environment' | 'feedback';
@@ -65,10 +64,7 @@ function renderDetailContent(
   }
   if (tab === 'feedback') {
     return selectedItem ? (
-      <div className="map-first__feedback-tab">
-        <RouteFeedback key={selectedRouteId ?? 'no-route'} />
-        <FacilityReport />
-      </div>
+      <FeedbackTabPanel selectedRouteId={selectedRouteId} />
     ) : (
       <p>경로를 선택하면 이용 후기를 남길 수 있습니다.</p>
     );
