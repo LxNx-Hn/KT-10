@@ -6,7 +6,7 @@ import type { ScoredRoute } from '@/types';
  * 지도·카드·음성·후기는 모두 응답 순서를 그대로 사용한다.
  */
 export function serverRankedRecommendations(
-  recommendations: ScoredRoute[],
+  recommendations: ScoredRoute[] | null | undefined,
 ): ScoredRoute[] {
-  return [...recommendations];
+  return Array.isArray(recommendations) ? [...recommendations] : [];
 }

@@ -583,10 +583,23 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     ).toBeTruthy();
     expect(
       container.querySelector('.map-first__route-score')?.textContent,
-    ).toContain('프로필 적합 점수');
+    ).toContain('맞춤 적합도');
     expect(container.textContent).toContain(
-      '안전도나 성공 확률이 아닙니다',
+      '선택한 프로필·상황·옵션을 기준으로 후보 경로를 비교한 점수예요.',
     );
+    expect(container.textContent).not.toContain('안전 점수');
+    expect(container.textContent).not.toContain('안전도 100점');
+    const listNotes = container.querySelectorAll(
+      '.map-first__route-list > .map-first__score-note',
+    );
+    expect(listNotes).toHaveLength(1);
+    const note = listNotes[0] as HTMLElement;
+    const stack = container.querySelector('.map-first__route-stack');
+    expect(note.compareDocumentPosition(stack!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(note.className).toContain('map-first__score-note--list');
+    expect(note.className).not.toMatch(/fixed|absolute|sticky/);
     expect(
       container.querySelector('.map-first__route-stats')?.textContent,
     ).toMatch(/분.*m 도보.*회 환승/);
@@ -839,7 +852,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(text).not.toContain('OpenStreetMap');
   });
 
-  it('내부 점수 구현과 무관하게 프로필 적합 점수로 표시한다', () => {
+  it('내부 점수 구현과 무관하게 맞춤 적합도로 표시한다', () => {
     const { container } = render(<App />);
     act(() => {
       seedResults();
@@ -858,9 +871,8 @@ describe('프로덕션 v2 지도 중심 UI', () => {
         );
       useAppStore.setState({ recommendations });
     });
-    expect(container.textContent).toContain(
-      '프로필 적합 점수',
-    );
+    expect(container.textContent).toContain('맞춤 적합도');
+    expect(container.textContent).not.toContain('프로필 적합 점수');
   });
 
   it('빠른 토글과 중복되지 않는 4개 이동 조건을 drawer에서 조정한다', () => {
@@ -1444,9 +1456,9 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(useAppStore.getState().selectedRouteId).toBe(selectedId);
   });
 
-  it('후기·신고 탭은 영역을 구분하고 등록·접수 버튼이 분리된다', () => {
+  it('후기·신고 탭은 영역을 구분하고 등록·접수 버튼이 분리된다', async () => {
     act(() => seedResults());
-    const { container, getByRole, getByLabelText } = render(<App />);
+    const { container, getByRole, findByRole, findByLabelText } = render(<App />);
     openSelectedRouteDetails(container);
 
     fireEvent.click(getByRole('tab', { name: '후기·신고' }));
@@ -1459,10 +1471,10 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
     expect(getByRole('region', { name: '경로 이용 후기' })).toBeTruthy();
     expect(getByRole('region', { name: '시설물 정보 오류 신고' })).toBeTruthy();
-    expect(getByLabelText('만족도')).toBeTruthy();
-    expect(getByLabelText('시설물 이름')).toBeTruthy();
-    expect(getByRole('button', { name: '후기 등록' })).toBeTruthy();
-    expect(getByRole('button', { name: '신고 접수' })).toBeTruthy();
+    expect(await findByLabelText('만족도')).toBeTruthy();
+    expect(await findByLabelText('시설물 이름')).toBeTruthy();
+    expect(await findByRole('button', { name: '후기 등록' })).toBeTruthy();
+    expect(await findByRole('button', { name: '신고 접수' })).toBeTruthy();
 
     expect(container.querySelector('.map-first__drawer-panel--details')).toBeTruthy();
     expect(container.querySelector('.map-first__details-panels')).toBeTruthy();
@@ -1554,6 +1566,63 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     ).toBeTruthy();
   });
 
+  it('상세 탭 전환 시 외곽 패널·탭 헤더는 유지되고 콘텐츠만 바뀐다', () => {
+    act(() => seedResults());
+    const { container, getByRole } = render(<App />);
+    openSelectedRouteDetails(container);
+
+    const panel = container.querySelector('.map-first__drawer-panel--details');
+    const layout = container.querySelector('.map-first__details-layout');
+    const tabs = container.querySelector('.map-first__tabs');
+    const panels = container.querySelector('.map-first__details-panels');
+    expect(panel).toBeTruthy();
+    expect(layout).toBeTruthy();
+    expect(tabs).toBeTruthy();
+    expect(panels).toBeTruthy();
+    // 탭 헤더는 스크롤 영역 밖(레이아웃 직계)에 둔다.
+    expect(layout?.contains(tabs)).toBe(true);
+    expect(panels?.contains(tabs)).toBe(false);
+    // 절대 위치로 탭 콘텐츠를 겹쳐 높이를 맞추지 않는다.
+    expect(panels?.querySelector('[style*="position: absolute"]')).toBeNull();
+
+    const selectedBefore = useAppStore.getState().selectedRouteId;
+    fireEvent.click(getByRole('tab', { name: '후기·신고' }));
+    expect(getByRole('tab', { name: '후기·신고' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    expect(
+      container.querySelector('#detail-panel-feedback')?.getAttribute('aria-labelledby'),
+    ).toBe('detail-tab-feedback');
+    expect(container.querySelector('#detail-panel-route')?.hasAttribute('hidden')).toBe(
+      true,
+    );
+    expect(container.querySelector('#detail-panel-feedback')?.hasAttribute('hidden')).toBe(
+      false,
+    );
+    expect(container.querySelector('.map-first__drawer-panel--details')).toBe(panel);
+    expect(container.querySelector('.map-first__tabs')).toBe(tabs);
+    expect(useAppStore.getState().selectedRouteId).toBe(selectedBefore);
+
+    fireEvent.click(getByRole('tab', { name: '날씨·버스' }));
+    expect(getByRole('tab', { name: '날씨·버스' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    expect(container.querySelector('#detail-panel-environment')?.hasAttribute('hidden')).toBe(
+      false,
+    );
+    expect(container.querySelector('#detail-panel-feedback')?.hasAttribute('hidden')).toBe(
+      true,
+    );
+    expect(container.querySelector('.map-first__drawer-panel--details')).toBe(panel);
+
+    fireEvent.click(getByRole('tab', { name: '경로' }));
+    expect(getByRole('tab', { name: '경로' }).getAttribute('aria-selected')).toBe('true');
+    expect(container.querySelector('#detail-panel-route')?.hasAttribute('hidden')).toBe(
+      false,
+    );
+    expect(useAppStore.getState().selectedRouteId).toBe(selectedBefore);
+  });
+
   it('상세 탭은 3개이며 전체 폭 그리드 훅을 사용한다', () => {
     act(() => seedResults());
     const { container, getAllByRole } = render(<App />);
@@ -1579,7 +1648,23 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       seedResults();
       const [first] = useAppStore.getState().recommendations;
       useAppStore.setState({
-        recommendations: [first],
+        recommendations: [{
+          ...first,
+          route: {
+            ...first.route,
+            characteristics: ['lowest_slope', 'fastest', 'fewest_transfers'],
+            traitLabels: [{
+              labelId: 'lowest_slope',
+              displayLabel: '경사가 완만한 길',
+              evidenceStatus: 'derived' as const,
+              evidence: [{
+                feature: 'max_slope_percent',
+                value: 4,
+                source: 'test',
+              }],
+            }],
+          },
+        }],
         candidates: [first.route],
         selectedRouteId: first.route.id,
       });
@@ -1588,13 +1673,36 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
     expect(getByRole('heading', { name: '경로 1개를 찾았어요' })).toBeTruthy();
     expect(container.textContent).not.toContain(
-      '위아래로 스크롤해 다른 길의 특성과 적합 점수를 비교하세요.',
+      '위아래로 스크롤해 다른 길을 비교하세요.',
     );
     expect(
       container.querySelector('.map-first__route-list-heading output'),
     ).toBeNull();
     expect(queryByRole('button', { name: /이전 경로|다음 경로/ })).toBeNull();
     expect(getByRole('button', { name: '상세 정보 보기' })).toBeTruthy();
+    expect(container.textContent).not.toContain('후보 중');
+    expect(container.textContent).not.toContain('후보 경로를 비교');
+    expect(container.textContent).toContain(
+      '선택한 프로필·상황·옵션을 기준으로 산정한 점수예요.',
+    );
+    expect(container.textContent).not.toMatch(/안전 점수|안전도 100점|완벽한 경로/);
+  });
+
+  it('경로 결과가 빈 배열·null이어도 오류 없이 그린다', () => {
+    act(() => {
+      useAppStore.setState({
+        recommendations: [],
+        selectedRouteId: null,
+      });
+    });
+    expect(() => render(<App />)).not.toThrow();
+    act(() => {
+      useAppStore.setState({
+        recommendations: null as unknown as [],
+        selectedRouteId: null,
+      });
+    });
+    expect(() => render(<App />)).not.toThrow();
   });
 
   it('경로가 여러 개이면 실제 개수 안내와 비교 안내를 표시한다', () => {
@@ -1607,7 +1715,18 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       getByRole('heading', { name: `경로 ${count}개를 찾았어요` }),
     ).toBeTruthy();
     expect(container.textContent).toContain(
-      '위아래로 스크롤해 다른 길의 특성과 적합 점수를 비교하세요.',
+      '위아래로 스크롤해 다른 길을 비교하세요.',
+    );
+    expect(container.textContent).toContain(
+      '선택한 프로필·상황·옵션을 기준으로 후보 경로를 비교한 점수예요.',
+    );
+    const note = container.querySelector(
+      '.map-first__score-note--list',
+    ) as HTMLElement | null;
+    const stack = container.querySelector('.map-first__route-stack');
+    expect(note).toBeTruthy();
+    expect(note!.compareDocumentPosition(stack!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
     );
     expect(
       container.querySelector('.map-first__route-list-heading output'),

@@ -2,6 +2,7 @@ import {
   type V2RouteFactKind,
   type V2RouteViewModel,
 } from '../routeViewModel';
+import type { SlopeLevelId } from '../utils/slopeLevel';
 
 export default function RouteSummaryCard({
   view,
@@ -29,10 +30,14 @@ export default function RouteSummaryCard({
   const badgeCandidates: Array<{
     label: string;
     kind: V2RouteFactKind;
+    slopeLevel?: SlopeLevelId;
+    title?: string;
   }> = [
     ...prioritizedFacts.map((fact) => ({
       label: fact.label,
       kind: fact.kind,
+      slopeLevel: fact.slopeLevel,
+      title: fact.title,
     })),
     ...view.characteristicLabels.map((label) => ({
       label,
@@ -63,7 +68,7 @@ export default function RouteSummaryCard({
       data-route-id={view.routeId}
       aria-current={selected ? 'true' : undefined}
       aria-busy={refining ? 'true' : undefined}
-      aria-label={`${view.rank}순위 경로, ${view.scoreKindLabel} ${view.score.rounded}점`}
+      aria-label={`${view.rank}순위 경로, ${view.score.ariaLabel}`}
       onClick={onSelect}
       onKeyDown={(event) => {
         // Tab으로 focus만 옮기는 것은 선택이 아니다. 키보드 선택은
@@ -80,10 +85,22 @@ export default function RouteSummaryCard({
           <h3>{view.summary}</h3>
           <p>{view.title}</p>
         </div>
-        <div className="map-first__route-score">
-          <strong>{view.score.rounded}</strong>
-          <span>/100</span>
-          <small>{view.scoreKindLabel}</small>
+        <div
+          className="map-first__route-score"
+          title={view.score.ariaLabel}
+          aria-label={view.score.ariaLabel}
+        >
+          {view.score.available && view.score.rounded !== null ? (
+            <>
+              <small>{view.scoreKindLabel}</small>
+              <strong>{view.score.rounded}</strong>
+              <span>점</span>
+            </>
+          ) : (
+            <small className="map-first__route-score-unavailable">
+              {view.score.summaryLabel}
+            </small>
+          )}
         </div>
       </header>
 
@@ -106,7 +123,18 @@ export default function RouteSummaryCard({
         {badges.slice(0, 4).map((badge) => (
           <span
             key={badge.label}
-            className={`map-first__badge map-first__badge--${badge.kind}`}
+            className={[
+              'map-first__badge',
+              `map-first__badge--${badge.kind}`,
+              badge.slopeLevel
+                ? `map-first__badge--slope-${badge.slopeLevel}`
+                : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            {...(badge.slopeLevel && badge.title
+              ? { title: badge.title, 'aria-label': badge.title }
+              : {})}
           >
             {badge.label}
           </span>

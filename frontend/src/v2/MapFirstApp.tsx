@@ -18,7 +18,12 @@ import {
   type ToggleableScoringOption,
 } from '@/store/appStore';
 import { serverRankedRecommendations } from '@/utils/routes';
-import KakaoMap, { SLOPE_COLOR_RAMP } from './KakaoMap';
+import KakaoMap from './KakaoMap';
+import {
+  formatSlopePercent,
+  resolvePeakSlopePercent,
+  SLOPE_LEGEND_BANDS,
+} from './utils/slopeLevel';
 import BottomDrawer from './components/BottomDrawer';
 import MapControls from './components/MapControls';
 import RouteDetailSheet, {
@@ -125,6 +130,18 @@ export default function MapFirstApp() {
         selectedShade.pathSegments.length > 0),
   );
   const selectedTerrain = selectedItem?.route.terrain;
+  const selectedTerrainAvgText =
+    selectedTerrain?.status === 'estimated_90m'
+      ? formatSlopePercent(selectedTerrain.avgSlopePercent)
+      : null;
+  const selectedTerrainPeakText = (() => {
+    if (selectedTerrain?.status !== 'estimated_90m') return null;
+    const peak = resolvePeakSlopePercent(
+      selectedTerrain.maxSlopePercent,
+      selectedTerrain.minSlopePercent,
+    );
+    return peak === null ? null : formatSlopePercent(peak);
+  })();
   const hasFacilityInfo = Boolean(
     selectedItem?.route.segments.some(
       (segment) =>
@@ -304,7 +321,7 @@ export default function MapFirstApp() {
         ? '경로를 표시하지 못했어요'
         : '출발지와 도착지를 검색하세요';
   const sheetMeta = selectedView
-    ? `${selectedView.meta} · ${selectedView.scoreKindLabel} ${selectedView.score.rounded}점`
+    ? `${selectedView.meta} · ${selectedView.score.summaryLabel}`
     : loading
       ? '경사·건물 그늘·이동 편의 정보를 확인하고 있습니다.'
       : '카카오 장소 검색 결과에서 실제 장소를 선택해 주세요.';
@@ -390,25 +407,22 @@ export default function MapFirstApp() {
             </div>
           )}
 
-        {selectedTerrain?.status === 'estimated_90m' &&
-          selectedTerrain.avgSlopePercent !== undefined && (
+        {selectedTerrainAvgText !== null && (
             <div className="map-first__map-legend map-first__map-legend--slope" role="note">
               <strong>
-                도보 경사 {selectedTerrain.avgSlopePercent.toFixed(1)}%
-                {selectedTerrain.maxSlopePercent !== undefined &&
-                  ` (최대 ${selectedTerrain.maxSlopePercent.toFixed(1)}%)`}
+                도보 경사 {selectedTerrainAvgText}%
+                {selectedTerrainPeakText !== null
+                  ? ` (최대 ${selectedTerrainPeakText}%)`
+                  : ''}
               </strong>
-              {SLOPE_COLOR_RAMP.map((band, index) => (
-                <span key={band.label}>
+              {SLOPE_LEGEND_BANDS.map((band) => (
+                <span key={band.id}>
                   <i
-                    className="map-first__legend-dot"
+                    className={`map-first__legend-dot map-first__legend-dot--slope-${band.id}`}
                     style={{ backgroundColor: band.color }}
+                    aria-hidden="true"
                   />
-                  {band.label}
-                  {' '}
-                  {Number.isFinite(band.max)
-                    ? `≤${band.max}%`
-                    : `>${SLOPE_COLOR_RAMP[index - 1]?.max ?? 0}%`}
+                  {band.legendText}
                 </span>
               ))}
             </div>

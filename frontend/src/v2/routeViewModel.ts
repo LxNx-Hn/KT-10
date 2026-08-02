@@ -5,18 +5,98 @@ import type {
   RouteScore,
   ScoredRoute,
 } from '@/types';
+import {
+  formatSlopePercent,
+  resolvePeakSlopePercent,
+  resolveSlopeLevel,
+  SLOPE_LEVEL_LABELS,
+  type SlopeLevelId,
+} from './utils/slopeLevel';
 
-export const ROUTE_SCORE_DISCLAIMER =
-  '적합 점수는 후보 경로끼리 비교하기 위한 값이며 안전도나 성공 확률이 아닙니다.';
-
+/**
+ * live AI: relative_fit_score(후보 내 min–max) × 100.
+ * rule_baseline: 프로필·옵션 가중 하위지표 가중합(0~100).
+ * 둘 다 절대 안전 점수가 아니며, 화면에는 맞춤 적합도로 통일한다.
+ */
 export const SCORE_KIND_LABEL: Record<
   NonNullable<RouteScore['scoreKind']>,
   string
 > = {
-  rule_baseline: '프로필 적합 점수',
-  bootstrap_baseline: '프로필 적합 점수',
-  human_model: '프로필 적합 점수',
+  rule_baseline: '맞춤 적합도',
+  bootstrap_baseline: '맞춤 적합도',
+  human_model: '맞춤 적합도',
 };
+
+/** 복수 후보 결과 목록용 점수 의미 설명 */
+export const ROUTE_SCORE_DISCLAIMER =
+  '선택한 프로필·상황·옵션을 기준으로 후보 경로를 비교한 점수예요.';
+
+/** 단일 후보일 때 — 비교를 전제하지 않는다. */
+export const ROUTE_SCORE_DISCLAIMER_SINGLE =
+  '선택한 프로필·상황·옵션을 기준으로 산정한 점수예요.';
+
+export const SCORE_COMPARISON_HINT =
+  '선택한 조건을 기준으로 후보 경로를 비교한 점수';
+
+export const SCORE_SINGLE_HINT =
+  '선택한 조건을 기준으로 산정한 점수';
+
+export const SCORE_UNAVAILABLE_LABEL = '적합도 산정 불가';
+
+export function routeScoreDisclaimer(routeCount: number): string {
+  return routeCount > 1 ? ROUTE_SCORE_DISCLAIMER : ROUTE_SCORE_DISCLAIMER_SINGLE;
+}
+
+export type V2ScoreDisplay = {
+  available: boolean;
+  value: number | null;
+  rounded: number | null;
+  kind: NonNullable<RouteScore['scoreKind']>;
+  /** 예: "맞춤 적합도 100점" / "적합도 산정 불가" */
+  summaryLabel: string;
+  ariaLabel: string;
+};
+
+/** finalScore가 유한 숫자일 때만 점수로 표시. null/NaN을 0으로 오인하지 않는다. */
+export function resolveScoreDisplay(
+  finalScore: unknown,
+  scoreKind: NonNullable<RouteScore['scoreKind']> = 'rule_baseline',
+  options: { canCompare?: boolean } = {},
+): V2ScoreDisplay {
+  const label = SCORE_KIND_LABEL[scoreKind];
+  const hint = options.canCompare === false
+    ? SCORE_SINGLE_HINT
+    : SCORE_COMPARISON_HINT;
+  if (typeof finalScore !== 'number' || !Number.isFinite(finalScore)) {
+    return {
+      available: false,
+      value: null,
+      rounded: null,
+      kind: scoreKind,
+      summaryLabel: SCORE_UNAVAILABLE_LABEL,
+      ariaLabel: SCORE_UNAVAILABLE_LABEL,
+    };
+  }
+  const rounded = Math.round(finalScore);
+  return {
+    available: true,
+    value: finalScore,
+    rounded,
+    kind: scoreKind,
+    summaryLabel: `${label} ${rounded}점`,
+    ariaLabel: `${label} ${rounded}점, ${hint}`,
+  };
+}
+
+/**
+ * 백엔드 assign_characteristics / AI route_traits 의 lowest_slope 비교 기준:
+ * max(|max_slope_percent|, |min_slope_percent|) — 구간 최대(가장 급한) 경사.
+ */
+export const LOWEST_SLOPE_RELATIVE_LABEL =
+  '후보 중 구간 최대 경사가 가장 낮은 길';
+
+/** 절대 완만 표현. 평균 경사 ≤2% 이고 상대 비교 배지가 없을 때만 노출. */
+export const GENTLE_SLOPE_ABSOLUTE_LABEL = '경사가 완만한 길';
 
 const CHARACTERISTIC_LABEL: Record<
   NonNullable<RouteCandidate['characteristics']>[number],
@@ -24,12 +104,146 @@ const CHARACTERISTIC_LABEL: Record<
 > = {
   fastest: '제일 빠른 길',
   shortest_walk: '도보가 가장 짧은 길',
-  lowest_slope: '경사가 가장 완만한 길',
+  lowest_slope: LOWEST_SLOPE_RELATIVE_LABEL,
   most_shade: '건물 그늘이 가장 많은 길',
   fewest_transfers: '환승이 가장 적은 길',
   stair_free: '계단 없음',
   low_floor_confirmed: '저상버스 이용 가능',
 };
+
+const ABSOLUTE_GENTLE_PHRASES = new Set([
+  GENTLE_SLOPE_ABSOLUTE_LABEL,
+  '경사가 가장 완만한 길',
+]);
+
+/** 후보 간 상대 비교로만 성립하는 characteristic */
+const RELATIVE_CHARACTERISTICS = new Set<
+  NonNullable<RouteCandidate['characteristics']>[number]
+>([
+  'fastest',
+  'shortest_walk',
+  'lowest_slope',
+  'most_shade',
+  'fewest_transfers',
+]);
+
+/** 후보 간 상대 비교 trait labelId */
+const RELATIVE_TRAIT_IDS = new Set([
+  'fastest',
+  'shortest',
+  'fewest_transfers',
+  'lowest_slope',
+  'most_shade',
+  'most_dongbaekjeon_stores',
+]);
+
+function hasRelativeLowestSlope(route: RouteCandidate): boolean {
+  if ((route.characteristics ?? []).includes('lowest_slope')) return true;
+  return (route.traitLabels ?? []).some(
+    (trait) =>
+      trait.evidenceStatus !== 'unavailable'
+      && trait.labelId === 'lowest_slope',
+  );
+}
+
+function canShowAbsoluteGentleSlope(route: RouteCandidate): boolean {
+  const avg = route.terrain?.avgSlopePercent;
+  if (
+    route.terrain?.status !== 'estimated_90m'
+    || typeof avg !== 'number'
+    || !Number.isFinite(avg)
+  ) {
+    return false;
+  }
+  return Math.abs(avg) <= 2;
+}
+
+function looksRelativeComparisonLabel(label: string): boolean {
+  return (
+    label.includes('후보 중')
+    || label.includes('다른 경로보다')
+    || label.includes('가장 빠른')
+    || label.includes('가장 짧은')
+    || label.includes('가장 적은')
+    || label.includes('가장 많은')
+    || label.includes('가장 완만')
+    || label.includes('가장 추천')
+    || label.startsWith('제일 빠른')
+    || label === LOWEST_SLOPE_RELATIVE_LABEL
+  );
+}
+
+/**
+ * 특성 배지: 복수 후보에서만 상대 비교 배지.
+ * 단일 후보에서는 상대 배지를 숨기고, 평균 ≤2%일 때만 절대 완만 허용.
+ * 수치 배지(terrain facts)는 여기서 다루지 않는다.
+ */
+function resolveTraitAndCharacteristicLabels(
+  route: RouteCandidate,
+  canCompare: boolean,
+): {
+  characteristicLabels: string[];
+  traitLabels: string[];
+} {
+  const relativeSlope = canCompare && hasRelativeLowestSlope(route);
+  const absoluteOk = !relativeSlope && canShowAbsoluteGentleSlope(route);
+
+  const characteristicLabels = unique(
+    (route.characteristics ?? [])
+      .filter(
+        (characteristic) =>
+          canCompare || !RELATIVE_CHARACTERISTICS.has(characteristic),
+      )
+      .map((characteristic) => {
+        if (characteristic === 'lowest_slope') return LOWEST_SLOPE_RELATIVE_LABEL;
+        return CHARACTERISTIC_LABEL[characteristic];
+      }),
+  );
+
+  const traitLabels: string[] = [];
+  for (const trait of route.traitLabels ?? []) {
+    if (trait.evidenceStatus === 'unavailable') continue;
+
+    if (trait.labelId === 'lowest_slope') {
+      if (
+        canCompare
+        && !characteristicLabels.includes(LOWEST_SLOPE_RELATIVE_LABEL)
+      ) {
+        traitLabels.push(LOWEST_SLOPE_RELATIVE_LABEL);
+      }
+      continue;
+    }
+
+    const looksAbsoluteGentle =
+      trait.labelId === 'gentle_slope'
+      || ABSOLUTE_GENTLE_PHRASES.has(trait.displayLabel);
+
+    if (looksAbsoluteGentle) {
+      if (absoluteOk) traitLabels.push(GENTLE_SLOPE_ABSOLUTE_LABEL);
+      continue;
+    }
+
+    if (!canCompare && RELATIVE_TRAIT_IDS.has(trait.labelId)) continue;
+    if (!canCompare && looksRelativeComparisonLabel(trait.displayLabel)) {
+      continue;
+    }
+
+    traitLabels.push(trait.displayLabel);
+  }
+
+  if (
+    absoluteOk
+    && !characteristicLabels.includes(LOWEST_SLOPE_RELATIVE_LABEL)
+    && !traitLabels.includes(GENTLE_SLOPE_ABSOLUTE_LABEL)
+  ) {
+    traitLabels.push(GENTLE_SLOPE_ABSOLUTE_LABEL);
+  }
+
+  return {
+    characteristicLabels,
+    traitLabels: unique(traitLabels),
+  };
+}
 
 export type V2RouteFactKind =
   | 'advantage'
@@ -43,6 +257,10 @@ export interface V2RouteFact {
   label: string;
   kind: V2RouteFactKind;
   detail?: string;
+  /** 경사 배지 전용 등급. 있을 때만 등급 색상 클래스를 쓴다. */
+  slopeLevel?: SlopeLevelId;
+  /** 접근성용 전체 설명 (등급 포함). */
+  title?: string;
 }
 
 export interface V2RouteViewModel {
@@ -58,11 +276,7 @@ export interface V2RouteViewModel {
     walkM: number;
     transferCount: number;
   };
-  score: {
-    value: number;
-    rounded: number;
-    kind: NonNullable<RouteScore['scoreKind']>;
-  };
+  score: V2ScoreDisplay;
   scoreKindLabel: string;
   characteristicLabels: string[];
   traitLabels: string[];
@@ -195,20 +409,29 @@ function terrainFacts(route: RouteCandidate): V2RouteFact[] {
     terrain?.status === 'estimated_90m' &&
     terrain.avgSlopePercent !== undefined
   ) {
-    const detail = [
-      terrain.maxSlopePercent !== undefined
-        ? `최대 ${terrain.maxSlopePercent.toFixed(1)}%`
-        : undefined,
-      terrain.source,
-    ]
-      .filter((value): value is string => Boolean(value))
-      .join(' · ');
+    const avgText = formatSlopePercent(terrain.avgSlopePercent);
+    if (avgText === null) return [];
+    // avg = |grade| 가중평균. "최대"는 min·max가 모두 있을 때만
+    // max(|max|, |min|) — 부호 있는 max만 쓰면 평균보다 작아 보일 수 있다.
+    const peak = resolvePeakSlopePercent(
+      terrain.maxSlopePercent,
+      terrain.minSlopePercent,
+    );
+    const peakText = peak === null ? null : formatSlopePercent(peak);
+    const label =
+      peakText !== null
+        ? `평균 경사 ${avgText}% · 최대 ${peakText}%`
+        : `평균 경사 ${avgText}%`;
+    const slopeLevel = resolveSlopeLevel(terrain.avgSlopePercent) ?? undefined;
+    const gradeLabel = slopeLevel ? SLOPE_LEVEL_LABELS[slopeLevel] : undefined;
     const facts: V2RouteFact[] = [
       {
         id: 'terrain',
-        label: `평균 경사 ${terrain.avgSlopePercent.toFixed(1)}%`,
+        label,
         kind: 'estimate',
-        detail: detail || undefined,
+        detail: terrain.source || undefined,
+        slopeLevel,
+        title: gradeLabel ? `${label}, ${gradeLabel}` : label,
       },
     ];
     if (
@@ -295,16 +518,13 @@ export function buildRouteViewModel(
   const { route, score } = item;
   const scoreKind = score.scoreKind ?? 'rule_baseline';
   const profileLabel = PROFILES[profile].label;
-  const characteristicLabels = unique(
-    (route.characteristics ?? []).map(
-      (characteristic) => CHARACTERISTIC_LABEL[characteristic],
-    ),
-  );
-  const traitLabels = unique(
-    (route.traitLabels ?? [])
-      .filter((trait) => trait.evidenceStatus !== 'unavailable')
-      .map((trait) => trait.displayLabel),
-  );
+  const peerRoutes = peers.length > 0 ? peers : [item];
+  const canCompare = peerRoutes.length > 1;
+  const scoreDisplay = resolveScoreDisplay(score.finalScore, scoreKind, {
+    canCompare,
+  });
+  const { characteristicLabels, traitLabels } =
+    resolveTraitAndCharacteristicLabels(route, canCompare);
   const unavailableTraits = (route.traitLabels ?? [])
     .filter((trait) => trait.evidenceStatus === 'unavailable')
     .map((trait) => trait.displayLabel);
@@ -335,11 +555,7 @@ export function buildRouteViewModel(
       walkM: route.totalWalkM,
       transferCount: route.transferCount,
     },
-    score: {
-      value: score.finalScore,
-      rounded: Math.round(score.finalScore),
-      kind: scoreKind,
-    },
+    score: scoreDisplay,
     scoreKindLabel: SCORE_KIND_LABEL[scoreKind],
     characteristicLabels,
     traitLabels,
@@ -448,10 +664,10 @@ export function buildDisplayReasons(
     terrain?.status === 'estimated_90m'
     && terrain.avgSlopePercent !== undefined
   ) {
-    add(
-      'terrain',
-      `평균 경사 ${terrain.avgSlopePercent.toFixed(1)}%로 추정돼요.`,
-    );
+    const avgText = formatSlopePercent(terrain.avgSlopePercent);
+    if (avgText !== null) {
+      add('terrain', `평균 경사 ${avgText}%로 추정돼요.`);
+    }
   }
 
   const shade = route.shade;
@@ -482,6 +698,7 @@ export function buildDisplayReasons(
   };
 
   for (const characteristic of route.characteristics ?? []) {
+    if (!canCompare && RELATIVE_CHARACTERISTICS.has(characteristic)) continue;
     const overlapKey = characteristicKey[characteristic];
     if (overlapKey && usedKeys.has(overlapKey)) continue;
     add(
@@ -493,6 +710,10 @@ export function buildDisplayReasons(
   for (const trait of route.traitLabels ?? []) {
     if (trait.evidenceStatus === 'unavailable') continue;
     if (trait.evidence.length === 0) continue;
+    if (!canCompare && RELATIVE_TRAIT_IDS.has(trait.labelId)) continue;
+    if (!canCompare && looksRelativeComparisonLabel(trait.displayLabel)) {
+      continue;
+    }
     add(`trait:${trait.labelId}`, `${trait.displayLabel} 근거가 있어요.`);
   }
 

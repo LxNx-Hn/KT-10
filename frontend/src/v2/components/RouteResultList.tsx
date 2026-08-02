@@ -3,8 +3,8 @@ import { routeRefinementKey } from '@/store/appStore';
 import type { ProfileId, ScoredRoute } from '@/types';
 import { serverRankedRecommendations } from '@/utils/routes';
 import {
-  ROUTE_SCORE_DISCLAIMER,
   buildRouteViewModel,
+  routeScoreDisclaimer,
 } from '../routeViewModel';
 import RouteSummaryCard from './RouteSummaryCard';
 
@@ -24,7 +24,7 @@ export default function RouteResultList({
   onDetails: () => void;
 }) {
   const ranked = useMemo(
-    () => serverRankedRecommendations(recommendations),
+    () => serverRankedRecommendations(recommendations ?? []),
     [recommendations],
   );
   const views = useMemo(
@@ -41,7 +41,7 @@ export default function RouteResultList({
   const activeIndex = selectedIndex >= 0 ? selectedIndex : null;
   const routeCount = views.length;
   const listLabel =
-    routeCount > 1 ? '적합 점수순 비교 경로' : '추천 경로';
+    routeCount > 1 ? '맞춤 적합도순 비교 경로' : '추천 경로';
   const heading =
     routeCount === 1
       ? '경로 1개를 찾았어요'
@@ -53,7 +53,7 @@ export default function RouteResultList({
         <div>
           <h2>{heading}</h2>
           {routeCount > 1 && (
-            <p>위아래로 스크롤해 다른 길의 특성과 적합 점수를 비교하세요.</p>
+            <p>위아래로 스크롤해 다른 길을 비교하세요.</p>
           )}
         </div>
         {routeCount > 1 && (
@@ -66,6 +66,10 @@ export default function RouteResultList({
           </output>
         )}
       </div>
+
+      <p className="map-first__score-note map-first__score-note--list">
+        {routeScoreDisclaimer(routeCount)}
+      </p>
 
       <div
         className="map-first__route-stack"
@@ -91,7 +95,6 @@ export default function RouteResultList({
           />
         ))}
       </div>
-      <p className="map-first__score-note">{ROUTE_SCORE_DISCLAIMER}</p>
     </section>
   );
 }

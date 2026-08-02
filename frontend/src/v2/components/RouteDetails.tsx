@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
 import type { ProfileId, ScoredRoute } from '@/types';
 import {
-  ROUTE_SCORE_DISCLAIMER,
   buildRouteViewModel,
   formatRouteSourceLabel,
+  routeScoreDisclaimer,
   type V2RouteFactKind,
 } from '../routeViewModel';
 
@@ -31,6 +31,7 @@ export default function RouteDetails({
     [item, peers, profile, rank],
   );
   const sources = item.route.sources ?? [];
+  const scoreNote = routeScoreDisclaimer(peers && peers.length > 0 ? peers.length : 1);
 
   return (
     <section className="map-first__route-detail" aria-label="선택 경로 상세">
@@ -39,13 +40,25 @@ export default function RouteDetails({
           <p>{view.title}</p>
           <h3>{view.summary}</h3>
         </div>
-        <div className="map-first__route-score">
-          <strong>{view.score.rounded}</strong>
-          <span>/100</span>
+        <div
+          className="map-first__route-score"
+          title={view.score.ariaLabel}
+          aria-label={view.score.ariaLabel}
+        >
+          {view.score.available && view.score.rounded !== null ? (
+            <>
+              <small>{view.scoreKindLabel}</small>
+              <strong>{view.score.rounded}</strong>
+              <span>점</span>
+            </>
+          ) : (
+            <small className="map-first__route-score-unavailable">
+              {view.score.summaryLabel}
+            </small>
+          )}
         </div>
       </div>
-      <p className="map-first__score-kind">{view.scoreKindLabel}</p>
-      <p className="map-first__score-note">{ROUTE_SCORE_DISCLAIMER}</p>
+      <p className="map-first__score-note">{scoreNote}</p>
 
       <dl className="map-first__fact-list">
         {view.facts.map((fact) => (

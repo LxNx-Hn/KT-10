@@ -14,6 +14,11 @@ import type {
   ScoredRoute,
   SegmentMode,
 } from '@/types';
+import {
+  SLOPE_COLOR_RAMP,
+  slopeLevelLabel,
+  slopeMapColor,
+} from './utils/slopeLevel';
 
 export type LngLatTuple = [number, number];
 
@@ -140,41 +145,17 @@ const MODE_COLOR: Record<SegmentMode, string> = {
   transfer: '#64748b',
 };
 
-/**
- * QGIS-style slope severity color ramp for walking segments.
- * - ≤2%  gentle         → green
- * - ≤5%  moderate       → yellow
- * - ≤8%  steep          → orange
- * - >8%  very steep     → red
- * Falls back to the default walk green when no terrain data is available.
- */
-const SLOPE_COLOR_RAMP: Array<{ max: number; color: string; label: string }> = [
-  { max: 2, color: '#2ca25f', label: '완만' },
-  { max: 5, color: '#f2cf4a', label: '보통' },
-  { max: 8, color: '#f28e2b', label: '급경사' },
-  { max: Infinity, color: '#d73027', label: '매우 급경사' },
-];
-
+/** 구간 경사색. 값 없으면 기본 도보색. 판정은 slopeLevel 유틸과 동일. */
 export function slopeColor(
   slopePercent: number | undefined | null,
 ): string {
-  if (slopePercent === undefined || slopePercent === null) return MODE_COLOR.walk;
-  const abs = Math.abs(slopePercent);
-  for (const band of SLOPE_COLOR_RAMP) {
-    if (abs <= band.max) return band.color;
-  }
-  return SLOPE_COLOR_RAMP[SLOPE_COLOR_RAMP.length - 1].color;
+  return slopeMapColor(slopePercent, MODE_COLOR.walk);
 }
 
 export function slopeLabel(
   slopePercent: number | undefined | null,
 ): string {
-  if (slopePercent === undefined || slopePercent === null) return '';
-  const abs = Math.abs(slopePercent);
-  for (const band of SLOPE_COLOR_RAMP) {
-    if (abs <= band.max) return band.label;
-  }
-  return SLOPE_COLOR_RAMP[SLOPE_COLOR_RAMP.length - 1].label;
+  return slopeLevelLabel(slopePercent);
 }
 
 export { SLOPE_COLOR_RAMP };
@@ -594,46 +575,84 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     if (!route) return;
     const routePath = validPath(route.path);
     const segmentParts = segmentPathParts(route);
+    // terrain.slopeSegments → LatLng start/end 구간. 있을 때만 도보 경사색을 쓴다.
+    const slopeWalkParts = segmentParts.filter(
+      (part) =>
+        part.mode === 'walk' && typeof part.slopePercent === 'number',
+    );
+    const transitParts = segmentParts.filter(
+      (part) => part.mode === 'bus' || part.mode === 'subway' || part.mode === 'transfer',
+    );
+    const hasSlopeWalk = slopeWalkParts.length > 0;
 
-    const addRoutePart = (
-      { path, mode, quality, slopePercent }: RoutePathPart,
-      includeOutline: boolean,
-    ) => {
-      const kakaoPath = path.map((point) => toKakaoLatLng(maps, point));
-      const style = strokeStyle(quality);
-      // Walk segments use slope-dependent color ramp; other modes keep fixed colors.
-      const color = mode === 'walk'
-        ? slopeColor(slopePercent)
-        : mode ? MODE_COLOR[mode] ?? DEFAULT_ROUTE_COLOR : DEFAULT_ROUTE_COLOR;
-      if (includeOutline) {
-        addGraphic(new maps.Polyline({
-          path: kakaoPath,
-          strokeWeight: 11,
-          strokeColor: '#ffffff',
-          strokeOpacity: 0.88,
-          strokeStyle: style,
-          zIndex: 4,
-        }));
+    const colorForPart = ({
+      mode,
+      slopePercent,
+    }: RoutePathPart): string => {
+      if (mode === 'walk') {
+        // 구간 경사값이 있을 때만 등급색. 없으면 선택 경로 파란선 유지.
+        if (typeof slopePercent === 'number') return slopeColor(slopePercent);
+        return DEFAULT_ROUTE_COLOR;
       }
+      if (mode) return MODE_COLOR[mode] ?? DEFAULT_ROUTE_COLOR;
+      return DEFAULT_ROUTE_COLOR;
+    };
+
+    const drawOutline = (path: LatLng[], quality?: GeometryQuality) => {
       addGraphic(new maps.Polyline({
-        path: kakaoPath,
-        strokeWeight: 6,
-        strokeColor: color,
-        strokeOpacity: 0.96,
-        strokeStyle: style,
-        zIndex: 5,
+        path: path.map((point) => toKakaoLatLng(maps, point)),
+        strokeWeight: 12,
+        strokeColor: '#ffffff',
+        strokeOpacity: 0.88,
+        strokeStyle: strokeStyle(quality),
+        zIndex: 4,
       }));
     };
 
-    if (routePath) {
-      addRoutePart(
-        { path: routePath, quality: route.geometryQuality },
-        true,
-      );
-      segmentParts.forEach((part) => addRoutePart(part, false));
+    const drawBody = (
+      part: RoutePathPart,
+      zIndex: number,
+      weight = 8,
+    ) => {
+      addGraphic(new maps.Polyline({
+        path: part.path.map((point) => toKakaoLatLng(maps, point)),
+        strokeWeight: weight,
+        strokeColor: colorForPart(part),
+        strokeOpacity: 0.96,
+        strokeStyle: strokeStyle(part.quality),
+        zIndex,
+      }));
+    };
+
+    if (hasSlopeWalk) {
+      // 1) 외곽선만 (파란 본선은 그리지 않음 — 경사선을 덮지 않게)
+      if (routePath) {
+        drawOutline(routePath, route.geometryQuality);
+      } else {
+        segmentParts.forEach((part) => drawOutline(part.path, part.quality));
+      }
+      // 2) 버스·지하철
+      transitParts.forEach((part) => drawBody(part, 5, 8));
+      // 3) 경사도 도보 구간 (가장 위)
+      slopeWalkParts.forEach((part) => drawBody(part, 6, 8));
       return;
     }
-    segmentParts.forEach((part) => addRoutePart(part, true));
+
+    // slopeSegments 없음: 기존처럼 선택 경로 파란 본선 + 대중교통 색 오버레이
+    if (routePath) {
+      drawOutline(routePath, route.geometryQuality);
+      drawBody(
+        { path: routePath, quality: route.geometryQuality },
+        5,
+        8,
+      );
+      transitParts.forEach((part) => drawBody(part, 6, 8));
+      return;
+    }
+    segmentParts.forEach((part) => {
+      drawOutline(part.path, part.quality);
+      drawBody(part, 5, 8);
+    });
   };
 
   const addShadeOverlay = (

@@ -25,6 +25,21 @@
   --mf-z-profile: 30;
   --mf-z-toast: 40;
 
+  /* 경사도 대표색 (지도·범례) — slopeLevel.ts 와 동기 */
+  --mf-slope-gentle: #2fae6b;
+  --mf-slope-moderate: #f7c948;
+  --mf-slope-steep: #f58a2a;
+  --mf-slope-very-steep: #e3362d;
+  /* 배지용 연한 배경 + 진한 글자 */
+  --mf-slope-gentle-bg: #e6f7ee;
+  --mf-slope-gentle-fg: #1a7a45;
+  --mf-slope-moderate-bg: #fff8dd;
+  --mf-slope-moderate-fg: #8a6a00;
+  --mf-slope-steep-bg: #fff0e0;
+  --mf-slope-steep-fg: #a8540f;
+  --mf-slope-very-steep-bg: #fde8e6;
+  --mf-slope-very-steep-fg: #b42318;
+
   min-height: 100dvh;
   display: flex;
   align-items: stretch;
@@ -1650,20 +1665,22 @@
   background: #ff5a1f;
 }
 
+.map-first__legend-dot--slope-gentle,
 .map-first__legend-dot--slope-flat {
-  background: #2ca25f;
+  background: var(--mf-slope-gentle);
 }
 
 .map-first__legend-dot--slope-moderate {
-  background: #f2cf4a;
+  background: var(--mf-slope-moderate);
 }
 
 .map-first__legend-dot--slope-steep {
-  background: #f28e2b;
+  background: var(--mf-slope-steep);
 }
 
+.map-first__legend-dot--slope-very-steep,
 .map-first__legend-dot--slope-danger {
-  background: #d73027;
+  background: var(--mf-slope-very-steep);
 }
 
 .map-first__map-legend--slope {
@@ -1776,8 +1793,18 @@
   -webkit-overflow-scrolling: touch;
 }
 
-.map-first__route-list > .map-first__score-note {
+.map-first__score-note--list {
   flex: none;
+  position: static;
+  margin: 0 0 10px;
+  max-width: 100%;
+  text-align: left;
+  line-height: 1.35;
+  /* 좁은 폭에서 최대 약 2줄 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .map-first__route-card {
@@ -1836,6 +1863,7 @@
   grid-template-columns: auto auto;
   align-items: baseline;
   justify-content: end;
+  column-gap: 2px;
   color: var(--mf-blue);
 }
 
@@ -1851,11 +1879,21 @@
 
 .map-first__route-score small {
   grid-column: 1 / -1;
-  max-width: 86px;
-  margin-top: 4px;
+  max-width: 88px;
+  margin-bottom: 2px;
   color: var(--mf-ink-soft);
   font-size: 9px;
   line-height: 1.2;
+  text-align: right;
+}
+
+.map-first__route-score-unavailable {
+  grid-column: 1 / -1;
+  max-width: 88px;
+  color: var(--mf-ink-soft);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
   text-align: right;
 }
 
@@ -1918,6 +1956,27 @@
   color: #175ea8;
 }
 
+/* 경사 배지: estimate 파란 톤을 등급 색으로 덮는다 */
+.map-first__badge--slope-gentle {
+  background: var(--mf-slope-gentle-bg);
+  color: var(--mf-slope-gentle-fg);
+}
+
+.map-first__badge--slope-moderate {
+  background: var(--mf-slope-moderate-bg);
+  color: var(--mf-slope-moderate-fg);
+}
+
+.map-first__badge--slope-steep {
+  background: var(--mf-slope-steep-bg);
+  color: var(--mf-slope-steep-fg);
+}
+
+.map-first__badge--slope-very-steep {
+  background: var(--mf-slope-very-steep-bg);
+  color: var(--mf-slope-very-steep-fg);
+}
+
 .map-first__badge--unknown {
   background: #fef3c7;
   color: #8a5100;
@@ -1932,7 +1991,8 @@
   margin: 0;
   color: var(--mf-ink-soft);
   font-size: 11px;
-  text-align: center;
+  text-align: left;
+  position: static;
 }
 
 .map-first__frame:has(.map-first__sheet--collapsed:not(.map-first__sheet--empty)) .map-first__map-legend {
@@ -2009,11 +2069,15 @@
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 .map-first__feedback-tab .route-feedback,
 .map-first__feedback-tab .facility-report {
   margin-top: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .map-first__drawer-head {

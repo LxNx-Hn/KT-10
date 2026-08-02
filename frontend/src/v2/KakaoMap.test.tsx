@@ -370,18 +370,19 @@ describe('KakaoMap production overlays', () => {
       (line) => line.options.path.length === 3
         && line.options.strokeColor !== '#64748b',
     );
+    // slopeSegments 없음: 흰 외곽선 + 파란 선택 본선만 (도보 구간 녹색 오버레이 없음)
     expect(fullRouteLines).toHaveLength(2);
+    expect(fullRouteLines.map((line) => line.options.strokeColor)).toEqual([
+      '#ffffff',
+      '#3182f6',
+    ]);
     expect(fullRouteLines.map((line) => line.options.zIndex)).toEqual([4, 5]);
     expect(
       fullRouteLines.every((line) => line.options.strokeStyle === 'solid'),
     ).toBe(true);
-
-    const partialOverlay = activePolylines().find(
-      (line) => line.options.strokeColor === '#16a34a',
-    );
-    expect(partialOverlay?.options.path).toHaveLength(2);
-    expect(partialOverlay?.options.strokeStyle).toBe('shortdash');
-    expect(partialOverlay?.options.zIndex).toBe(5);
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#16a34a'),
+    ).toBe(false);
 
     const alternativeLine = activePolylines().find(
       (line) => line.options.clickable === true,
@@ -442,14 +443,209 @@ describe('KakaoMap production overlays', () => {
     await waitUntilReady();
 
     const coloredSegments = activePolylines().filter(
-      (line) => ['#2ca25f', '#d73027'].includes(line.options.strokeColor),
+      (line) => ['#2FAE6B', '#E3362D'].includes(line.options.strokeColor),
     );
     expect(coloredSegments.map((line) => line.options.strokeColor)).toEqual([
-      '#2ca25f',
-      '#d73027',
+      '#2FAE6B',
+      '#E3362D',
     ]);
     expect(coloredSegments.every((line) => line.options.path.length === 2))
       .toBe(true);
+    // 파란 선택 본선이 경사선 위를 덮지 않는다
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#3182f6'),
+    ).toBe(false);
+    expect(coloredSegments.every((line) => line.options.zIndex === 6)).toBe(true);
+    expect(
+      coloredSegments.every((line) => line.options.strokeWeight >= 7
+        && line.options.strokeWeight <= 9),
+    ).toBe(true);
+  });
+
+  it.each([
+    [2, '#2FAE6B'],
+    [2.01, '#F7C948'],
+    [5.01, '#F58A2A'],
+    [8.01, '#E3362D'],
+  ] as const)(
+    '도보 slopePercent %s → 지도선 %s',
+    async (slopePercent, color) => {
+      const selected = scoredRoute(`slope-${slopePercent}`, {
+        path: [ORIGIN, DESTINATION],
+        geometryQuality: 'exact',
+        segments: [routeSegment('walk', [ORIGIN, DESTINATION], 'exact')],
+        terrain: {
+          status: 'estimated_90m',
+          avgSlopePercent: slopePercent,
+          maxSlopePercent: slopePercent,
+          minSlopePercent: slopePercent,
+          source: 'test',
+          resolutionM: 90,
+          slopeSegments: [{
+            start: ORIGIN,
+            end: DESTINATION,
+            slopePercent,
+            distanceM: 120,
+          }],
+        },
+      });
+
+      const { unmount } = render(
+        <KakaoMap
+          origin={ORIGIN}
+          destination={DESTINATION}
+          recommendations={[selected]}
+          selectedRouteId={selected.route.id}
+          onSelectRoute={vi.fn()}
+        />,
+      );
+      await waitUntilReady();
+
+      const slopeLines = activePolylines().filter(
+        (line) => line.options.strokeColor === color,
+      );
+      expect(slopeLines.length).toBeGreaterThanOrEqual(1);
+      expect(
+        activePolylines().some((line) => line.options.strokeColor === '#3182f6'),
+      ).toBe(false);
+      unmount();
+      expect(activePolylines()).toHaveLength(0);
+    },
+  );
+
+  it('버스·지하철은 이동수단 색을 유지하고 경사 도보선과 함께 그린다', async () => {
+    const busEnd = MIDPOINT;
+    const selected = scoredRoute('mixed-slope', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+      segments: [
+        {
+          id: 'w1',
+          mode: 'walk',
+          description: '도보',
+          durationMin: 3,
+          path: [ORIGIN, MIDPOINT],
+          geometryQuality: 'exact',
+        },
+        {
+          id: 'b1',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 8,
+          path: [MIDPOINT, DESTINATION],
+          geometryQuality: 'exact',
+        },
+      ],
+      terrain: {
+        status: 'estimated_90m',
+        avgSlopePercent: 3,
+        maxSlopePercent: 3,
+        minSlopePercent: 3,
+        source: 'test',
+        resolutionM: 90,
+        slopeSegments: [{
+          start: ORIGIN,
+          end: busEnd,
+          slopePercent: 3,
+          distanceM: 90,
+        }],
+      },
+    });
+
+    render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="mixed-slope"
+        onSelectRoute={vi.fn()}
+      />,
+    );
+    await waitUntilReady();
+
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#F7C948'),
+    ).toBe(true);
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#3182f6'),
+    ).toBe(true); // bus MODE_COLOR
+    expect(
+      activePolylines().filter((line) => line.options.strokeColor === '#3182f6')
+        .every((line) => line.options.path.length === 2),
+    ).toBe(true); // 버스 구간만 파랑 (전체 선택선 아님)
+  });
+
+  it('선택 경로 변경 시 이전 Polyline을 제거하고 새 경사선만 남긴다', async () => {
+    const first = scoredRoute('first', {
+      path: [ORIGIN, MIDPOINT],
+      geometryQuality: 'exact',
+      segments: [routeSegment('walk', [ORIGIN, MIDPOINT], 'exact')],
+      terrain: {
+        status: 'estimated_90m',
+        avgSlopePercent: 2,
+        maxSlopePercent: 2,
+        minSlopePercent: 2,
+        source: 'test',
+        resolutionM: 90,
+        slopeSegments: [{
+          start: ORIGIN,
+          end: MIDPOINT,
+          slopePercent: 2,
+          distanceM: 90,
+        }],
+      },
+    });
+    const second = scoredRoute('second', {
+      path: [MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+      segments: [routeSegment('walk', [MIDPOINT, DESTINATION], 'exact')],
+      terrain: {
+        status: 'estimated_90m',
+        avgSlopePercent: 9,
+        maxSlopePercent: 9,
+        minSlopePercent: 9,
+        source: 'test',
+        resolutionM: 90,
+        slopeSegments: [{
+          start: MIDPOINT,
+          end: DESTINATION,
+          slopePercent: 9,
+          distanceM: 90,
+        }],
+      },
+    });
+
+    const { rerender } = render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[first, second]}
+        selectedRouteId="first"
+        onSelectRoute={vi.fn()}
+      />,
+    );
+    await waitUntilReady();
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#2FAE6B'),
+    ).toBe(true);
+
+    rerender(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[first, second]}
+        selectedRouteId="second"
+        onSelectRoute={vi.fn()}
+      />,
+    );
+    await waitFor(() => {
+      expect(
+        activePolylines().some((line) => line.options.strokeColor === '#E3362D'),
+      ).toBe(true);
+    });
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#2FAE6B'),
+    ).toBe(false);
   });
 
   it('그늘 폴리곤과 90m 경사선을 동시에 표시하고 경사선을 위에 배치한다', async () => {
@@ -501,17 +697,17 @@ describe('KakaoMap production overlays', () => {
     expect(activePolygons()).toHaveLength(1);
     expect(
       activePolylines().filter(
-        (line) => line.options.strokeColor === '#d73027',
+        (line) => line.options.strokeColor === '#E3362D',
       ),
     ).toHaveLength(1);
     const shadeLine = activePolylines().find(
       (line) => line.options.strokeColor === '#00b84a',
     );
     const slopeLine = activePolylines().find(
-      (line) => line.options.strokeColor === '#d73027',
+      (line) => line.options.strokeColor === '#E3362D',
     );
     expect(shadeLine?.options.zIndex).toBe(3);
-    expect(slopeLine?.options.zIndex).toBe(5);
+    expect(slopeLine?.options.zIndex).toBe(6);
   });
 
   it.each(['estimated_demo', 'estimated_public'] as const)(
