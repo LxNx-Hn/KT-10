@@ -878,6 +878,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       setStatus('error');
     };
 
+    // loadKakaoMaps 내부 1회 재시도까지 포함한 최종 결과만 반영한다.
+    // 재시도 성공 시 아래 setStatus('ready')로 오류 폴백을 해제한다.
+    setStatus('loading');
     void loadKakaoMaps()
       .then((loaded: unknown) => {
         if (cancelled || !containerRef.current || !isKakaoNamespace(loaded)) {

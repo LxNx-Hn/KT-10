@@ -107,9 +107,9 @@ export default function SearchHeader({
           className="map-first__search-header-body"
         >
           <RouteSearchPanel
+            {...panelProps}
             mode={mode === 'summary' ? 'compact' : 'expanded'}
             onCollapse={mode === 'expanded' ? onCollapse : undefined}
-            {...panelProps}
           />
         </div>
       )}

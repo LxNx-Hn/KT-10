@@ -243,10 +243,32 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(precedes(map, collapsed)).toBe(true);
     expect(collapsed.getAttribute('aria-expanded')).toBe('false');
     expect(collapsed.getAttribute('aria-controls')).toBe('map-first-search-panel');
+    expect(collapsed.textContent).toContain('어디로 갈까요?');
     expect(queryByLabelText('출발지')).toBeNull();
     expect(queryByLabelText('도착지')).toBeNull();
     expect(queryByRole('button', { name: '경로 찾기' })).toBeNull();
+    expect(queryByRole('button', { name: '검색창 접기' })).toBeNull();
     expect(container.querySelector('.map-first__chip-scroll')).toBeNull();
+    expect(container.querySelector('#map-first-origin')).toBeNull();
+  });
+
+  it('App을 unmount/remount 해도 최초 화면은 collapsed를 유지한다', () => {
+    const first = render(<App />);
+    expect(
+      first.getByRole('button', { name: '어디로 갈까요?' }),
+    ).toBeTruthy();
+    expect(first.queryByLabelText('출발지')).toBeNull();
+    first.unmount();
+
+    const second = render(<App />);
+    expect(
+      second.container.querySelector('[data-search-header="collapsed"]'),
+    ).toBeTruthy();
+    expect(
+      second.getByRole('button', { name: '어디로 갈까요?' }),
+    ).toBeTruthy();
+    expect(second.queryByLabelText('출발지')).toBeNull();
+    expect(second.queryByRole('button', { name: '경로 찾기' })).toBeNull();
   });
 
   it('한 줄 검색창을 누르면 expanded 패널이 열린다', () => {
@@ -263,9 +285,10 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       '도착지 검색',
     );
     expect(getByRole('button', { name: '경로 찾기' })).toBeTruthy();
-    expect(getByRole('button', { name: '검색창 접기' }).getAttribute('aria-expanded')).toBe(
-      'true',
-    );
+    const collapse = getByRole('button', { name: '검색창 접기' });
+    expect(collapse.getAttribute('aria-expanded')).toBe('true');
+    expect(collapse.getAttribute('aria-controls')).toBe('map-first-search-panel');
+    expect(collapse.textContent).toContain('검색창 접기');
   });
 
   it('검색 성공 후 compact summary를 보여주고 수정 시 API를 호출하지 않는다', async () => {

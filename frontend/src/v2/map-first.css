@@ -861,19 +861,21 @@
 .map-first__search-toolbar {
   display: flex;
   justify-content: flex-end;
-  margin: 0 0 4px;
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--mf-line);
 }
 
 .map-first__search-collapse {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  min-height: 36px;
-  padding: 0 10px;
-  border: none;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--mf-ink-soft);
+  gap: 6px;
+  min-height: var(--mf-tap);
+  padding: 0 12px;
+  border: 1px solid var(--mf-line);
+  border-radius: 12px;
+  background: #f8fafc;
+  color: var(--mf-ink);
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
@@ -883,6 +885,10 @@
 .map-first__search-collapse:focus-visible {
   outline: 3px solid rgba(49, 130, 246, 0.55);
   outline-offset: 2px;
+}
+
+.map-first__search-collapse-label {
+  flex: none;
 }
 
 @media (max-width: 360px) {

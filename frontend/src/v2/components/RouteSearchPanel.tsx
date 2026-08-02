@@ -177,7 +177,9 @@ export default function RouteSearchPanel({
                 onClick={onCollapse}
               >
                 <span aria-hidden="true">⌃</span>
-                <span className="map-first__search-collapse-label">접기</span>
+                <span className="map-first__search-collapse-label">
+                  검색창 접기
+                </span>
               </button>
             </div>
           )}
