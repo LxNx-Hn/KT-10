@@ -37,8 +37,14 @@ export function toUserMessage(error: unknown, fallback: string): string {
   }
   if (
     error instanceof Error
-    && ['NO_KAKAO_KEY', 'KAKAO_SDK_LOAD_FAILED', 'KAKAO_PLACES_LIBRARY_UNAVAILABLE']
-      .includes(error.message)
+    && [
+      'NO_KAKAO_KEY',
+      'KAKAO_SDK_LOAD_FAILED',
+      'KAKAO_SDK_TIMEOUT',
+      'KAKAO_SDK_NETWORK_ERROR',
+      'KAKAO_SDK_INIT_ERROR',
+      'KAKAO_PLACES_LIBRARY_UNAVAILABLE',
+    ].includes(error.message)
   ) {
     return '카카오 장소 검색을 불러오지 못했습니다. JavaScript 키와 현재 도메인 등록을 확인해 주세요.';
   }

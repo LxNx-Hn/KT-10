@@ -14,6 +14,11 @@ import type {
   ScoredRoute,
   SegmentMode,
 } from '@/types';
+import {
+  SLOPE_COLOR_RAMP,
+  slopeLevelLabel,
+  slopeMapColor,
+} from './utils/slopeLevel';
 
 export type LngLatTuple = [number, number];
 
@@ -30,6 +35,12 @@ export type KakaoMapProps = {
   selectedRouteId: string | null;
   onSelectRoute: (routeId: string) => void;
   showFacilities?: boolean;
+  /** 선택 경로 shade geometry가 있을 때만 의미가 있다. 기본 ON(기존 자동 표시). */
+  showShade?: boolean;
+  /** terrain.slopeSegments가 있을 때만 경사색 도보선을 그린다. 기본 ON. */
+  showSlope?: boolean;
+  /** Overlay layout signature (search panel / sheet / drawer) for visible-area fits. */
+  layoutFitKey?: string;
 };
 
 type GeometryQuality = NonNullable<RouteCandidate['geometryQuality']>;
@@ -138,41 +149,17 @@ const MODE_COLOR: Record<SegmentMode, string> = {
   transfer: '#64748b',
 };
 
-/**
- * QGIS-style slope severity color ramp for walking segments.
- * - ≤2%  gentle         → green
- * - ≤5%  moderate       → yellow
- * - ≤8%  steep          → orange
- * - >8%  very steep     → red
- * Falls back to the default walk green when no terrain data is available.
- */
-const SLOPE_COLOR_RAMP: Array<{ max: number; color: string; label: string }> = [
-  { max: 2, color: '#2ca25f', label: '완만' },
-  { max: 5, color: '#f2cf4a', label: '보통' },
-  { max: 8, color: '#f28e2b', label: '급경사' },
-  { max: Infinity, color: '#d73027', label: '매우 급경사' },
-];
-
+/** 구간 경사색. 값 없으면 기본 도보색. 판정은 slopeLevel 유틸과 동일. */
 export function slopeColor(
   slopePercent: number | undefined | null,
 ): string {
-  if (slopePercent === undefined || slopePercent === null) return MODE_COLOR.walk;
-  const abs = Math.abs(slopePercent);
-  for (const band of SLOPE_COLOR_RAMP) {
-    if (abs <= band.max) return band.color;
-  }
-  return SLOPE_COLOR_RAMP[SLOPE_COLOR_RAMP.length - 1].color;
+  return slopeMapColor(slopePercent, MODE_COLOR.walk);
 }
 
 export function slopeLabel(
   slopePercent: number | undefined | null,
 ): string {
-  if (slopePercent === undefined || slopePercent === null) return '';
-  const abs = Math.abs(slopePercent);
-  for (const band of SLOPE_COLOR_RAMP) {
-    if (abs <= band.max) return band.label;
-  }
-  return SLOPE_COLOR_RAMP[SLOPE_COLOR_RAMP.length - 1].label;
+  return slopeLevelLabel(slopePercent);
 }
 
 export { SLOPE_COLOR_RAMP };
@@ -255,6 +242,148 @@ function alternativeRoutePathParts(route: RouteCandidate): RoutePathPart[] {
     : segmentPathParts(route);
 }
 
+function collectSelectedRoutePoints(route: RouteCandidate | undefined): LatLng[] {
+  if (!route) return [];
+  const main = validPath(route.path);
+  if (main) return [...main];
+  return segmentPathParts(route).flatMap((part) => part.path);
+}
+
+function buildFitPoints(
+  origin: Place | null,
+  destination: Place | null,
+  selectedRoute: RouteCandidate | undefined,
+): LatLng[] {
+  const points: LatLng[] = [];
+  // Origin/destination markers must always stay inside the fitted bounds.
+  if (origin && isValidPoint(origin)) points.push(origin);
+  if (destination && isValidPoint(destination)) points.push(destination);
+  points.push(...collectSelectedRoutePoints(selectedRoute));
+  return points;
+}
+
+function routeGeometryFitKey(route: RouteCandidate | undefined): string {
+  const points = collectSelectedRoutePoints(route);
+  if (!route || points.length === 0) {
+    return `${route?.id ?? 'none'}|empty|${route?.geometryQuality ?? ''}`;
+  }
+  const first = points[0];
+  const mid = points[Math.floor(points.length / 2)];
+  const last = points[points.length - 1];
+  return [
+    route.id,
+    route.geometryQuality ?? '',
+    String(points.length),
+    `${first.lat.toFixed(5)},${first.lng.toFixed(5)}`,
+    `${mid.lat.toFixed(5)},${mid.lng.toFixed(5)}`,
+    `${last.lat.toFixed(5)},${last.lng.toFixed(5)}`,
+  ].join('|');
+}
+
+const TOP_MARKER_SAFE_PAD = 24;
+const BOTTOM_MARKER_SAFE_PAD = 32;
+const SIDE_PAD = 24;
+const MIN_VISIBLE_MAP_PX = 100;
+
+const TOP_OVERLAY_SELECTORS = [
+  '.map-first__top',
+  '.map-first__search',
+  '.map-first__search--compact',
+  '.map-first__context',
+  '.map-first__chip-row',
+] as const;
+
+const BOTTOM_OVERLAY_SELECTORS = [
+  '.map-first__drawer-panel',
+  '.map-first__sheet',
+] as const;
+
+function isDisplayedOverlay(el: Element): el is HTMLElement {
+  if (!(el instanceof HTMLElement)) return false;
+  const style = window.getComputedStyle(el);
+  if (style.display === 'none' || style.visibility === 'hidden') return false;
+  if (Number(style.opacity) === 0) return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function queryVisibleOverlays(selectors: readonly string[]): HTMLElement[] {
+  const found: HTMLElement[] = [];
+  selectors.forEach((selector) => {
+    document.querySelectorAll(selector).forEach((el) => {
+      if (isDisplayedOverlay(el)) found.push(el);
+    });
+  });
+  return found;
+}
+
+function computeVisibleAreaPaddings(mapEl: HTMLElement): {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+} {
+  const mapRect = mapEl.getBoundingClientRect();
+  const height = mapEl.clientHeight || mapRect.height || 0;
+
+  let topCovered = 0;
+  queryVisibleOverlays(TOP_OVERLAY_SELECTORS).forEach((overlay) => {
+    const rect = overlay.getBoundingClientRect();
+    const overlap =
+      Math.min(rect.bottom, mapRect.bottom) - Math.max(rect.top, mapRect.top);
+    if (overlap <= 0) return;
+    topCovered = Math.max(topCovered, rect.bottom - mapRect.top);
+  });
+
+  let bottomCovered = 0;
+  // Prefer an open drawer panel over the route sheet when both exist.
+  const bottomOverlays = queryVisibleOverlays(BOTTOM_OVERLAY_SELECTORS);
+  const drawer = bottomOverlays.find((el) =>
+    el.classList.contains('map-first__drawer-panel'),
+  );
+  const sheet = bottomOverlays.find((el) =>
+    el.classList.contains('map-first__sheet'),
+  );
+  const bottomOverlay = drawer ?? sheet ?? null;
+  if (bottomOverlay) {
+    const rect = bottomOverlay.getBoundingClientRect();
+    const overlap =
+      Math.min(rect.bottom, mapRect.bottom) - Math.max(rect.top, mapRect.top);
+    if (overlap > 0) {
+      bottomCovered = Math.max(0, mapRect.bottom - rect.top);
+    }
+  }
+
+  let top = Math.max(
+    TOP_MARKER_SAFE_PAD,
+    Math.round(Math.max(0, topCovered) + TOP_MARKER_SAFE_PAD),
+  );
+  let bottom = Math.max(
+    BOTTOM_MARKER_SAFE_PAD,
+    Math.round(Math.max(0, bottomCovered) + BOTTOM_MARKER_SAFE_PAD),
+  );
+
+  // Keep a usable map strip, but prefer preserving overlay clearance over
+  // the older height-120 clamp that trimmed needed padding too aggressively.
+  const minVisible = Math.min(
+    Math.max(MIN_VISIBLE_MAP_PX, Math.round(height * 0.2)),
+    Math.max(MIN_VISIBLE_MAP_PX, height - 40),
+  );
+  const maximumCombinedPadding = Math.max(0, height - minVisible);
+  if (height > 0 && top + bottom > maximumCombinedPadding) {
+    const scale = maximumCombinedPadding / (top + bottom);
+    top = Math.max(0, Math.round(top * scale));
+    bottom = Math.max(0, Math.round(bottom * scale));
+  }
+
+  return {
+    top,
+    right: SIDE_PAD,
+    bottom,
+    left: SIDE_PAD,
+  };
+}
+
 function toKakaoLatLng(maps: KakaoMapsApi, point: LatLng): KakaoLatLng {
   return new maps.LatLng(point.lat, point.lng);
 }
@@ -330,6 +459,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showFacilities = false,
+    showShade = true,
+    showSlope = true,
+    layoutFitKey = '',
   },
   ref,
 ) {
@@ -342,6 +474,8 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
   const userRef = useRef<KakaoCustomOverlay | null>(null);
   const pendingUserLocationRef = useRef<LngLatTuple | null>(null);
   const locationRafRef = useRef<number | null>(null);
+  const fitRafRef = useRef<number | null>(null);
+  const lastFitKeyRef = useRef<string | null>(null);
   const propsRef = useRef({
     origin,
     destination,
@@ -349,6 +483,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showFacilities,
+    showShade,
+    showSlope,
+    layoutFitKey,
   });
   propsRef.current = {
     origin,
@@ -357,6 +494,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showFacilities,
+    showShade,
+    showSlope,
+    layoutFitKey,
   };
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -365,6 +505,13 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     if (locationRafRef.current !== null) {
       cancelAnimationFrame(locationRafRef.current);
       locationRafRef.current = null;
+    }
+  };
+
+  const cancelFitRaf = () => {
+    if (fitRafRef.current !== null) {
+      cancelAnimationFrame(fitRafRef.current);
+      fitRafRef.current = null;
     }
   };
 
@@ -434,59 +581,99 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
   const addSelectedRoute = (
     maps: KakaoMapsApi,
     route: RouteCandidate | undefined,
+    slopeVisible: boolean,
   ) => {
     if (!route) return;
     const routePath = validPath(route.path);
     const segmentParts = segmentPathParts(route);
+    // terrain.slopeSegments → LatLng start/end 구간. 있을 때만 도보 경사색을 쓴다.
+    const slopeWalkParts = segmentParts.filter(
+      (part) =>
+        part.mode === 'walk' && typeof part.slopePercent === 'number',
+    );
+    const transitParts = segmentParts.filter(
+      (part) => part.mode === 'bus' || part.mode === 'subway' || part.mode === 'transfer',
+    );
+    const hasSlopeWalk = slopeVisible && slopeWalkParts.length > 0;
 
-    const addRoutePart = (
-      { path, mode, quality, slopePercent }: RoutePathPart,
-      includeOutline: boolean,
-    ) => {
-      const kakaoPath = path.map((point) => toKakaoLatLng(maps, point));
-      const style = strokeStyle(quality);
-      // Walk segments use slope-dependent color ramp; other modes keep fixed colors.
-      const color = mode === 'walk'
-        ? slopeColor(slopePercent)
-        : mode ? MODE_COLOR[mode] ?? DEFAULT_ROUTE_COLOR : DEFAULT_ROUTE_COLOR;
-      if (includeOutline) {
-        addGraphic(new maps.Polyline({
-          path: kakaoPath,
-          strokeWeight: 11,
-          strokeColor: '#ffffff',
-          strokeOpacity: 0.88,
-          strokeStyle: style,
-          zIndex: 4,
-        }));
+    const colorForPart = ({
+      mode,
+      slopePercent,
+    }: RoutePathPart): string => {
+      if (mode === 'walk') {
+        // 구간 경사값이 있을 때만 등급색. 없으면 선택 경로 파란선 유지.
+        if (typeof slopePercent === 'number') return slopeColor(slopePercent);
+        return DEFAULT_ROUTE_COLOR;
       }
+      if (mode) return MODE_COLOR[mode] ?? DEFAULT_ROUTE_COLOR;
+      return DEFAULT_ROUTE_COLOR;
+    };
+
+    const drawOutline = (path: LatLng[], quality?: GeometryQuality) => {
       addGraphic(new maps.Polyline({
-        path: kakaoPath,
-        strokeWeight: 6,
-        strokeColor: color,
-        strokeOpacity: 0.96,
-        strokeStyle: style,
-        zIndex: 5,
+        path: path.map((point) => toKakaoLatLng(maps, point)),
+        strokeWeight: 12,
+        strokeColor: '#ffffff',
+        strokeOpacity: 0.88,
+        strokeStyle: strokeStyle(quality),
+        zIndex: 4,
       }));
     };
 
-    if (routePath) {
-      addRoutePart(
-        { path: routePath, quality: route.geometryQuality },
-        true,
-      );
-      segmentParts.forEach((part) => addRoutePart(part, false));
+    const drawBody = (
+      part: RoutePathPart,
+      zIndex: number,
+      weight = 8,
+    ) => {
+      addGraphic(new maps.Polyline({
+        path: part.path.map((point) => toKakaoLatLng(maps, point)),
+        strokeWeight: weight,
+        strokeColor: colorForPart(part),
+        strokeOpacity: 0.96,
+        strokeStyle: strokeStyle(part.quality),
+        zIndex,
+      }));
+    };
+
+    if (hasSlopeWalk) {
+      // 1) 외곽선만 (파란 본선은 그리지 않음 — 경사선을 덮지 않게)
+      if (routePath) {
+        drawOutline(routePath, route.geometryQuality);
+      } else {
+        segmentParts.forEach((part) => drawOutline(part.path, part.quality));
+      }
+      // 2) 버스·지하철
+      transitParts.forEach((part) => drawBody(part, 5, 8));
+      // 3) 경사도 도보 구간 (가장 위)
+      slopeWalkParts.forEach((part) => drawBody(part, 6, 8));
       return;
     }
-    segmentParts.forEach((part) => addRoutePart(part, true));
+
+    // slopeSegments 없음: 기존처럼 선택 경로 파란 본선 + 대중교통 색 오버레이
+    if (routePath) {
+      drawOutline(routePath, route.geometryQuality);
+      drawBody(
+        { path: routePath, quality: route.geometryQuality },
+        5,
+        8,
+      );
+      transitParts.forEach((part) => drawBody(part, 6, 8));
+      return;
+    }
+    segmentParts.forEach((part) => {
+      drawOutline(part.path, part.quality);
+      drawBody(part, 5, 8);
+    });
   };
 
   const addShadeOverlay = (
     maps: KakaoMapsApi,
     route: RouteCandidate | undefined,
     boundsPoints: LatLng[],
+    shadeVisible: boolean,
   ) => {
-    // 실제 shade 결과가 있으면 자동 표시하고, 없으면 layer만 조용히 생략한다.
-    if (!route?.shade) return;
+    // 실제 shade geometry가 있고 사용자가 ON일 때만 표시한다.
+    if (!shadeVisible || !route?.shade) return;
     if (
       route.shade.status !== 'estimated_demo'
       && route.shade.status !== 'estimated_public'
@@ -566,34 +753,47 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     maps: KakaoMapsApi,
     map: KakaoMapInstance,
     points: LatLng[],
+    fitKey: string,
   ) => {
-    if (points.length === 0) {
-      map.setCenter(new maps.LatLng(DISTRICT.center.lat, DISTRICT.center.lng));
-      map.setLevel(DISTRICT.defaultZoom);
-      return;
-    }
-    if (points.length === 1) {
-      map.setCenter(toKakaoLatLng(maps, points[0]));
-      map.setLevel(4);
-      return;
-    }
+    if (lastFitKeyRef.current === fitKey) return;
+    lastFitKeyRef.current = fitKey;
+    cancelFitRaf();
 
-    const bounds = new maps.LatLngBounds();
-    points.forEach((point) => bounds.extend(toKakaoLatLng(maps, point)));
-    const height = containerRef.current?.clientHeight ?? 0;
-    let paddingTop = height > 0
-      ? Math.min(270, Math.max(120, Math.round(height * 0.34)))
-      : 240;
-    let paddingBottom = height > 0
-      ? Math.min(320, Math.max(120, Math.round(height * 0.4)))
-      : 280;
-    const maximumCombinedPadding = Math.max(80, height - 120);
-    if (height > 0 && paddingTop + paddingBottom > maximumCombinedPadding) {
-      const scale = maximumCombinedPadding / (paddingTop + paddingBottom);
-      paddingTop = Math.round(paddingTop * scale);
-      paddingBottom = Math.round(paddingBottom * scale);
-    }
-    map.setBounds(bounds, paddingTop, 48, paddingBottom, 48);
+    fitRafRef.current = requestAnimationFrame(() => {
+      fitRafRef.current = null;
+      if (mapRef.current !== map || mapsRef.current !== maps) return;
+      map.relayout();
+
+      if (points.length === 0) {
+        map.setCenter(new maps.LatLng(DISTRICT.center.lat, DISTRICT.center.lng));
+        map.setLevel(DISTRICT.defaultZoom);
+        return;
+      }
+      if (points.length === 1) {
+        map.setCenter(toKakaoLatLng(maps, points[0]));
+        map.setLevel(4);
+        return;
+      }
+
+      const bounds = new maps.LatLngBounds();
+      points.forEach((point) => bounds.extend(toKakaoLatLng(maps, point)));
+      const mapEl = containerRef.current;
+      const padding = mapEl
+        ? computeVisibleAreaPaddings(mapEl)
+        : {
+            top: TOP_MARKER_SAFE_PAD,
+            right: SIDE_PAD,
+            bottom: BOTTOM_MARKER_SAFE_PAD,
+            left: SIDE_PAD,
+          };
+      map.setBounds(
+        bounds,
+        padding.top,
+        padding.right,
+        padding.bottom,
+        padding.left,
+      );
+    });
   };
 
   const renderMapData = (
@@ -603,6 +803,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedId: string | null,
     selectRoute: (routeId: string) => void,
     facilitiesVisible: boolean,
+    shadeVisible: boolean,
+    slopeVisible: boolean,
+    nextLayoutFitKey: string,
   ) => {
     const maps = mapsRef.current;
     const map = mapRef.current;
@@ -610,17 +813,23 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
 
     clearRouteGraphics();
     const boundsPoints: LatLng[] = [];
-    if (nextOrigin && isValidPoint(nextOrigin)) boundsPoints.push(nextOrigin);
-    if (nextDestination && isValidPoint(nextDestination)) boundsPoints.push(nextDestination);
-
     const selectedRoute = routes.find(({ route }) => route.id === selectedId)?.route;
-    addShadeOverlay(maps, selectedRoute, boundsPoints);
+    addShadeOverlay(maps, selectedRoute, boundsPoints, shadeVisible);
     addAlternativeRoutes(maps, routes, selectedId, selectRoute, boundsPoints);
-    addSelectedRoute(maps, selectedRoute);
+    addSelectedRoute(maps, selectedRoute, slopeVisible);
     addFacilityOverlays(maps, selectedRoute, facilitiesVisible);
     addEndpoint(maps, nextOrigin, 'origin');
     addEndpoint(maps, nextDestination, 'dest');
-    fitDataBounds(maps, map, boundsPoints);
+
+    const fitPoints = buildFitPoints(nextOrigin, nextDestination, selectedRoute);
+    const heightBucket = Math.round((containerRef.current?.clientHeight ?? 0) / 40);
+    const fitKey = [
+      selectedId ?? 'none',
+      routeGeometryFitKey(selectedRoute),
+      nextLayoutFitKey,
+      String(heightBucket),
+    ].join('\u001f');
+    fitDataBounds(maps, map, fitPoints, fitKey);
   };
 
   const removeUserOverlay = () => {
@@ -702,6 +911,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       setStatus('error');
     };
 
+    // loadKakaoMaps 내부 1회 재시도까지 포함한 최종 결과만 반영한다.
+    // 재시도 성공 시 아래 setStatus('ready')로 오류 폴백을 해제한다.
+    setStatus('loading');
     void loadKakaoMaps()
       .then((loaded: unknown) => {
         if (cancelled || !containerRef.current || !isKakaoNamespace(loaded)) {
@@ -730,6 +942,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
           current.selectedRouteId,
           current.onSelectRoute,
           current.showFacilities,
+          current.showShade,
+          current.showSlope,
+          current.layoutFitKey,
         );
         const pending = pendingUserLocationRef.current;
         if (pending && applyUserLocation(pending)) {
@@ -737,7 +952,32 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
         }
         setStatus('ready');
 
-        resizeObserver = new ResizeObserver(() => map.relayout());
+        resizeObserver = new ResizeObserver(() => {
+          map.relayout();
+          const latest = propsRef.current;
+          const selected = latest.recommendations.find(
+            ({ route }) => route.id === latest.selectedRouteId,
+          )?.route;
+          const fitPoints = buildFitPoints(
+            latest.origin,
+            latest.destination,
+            selected,
+          );
+          const heightBucket = Math.round(
+            (containerRef.current?.clientHeight ?? 0) / 40,
+          );
+          const fitKey = [
+            latest.selectedRouteId ?? 'none',
+            routeGeometryFitKey(selected),
+            latest.layoutFitKey,
+            String(heightBucket),
+          ].join('\u001f');
+          // Allow a fresh fit when the viewport bucket changes.
+          if (lastFitKeyRef.current !== fitKey) {
+            lastFitKeyRef.current = null;
+            fitDataBounds(maps, map, fitPoints, fitKey);
+          }
+        });
         resizeObserver.observe(containerRef.current);
       })
       .catch(fail);
@@ -746,7 +986,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       cancelled = true;
       resizeObserver?.disconnect();
       cancelLocationRaf();
+      cancelFitRaf();
       readyRef.current = false;
+      lastFitKeyRef.current = null;
       pendingUserLocationRef.current = null;
       clearRouteGraphics();
       removeUserOverlay();
@@ -767,6 +1009,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       selectedRouteId,
       onSelectRoute,
       showFacilities,
+      showShade,
+      showSlope,
+      layoutFitKey,
     );
     // Map data helpers use refs and are intentionally recreated with the latest props.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -777,6 +1022,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     selectedRouteId,
     onSelectRoute,
     showFacilities,
+    showShade,
+    showSlope,
+    layoutFitKey,
     status,
   ]);
 

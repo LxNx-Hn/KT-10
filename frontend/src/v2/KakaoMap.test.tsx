@@ -307,6 +307,10 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(
     () => viewportHeight,
   );
+  vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+    callback(0);
+    return 1;
+  });
 });
 
 afterEach(() => {
@@ -366,18 +370,19 @@ describe('KakaoMap production overlays', () => {
       (line) => line.options.path.length === 3
         && line.options.strokeColor !== '#64748b',
     );
+    // slopeSegments 없음: 흰 외곽선 + 파란 선택 본선만 (도보 구간 녹색 오버레이 없음)
     expect(fullRouteLines).toHaveLength(2);
+    expect(fullRouteLines.map((line) => line.options.strokeColor)).toEqual([
+      '#ffffff',
+      '#3182f6',
+    ]);
     expect(fullRouteLines.map((line) => line.options.zIndex)).toEqual([4, 5]);
     expect(
       fullRouteLines.every((line) => line.options.strokeStyle === 'solid'),
     ).toBe(true);
-
-    const partialOverlay = activePolylines().find(
-      (line) => line.options.strokeColor === '#16a34a',
-    );
-    expect(partialOverlay?.options.path).toHaveLength(2);
-    expect(partialOverlay?.options.strokeStyle).toBe('shortdash');
-    expect(partialOverlay?.options.zIndex).toBe(5);
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#16a34a'),
+    ).toBe(false);
 
     const alternativeLine = activePolylines().find(
       (line) => line.options.clickable === true,
@@ -438,14 +443,209 @@ describe('KakaoMap production overlays', () => {
     await waitUntilReady();
 
     const coloredSegments = activePolylines().filter(
-      (line) => ['#2ca25f', '#d73027'].includes(line.options.strokeColor),
+      (line) => ['#2FAE6B', '#E3362D'].includes(line.options.strokeColor),
     );
     expect(coloredSegments.map((line) => line.options.strokeColor)).toEqual([
-      '#2ca25f',
-      '#d73027',
+      '#2FAE6B',
+      '#E3362D',
     ]);
     expect(coloredSegments.every((line) => line.options.path.length === 2))
       .toBe(true);
+    // 파란 선택 본선이 경사선 위를 덮지 않는다
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#3182f6'),
+    ).toBe(false);
+    expect(coloredSegments.every((line) => line.options.zIndex === 6)).toBe(true);
+    expect(
+      coloredSegments.every((line) => line.options.strokeWeight >= 7
+        && line.options.strokeWeight <= 9),
+    ).toBe(true);
+  });
+
+  it.each([
+    [2, '#2FAE6B'],
+    [2.01, '#F7C948'],
+    [5.01, '#F58A2A'],
+    [8.01, '#E3362D'],
+  ] as const)(
+    '도보 slopePercent %s → 지도선 %s',
+    async (slopePercent, color) => {
+      const selected = scoredRoute(`slope-${slopePercent}`, {
+        path: [ORIGIN, DESTINATION],
+        geometryQuality: 'exact',
+        segments: [routeSegment('walk', [ORIGIN, DESTINATION], 'exact')],
+        terrain: {
+          status: 'estimated_90m',
+          avgSlopePercent: slopePercent,
+          maxSlopePercent: slopePercent,
+          minSlopePercent: slopePercent,
+          source: 'test',
+          resolutionM: 90,
+          slopeSegments: [{
+            start: ORIGIN,
+            end: DESTINATION,
+            slopePercent,
+            distanceM: 120,
+          }],
+        },
+      });
+
+      const { unmount } = render(
+        <KakaoMap
+          origin={ORIGIN}
+          destination={DESTINATION}
+          recommendations={[selected]}
+          selectedRouteId={selected.route.id}
+          onSelectRoute={vi.fn()}
+        />,
+      );
+      await waitUntilReady();
+
+      const slopeLines = activePolylines().filter(
+        (line) => line.options.strokeColor === color,
+      );
+      expect(slopeLines.length).toBeGreaterThanOrEqual(1);
+      expect(
+        activePolylines().some((line) => line.options.strokeColor === '#3182f6'),
+      ).toBe(false);
+      unmount();
+      expect(activePolylines()).toHaveLength(0);
+    },
+  );
+
+  it('버스·지하철은 이동수단 색을 유지하고 경사 도보선과 함께 그린다', async () => {
+    const busEnd = MIDPOINT;
+    const selected = scoredRoute('mixed-slope', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+      segments: [
+        {
+          id: 'w1',
+          mode: 'walk',
+          description: '도보',
+          durationMin: 3,
+          path: [ORIGIN, MIDPOINT],
+          geometryQuality: 'exact',
+        },
+        {
+          id: 'b1',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 8,
+          path: [MIDPOINT, DESTINATION],
+          geometryQuality: 'exact',
+        },
+      ],
+      terrain: {
+        status: 'estimated_90m',
+        avgSlopePercent: 3,
+        maxSlopePercent: 3,
+        minSlopePercent: 3,
+        source: 'test',
+        resolutionM: 90,
+        slopeSegments: [{
+          start: ORIGIN,
+          end: busEnd,
+          slopePercent: 3,
+          distanceM: 90,
+        }],
+      },
+    });
+
+    render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="mixed-slope"
+        onSelectRoute={vi.fn()}
+      />,
+    );
+    await waitUntilReady();
+
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#F7C948'),
+    ).toBe(true);
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#3182f6'),
+    ).toBe(true); // bus MODE_COLOR
+    expect(
+      activePolylines().filter((line) => line.options.strokeColor === '#3182f6')
+        .every((line) => line.options.path.length === 2),
+    ).toBe(true); // 버스 구간만 파랑 (전체 선택선 아님)
+  });
+
+  it('선택 경로 변경 시 이전 Polyline을 제거하고 새 경사선만 남긴다', async () => {
+    const first = scoredRoute('first', {
+      path: [ORIGIN, MIDPOINT],
+      geometryQuality: 'exact',
+      segments: [routeSegment('walk', [ORIGIN, MIDPOINT], 'exact')],
+      terrain: {
+        status: 'estimated_90m',
+        avgSlopePercent: 2,
+        maxSlopePercent: 2,
+        minSlopePercent: 2,
+        source: 'test',
+        resolutionM: 90,
+        slopeSegments: [{
+          start: ORIGIN,
+          end: MIDPOINT,
+          slopePercent: 2,
+          distanceM: 90,
+        }],
+      },
+    });
+    const second = scoredRoute('second', {
+      path: [MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+      segments: [routeSegment('walk', [MIDPOINT, DESTINATION], 'exact')],
+      terrain: {
+        status: 'estimated_90m',
+        avgSlopePercent: 9,
+        maxSlopePercent: 9,
+        minSlopePercent: 9,
+        source: 'test',
+        resolutionM: 90,
+        slopeSegments: [{
+          start: MIDPOINT,
+          end: DESTINATION,
+          slopePercent: 9,
+          distanceM: 90,
+        }],
+      },
+    });
+
+    const { rerender } = render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[first, second]}
+        selectedRouteId="first"
+        onSelectRoute={vi.fn()}
+      />,
+    );
+    await waitUntilReady();
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#2FAE6B'),
+    ).toBe(true);
+
+    rerender(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[first, second]}
+        selectedRouteId="second"
+        onSelectRoute={vi.fn()}
+      />,
+    );
+    await waitFor(() => {
+      expect(
+        activePolylines().some((line) => line.options.strokeColor === '#E3362D'),
+      ).toBe(true);
+    });
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#2FAE6B'),
+    ).toBe(false);
   });
 
   it('그늘 폴리곤과 90m 경사선을 동시에 표시하고 경사선을 위에 배치한다', async () => {
@@ -497,17 +697,17 @@ describe('KakaoMap production overlays', () => {
     expect(activePolygons()).toHaveLength(1);
     expect(
       activePolylines().filter(
-        (line) => line.options.strokeColor === '#d73027',
+        (line) => line.options.strokeColor === '#E3362D',
       ),
     ).toHaveLength(1);
     const shadeLine = activePolylines().find(
       (line) => line.options.strokeColor === '#00b84a',
     );
     const slopeLine = activePolylines().find(
-      (line) => line.options.strokeColor === '#d73027',
+      (line) => line.options.strokeColor === '#E3362D',
     );
     expect(shadeLine?.options.zIndex).toBe(3);
-    expect(slopeLine?.options.zIndex).toBe(5);
+    expect(slopeLine?.options.zIndex).toBe(6);
   });
 
   it.each(['estimated_demo', 'estimated_public'] as const)(
@@ -600,6 +800,61 @@ describe('KakaoMap production overlays', () => {
       });
     },
   );
+
+  it('showShade=false이면 그늘 geometry가 있어도 시각화만 숨긴다', async () => {
+    const selected = scoredRoute('shade-off', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+      shade: {
+        status: 'estimated_demo',
+        evaluatedAt: '2026-07-23T14:00:00+09:00',
+        shadeRatio: 0.5,
+        source: 'test',
+        dataQuality: 'demo',
+        shadowPolygons: [[ORIGIN, MIDPOINT, DESTINATION]],
+        pathSegments: [
+          { start: ORIGIN, end: MIDPOINT, shaded: true },
+          { start: MIDPOINT, end: DESTINATION, shaded: false },
+        ],
+        calculationNote: 'test',
+      },
+    });
+    const scoreBefore = selected.score.finalScore;
+
+    const view = render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="shade-off"
+        onSelectRoute={vi.fn()}
+        showShade
+      />,
+    );
+    await waitUntilReady();
+    expect(activePolygons().length).toBeGreaterThan(0);
+
+    view.rerender(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="shade-off"
+        onSelectRoute={vi.fn()}
+        showShade={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(activePolygons()).toHaveLength(0);
+      expect(
+        activePolylines().filter((line) =>
+          ['#00b84a', '#ff5a1f'].includes(line.options.strokeColor),
+        ),
+      ).toHaveLength(0);
+    });
+    expect(selected.score.finalScore).toBe(scoreBefore);
+  });
 
   it('확인된 승강기와 저상버스만 편의시설 레이어에 표시하고 토글을 끄면 제거한다', async () => {
     const selected = scoredRoute('facilities', {
@@ -747,10 +1002,154 @@ describe('KakaoMap production overlays', () => {
     expect(boundsCall).toBeDefined();
     const top = boundsCall?.paddingTop ?? 0;
     const bottom = boundsCall?.paddingBottom ?? 0;
+    expect(top).toBeGreaterThanOrEqual(24);
+    expect(bottom).toBeGreaterThanOrEqual(32);
     expect(top + bottom).toBeLessThanOrEqual(80);
     expect(viewportHeight - top - bottom).toBeGreaterThanOrEqual(100);
-    expect(boundsCall?.paddingRight).toBe(48);
-    expect(boundsCall?.paddingLeft).toBe(48);
+    expect(boundsCall?.paddingRight).toBe(24);
+    expect(boundsCall?.paddingLeft).toBe(24);
     expect(boundsCall?.bounds.points.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('상단 칩·하단 시트가 가리는 높이를 padding에 반영하고 OD를 bounds에 포함한다', async () => {
+    viewportHeight = 640;
+    const selected = scoredRoute('padded', {
+      path: [MIDPOINT],
+      geometryQuality: 'exact',
+    });
+
+    const mapRect = {
+      top: 0,
+      bottom: 640,
+      left: 0,
+      right: 390,
+      width: 390,
+      height: 640,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function mockRect(this: HTMLElement) {
+        if (this.classList.contains('map-first__kakao-canvas')) {
+          return mapRect;
+        }
+        if (this.classList.contains('map-first__chip-row')) {
+          return {
+            top: 80,
+            bottom: 140,
+            left: 12,
+            right: 378,
+            width: 366,
+            height: 60,
+            x: 12,
+            y: 80,
+            toJSON: () => ({}),
+          } as DOMRect;
+        }
+        if (this.classList.contains('map-first__sheet')) {
+          return {
+            top: 400,
+            bottom: 640,
+            left: 0,
+            right: 390,
+            width: 390,
+            height: 240,
+            x: 0,
+            y: 400,
+            toJSON: () => ({}),
+          } as DOMRect;
+        }
+        return {
+          top: 0,
+          bottom: 0,
+          left: 0,
+          right: 0,
+          width: 0,
+          height: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        } as DOMRect;
+      },
+    );
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(
+      () =>
+        ({
+          display: 'block',
+          visibility: 'visible',
+          opacity: '1',
+        }) as CSSStyleDeclaration,
+    );
+
+    const topHost = document.createElement('div');
+    topHost.className = 'map-first__top';
+    const chipRow = document.createElement('div');
+    chipRow.className = 'map-first__chip-row';
+    topHost.append(chipRow);
+    const sheet = document.createElement('div');
+    sheet.className = 'map-first__sheet';
+    document.body.append(topHost, sheet);
+
+    render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="padded"
+        onSelectRoute={vi.fn()}
+      />,
+    );
+    await waitUntilReady();
+
+    const map = sdkRecords.maps[0];
+    const boundsCall = map?.boundsCalls[map.boundsCalls.length - 1];
+    expect(boundsCall?.paddingTop).toBe(164); // 140 - 0 + 24
+    expect(boundsCall?.paddingBottom).toBe(272); // 640 - 400 + 32
+    const lats = boundsCall?.bounds.points.map((point) => point.getLat()) ?? [];
+    expect(lats).toContain(ORIGIN.lat);
+    expect(lats).toContain(DESTINATION.lat);
+
+    topHost.remove();
+    sheet.remove();
+  });
+
+  it('같은 선택 경로·geometry·레이아웃이면 자동 fit을 중복 실행하지 않는다', async () => {
+    const selected = scoredRoute('stable', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+    });
+    const onSelectRoute = vi.fn();
+    const { rerender } = render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="stable"
+        onSelectRoute={onSelectRoute}
+        layoutFitKey="compact|sheet-expanded|none"
+        showFacilities={false}
+      />,
+    );
+    await waitUntilReady();
+    const map = sdkRecords.maps[0];
+    const firstCount = map.boundsCalls.length;
+    expect(firstCount).toBeGreaterThanOrEqual(1);
+
+    rerender(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="stable"
+        onSelectRoute={vi.fn()}
+        layoutFitKey="compact|sheet-expanded|none"
+        showFacilities={true}
+      />,
+    );
+    await waitFor(() => {
+      expect(sdkRecords.maps).toHaveLength(1);
+    });
+    expect(map.boundsCalls.length).toBe(firstCount);
   });
 });

@@ -46,6 +46,31 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   return response.json() as Promise<CurrentUser>;
 }
 
+/** UI 노출용 인증 구분. 게스트(204/401)와 일시적 확인 불가(503·네트워크)를 분리한다. */
+export type ResolvedAuth =
+  | { status: 'authenticated'; user: CurrentUser }
+  | { status: 'guest' }
+  | { status: 'unavailable' };
+
+export async function resolveCurrentAuth(): Promise<ResolvedAuth> {
+  // mock/demo·단위 테스트에서는 세션 API가 없으므로 제출 UI를 열어 둔다.
+  if (!IS_LIVE) {
+    return { status: 'authenticated', user: { id: 'mock-user', preference: {} } };
+  }
+  try {
+    const response = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' });
+    if (response.status === 200) {
+      return { status: 'authenticated', user: await response.json() as CurrentUser };
+    }
+    if (response.status === 204 || response.status === 401) {
+      return { status: 'guest' };
+    }
+    return { status: 'unavailable' };
+  } catch {
+    return { status: 'unavailable' };
+  }
+}
+
 export async function savePreferences(preference: Partial<UserPreferences>): Promise<UserPreferences> {
   const response = await fetch(`${API_BASE}/api/me/preferences`, {
     method: 'PUT',

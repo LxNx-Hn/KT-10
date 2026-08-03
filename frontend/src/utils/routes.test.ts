@@ -44,4 +44,9 @@ describe('경로 순위 계약', () => {
     ]);
     expect(input[0].route.id).toBe('낮은점수');
   });
+
+  it('null/undefined 추천 배열은 빈 목록으로 취급한다', () => {
+    expect(serverRankedRecommendations(null)).toEqual([]);
+    expect(serverRankedRecommendations(undefined)).toEqual([]);
+  });
 });

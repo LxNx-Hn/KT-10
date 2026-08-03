@@ -1,4 +1,3 @@
-import InstallPrompt from '@/components/InstallPrompt';
 import VoiceChatDock from '@/components/VoiceChatDock';
 import MapFirstApp from '@/v2/MapFirstApp';
 
@@ -10,7 +9,6 @@ export default function App() {
         본문으로 바로가기
       </a>
       <MapFirstApp />
-      <InstallPrompt />
       <VoiceChatDock variant="map-first" />
     </>
   );
