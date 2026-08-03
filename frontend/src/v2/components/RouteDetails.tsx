@@ -11,6 +11,7 @@ import {
   formatSlopePercent,
   resolvePeakSlopePercent,
 } from '../utils/slopeLevel';
+import TransitArrivalPanel from './TransitArrivalPanel';
 
 const FACT_KIND_LABEL: Record<V2RouteFactKind, string> = {
   advantage: '확인된 장점',
@@ -120,12 +121,14 @@ export default function RouteDetails({
         <p className="map-first__score-note">{scoreNote}</p>
       </div>
 
+      <TransitArrivalPanel item={item} />
+
       {avgSlopeText !== null && (
         <div className="map-first__detail-section map-first__detail-section--terrain">
           <h4>경사 정보</h4>
           <dl className="map-first__terrain-list">
             <div>
-              <dt>평균 경사</dt>
+              <dt>보행구간 평균 경사</dt>
               <dd>{avgSlopeText}%</dd>
             </div>
             {peakSlopeText !== null && (

@@ -2853,6 +2853,33 @@
   margin: 4px 0;
 }
 
+.map-first__transit-arrivals ol {
+  display: grid;
+  gap: 9px;
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.map-first__transit-arrivals li {
+  padding-left: 2px;
+}
+
+.map-first__transit-arrivals li > strong,
+.map-first__transit-arrivals li > span,
+.map-first__transit-arrivals li > small {
+  display: block;
+}
+
+.map-first__transit-arrivals li > span {
+  margin-top: 2px;
+  color: var(--mf-ink);
+}
+
+.map-first__transit-arrivals li > small {
+  margin-top: 2px;
+  color: var(--mf-ink-soft);
+}
+
 .map-first__info h3 {
   margin: 16px 0 5px;
   color: var(--mf-ink);

@@ -65,6 +65,19 @@ class RouteSegment(CamelModel):
     is_low_floor_bus: Optional[bool] = None  # None = 미확인
     wait_min: Optional[float] = Field(default=None, ge=0)
 
+    # 대중교통 공급자가 경로검색 응답에 함께 제공한 탑승 metadata.
+    # 실시간/시간표 도착 조회는 선택 경로 상세를 열 때만 이 식별자를 사용한다.
+    transit_start_id: Optional[str] = Field(default=None, max_length=100)
+    transit_end_id: Optional[str] = Field(default=None, max_length=100)
+    transit_route_id: Optional[str] = Field(default=None, max_length=100)
+    transit_direction: Optional[str] = Field(default=None, max_length=200)
+    transit_direction_code: Optional[int] = Field(default=None, ge=1, le=2)
+    transit_interval_min: Optional[int] = Field(default=None, ge=0)
+    fast_boarding_position: Optional[str] = Field(default=None, max_length=100)
+    start_exit_no: Optional[str] = Field(default=None, max_length=50)
+    end_exit_no: Optional[str] = Field(default=None, max_length=50)
+    smart_shelter_name: Optional[str] = Field(default=None, max_length=200)
+
     # 역/수직이동
     station_name: Optional[str] = None
     has_elevator: Optional[bool] = None  # None = 미확인
@@ -408,3 +421,36 @@ class TransitRefinementResponse(CamelModel):
     segments: list[RouteSegment] = Field(min_length=1, max_length=200)
     geometry_quality: Literal["exact", "mixed", "estimated"]
     refined_at: Optional[datetime] = None
+
+
+class TransitArrivalsRequest(CamelModel):
+    """선택한 기존 후보의 버스 실시간·지하철 시간표 도착 조회."""
+
+    route_set_token: str = Field(min_length=20, max_length=64)
+    route_id: str = Field(min_length=1, max_length=200)
+
+
+class TransitLegArrival(CamelModel):
+    segment_id: str
+    mode: Literal["bus", "subway"]
+    status: Literal["live", "scheduled", "unavailable"]
+    route_name: Optional[str] = None
+    boarding_stop_name: Optional[str] = None
+    direction: Optional[str] = None
+    arrival_min: Optional[int] = Field(default=None, ge=0)
+    arrival_message: Optional[str] = None
+    departure_time: Optional[str] = Field(
+        default=None,
+        pattern=r"^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$",
+    )
+    destination_arrival_time: Optional[str] = Field(
+        default=None,
+        pattern=r"^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$",
+    )
+    observed_at: datetime
+    source: str
+
+
+class TransitArrivalsResponse(CamelModel):
+    route_id: str
+    arrivals: list[TransitLegArrival] = Field(max_length=200)

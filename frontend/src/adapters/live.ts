@@ -4,6 +4,7 @@ import type {
   Place,
   RouteCandidate,
   ScoredRoute,
+  TransitArrivals,
   TransitRefinement,
   WeatherCondition,
 } from '@/types';
@@ -123,6 +124,11 @@ export const liveAdapters: Adapters = {
     },
     refineTransit: (routeSetToken, routeId) =>
       postJson<TransitRefinement>('/api/routes/refine-transit', {
+        routeSetToken,
+        routeId,
+      }, ROUTE_TIMEOUT_MS),
+    getTransitArrivals: (routeSetToken, routeId) =>
+      postJson<TransitArrivals>('/api/routes/transit-arrivals', {
         routeSetToken,
         routeId,
       }, ROUTE_TIMEOUT_MS),

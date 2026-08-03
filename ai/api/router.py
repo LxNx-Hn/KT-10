@@ -13,6 +13,7 @@ from threading import Lock
 from typing import Any, Literal
 
 import hmac
+from pyproj import Transformer
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -105,6 +106,11 @@ _layers = None
 _rankers = None
 _layers_lock = Lock()
 log = logging.getLogger("api.router")
+_WGS84_TO_METRIC = Transformer.from_crs(
+    "EPSG:4326",
+    "EPSG:5179",
+    always_xy=True,
+)
 
 
 def _get_layers():
@@ -624,7 +630,7 @@ async def _collect_static_featured_routes(
             "_distance_m": candidate.distance_m,
             "_path": [{"lat": point.lat, "lng": point.lng} for point in candidate.path],
             "_segments": _enrich_subway_elevator_accessibility(
-                _public_segments(candidate),
+                _public_segments(candidate, layers),
                 layers,
             ),
             "_slope_segments": slope_segments,
@@ -1257,7 +1263,49 @@ def _enrich_subway_elevator_accessibility(
     return segments
 
 
-def _public_segments(candidate) -> list[dict]:
+def _stop_name_key(value: object) -> str | None:
+    text = _provider_text(value)
+    if not text:
+        return None
+    return re.sub(r"(?:버스)?정류장$", "", re.sub(r"\s+", "", text))
+
+
+def _smart_shelter_for_boarding_stop(raw: dict, layers: dict | None) -> str | None:
+    """이름이 같고 좌표가 75m 이내인 탑승 정류장만 스마트쉘터로 확정한다."""
+    layer = (layers or {}).get("smart_shelter")
+    stop_name = _stop_name_key(raw.get("startName"))
+    x = raw.get("startX")
+    y = raw.get("startY")
+    if (
+        layer is None
+        or stop_name is None
+        or isinstance(x, bool)
+        or isinstance(y, bool)
+        or not isinstance(x, (int, float))
+        or not isinstance(y, (int, float))
+        or not math.isfinite(float(x))
+        or not math.isfinite(float(y))
+        or "정류소명" not in layer
+    ):
+        return None
+    metric_x, metric_y = _WGS84_TO_METRIC.transform(float(x), float(y))
+    from shapely.geometry import Point
+
+    point = Point(metric_x, metric_y)
+    indexes = layer.sindex.query(point.buffer(75), predicate="intersects")
+    matches = [
+        row
+        for _, row in layer.iloc[indexes].iterrows()
+        if _stop_name_key(row.get("정류소명")) == stop_name
+        and row.geometry.distance(point) <= 75
+    ]
+    if not matches:
+        return None
+    nearest = min(matches, key=lambda row: row.geometry.distance(point))
+    return _provider_text(nearest.get("정류소명"))
+
+
+def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
     route_facilities = _parse_api_features(candidate)
     observations = []
     for item in candidate.segments:
@@ -1326,6 +1374,15 @@ def _public_segments(candidate) -> list[dict]:
             _provider_text(lane.get("busNo"))
             or _provider_text(lane.get("name"))
         )
+        direction_code = raw.get("wayCode")
+        if type(direction_code) is not int or direction_code not in {1, 2}:
+            direction_code = None
+        interval_min = raw.get("intervalTime")
+        if (
+            type(interval_min) is not int
+            or interval_min < 0
+        ):
+            interval_min = None
         description = " → ".join(value for value in (start_name, end_name) if value)
         if name:
             description = f"{name} · {description}" if description else str(name)
@@ -1364,6 +1421,58 @@ def _public_segments(candidate) -> list[dict]:
             "stairs_count": stairs,
             "bus_route_name": str(name) if mode == "bus" and name else None,
             "is_low_floor_bus": low_floor if mode == "bus" else None,
+            "transit_start_id": (
+                _first_known(raw, "startLocalStationID", "startID")
+                if mode == "bus"
+                else _first_known(raw, "startID")
+                if mode == "subway"
+                else None
+            ),
+            "transit_end_id": (
+                _first_known(raw, "endLocalStationID", "endID")
+                if mode == "bus"
+                else _first_known(raw, "endID")
+                if mode == "subway"
+                else None
+            ),
+            "transit_route_id": (
+                _first_known(lane, "busLocalBlID", "busID")
+                if mode == "bus"
+                else _first_known(lane, "subwayCode")
+                if mode == "subway"
+                else None
+            ),
+            "transit_direction": (
+                _provider_text(raw.get("way"))
+                if mode == "subway"
+                else None
+            ),
+            "transit_direction_code": (
+                direction_code if mode == "subway" else None
+            ),
+            "transit_interval_min": (
+                interval_min if mode in {"bus", "subway"} else None
+            ),
+            "fast_boarding_position": (
+                _provider_text(raw.get("door"))
+                if mode == "subway"
+                else None
+            ),
+            "start_exit_no": (
+                _provider_text(raw.get("startExitNo"))
+                if mode == "subway"
+                else None
+            ),
+            "end_exit_no": (
+                _provider_text(raw.get("endExitNo"))
+                if mode == "subway"
+                else None
+            ),
+            "smart_shelter_name": (
+                _smart_shelter_for_boarding_stop(raw, layers)
+                if mode == "bus"
+                else None
+            ),
             "station_name": start_name if mode == "subway" else None,
             "has_elevator": elevator,
             "needs_vertical_move": needs_vertical_move,

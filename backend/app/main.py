@@ -48,6 +48,8 @@ from .models import (
     ScoredRoute,
     ShadeSummary,
     ShadeRefreshRequest,
+    TransitArrivalsRequest,
+    TransitArrivalsResponse,
     TransitRefineRequest,
     TransitRefinementResponse,
     WeatherCondition,
@@ -63,6 +65,7 @@ from .providers import (
     search_places,
 )
 from .providers.ai_pipeline import AIProviderError
+from .providers.transit_arrivals import get_route_transit_arrivals
 from .providers.vworld_buildings import get_vworld_buildings
 from .rule_demo import personalize_and_sign, select_representative_routes
 from .route_set_cache import StaleRouteSetRevision, route_set_cache
@@ -1117,6 +1120,44 @@ async def routes_rescore(
         req,
         user,
         allow_vworld_cache_fill=False,
+    )
+
+
+@app.post(
+    "/api/routes/transit-arrivals",
+    response_model=TransitArrivalsResponse,
+    response_model_exclude_none=True,
+)
+async def routes_transit_arrivals(
+    req: TransitArrivalsRequest,
+) -> TransitArrivalsResponse:
+    """선택 후보의 도착정보만 지연 조회한다.
+
+    초기 추천·재채점·출발시각 변경에는 호출되지 않는다. route-set 잠금은
+    후보 복사까지만 유지하고 외부 BIMS/ODsay 시간표 요청은 잠금 밖에서
+    수행한다. 공급자 모듈의 정류장·역 단위 TTL 캐시와 single-flight가
+    동일 상세 요청의 중복 네트워크 호출을 합친다.
+    """
+    async with route_set_cache.lock_existing(req.route_set_token) as cached:
+        if cached is None:
+            raise HTTPException(
+                status_code=409,
+                detail="경로 계산 정보가 만료되었습니다. 경로를 다시 검색해 주세요.",
+            )
+        candidate = next(
+            (item for item in cached.candidates if item.id == req.route_id),
+            None,
+        )
+        if candidate is None:
+            raise HTTPException(
+                status_code=422,
+                detail="요청한 경로가 이 route-set에 속하지 않습니다.",
+            )
+        segments = [segment.model_copy(deep=True) for segment in candidate.segments]
+
+    return TransitArrivalsResponse(
+        route_id=req.route_id,
+        arrivals=await get_route_transit_arrivals(segments),
     )
 
 

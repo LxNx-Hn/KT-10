@@ -68,6 +68,17 @@ export interface RouteSegment {
   /** 저상버스 여부(미확인 = undefined) */
   isLowFloorBus?: Tristate;
   waitMin?: number; // 대기시간
+  transitStartId?: string;
+  transitEndId?: string;
+  transitRouteId?: string;
+  transitDirection?: string;
+  transitDirectionCode?: 1 | 2;
+  transitIntervalMin?: number;
+  /** ODsay가 제공한 빠른 환승 승차 위치. 승강기 최적 위치가 아님. */
+  fastBoardingPosition?: string;
+  startExitNo?: string;
+  endExitNo?: string;
+  smartShelterName?: string;
 
   /* 역/수직이동(승강기) 속성 */
   stationName?: string;
@@ -86,6 +97,26 @@ export interface TransitRefinement {
   segments: RouteSegment[];
   geometryQuality: 'exact' | 'mixed' | 'estimated';
   refinedAt?: string;
+}
+
+export interface TransitLegArrival {
+  segmentId: string;
+  mode: 'bus' | 'subway';
+  status: 'live' | 'scheduled' | 'unavailable';
+  routeName?: string;
+  boardingStopName?: string;
+  direction?: string;
+  arrivalMin?: number;
+  arrivalMessage?: string;
+  departureTime?: string;
+  destinationArrivalTime?: string;
+  observedAt: string;
+  source: string;
+}
+
+export interface TransitArrivals {
+  routeId: string;
+  arrivals: TransitLegArrival[];
 }
 
 export interface RouteCandidate {

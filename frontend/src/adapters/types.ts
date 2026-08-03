@@ -5,6 +5,7 @@ import type {
   RouteCandidate,
   ScoredRoute,
   ScoringOptions,
+  TransitArrivals,
   TransitRefinement,
   WeatherCondition,
 } from '@/types';
@@ -56,6 +57,11 @@ export interface RouteAdapter {
     routeSetToken: string,
     routeId: string,
   ): Promise<TransitRefinement | null>;
+  /** 선택 경로 상세에서만 버스 실시간·지하철 시간표 도착정보를 조회한다. */
+  getTransitArrivals(
+    routeSetToken: string,
+    routeId: string,
+  ): Promise<TransitArrivals>;
   /**
    * 프로필·이동 조건 변경을 기존 route-set 재순위화로 처리한다.
    * 경로 공급자를 다시 호출하지 않으며 route-set token도 유지된다.

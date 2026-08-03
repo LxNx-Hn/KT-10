@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 
 from fastapi.testclient import TestClient
+import geopandas as gpd
 import numpy as np
 
 import api.router as api_router
@@ -21,6 +22,7 @@ from api.router import (
 from collectors.base import Coordinate, RouteCandidate
 from merger.route_merger import MergedRoute
 from scoring.train import FEATURE_COLS, ModelNotReady
+from shapely.geometry import Point
 
 
 client = TestClient(app)
@@ -687,6 +689,123 @@ def test_subway_accessibility_layer_enriches_only_confirmed_station_elevator():
     assert enriched[0]["has_elevator"] is True
     assert enriched[0]["needs_vertical_move"] is None
     assert enriched[1]["has_elevator"] is None
+
+
+def test_public_segments_preserve_existing_transit_guidance_and_lookup_ids():
+    point = Coordinate(35.1000, 129.0000)
+    bus_raw = {
+        "trafficType": 2,
+        "sectionTime": 5,
+        "distance": 1000,
+        "startName": "부산역",
+        "endName": "서면역",
+        "startLocalStationID": "505780000",
+        "endLocalStationID": "505780100",
+        "intervalTime": 8,
+        "lane": [{
+            "busNo": "100",
+            "busID": 123,
+            "busLocalBlID": "5200100000",
+        }],
+    }
+    subway_raw = {
+        "trafficType": 1,
+        "sectionTime": 10,
+        "distance": 4000,
+        "startName": "서면역",
+        "endName": "동래역",
+        "startID": 119,
+        "endID": 125,
+        "way": "노포",
+        "wayCode": 1,
+        "door": "3-2",
+        "startExitNo": "8",
+        "endExitNo": "1",
+        "intervalTime": 6,
+        "lane": [{"name": "부산 1호선", "subwayCode": 1}],
+    }
+    candidate = RouteCandidate(
+        source="odsay",
+        path=[point, Coordinate(35.1100, 129.0100)],
+        duration_min=15,
+        distance_m=5000,
+        raw_response={
+            "info": {"transferCount": 1, "totalWalk": 0},
+            "subPath": [bus_raw, subway_raw],
+        },
+        segments=[
+            {
+                "mode": "bus",
+                "duration_min": 5,
+                "distance_m": 1000,
+                "path": [],
+                "raw": bus_raw,
+            },
+            {
+                "mode": "subway",
+                "duration_min": 10,
+                "distance_m": 4000,
+                "path": [],
+                "raw": subway_raw,
+            },
+        ],
+    )
+
+    bus, subway = _public_segments(candidate)
+
+    assert bus["transit_start_id"] == "505780000"
+    assert bus["transit_route_id"] == "5200100000"
+    assert bus["transit_interval_min"] == 8
+    assert subway["transit_start_id"] == "119"
+    assert subway["transit_end_id"] == "125"
+    assert subway["transit_direction"] == "노포"
+    assert subway["transit_direction_code"] == 1
+    assert subway["fast_boarding_position"] == "3-2"
+    assert subway["start_exit_no"] == "8"
+    assert subway["end_exit_no"] == "1"
+
+
+def test_smart_shelter_requires_same_boarding_stop_name_and_nearby_coordinate():
+    point = Coordinate(35.1151, 129.0414)
+    raw = {
+        "trafficType": 2,
+        "sectionTime": 8,
+        "distance": 1500,
+        "startName": "부산역 정류장",
+        "endName": "서면역",
+        "startX": 129.0414,
+        "startY": 35.1151,
+        "lane": [{"busNo": "100"}],
+    }
+    candidate = RouteCandidate(
+        source="odsay",
+        path=[point, Coordinate(35.1500, 129.0600)],
+        duration_min=8,
+        distance_m=1500,
+        raw_response={"info": {}, "subPath": [raw]},
+        segments=[{
+            "mode": "bus",
+            "duration_min": 8,
+            "distance_m": 1500,
+            "path": [],
+            "raw": raw,
+        }],
+    )
+    shelters = gpd.GeoDataFrame(
+        {"정류소명": ["부산역", "다른 정류장"]},
+        geometry=[
+            Point(129.0414, 35.1151),
+            Point(129.04141, 35.11511),
+        ],
+        crs="EPSG:4326",
+    ).to_crs("EPSG:5179")
+
+    segment = _public_segments(
+        candidate,
+        {"smart_shelter": shelters},
+    )[0]
+
+    assert segment["smart_shelter_name"] == "부산역"
 
 
 def test_partial_route_facilities_remain_unknown_for_ui_and_model():
