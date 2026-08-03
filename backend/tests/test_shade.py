@@ -67,7 +67,7 @@ def test_demo_buildings_outside_verified_area_are_unavailable_not_zero():
     assert shade is not None
     assert shade.status == "unavailable"
     assert shade.shade_ratio is None
-    assert shade.calculation_note == ""
+    assert "건물 데이터 범위를 벗어나" in shade.calculation_note
 
 
 def test_night_outside_demo_bounds_stays_not_daylight():
@@ -100,7 +100,7 @@ def test_zero_length_walking_geometry_is_unavailable_not_estimated():
     assert shade is not None
     assert shade.status == "unavailable"
     assert shade.shade_ratio is None
-    assert shade.calculation_note == ""
+    assert "보행 경로" in shade.calculation_note
 
 
 def test_concave_building_shadow_is_not_inflated_to_convex_hull():

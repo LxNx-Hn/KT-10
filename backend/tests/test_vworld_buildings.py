@@ -419,7 +419,9 @@ def test_public_shade_with_99_percent_height_coverage_is_omitted():
     assert route.shade.building_height_coverage == pytest.approx(0.99)
     assert route.shade.shade_ratio is None
     _normalize_shade_for_response([route])
-    assert route.shade is None
+    assert route.shade is not None
+    assert route.shade.status == "unavailable"
+    assert "확인된 높이가 완전하지 않아" in route.shade.calculation_note
 
 
 def test_public_shade_computes_ratio_with_complete_heights():
@@ -502,7 +504,7 @@ def test_public_shade_does_not_use_estimated_straight_walk_geometry():
 
     assert shade.status == "unavailable"
     assert shade.shade_ratio is None
-    assert shade.calculation_note == ""
+    assert "실제 보행 경로가 완전히 확인되지 않아" in shade.calculation_note
 
 
 def test_public_shade_waits_for_complete_building_corridor_cache():
@@ -519,7 +521,7 @@ def test_public_shade_waits_for_complete_building_corridor_cache():
 
     assert shade.status == "unavailable"
     assert shade.shade_ratio is None
-    assert shade.calculation_note == ""
+    assert "건물 데이터가 캐시에 완전히 준비되지 않아" in shade.calculation_note
 
 
 def test_public_transit_route_without_walking_geometry_is_unavailable():
@@ -544,4 +546,4 @@ def test_public_transit_route_without_walking_geometry_is_unavailable():
         buildings,
     )
     assert shade.status == "unavailable"
-    assert shade.calculation_note == ""
+    assert "보행 경로 좌표가 없어" in shade.calculation_note

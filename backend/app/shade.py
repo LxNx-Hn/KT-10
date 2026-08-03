@@ -515,7 +515,10 @@ def calculate_shade(
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
-            calculation_note="",
+            calculation_note=(
+                "태양 고도가 0도 이하인 시각이라 건물 그늘을 계산하지 "
+                "않았습니다."
+            ),
         )
     if not walking_paths:
         return ShadeSummary(
@@ -528,7 +531,10 @@ def calculate_shade(
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
-            calculation_note="",
+            calculation_note=(
+                "분석할 수 있는 보행 경로 좌표가 없어 건물 그늘을 계산하지 "
+                "않았습니다."
+            ),
         )
     assert ref_lat is not None
     assert ref_lng is not None
@@ -544,7 +550,10 @@ def calculate_shade(
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
-            calculation_note="",
+            calculation_note=(
+                "실제 보행 경로가 완전히 확인되지 않아 건물 그늘을 계산하지 "
+                "않았습니다."
+            ),
         )
     if not is_demo and building_data.get("cacheComplete") is False:
         return ShadeSummary(
@@ -556,7 +565,10 @@ def calculate_shade(
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
-            calculation_note="",
+            calculation_note=(
+                "경로 주변 건물 데이터가 캐시에 완전히 준비되지 않아 건물 "
+                "그늘을 계산하지 않았습니다."
+            ),
         )
 
     applicable_bounds = building_data.get("applicableBounds")
@@ -593,7 +605,10 @@ def calculate_shade(
                 source=source,
                 data_quality=data_quality,
                 walking_geometry_quality=walking_quality,
-                calculation_note="",
+                calculation_note=(
+                    "보행 경로가 확인된 건물 데이터 범위를 벗어나 건물 그늘을 "
+                    "계산하지 않았습니다."
+                ),
             )
 
     projected_paths = [
@@ -661,7 +676,9 @@ def calculate_shade(
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
-            calculation_note="",
+            calculation_note=(
+                "경로 주변에서 계산 가능한 건물 그림자를 만들 수 없었습니다."
+            ),
         )
     segments: list[ShadePathSegment] = []
     route_lines = [LineString(points) for points in projected_paths]
@@ -709,7 +726,10 @@ def calculate_shade(
             walking_geometry_quality=walking_quality,
             source=source,
             data_quality=data_quality,
-            calculation_note="",
+            calculation_note=(
+                "분석 가능한 보행 경로 길이가 없어 건물 그늘을 계산하지 "
+                "않았습니다."
+            ),
         )
     ratio = shaded_geometry_m / total_geometry_m
     shaded_walk_m = (
@@ -810,7 +830,10 @@ def resolve_shade_without_buildings(
                 source=source,
                 data_quality=data_quality,
                 walking_geometry_quality=walking_quality,
-                calculation_note="",
+                calculation_note=(
+                    "태양 위치를 계산할 경로 좌표가 없어 건물 그늘을 계산하지 "
+                    "않았습니다."
+                ),
             ))
             continue
 
@@ -829,7 +852,10 @@ def resolve_shade_without_buildings(
                 source=source,
                 data_quality=data_quality,
                 walking_geometry_quality=walking_quality,
-                calculation_note="",
+                calculation_note=(
+                    "분석할 수 있는 보행 경로 좌표가 없어 건물 그늘을 계산하지 "
+                    "않았습니다."
+                ),
             ))
             continue
         summaries.append(ShadeSummary(
@@ -841,7 +867,10 @@ def resolve_shade_without_buildings(
             source=source,
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
-            calculation_note="",
+            calculation_note=(
+                "태양 고도가 0도 이하인 시각이라 건물 그늘을 계산하지 "
+                "않았습니다."
+            ),
         ))
 
     for route, summary in zip(routes, summaries, strict=True):

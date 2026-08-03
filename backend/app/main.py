@@ -46,6 +46,7 @@ from .models import (
     RouteCandidate,
     RouteSetRescoreRequest,
     ScoredRoute,
+    ShadeSummary,
     ShadeRefreshRequest,
     TransitRefineRequest,
     TransitRefinementResponse,
@@ -184,6 +185,53 @@ def _shade_gate_reason(
     return None
 
 
+_SHADE_GATE_NOTES = {
+    "departure-outside-10-18-kst": (
+        "건물 그늘은 오전 10시부터 오후 6시 전까지 계산할 수 있습니다."
+    ),
+    "no-weather-context": (
+        "그늘 계산에 필요한 날씨 관측 정보를 확인할 수 없습니다."
+    ),
+    "invalid-weather-observation": (
+        "그늘 계산에 필요한 날씨 관측 시각을 확인할 수 없습니다."
+    ),
+    "weather-validity-window-disabled": (
+        "날씨 관측의 유효 범위가 설정되지 않아 건물 그늘을 계산하지 않았습니다."
+    ),
+    "weather-observation-expired": (
+        "현재 날씨 관측이 만료되어 건물 그늘을 계산하지 않았습니다."
+    ),
+    "departure-beyond-observation-validity": (
+        "선택한 시각이 현재 날씨 관측의 유효 범위를 벗어나 건물 그늘을 "
+        "계산하지 않았습니다."
+    ),
+    "feels-like-below-25": (
+        "현재 체감온도가 그늘 계산 기준인 25도 미만이라 건물 그늘을 "
+        "계산하지 않았습니다."
+    ),
+}
+
+
+def _set_gate_unavailable_shade(
+    candidates: list[RouteCandidate],
+    effective_at: datetime,
+    gate_reason: str,
+) -> None:
+    """외부 호출을 생략한 이유를 공개 응답에 안전하게 보존한다."""
+    note = _SHADE_GATE_NOTES.get(
+        gate_reason,
+        "현재 조건에서는 건물 그늘을 계산할 수 없습니다.",
+    )
+    for candidate in candidates:
+        candidate.shade = ShadeSummary(
+            status="unavailable",
+            evaluated_at=effective_at,
+            source=VWORLD_SHADE_SOURCE,
+            data_quality="public",
+            calculation_note=note,
+        )
+
+
 def _has_reusable_shade(
     candidate: RouteCandidate,
     effective_at,
@@ -248,9 +296,9 @@ async def _add_configured_shade(
     gate_reason = _shade_gate_reason(weather, effective_at)
     if gate_reason is not None:
         # 그늘 없음은 0%가 아니라 미계산 상태다. VWorld 조회·그림자 생성·
-        # 경로 교차 계산을 모두 생략하고 응답에서 shade를 생략한다.
-        for candidate in candidates:
-            candidate.shade = None
+        # 경로 교차 계산을 모두 생략하되, 사용자가 원인을 확인할 수 있도록
+        # unavailable 상태와 안전한 설명을 응답에 보존한다.
+        _set_gate_unavailable_shade(candidates, effective_at, gate_reason)
         log.info("그늘 계산 생략 (%s): VWorld 호출 0회", gate_reason)
         return assign_characteristics(candidates)
     cached_summaries = await asyncio.gather(*(
@@ -333,22 +381,22 @@ async def _add_configured_shade(
 
 
 
-#: public 응답에 남길 수 있는 그늘 상태. 나머지는 미계산으로 본다.
+#: API 모델이 허용하고 공개 응답에 남길 수 있는 그늘 상태.
 _DISPLAYABLE_SHADE_STATUSES = frozenset({
     "estimated_public",
     "estimated_demo",
     "not_daylight",
+    "unavailable",
 })
 
 
 def _normalize_shade_for_response(
     candidates: list[RouteCandidate],
 ) -> list[RouteCandidate]:
-    """계산하지 못한 그늘을 응답 조립 단계에서 None으로 정규화한다.
+    """알 수 없는 상태만 제거하고 계산 불가 사유는 공개 응답에 보존한다.
 
-    ``unavailable``은 내부 계산 결과를 설명하는 상태일 뿐이며, 사용자
-    응답에 남기면 "그늘 정보가 있는데 값이 없는" 것처럼 보인다. 미계산은
-    필드 자체를 생략하고 0%로 바꾸지 않는다.
+    ``unavailable``은 0%가 아니라 미계산 상태이며 ``calculationNote``로
+    이유를 설명한다. 점수 계산은 기존처럼 확인된 estimated 상태만 사용한다.
     """
     for candidate in candidates:
         shade = candidate.shade
@@ -584,12 +632,15 @@ async def _single_flight_refinement(
 async def _rescore_cached_route_set(
     req: ShadeRefreshRequest,
     user: User | None,
+    *,
+    allow_vworld_cache_fill: bool,
 ) -> list[ScoredRoute]:
     """저장된 route-set만으로 그늘·순위를 다시 계산한다.
 
     같은 route-set의 refinement·다른 갱신과 토큰 잠금으로 직렬화해 서로의
-    결과를 덮어쓰지 않는다. 새 ODsay·TMAP·VWorld corridor·고도 조회는
-    수행하지 않는다.
+    결과를 덮어쓰지 않는다. 새 ODsay·TMAP·고도 조회는 수행하지 않는다.
+    출발 시각을 명시적으로 갱신하는 요청만 VWorld 건물 캐시 미스 회랑을
+    채우며, 일반 프로필·조건 재채점은 기존 건물 캐시만 사용한다.
     """
     async with route_set_cache.lock_existing(req.route_set_token) as cached:
         if cached is None:
@@ -635,7 +686,8 @@ async def _rescore_cached_route_set(
                 candidates,
                 req.options.departure_at,
                 weather=rescore_weather,
-                cache_only_buildings=True,
+                wait_for_buildings=allow_vworld_cache_fill,
+                cache_only_buildings=not allow_vworld_cache_fill,
             )
             if settings.route_mode == "ai":
                 rank_kwargs = {
@@ -1031,10 +1083,14 @@ async def routes_refresh_shade(
     """기존 서버 후보로 시각별 그늘만 갱신하고 동일 후보군을 재순위화한다.
 
     같은 route-set의 refinement·다른 갱신과 토큰 잠금으로 직렬화해 서로의
-    결과를 덮어쓰지 않는다. 새 ODsay·TMAP·VWorld corridor·고도 조회는
-    수행하지 않는다.
+    결과를 덮어쓰지 않는다. 새 ODsay·TMAP·고도 조회는 수행하지 않는다.
+    VWorld 건물 회랑은 캐시를 우선 사용하고, 누락된 회랑만 동기 조회한다.
     """
-    return await _rescore_cached_route_set(req, user)
+    return await _rescore_cached_route_set(
+        req,
+        user,
+        allow_vworld_cache_fill=True,
+    )
 
 
 @app.post(
@@ -1057,7 +1113,11 @@ async def routes_rescore(
     순서는 달라질 수 있다. 날씨는 route-set 생성 시점의 관측값을
     재사용하며 새 OpenWeather 호출을 만들지 않는다.
     """
-    return await _rescore_cached_route_set(req, user)
+    return await _rescore_cached_route_set(
+        req,
+        user,
+        allow_vworld_cache_fill=False,
+    )
 
 
 @app.post(

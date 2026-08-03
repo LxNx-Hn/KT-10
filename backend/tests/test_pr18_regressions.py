@@ -177,10 +177,10 @@ def test_stale_revision_replace_returns_409_without_new_token():
     )
 
 
-# ── 이슈 12: 미계산 shade가 unavailable 객체로 응답에 남음 ──
+# ── 이슈 12: 미계산 shade의 상태·사유를 공개 응답에 보존 ──
 
-def test_unavailable_shade_is_not_serialized_in_public_response():
-    """계산하지 못한 그늘은 응답 조립 단계에서 None으로 정규화된다."""
+def test_unavailable_shade_reason_is_serialized_in_public_response():
+    """계산하지 못한 그늘은 0%가 아니라 상태와 사유로 직렬화된다."""
     from app.main import _normalize_shade_for_response
 
     candidate = _candidate()
@@ -189,7 +189,7 @@ def test_unavailable_shade_is_not_serialized_in_public_response():
         evaluated_at="2026-07-27T14:00:00+09:00",
         source="VWorld LT_C_BLDGINFO WFS",
         data_quality="public",
-        calculation_note="",
+        calculation_note="건물 데이터가 준비되지 않아 계산하지 않았습니다.",
     )
 
     _normalize_shade_for_response([candidate])
@@ -199,10 +199,12 @@ def test_unavailable_shade_is_not_serialized_in_public_response():
         exclude_none=True,
     )
 
-    assert candidate.shade is None
-    assert "shade" not in payload, (
-        "미계산 shade가 public 응답에 unavailable 객체로 남아 있음"
+    assert candidate.shade is not None
+    assert payload["shade"]["status"] == "unavailable"
+    assert payload["shade"]["calculationNote"] == (
+        "건물 데이터가 준비되지 않아 계산하지 않았습니다."
     )
+    assert "shadeRatio" not in payload["shade"]
 
 
 def test_displayable_shade_survives_normalization():
@@ -225,8 +227,8 @@ def test_displayable_shade_survives_normalization():
     assert candidate.shade.shade_ratio == 0.42
 
 
-def test_recommend_response_has_no_unavailable_shade_objects(monkeypatch):
-    """추천 응답의 어떤 후보에도 unavailable shade 객체가 없어야 한다."""
+def test_recommend_response_exposes_unavailable_shade_reason(monkeypatch):
+    """추천 응답은 외부 호출을 생략한 이유를 unavailable로 알려야 한다."""
     monkeypatch.setattr(settings, "building_source", "vworld")
     monkeypatch.setattr(settings, "vworld_api_key", "configured")
 
@@ -247,9 +249,11 @@ def test_recommend_response_has_no_unavailable_shade_objects(monkeypatch):
     assert response.status_code == 200
 
     for item in response.json():
-        shade = item["route"].get("shade")
-        assert shade is None or shade.get("status") != "unavailable", (
-            f"unavailable shade가 응답에 포함됨: {shade}"
+        shade = item["route"]["shade"]
+        assert shade["status"] == "unavailable"
+        assert "오전 10시부터 오후 6시 전" in shade["calculationNote"]
+        assert "shadeRatio" not in shade, (
+            f"미계산 그늘이 0% 또는 계산값으로 직렬화됨: {shade}"
         )
 
 
@@ -426,6 +430,18 @@ def test_rescore_reuses_route_set_without_provider_calls(monkeypatch):
         app_main,
         "get_ai_pipeline_candidates",
         fail_if_pipeline,
+    )
+    add_shade = app_main._add_configured_shade
+
+    async def assert_cache_only(candidates, departure_at=None, **kwargs):
+        assert kwargs.get("wait_for_buildings") is False
+        assert kwargs.get("cache_only_buildings") is True
+        return await add_shade(candidates, departure_at, **kwargs)
+
+    monkeypatch.setattr(
+        app_main,
+        "_add_configured_shade",
+        assert_cache_only,
     )
 
     token, candidates = _seeded_route_set()

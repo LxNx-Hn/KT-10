@@ -331,9 +331,15 @@ def test_vworld_night_skips_building_lookup(monkeypatch):
         weather=_valid_live_weather(),
     ))
 
-    # 10~18시 밖 출발은 gate에서 차단되어 VWorld 0회, shade는 None(생략)이다.
+    # 10~18시 밖 출발은 gate에서 차단되어 VWorld 0회이며, 계산 불가
+    # 상태와 사용자 설명은 응답용 모델에 보존한다.
     assert calls == []
-    assert all(route.shade is None for route in routes)
+    assert all(
+        route.shade is not None
+        and route.shade.status == "unavailable"
+        and "오전 10시부터 오후 6시 전" in route.shade.calculation_note
+        for route in routes
+    )
 
 
 def test_vworld_provider_failure_remains_a_502(monkeypatch):
@@ -378,12 +384,17 @@ def test_time_refresh_reuses_server_candidates_without_route_collection(monkeypa
     monkeypatch.setattr(app_main, "get_route_candidates", fail_if_called)
     add_shade = app_main._add_configured_shade
 
-    async def assert_cache_only(candidates, departure_at=None, **kwargs):
-        assert kwargs.get("cache_only_buildings") is True
+    async def assert_vworld_cache_fill(candidates, departure_at=None, **kwargs):
+        assert kwargs.get("wait_for_buildings") is True
+        assert kwargs.get("cache_only_buildings") is False
         assert "weather" in kwargs
         return await add_shade(candidates, departure_at, **kwargs)
 
-    monkeypatch.setattr(app_main, "_add_configured_shade", assert_cache_only)
+    monkeypatch.setattr(
+        app_main,
+        "_add_configured_shade",
+        assert_vworld_cache_fill,
+    )
     refreshed = client.post("/api/routes/refresh-shade", json={
         "routeSetToken": token,
         "profile": "general",
@@ -399,6 +410,55 @@ def test_time_refresh_reuses_server_candidates_without_route_collection(monkeypa
         for item in refreshed_results
     )
     assert all(item["routeSetToken"] == token for item in refreshed_results)
+
+
+def test_time_refresh_fills_missing_vworld_corridor_as_one_candidate_batch(
+    monkeypatch,
+):
+    _freeze_daytime_clock(monkeypatch)
+    monkeypatch.setattr(settings, "building_source", "vworld")
+    monkeypatch.setattr(settings, "vworld_api_key", "configured")
+    candidates = demo_candidates()[:2]
+    token = route_set_cache.put(
+        candidates,
+        _valid_live_weather(),
+        metadata={
+            "effectiveTopN": 2,
+            "collectedCandidateCount": 2,
+        },
+    )
+    calls = []
+
+    async def fake_buildings(
+        routes,
+        *,
+        wait_for_complete=False,
+        cache_only=False,
+    ):
+        calls.append((len(routes), wait_for_complete, cache_only))
+        return {
+            "source": "VWorld LT_C_BLDGINFO WFS",
+            "dataQuality": "public",
+            "cacheComplete": True,
+            "buildings": [],
+        }
+
+    monkeypatch.setattr(app_main, "get_vworld_buildings", fake_buildings)
+
+    refreshed = client.post("/api/routes/refresh-shade", json={
+        "routeSetToken": token,
+        "profile": "general",
+        "options": {"departureAt": _gate_open_departure().isoformat()},
+        "topN": 2,
+    })
+
+    assert refreshed.status_code == 200
+    assert calls == [(2, True, False)]
+    assert all(
+        item["route"]["shade"]["status"] == "unavailable"
+        and item["route"]["shade"]["calculationNote"]
+        for item in refreshed.json()
+    )
 
 
 def test_same_departure_reuses_calculated_shade(monkeypatch):
