@@ -19,6 +19,7 @@ import {
 } from '@/store/appStore';
 import type { RouteCandidate } from '@/types';
 import { serverRankedRecommendations } from '@/utils/routes';
+import { primeSpeechOutput } from '@/voice/synthesis';
 import KakaoMap from './KakaoMap';
 import {
   formatSlopePercent,
@@ -500,7 +501,10 @@ export default function MapFirstApp() {
                 || voiceStatus === 'thinking'
                 || voiceStatus === 'speaking'
               }
-              onClick={requestListen}
+              onClick={() => {
+                primeSpeechOutput();
+                requestListen();
+              }}
             >
               <VoiceIcon />
               {showLabeledControls && (

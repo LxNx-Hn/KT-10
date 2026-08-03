@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useVoiceChatStore } from '@/chat/voiceChatStore';
 import { useSpeechRecognition } from '@/chat/useSpeechRecognition';
-import { stopSpeaking } from '@/voice/synthesis';
+import { primeSpeechOutput, stopSpeaking } from '@/voice/synthesis';
 import { PROFILE_LIST } from '@/config/profiles';
 import type { VoiceChatStatus } from '@/voice/intents';
 
@@ -63,6 +63,7 @@ export default function VoiceChatDock({
   const submitText = () => {
     const t = draft.trim();
     if (!t) return;
+    primeSpeechOutput();
     setDraft('');
     void handleUserInput(t);
   };
@@ -133,7 +134,10 @@ export default function VoiceChatDock({
                   type="button"
                   className="chip chip--small"
                   disabled={processing}
-                  onClick={() => void handleUserInput(`${p.label} 기준으로 알려줘`)}
+                  onClick={() => {
+                    primeSpeechOutput();
+                    void handleUserInput(`${p.label} 기준으로 알려줘`);
+                  }}
                 >
                   {p.label}
                 </button>
@@ -145,7 +149,14 @@ export default function VoiceChatDock({
             <button
               type="button"
               className={`voice-fab ${listening ? 'voice-fab--on' : ''}`}
-              onClick={listening ? stop : start}
+              onClick={() => {
+                if (listening) {
+                  stop();
+                } else {
+                  primeSpeechOutput();
+                  start();
+                }
+              }}
               disabled={!supported || voiceBusy}
               aria-pressed={listening}
               aria-label={listening ? '음성 인식 중지' : '음성 말하기'}
@@ -155,7 +166,10 @@ export default function VoiceChatDock({
             <button
               type="button"
               className="btn btn--repeat"
-              onClick={repeatLast}
+              onClick={() => {
+                primeSpeechOutput();
+                repeatLast();
+              }}
               disabled={status === 'thinking' || status === 'listening'}
               aria-label="다시 듣기"
             >

@@ -1,5 +1,6 @@
 import { useVoiceChatStore } from '@/chat/voiceChatStore';
 import { isVoiceInputSupported } from '@/chat/useSpeechRecognition';
+import { primeSpeechOutput } from '@/voice/synthesis';
 
 /** 홈 화면의 큰 마이크 버튼. 누르면 하단 챗봇이 듣기를 시작한다(요구사항 §2·§10). */
 export default function VoiceChatEntryButton() {
@@ -12,7 +13,10 @@ export default function VoiceChatEntryButton() {
     <button
       type="button"
       className="voice-entry"
-      onClick={requestListen}
+      onClick={() => {
+        primeSpeechOutput();
+        requestListen();
+      }}
       disabled={!supported || busy}
       aria-label="음성으로 길찾기"
     >
