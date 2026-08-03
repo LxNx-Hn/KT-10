@@ -114,7 +114,7 @@ describe('v2 경로 표시 모델', () => {
     });
   });
 
-  it('수직이동 여부를 추정하지 않고 확인된 역사 승강기 접근성은 별도로 표시한다', () => {
+  it('출구·승강장 동선 근거가 없는 역 단위 승강기 보유 여부는 장점으로 표시하지 않는다', () => {
     const view = buildRouteViewModel(
       makeItem({
         segments: [{
@@ -129,10 +129,8 @@ describe('v2 경로 표시 모델', () => {
       'disabled',
     );
 
-    expect(view.facts.find((fact) => fact.id === 'elevator')).toMatchObject({
-      label: '역 승강기 접근성 확인',
-      kind: 'advantage',
-    });
+    expect(view.facts.find((fact) => fact.id === 'elevator')).toBeUndefined();
+    expect(view.reasons.some((reason) => reason.includes('승강기'))).toBe(false);
   });
 
   it('공공 건물 그늘 lower bound와 90m 지형 추정을 수치 그대로 구분한다', () => {
@@ -162,10 +160,10 @@ describe('v2 경로 표시 모델', () => {
     expect(view.facts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          label: '평균 경사 2.34% · 최대 7.1%',
+          label: '보행구간 평균 경사 2.34% · 최대 7.1%',
           kind: 'estimate',
           slopeLevel: 'moderate',
-          title: '평균 경사 2.34% · 최대 7.1%, 보통',
+          title: '보행구간 평균 경사 2.34% · 최대 7.1%, 보통',
         }),
         expect.objectContaining({
           label: '확인된 건물 그늘 최소 59%',
@@ -194,10 +192,10 @@ describe('v2 경로 표시 모델', () => {
     );
 
     expect(view.facts.find((fact) => fact.id === 'terrain')).toMatchObject({
-      label: '평균 경사 1.8%',
+      label: '보행구간 평균 경사 1.8%',
       kind: 'estimate',
       slopeLevel: 'gentle',
-      title: '평균 경사 1.8%, 완만',
+      title: '보행구간 평균 경사 1.8%, 완만',
       detail: 'Copernicus GLO-90',
     });
     expect(view.facts.find((fact) => fact.id === 'terrain')?.label).not.toContain(
@@ -222,9 +220,9 @@ describe('v2 경로 표시 모델', () => {
     );
 
     expect(view.facts.find((fact) => fact.id === 'terrain')).toMatchObject({
-      label: '평균 경사 8% · 최대 12%',
+      label: '보행구간 평균 경사 8% · 최대 12%',
       slopeLevel: 'steep',
-      title: '평균 경사 8% · 최대 12%, 급경사',
+      title: '보행구간 평균 경사 8% · 최대 12%, 급경사',
     });
   });
 
@@ -244,7 +242,7 @@ describe('v2 경로 표시 모델', () => {
       'general',
     );
     expect(atBoundary.facts.find((f) => f.id === 'terrain')).toMatchObject({
-      label: '평균 경사 8% · 최대 8%',
+      label: '보행구간 평균 경사 8% · 최대 8%',
       slopeLevel: 'steep',
     });
 
@@ -263,7 +261,7 @@ describe('v2 경로 표시 모델', () => {
       'general',
     );
     expect(justOver.facts.find((f) => f.id === 'terrain')).toMatchObject({
-      label: '평균 경사 8.01% · 최대 8.01%',
+      label: '보행구간 평균 경사 8.01% · 최대 8.01%',
       slopeLevel: 'very-steep',
     });
   });
@@ -317,7 +315,44 @@ describe('v2 경로 표시 모델', () => {
       expect(view.traitLabels).not.toContain(GENTLE_SLOPE_ABSOLUTE_LABEL);
       expect(view.characteristicLabels).not.toContain(GENTLE_SLOPE_ABSOLUTE_LABEL);
       expect(view.facts.find((fact) => fact.id === 'terrain')?.label).toBe(
-        '평균 경사 7.3% · 최대 29.6%',
+        '보행구간 평균 경사 7.3% · 최대 29.6%',
+      );
+    });
+
+    it('긴 도보로 평균이 낮아져도 급한 구간이 있으면 완만한 길로 표시하지 않는다', () => {
+      const view = buildRouteViewModel(
+        makeItem({
+          segments: [{
+            ...BASE_SEGMENT,
+            durationMin: 55,
+            distanceM: 4200,
+          }],
+          terrain: {
+            status: 'estimated_90m',
+            avgSlopePercent: 1.5,
+            maxSlopePercent: 12,
+            minSlopePercent: -3,
+            elevationGainM: 64,
+            source: 'test',
+            resolutionM: 90,
+          },
+          traitLabels: [{
+            labelId: 'gentle_slope',
+            displayLabel: '경사가 완만한 길',
+            evidenceStatus: 'derived',
+            evidence: [],
+          }],
+        }),
+        1,
+        'general',
+      );
+
+      expect(view.traitLabels).not.toContain(GENTLE_SLOPE_ABSOLUTE_LABEL);
+      expect(view.facts.find((fact) => fact.id === 'terrain')?.label).toBe(
+        '보행구간 평균 경사 1.5% · 최대 12%',
+      );
+      expect(view.facts.find((fact) => fact.id === 'elevation-gain')?.label).toBe(
+        '누적 오르막 64m',
       );
     });
 
@@ -366,7 +401,7 @@ describe('v2 경로 표시 모델', () => {
 
       expect(slopeLabels).toEqual([LOWEST_SLOPE_RELATIVE_LABEL]);
       expect(view.facts.find((fact) => fact.id === 'terrain')?.label).toBe(
-        '평균 경사 7.3% · 최대 29.6%',
+        '보행구간 평균 경사 7.3% · 최대 29.6%',
       );
       expect(view.facts.find((fact) => fact.id === 'elevation-gain')?.label).toBe(
         '누적 오르막 128m',
@@ -408,7 +443,7 @@ describe('v2 경로 표시 모델', () => {
         ...view.traitLabels,
       ].filter(
         (label) =>
-          label.includes('경사') && !label.startsWith('평균 경사'),
+          label.includes('경사') && !label.startsWith('보행구간 평균 경사'),
       );
       expect(slopeLabels).toEqual([LOWEST_SLOPE_RELATIVE_LABEL]);
     });
@@ -444,7 +479,7 @@ describe('v2 경로 표시 모델', () => {
       expect(alone.characteristicLabels).not.toContain('환승이 가장 적은 길');
       expect(alone.traitLabels).toContain(GENTLE_SLOPE_ABSOLUTE_LABEL);
       expect(alone.traitLabels.join(' ')).not.toContain('후보 중');
-      expect(alone.facts.find((f) => f.id === 'terrain')?.label).toContain('평균 경사');
+      expect(alone.facts.find((f) => f.id === 'terrain')?.label).toContain('보행구간 평균 경사');
       expect(alone.score.ariaLabel).toContain('산정한 점수');
       expect(alone.score.ariaLabel).not.toContain('후보 경로를 비교');
     });
@@ -657,7 +692,7 @@ describe('v2 경로 표시 모델', () => {
       expect.arrayContaining([
         '확인된 구간에서 계단이 없어요.',
         '경로의 버스가 저상버스로 확인됐어요.',
-        '평균 경사 1.5%로 추정돼요.',
+        '보행구간 평균 경사 1.5%로 추정돼요.',
       ]),
     );
     expect(evidenced.reasons.join(' ')).not.toContain(

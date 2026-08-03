@@ -137,7 +137,7 @@ export default function RouteCard({
 
       <div className="route-card__quick-facts">
         {terrain?.status === 'estimated_90m' && terrain.avgSlopePercent !== undefined && (
-          <Badge tone="neutral">평균 경사 {terrain.avgSlopePercent.toFixed(1)}%</Badge>
+          <Badge tone="neutral">보행구간 평균 경사 {terrain.avgSlopePercent.toFixed(1)}%</Badge>
         )}
         {hasStairs
           ? <Badge tone="bad">계단 {stairCount ? `${stairCount}개` : '포함'}</Badge>
@@ -160,7 +160,7 @@ export default function RouteCard({
           {hasSlope && <Badge tone="warn">경사 구간</Badge>}
           {terrain?.status === 'estimated_90m' && terrain.avgSlopePercent !== undefined && (
             <Badge tone="neutral">
-              평균 경사 {terrain.avgSlopePercent.toFixed(1)}%
+              보행구간 평균 경사 {terrain.avgSlopePercent.toFixed(1)}%
             </Badge>
           )}
           {terrain?.status === 'estimated_90m'

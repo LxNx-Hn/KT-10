@@ -95,7 +95,7 @@ export function resolveScoreDisplay(
 export const LOWEST_SLOPE_RELATIVE_LABEL =
   '후보 중 구간 최대 경사가 가장 낮은 길';
 
-/** 절대 완만 표현. 평균 경사 ≤2% 이고 상대 비교 배지가 없을 때만 노출. */
+/** 절대 완만 표현. 평균과 구간 최대가 모두 ≤2%일 때만 노출. */
 export const GENTLE_SLOPE_ABSOLUTE_LABEL = '경사가 완만한 길';
 
 const CHARACTERISTIC_LABEL: Record<
@@ -148,14 +148,19 @@ function hasRelativeLowestSlope(route: RouteCandidate): boolean {
 
 function canShowAbsoluteGentleSlope(route: RouteCandidate): boolean {
   const avg = route.terrain?.avgSlopePercent;
+  const peak = resolvePeakSlopePercent(
+    route.terrain?.maxSlopePercent,
+    route.terrain?.minSlopePercent,
+  );
   if (
     route.terrain?.status !== 'estimated_90m'
     || typeof avg !== 'number'
     || !Number.isFinite(avg)
+    || peak === null
   ) {
     return false;
   }
-  return Math.abs(avg) <= 2;
+  return Math.abs(avg) <= 2 && peak <= 2;
 }
 
 function looksRelativeComparisonLabel(label: string): boolean {
@@ -336,10 +341,6 @@ function elevatorFact(route: RouteCandidate): V2RouteFact | null {
   const elevatorUnavailable =
     verticalSegments.length > 0 &&
     verticalSegments.every((segment) => segment.hasElevator === false);
-  const stationElevatorSegments = route.segments.filter(
-    (segment) => segment.mode === 'subway' && segment.hasElevator !== undefined,
-  );
-
   if (noVerticalMoveConfirmed) {
     return {
       id: 'elevator',
@@ -348,26 +349,6 @@ function elevatorFact(route: RouteCandidate): V2RouteFact | null {
     };
   }
   if (verticalSegments.length === 0) {
-    if (
-      stationElevatorSegments.length > 0
-      && stationElevatorSegments.every((segment) => segment.hasElevator === true)
-    ) {
-      return {
-        id: 'elevator',
-        label: '역 승강기 접근성 확인',
-        kind: 'advantage',
-      };
-    }
-    if (
-      stationElevatorSegments.length > 0
-      && stationElevatorSegments.every((segment) => segment.hasElevator === false)
-    ) {
-      return {
-        id: 'elevator',
-        label: '역 승강기 없음',
-        kind: 'caution',
-      };
-    }
     return null;
   }
   if (hasElevator) {
@@ -420,8 +401,8 @@ function terrainFacts(route: RouteCandidate): V2RouteFact[] {
     const peakText = peak === null ? null : formatSlopePercent(peak);
     const label =
       peakText !== null
-        ? `평균 경사 ${avgText}% · 최대 ${peakText}%`
-        : `평균 경사 ${avgText}%`;
+        ? `보행구간 평균 경사 ${avgText}% · 최대 ${peakText}%`
+        : `보행구간 평균 경사 ${avgText}%`;
     const slopeLevel = resolveSlopeLevel(terrain.avgSlopePercent) ?? undefined;
     const gradeLabel = slopeLevel ? SLOPE_LEVEL_LABELS[slopeLevel] : undefined;
     const facts: V2RouteFact[] = [
@@ -648,8 +629,6 @@ export function buildDisplayReasons(
   if (elevator?.kind === 'advantage') {
     if (elevator.label === '승강기 이용 가능') {
       add('elevator', '승강기 이용이 확인됐어요.');
-    } else if (elevator.label === '역 승강기 접근성 확인') {
-      add('elevator', '역 승강기 접근성이 확인됐어요.');
     } else {
       add('elevator', `${elevator.label}예요.`);
     }
@@ -666,7 +645,7 @@ export function buildDisplayReasons(
   ) {
     const avgText = formatSlopePercent(terrain.avgSlopePercent);
     if (avgText !== null) {
-      add('terrain', `평균 경사 ${avgText}%로 추정돼요.`);
+      add('terrain', `보행구간 평균 경사 ${avgText}%로 추정돼요.`);
     }
   }
 

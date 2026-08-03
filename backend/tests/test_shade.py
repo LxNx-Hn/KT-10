@@ -208,3 +208,18 @@ def test_characteristics_cover_factual_route_traits():
         "most_shade",
         "fewest_transfers",
     }.issubset(characteristics)
+
+
+def test_lowest_slope_uses_peak_not_diluted_whole_walk_average():
+    routes = [route.model_copy(deep=True) for route in demo_candidates()[:2]]
+    routes[0].terrain.avg_slope_percent = 1.5
+    routes[0].terrain.max_slope_percent = 12
+    routes[0].terrain.min_slope_percent = -3
+    routes[1].terrain.avg_slope_percent = 3
+    routes[1].terrain.max_slope_percent = 5
+    routes[1].terrain.min_slope_percent = -4
+
+    assign_characteristics(routes)
+
+    assert "lowest_slope" not in routes[0].characteristics
+    assert "lowest_slope" in routes[1].characteristics
