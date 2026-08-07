@@ -11,6 +11,38 @@ on:
         description: Optional image tag override
         required: false
         type: string
+      deploy_mode:
+        description: Deployment mode
+        required: true
+        default: preserve
+        type: choice
+        options:
+          - preserve
+          - activate
+      service_selection:
+        description: Services to deploy
+        required: true
+        default: auto
+        type: choice
+        options:
+          - auto
+          - all
+          - custom
+      deploy_frontend:
+        description: Include frontend when service_selection=custom
+        required: false
+        default: false
+        type: boolean
+      deploy_backend:
+        description: Include backend when service_selection=custom
+        required: false
+        default: false
+        type: boolean
+      deploy_ai:
+        description: Include ai when service_selection=custom
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -38,14 +70,176 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 2
+
+      - name: Resolve deployment plan
+        id: plan
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          DEPLOY_MODE_INPUT: ${{ github.event.inputs.deploy_mode || '' }}
+          SERVICE_SELECTION_INPUT: ${{ github.event.inputs.service_selection || '' }}
+          DEPLOY_FRONTEND_INPUT: ${{ github.event.inputs.deploy_frontend || 'false' }}
+          DEPLOY_BACKEND_INPUT: ${{ github.event.inputs.deploy_backend || 'false' }}
+          DEPLOY_AI_INPUT: ${{ github.event.inputs.deploy_ai || 'false' }}
+        run: |
+          set -euo pipefail
+
+          bool_input() {
+            case "${1,,}" in
+              true|1|yes|on) echo "true" ;;
+              *) echo "false" ;;
+            esac
+          }
+
+          deploy_mode="preserve"
+          service_selection="auto"
+          deploy_frontend="false"
+          deploy_backend="false"
+          deploy_ai="false"
+          changed_files=""
+          changed_files_status="not-needed"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            deploy_mode="${DEPLOY_MODE_INPUT:-preserve}"
+            service_selection="${SERVICE_SELECTION_INPUT:-auto}"
+          fi
+
+          case "$deploy_mode" in
+            preserve|activate) ;;
+            *)
+              echo "Invalid deploy_mode: $deploy_mode" >&2
+              exit 1
+              ;;
+          esac
+          case "$service_selection" in
+            auto|all|custom) ;;
+            *)
+              echo "Invalid service_selection: $service_selection" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$service_selection" = "all" ]; then
+            deploy_frontend="true"
+            deploy_backend="true"
+            deploy_ai="true"
+          elif [ "$service_selection" = "custom" ]; then
+            deploy_frontend="$(bool_input "$DEPLOY_FRONTEND_INPUT")"
+            deploy_backend="$(bool_input "$DEPLOY_BACKEND_INPUT")"
+            deploy_ai="$(bool_input "$DEPLOY_AI_INPUT")"
+            if [ "$deploy_frontend" != "true" ] \
+              && [ "$deploy_backend" != "true" ] \
+              && [ "$deploy_ai" != "true" ]; then
+              echo "service_selection=custom requires at least one service." >&2
+              exit 1
+            fi
+          else
+            if base_sha="$(git rev-parse "${SOURCE_SHA}^1" 2>/dev/null)"; then
+              changed_files="$(git diff --name-only "$base_sha" "$SOURCE_SHA" --)"
+              changed_files_status="resolved"
+            else
+              echo "Could not resolve base SHA for $SOURCE_SHA; deploying all services." >&2
+              changed_files_status="fallback-all"
+              deploy_frontend="true"
+              deploy_backend="true"
+              deploy_ai="true"
+            fi
+
+            if [ "$changed_files_status" = "resolved" ]; then
+              if [ -z "$changed_files" ]; then
+                changed_files_status="no-changes"
+              fi
+              while IFS= read -r file; do
+                [ -n "$file" ] || continue
+                case "$file" in
+                  *.md|*.txt)
+                    ;;
+                  docker-compose.prod.yml|.env.production.example|scripts/prepare_deployment_env.py|.github/workflows/deploy-ecs.yml|data/*|data/**)
+                    deploy_frontend="true"
+                    deploy_backend="true"
+                    deploy_ai="true"
+                    ;;
+                  frontend/*|frontend/**)
+                    deploy_frontend="true"
+                    ;;
+                  backend/*|backend/**)
+                    deploy_backend="true"
+                    ;;
+                  ai/*|ai/**)
+                    deploy_ai="true"
+                    ;;
+                  *)
+                    echo "Treating shared or unknown change as full deploy: $file"
+                    deploy_frontend="true"
+                    deploy_backend="true"
+                    deploy_ai="true"
+                    ;;
+                esac
+              done <<< "$changed_files"
+            fi
+          fi
+
+          deploy_any="false"
+          selected_services=""
+          if [ "$deploy_frontend" = "true" ]; then
+            deploy_any="true"
+            selected_services="${selected_services} kt10-frontend"
+          fi
+          if [ "$deploy_backend" = "true" ]; then
+            deploy_any="true"
+            selected_services="${selected_services} kt10-backend"
+          fi
+          if [ "$deploy_ai" = "true" ]; then
+            deploy_any="true"
+            selected_services="${selected_services} kt10-ai"
+          fi
+          selected_services="${selected_services# }"
+
+          {
+            echo "deploy_mode=$deploy_mode"
+            echo "service_selection=$service_selection"
+            echo "deploy_frontend=$deploy_frontend"
+            echo "deploy_backend=$deploy_backend"
+            echo "deploy_ai=$deploy_ai"
+            echo "deploy_any=$deploy_any"
+            echo "selected_services=$selected_services"
+            echo "changed_files_status=$changed_files_status"
+            echo "changed_files<<EOF"
+            echo "$changed_files"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Deployment mode: $deploy_mode"
+          echo "Service selection: $service_selection"
+          echo "Changed files status: $changed_files_status"
+          echo "Deploy frontend: $deploy_frontend"
+          echo "Deploy backend: $deploy_backend"
+          echo "Deploy ai: $deploy_ai"
+          if [ "$deploy_any" = "true" ]; then
+            echo "Selected services: $selected_services"
+          else
+            echo "No deployable service changes detected."
+          fi
+
+      - name: Skip deployment
+        if: ${{ steps.plan.outputs.deploy_any != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "No ECS deployment target was selected."
+          echo "Changed files status: ${{ steps.plan.outputs.changed_files_status }}"
 
       - name: Configure AWS credentials
+        if: ${{ steps.plan.outputs.deploy_any == 'true' }}
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Resolve image tag
+        if: ${{ steps.plan.outputs.deploy_any == 'true' }}
         id: image
         shell: bash
         env:
@@ -69,54 +263,102 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Login to ECR
+        if: ${{ steps.plan.outputs.deploy_any == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
           aws ecr get-login-password --region "$AWS_REGION" |
             docker login --username AWS --password-stdin "${{ steps.image.outputs.registry }}"
 
-      - name: Build images
+      - name: Build frontend image
+        if: ${{ steps.plan.outputs.deploy_frontend == 'true' }}
         shell: bash
         env:
           KAKAO_BROWSER_APP_ID: ${{ secrets.VITE_KAKAO_MAP_KEY }}
         run: |
           set -euo pipefail
-          tag="${{ steps.image.outputs.tag }}"
-          registry="${{ steps.image.outputs.registry }}"
-
           docker build \
             -f frontend/Dockerfile.prod \
             --build-arg KAKAO_BROWSER_APP_ID="$KAKAO_BROWSER_APP_ID" \
             --build-arg VITE_DATA_SOURCE=live \
             --build-arg VITE_API_BASE= \
-            -t "$registry/kt10-frontend:$tag" \
+            -t "${{ steps.image.outputs.registry }}/kt10-frontend:${{ steps.image.outputs.tag }}" \
             .
-          docker build -f backend/Dockerfile -t "$registry/kt10-backend:$tag" .
-          docker build -f ai/Dockerfile -t "$registry/kt10-ai:$tag" .
 
-      - name: Push images
+      - name: Build backend image
+        if: ${{ steps.plan.outputs.deploy_backend == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ steps.image.outputs.tag }}"
-          registry="${{ steps.image.outputs.registry }}"
-          docker push "$registry/kt10-frontend:$tag"
-          docker push "$registry/kt10-backend:$tag"
-          docker push "$registry/kt10-ai:$tag"
+          docker build \
+            -f backend/Dockerfile \
+            -t "${{ steps.image.outputs.registry }}/kt10-backend:${{ steps.image.outputs.tag }}" \
+            .
 
-      - name: Register task definitions
+      - name: Build AI image
+        if: ${{ steps.plan.outputs.deploy_ai == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            -f ai/Dockerfile \
+            -t "${{ steps.image.outputs.registry }}/kt10-ai:${{ steps.image.outputs.tag }}" \
+            .
+
+      - name: Push frontend image
+        if: ${{ steps.plan.outputs.deploy_frontend == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${{ steps.image.outputs.registry }}/kt10-frontend:${{ steps.image.outputs.tag }}"
+
+      - name: Push backend image
+        if: ${{ steps.plan.outputs.deploy_backend == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${{ steps.image.outputs.registry }}/kt10-backend:${{ steps.image.outputs.tag }}"
+
+      - name: Push AI image
+        if: ${{ steps.plan.outputs.deploy_ai == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${{ steps.image.outputs.registry }}/kt10-ai:${{ steps.image.outputs.tag }}"
+
+      - name: Register selected task definitions
         id: taskdefs
+        if: ${{ steps.plan.outputs.deploy_any == 'true' }}
         shell: bash
         env:
           AI_INTERNAL_SERVICE_TOKEN: ${{ secrets.AI_INTERNAL_SERVICE_TOKEN }}
+          DEPLOY_FRONTEND: ${{ steps.plan.outputs.deploy_frontend }}
+          DEPLOY_BACKEND: ${{ steps.plan.outputs.deploy_backend }}
+          DEPLOY_AI: ${{ steps.plan.outputs.deploy_ai }}
         run: |
           set -euo pipefail
           tag="${{ steps.image.outputs.tag }}"
           registry="${{ steps.image.outputs.registry }}"
-          if [ "${#AI_INTERNAL_SERVICE_TOKEN}" -lt 32 ]; then
+          if { [ "$DEPLOY_BACKEND" = "true" ] || [ "$DEPLOY_AI" = "true" ]; } \
+            && [ "${#AI_INTERNAL_SERVICE_TOKEN}" -lt 32 ]; then
             echo "AI_INTERNAL_SERVICE_TOKEN secret must be at least 32 characters." >&2
             exit 1
           fi
+
+          snapshot_desired_count() {
+            local service="$1"
+            local output_key="$2"
+            desired_count="$(aws ecs describe-services \
+              --cluster "$ECS_CLUSTER" \
+              --services "$service" \
+              --query 'services[0].desiredCount' \
+              --output text)"
+            if ! [[ "$desired_count" =~ ^[0-9]+$ ]]; then
+              echo "Invalid desired count for $service: $desired_count" >&2
+              exit 1
+            fi
+            echo "$output_key=$desired_count" >> "$GITHUB_OUTPUT"
+          }
 
           register_task_definition() {
             local family="$1"
@@ -172,108 +414,138 @@ jobs:
             echo "${output_key}_previous=$previous_arn" >> "$GITHUB_OUTPUT"
           }
 
-          register_task_definition \
-            kt10-ai-task \
-            ai \
-            "$registry/kt10-ai:$tag" \
-            ai_task_definition \
-            true
-          register_task_definition \
-            kt10-backend-task \
-            backend \
-            "$registry/kt10-backend:$tag" \
-            backend_task_definition \
-            true
-          register_task_definition \
-            kt10-frontend-task \
-            frontend \
-            "$registry/kt10-frontend:$tag" \
-            frontend_task_definition \
-            false
-
-          snapshot_desired_count() {
-            local service="$1"
-            local output_key="$2"
-            desired_count="$(aws ecs describe-services \
-              --cluster "$ECS_CLUSTER" \
-              --services "$service" \
-              --query 'services[0].desiredCount' \
-              --output text)"
-            if ! [[ "$desired_count" =~ ^[0-9]+$ ]]; then
-              echo "Invalid desired count for $service: $desired_count" >&2
-              exit 1
-            fi
-            echo "$output_key=$desired_count" >> "$GITHUB_OUTPUT"
-          }
-
           snapshot_desired_count kt10-ai ai_previous_desired_count
           snapshot_desired_count kt10-backend backend_previous_desired_count
           snapshot_desired_count kt10-frontend frontend_previous_desired_count
 
+          if [ "$DEPLOY_AI" = "true" ]; then
+            register_task_definition \
+              kt10-ai-task \
+              ai \
+              "$registry/kt10-ai:$tag" \
+              ai_task_definition \
+              true
+          fi
+          if [ "$DEPLOY_BACKEND" = "true" ]; then
+            register_task_definition \
+              kt10-backend-task \
+              backend \
+              "$registry/kt10-backend:$tag" \
+              backend_task_definition \
+              true
+          fi
+          if [ "$DEPLOY_FRONTEND" = "true" ]; then
+            register_task_definition \
+              kt10-frontend-task \
+              frontend \
+              "$registry/kt10-frontend:$tag" \
+              frontend_task_definition \
+              false
+          fi
+
       - name: Deploy AI
+        if: ${{ steps.plan.outputs.deploy_ai == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
+          desired="${{ steps.taskdefs.outputs.ai_previous_desired_count }}"
+          if [ "${{ steps.plan.outputs.deploy_mode }}" = "activate" ]; then
+            desired="1"
+          fi
           aws ecs update-service \
             --cluster "$ECS_CLUSTER" \
             --service kt10-ai \
             --task-definition "${{ steps.taskdefs.outputs.ai_task_definition }}" \
-            --desired-count 1 \
+            --desired-count "$desired" \
             --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
             >/dev/null
           aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services kt10-ai
-          read -r actual desired running < <(aws ecs describe-services \
+          read -r actual actual_desired running < <(aws ecs describe-services \
             --cluster "$ECS_CLUSTER" \
             --services kt10-ai \
             --query 'services[0].[taskDefinition,desiredCount,runningCount]' \
             --output text)
           test "$actual" = "${{ steps.taskdefs.outputs.ai_task_definition }}"
-          test "$desired" = "1"
-          test "$running" = "1"
+          test "$actual_desired" = "$desired"
+          test "$running" = "$desired"
 
       - name: Deploy backend
+        if: ${{ steps.plan.outputs.deploy_backend == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
+          desired="${{ steps.taskdefs.outputs.backend_previous_desired_count }}"
+          if [ "${{ steps.plan.outputs.deploy_mode }}" = "activate" ]; then
+            desired="1"
+          fi
           aws ecs update-service \
             --cluster "$ECS_CLUSTER" \
             --service kt10-backend \
             --task-definition "${{ steps.taskdefs.outputs.backend_task_definition }}" \
-            --desired-count 1 \
+            --desired-count "$desired" \
             --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
             >/dev/null
           aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services kt10-backend
-          read -r actual desired running < <(aws ecs describe-services \
+          read -r actual actual_desired running < <(aws ecs describe-services \
             --cluster "$ECS_CLUSTER" \
             --services kt10-backend \
             --query 'services[0].[taskDefinition,desiredCount,runningCount]' \
             --output text)
           test "$actual" = "${{ steps.taskdefs.outputs.backend_task_definition }}"
-          test "$desired" = "1"
-          test "$running" = "1"
+          test "$actual_desired" = "$desired"
+          test "$running" = "$desired"
 
       - name: Deploy frontend
+        if: ${{ steps.plan.outputs.deploy_frontend == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
+          desired="${{ steps.taskdefs.outputs.frontend_previous_desired_count }}"
+          if [ "${{ steps.plan.outputs.deploy_mode }}" = "activate" ]; then
+            desired="1"
+          fi
           aws ecs update-service \
             --cluster "$ECS_CLUSTER" \
             --service kt10-frontend \
             --task-definition "${{ steps.taskdefs.outputs.frontend_task_definition }}" \
-            --desired-count 1 \
+            --desired-count "$desired" \
             --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
             >/dev/null
           aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services kt10-frontend
-          read -r actual desired running < <(aws ecs describe-services \
+          read -r actual actual_desired running < <(aws ecs describe-services \
             --cluster "$ECS_CLUSTER" \
             --services kt10-frontend \
             --query 'services[0].[taskDefinition,desiredCount,runningCount]' \
             --output text)
           test "$actual" = "${{ steps.taskdefs.outputs.frontend_task_definition }}"
-          test "$desired" = "1"
-          test "$running" = "1"
+          test "$actual_desired" = "$desired"
+          test "$running" = "$desired"
+
+      - name: Evaluate smoke test eligibility
+        id: smoke
+        if: ${{ steps.plan.outputs.deploy_any == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          counts="$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services kt10-ai kt10-backend kt10-frontend \
+            --query 'services[].{service:serviceName,desired:desiredCount,running:runningCount}' \
+            --output json)"
+          echo "$counts" | jq -c .
+          ready="$(jq -r '
+            length == 3 and all(.[]; (.desired >= 1 and .running >= 1))
+          ' <<<"$counts")"
+          if [ "$ready" = "true" ]; then
+            echo "run_smoke=true" >> "$GITHUB_OUTPUT"
+            echo "All ECS services are running; production smoke test will run."
+          else
+            echo "run_smoke=false" >> "$GITHUB_OUTPUT"
+            echo "Production smoke test skipped because the full ECS stack is not running."
+          fi
 
       - name: Smoke test ALB core route service
+        if: ${{ steps.smoke.outputs.run_smoke == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -310,11 +582,13 @@ jobs:
           exit 1
 
       - name: Collect safe ECS diagnostics after failure
-        if: ${{ failure() }}
+        if: ${{ failure() && steps.plan.outputs.deploy_any == 'true' }}
         shell: bash
+        env:
+          SELECTED_SERVICES: ${{ steps.plan.outputs.selected_services }}
         run: |
           set +e
-          for service in kt10-ai kt10-backend kt10-frontend; do
+          for service in $SELECTED_SERVICES; do
             echo "::group::$service service state"
             aws ecs describe-services \
               --cluster "$ECS_CLUSTER" \
@@ -324,9 +598,13 @@ jobs:
             echo "::endgroup::"
           done
 
-      - name: Roll back all services after failed deployment
+      - name: Roll back selected services after failed deployment
         if: ${{ failure() && steps.taskdefs.outcome == 'success' }}
         shell: bash
+        env:
+          DEPLOY_FRONTEND: ${{ steps.plan.outputs.deploy_frontend }}
+          DEPLOY_BACKEND: ${{ steps.plan.outputs.deploy_backend }}
+          DEPLOY_AI: ${{ steps.plan.outputs.deploy_ai }}
         run: |
           set -euo pipefail
           rollback_service() {
@@ -349,18 +627,30 @@ jobs:
               >/dev/null
           }
 
-          rollback_service \
-            kt10-ai \
-            "${{ steps.taskdefs.outputs.ai_task_definition_previous }}" \
-            "${{ steps.taskdefs.outputs.ai_previous_desired_count }}"
-          rollback_service \
-            kt10-backend \
-            "${{ steps.taskdefs.outputs.backend_task_definition_previous }}" \
-            "${{ steps.taskdefs.outputs.backend_previous_desired_count }}"
-          rollback_service \
-            kt10-frontend \
-            "${{ steps.taskdefs.outputs.frontend_task_definition_previous }}" \
-            "${{ steps.taskdefs.outputs.frontend_previous_desired_count }}"
-          aws ecs wait services-stable \
-            --cluster "$ECS_CLUSTER" \
-            --services kt10-ai kt10-backend kt10-frontend
+          wait_services=()
+          if [ "$DEPLOY_AI" = "true" ]; then
+            rollback_service \
+              kt10-ai \
+              "${{ steps.taskdefs.outputs.ai_task_definition_previous }}" \
+              "${{ steps.taskdefs.outputs.ai_previous_desired_count }}"
+            wait_services+=(kt10-ai)
+          fi
+          if [ "$DEPLOY_BACKEND" = "true" ]; then
+            rollback_service \
+              kt10-backend \
+              "${{ steps.taskdefs.outputs.backend_task_definition_previous }}" \
+              "${{ steps.taskdefs.outputs.backend_previous_desired_count }}"
+            wait_services+=(kt10-backend)
+          fi
+          if [ "$DEPLOY_FRONTEND" = "true" ]; then
+            rollback_service \
+              kt10-frontend \
+              "${{ steps.taskdefs.outputs.frontend_task_definition_previous }}" \
+              "${{ steps.taskdefs.outputs.frontend_previous_desired_count }}"
+            wait_services+=(kt10-frontend)
+          fi
+          if [ "${#wait_services[@]}" -gt 0 ]; then
+            aws ecs wait services-stable \
+              --cluster "$ECS_CLUSTER" \
+              --services "${wait_services[@]}"
+          fi
