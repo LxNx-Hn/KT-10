@@ -166,3 +166,50 @@ export function sheetSnapToggleLabel(snap: RouteSheetSnap): string {
   if (snap === 'medium') return '경로 결과 더 크게';
   return '경로 결과 접기';
 }
+
+/** KakaoMap layoutFitKey에 넣는 확정 snap 토큰(collapsed|medium|expanded 구분). */
+export function sheetSnapLayoutFitToken(snap: RouteSheetSnap): string {
+  return `sheet-${snap}`;
+}
+
+/** CSS `transition-duration` / `transition-delay` 단일 토큰 → ms. */
+export function cssTimeTokenToMs(token: string): number {
+  const value = token.trim().toLowerCase();
+  if (!value || value === 'initial' || value === 'inherit') return 0;
+  if (value.endsWith('ms')) {
+    const n = Number.parseFloat(value);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+  }
+  if (value.endsWith('s')) {
+    const n = Number.parseFloat(value);
+    return Number.isFinite(n) ? Math.max(0, n * 1000) : 0;
+  }
+  const n = Number.parseFloat(value);
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+/** 콤마로 나열된 CSS 시간 목록에서 최댓값을 ms로 반환한다. */
+export function maxCssTimeListToMs(cssTimeList: string): number {
+  const parts = cssTimeList.split(',');
+  let max = 0;
+  for (const part of parts) {
+    const ms = cssTimeTokenToMs(part);
+    if (ms > max) max = ms;
+  }
+  return max;
+}
+
+/**
+ * 시트 height 전환 대기 시간(ms).
+ * reduced-motion 이거나 duration+delay가 0이면 즉시(다음 프레임) 확정한다.
+ */
+export function sheetHeightTransitionWaitMs(
+  transitionDuration: string,
+  transitionDelay: string,
+  prefersReducedMotion: boolean,
+): number {
+  if (prefersReducedMotion) return 0;
+  return (
+    maxCssTimeListToMs(transitionDuration) + maxCssTimeListToMs(transitionDelay)
+  );
+}

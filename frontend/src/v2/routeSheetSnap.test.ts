@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   clampSheetSnapForResults,
   cycleSheetSnap,
+  cssTimeTokenToMs,
+  maxCssTimeListToMs,
   resolveBodyPointerIntent,
   resolveCssLengthPx,
   resolveSheetSnapFromDrag,
+  sheetHeightTransitionWaitMs,
+  sheetSnapLayoutFitToken,
   stepSheetSnap,
 } from './routeSheetSnap';
 
@@ -216,5 +220,24 @@ describe('routeSheetSnap', () => {
     expect(
       resolveBodyPointerIntent({ scrollTop: 0, deltaY: 3 }),
     ).toBe('pending');
+  });
+
+  it('layoutFit tokens distinguish collapsed/medium/expanded', () => {
+    expect(sheetSnapLayoutFitToken('collapsed')).toBe('sheet-collapsed');
+    expect(sheetSnapLayoutFitToken('medium')).toBe('sheet-medium');
+    expect(sheetSnapLayoutFitToken('expanded')).toBe('sheet-expanded');
+    expect(sheetSnapLayoutFitToken('medium')).not.toBe(
+      sheetSnapLayoutFitToken('expanded'),
+    );
+  });
+
+  it('parses CSS transition times and wait budgets', () => {
+    expect(cssTimeTokenToMs('0.2s')).toBe(200);
+    expect(cssTimeTokenToMs('16ms')).toBe(16);
+    expect(maxCssTimeListToMs('0.2s, 0.1s')).toBe(200);
+    expect(sheetHeightTransitionWaitMs('0.2s', '0s', false)).toBe(200);
+    expect(sheetHeightTransitionWaitMs('0.2s', '50ms', false)).toBe(250);
+    expect(sheetHeightTransitionWaitMs('0.2s', '0s', true)).toBe(0);
+    expect(sheetHeightTransitionWaitMs('0s', '0s', false)).toBe(0);
   });
 });
