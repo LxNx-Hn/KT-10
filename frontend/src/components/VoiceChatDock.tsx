@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useVoiceChatStore } from '@/chat/voiceChatStore';
 import { useSpeechRecognition } from '@/chat/useSpeechRecognition';
 import { primeSpeechOutput, stopSpeaking } from '@/voice/synthesis';
@@ -16,8 +16,13 @@ const STATUS_LABEL: Record<VoiceChatStatus, string> = {
 /** 하단 고정 실시간 음성 챗봇 패널 (요구사항 §7) */
 export default function VoiceChatDock({
   variant = 'dock',
+  open: openProp,
+  onOpenChange,
 }: {
   variant?: 'dock' | 'map-first';
+  /** map-first에서는 App이 소유한 실제 open boolean을 그대로 전달한다. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const status = useVoiceChatStore((s) => s.status);
   const messages = useVoiceChatStore((s) => s.messages);
@@ -28,7 +33,17 @@ export default function VoiceChatDock({
   const repeatLast = useVoiceChatStore((s) => s.repeatLast);
   const setStatus = useVoiceChatStore((s) => s.setStatus);
 
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : internalOpen;
+  const setOpen = useCallback(
+    (next: boolean | ((prev: boolean) => boolean)) => {
+      const resolved = typeof next === 'function' ? next(open) : next;
+      if (!controlled) setInternalOpen(resolved);
+      onOpenChange?.(resolved);
+    },
+    [controlled, open, onOpenChange],
+  );
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 

@@ -76,7 +76,10 @@
   --mf-slope-very-steep-bg: #fde8e6;
   --mf-slope-very-steep-fg: #b42318;
 
-  min-height: 100dvh;
+  /* MOB-01: 가시 viewport 높이 — 100vh fallback 후 100dvh */
+  --mf-app-height: 100vh;
+  --mf-app-height: 100dvh;
+  min-height: var(--mf-app-height);
   display: flex;
   align-items: stretch;
   justify-content: center;
@@ -91,8 +94,8 @@
   position: relative;
   width: 100%;
   max-width: 430px;
-  min-height: 100dvh;
-  height: 100dvh;
+  min-height: var(--mf-app-height);
+  height: var(--mf-app-height);
   overflow: hidden;
   overflow-x: hidden;
   background: var(--mf-bg);
@@ -1226,6 +1229,11 @@
   bottom: calc(132px + env(safe-area-inset-bottom, 0px));
 }
 
+.map-first__frame:has(.map-first__sheet--medium) .map-first__voice-wrap {
+  /* medium(55%) 시트 상단 + 16px 간격 — safe-area는 시트 padding에 이미 포함 */
+  bottom: calc(var(--mf-sheet-snap-medium) + 16px);
+}
+
 .map-first__frame:has(.map-first__sheet--empty.map-first__sheet--expanded) .map-first__voice-wrap {
   bottom: calc(224px + env(safe-area-inset-bottom, 0px));
 }
@@ -1292,6 +1300,12 @@
 }
 
 /* ── Bottom sheet ── */
+.map-first__frame {
+  --mf-sheet-snap-collapsed: 120px;
+  --mf-sheet-snap-medium: 55%;
+  --mf-sheet-snap-expanded: 90%;
+}
+
 .map-first__sheet {
   position: absolute;
   left: 0;
@@ -1304,23 +1318,35 @@
   border-radius: 24px 24px 0 0;
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.1);
   padding: 0 20px calc(16px + env(safe-area-inset-bottom, 0px));
-  transition: max-height 0.2s ease;
+  box-sizing: border-box;
+  min-height: 0;
+  height: var(--mf-sheet-height, var(--mf-sheet-snap-collapsed));
+  max-height: var(--mf-sheet-height, var(--mf-sheet-snap-collapsed));
+  transition: height 0.2s ease, max-height 0.2s ease;
   pointer-events: auto;
   /* 카드 목록만 스크롤하도록 outer sheet는 스크롤하지 않는다. */
   overflow: hidden;
 }
 
+.map-first__sheet--collapsed {
+  --mf-sheet-height: var(--mf-sheet-snap-collapsed);
+}
+
+.map-first__sheet--medium {
+  --mf-sheet-height: var(--mf-sheet-snap-medium);
+}
+
 .map-first__sheet--expanded {
-  max-height: 58%;
+  --mf-sheet-height: var(--mf-sheet-snap-expanded);
 }
 
 .map-first__frame[data-profile='elderly'] .map-first__sheet--expanded,
 .map-first__frame--easy .map-first__sheet--expanded {
-  max-height: 54%;
+  --mf-sheet-height: 86%;
 }
 
-.map-first__sheet--collapsed {
-  max-height: 120px;
+.map-first__sheet--dragging {
+  transition: none;
 }
 
 .map-first__sheet-stack {
@@ -1349,11 +1375,11 @@
 }
 
 .map-first__sheet--collapsed:has(.install-prompt) {
-  max-height: min(52%, 280px);
+  --mf-sheet-height: min(52%, 280px);
 }
 
 .map-first__sheet--empty.map-first__sheet--collapsed:has(.install-prompt) {
-  max-height: min(58%, 320px);
+  --mf-sheet-height: min(58%, 320px);
 }
 
 .map-first__sheet-toggle {
@@ -1368,6 +1394,10 @@
   font-family: inherit;
   color: inherit;
   min-height: var(--mf-tap);
+  flex: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .map-first__sheet-handle {
@@ -1876,7 +1906,7 @@
 }
 
 .map-first__sheet--empty.map-first__sheet--expanded {
-  max-height: 210px;
+  --mf-sheet-height: 210px;
 }
 
 .map-first__sheet-header {
@@ -1975,6 +2005,7 @@
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .map-first__score-note--list {
@@ -3094,16 +3125,22 @@
 /* Voice and install overlays remain inside the same phone-width visual system. */
 .voicedock--map-first {
   z-index: 60;
-  left: 50%;
-  right: auto;
-  width: min(100%, 430px);
   max-height: min(78dvh, 680px);
   margin: 0;
-  transform: translateX(-50%);
   overflow-y: auto;
   border: 1px solid var(--mf-line, #e5e8eb);
   border-radius: 24px 24px 0 0;
   box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.18);
+}
+
+/* Desktop/phone-frame centering only — mobile must not inherit translateX(-50%). */
+@media (min-width: 480px) {
+  .voicedock--map-first {
+    left: 50%;
+    right: auto;
+    width: min(100%, 430px);
+    transform: translateX(-50%);
+  }
 }
 
 @media (max-width: 370px) {
@@ -3162,11 +3199,79 @@
 
 @media (max-height: 700px) {
   .map-first__sheet--expanded {
-    max-height: 40%;
+    --mf-sheet-height: min(90%, calc(100% - 72px));
   }
 
   .map-first__map-legend {
     bottom: calc(260px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 짧은 뷰포트(예: 320×568): medium 55%는 유지하고 고정·중복 영역만 압축.
+   카드 정보 위계(순위·수단·시간·도보·환승)는 변경하지 않는다. */
+@media (max-height: 600px) {
+  .map-first__sheet {
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .map-first__sheet-stack {
+    gap: 2px;
+  }
+
+  .map-first__sheet-handle {
+    padding: 4px 0 2px;
+  }
+
+  .map-first__sheet-handle-bar {
+    width: 36px;
+    height: 3px;
+  }
+
+  .map-first__sheet-title {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.2;
+  }
+
+  /* 시트 헤더 meta는 첫 카드 요약과 중복 — 짧은 화면에서 숨김 */
+  .map-first__frame--results .map-first__sheet-meta {
+    display: none;
+  }
+
+  .map-first__sheet-body {
+    padding-top: 4px;
+  }
+
+  .map-first__departure-btn {
+    min-height: 36px;
+    margin: 0 0 4px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  .map-first__route-list-heading {
+    margin-bottom: 2px;
+    gap: 6px;
+  }
+
+  .map-first__route-list-heading h2 {
+    font-size: 14px;
+    line-height: 1.2;
+  }
+
+  /* 안내 문구 — 경로 필수 정보 아님 */
+  .map-first__route-list-heading p {
+    display: none;
+  }
+
+  /* score note — 짧은 화면에서 목록 보조 설명 숨김(필수 경로 정보 유지) */
+  .map-first__score-note--list {
+    display: none;
+  }
+
+  .map-first__route-stack {
+    gap: 8px;
+    padding: 0 0 2px;
   }
 }
 
@@ -3220,5 +3325,195 @@
   .map-first__search-dot,
   .map-first__kakao-user-dot {
     forced-color-adjust: none;
+  }
+}
+
+/* ── Mobile ≤479px: map controls / voice FAB / voice dock overlap ── */
+@media (max-width: 479px) {
+  /* MOB-01: document를 가시 viewport에 고정해 body 이중 스크롤을 막는다.
+     overflow-x는 숨기지 않는다(가로 문제를 가리지 않음). */
+  html {
+    height: 100%;
+    height: 100dvh;
+  }
+
+  body {
+    height: 100%;
+    height: 100dvh;
+    max-width: 100%;
+    overflow-y: hidden;
+  }
+
+  #root {
+    height: 100%;
+    height: 100dvh;
+    max-width: 100%;
+  }
+
+  .map-first {
+    --mf-app-height: 100%;
+    --mf-app-height: 100dvh;
+    width: 100%;
+    max-width: 100%;
+    height: var(--mf-app-height);
+    min-height: var(--mf-app-height);
+    box-sizing: border-box;
+    /* 좌우 safe-area는 shell에서 한 번만 (VoiceDock 자체 padding과 중복되지 않음) */
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  /* 1) 경로 시트 상태 → 음성 FAB 하단 오프셋 (기존 bottom 값과 동일) */
+  .map-first__frame {
+    width: 100%;
+    max-width: 100%;
+    height: var(--mf-app-height);
+    min-height: var(--mf-app-height);
+    --mf-mobile-voice-bottom: calc(224px + env(safe-area-inset-bottom, 0px));
+    --mf-mobile-voice-height: var(--mf-voice-size);
+    --mf-mobile-fab-gap: 16px;
+  }
+
+  .map-first__frame--labeled,
+  .map-first__frame[data-profile='elderly'] {
+    --mf-mobile-voice-bottom: calc(236px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .map-first__frame:has(.map-first__sheet--collapsed) {
+    --mf-mobile-voice-bottom: calc(132px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .map-first__frame:has(.map-first__sheet--medium) {
+    --mf-mobile-voice-bottom: calc(var(--mf-sheet-snap-medium) + 16px);
+  }
+
+  .map-first__frame:has(.map-first__sheet--empty.map-first__sheet--expanded) {
+    --mf-mobile-voice-bottom: calc(224px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .map-first__voice-wrap {
+    bottom: var(--mf-mobile-voice-bottom);
+  }
+
+  /* 2) 현재 위치·지도 정보·음성 FAB를 하단 기준 한 줄 수직 흐름으로 정렬 */
+  .map-first__fab-stack {
+    top: auto;
+    bottom: calc(
+      var(--mf-mobile-voice-bottom)
+      + var(--mf-mobile-voice-height)
+      + var(--mf-mobile-fab-gap)
+    );
+    gap: var(--mf-mobile-fab-gap);
+  }
+
+  /* A) 결과 있는 시트 expanded: 세로 공간 부족 → 지도 컨트롤·음성 FAB 숨김
+     frame--results = ranked.length > 0 (empty 시트에는 없음) */
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__fab-stack,
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__fab-stack > *,
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__voice-wrap,
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__voice-wrap > * {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* B) 지도 정보 open: React data-map-info-open (MapControls open boolean) */
+  .map-first[data-map-info-open='true'] .map-first__voice-wrap,
+  .map-first[data-map-info-open='true'] .map-first__voice-wrap > * {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .map-first[data-map-info-open='true'] .map-first__fab-stack {
+    bottom: calc(var(--mf-mobile-voice-bottom) + var(--mf-mobile-fab-gap));
+  }
+
+  /* 6) 지도 정보 패널: 위로 펼치고 viewport 내 스크롤 */
+  .map-first__map-info-panel {
+    top: auto;
+    bottom: calc(100% + 8px);
+    max-height: min(
+      52dvh,
+      calc(100dvh - var(--mf-mobile-voice-bottom) - 96px)
+    );
+    overflow-x: hidden;
+    overflow-y: auto;
+    box-sizing: border-box;
+  }
+
+  /* C) VoiceDock 모바일: translate 중앙정렬 제거.
+     공용/데스크톱 left:50%+translateX(-50%)가 남으면 전체 폭 패널이 반 폭 밀림.
+     위치 관련만 !important — cascade에서 left가 지고 transform만 남는 충돌 차단. */
+  .voicedock.voicedock--map-first {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    transform: none !important;
+    translate: none !important;
+    box-sizing: border-box;
+    min-width: 0;
+    margin: 0;
+    padding-left: max(14px, env(safe-area-inset-left, 0px));
+    padding-right: max(14px, env(safe-area-inset-right, 0px));
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px));
+    overflow-x: hidden;
+    overflow-y: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .voicedock.voicedock--map-first .voicedock__handle {
+    flex: 0 0 auto;
+  }
+
+  .voicedock.voicedock--map-first .voicedock__body {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .voicedock.voicedock--map-first .voicedock__log {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .voicedock.voicedock--map-first .voicedock__quick,
+  .voicedock.voicedock--map-first .voicedock__controls,
+  .voicedock.voicedock--map-first .voicedock__textentry {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* D) 좁은 화면: 말하기·다시 듣기·정지 줄바꿈, 입력/보내기 viewport 내 유지 */
+  .voicedock.voicedock--map-first .voicedock__controls {
+    flex-wrap: wrap;
+  }
+
+  .voicedock.voicedock--map-first .voicedock__textentry {
+    flex-wrap: wrap;
+  }
+
+  .voicedock.voicedock--map-first .voicedock__textentry input {
+    min-width: 0;
+    flex: 1 1 10rem;
+  }
+
+  /* VoiceDock open: React data-voice-open (App voiceOpen boolean) */
+  .map-first[data-voice-open='true'] .map-first__fab-stack,
+  .map-first[data-voice-open='true'] .map-first__fab-stack > *,
+  .map-first[data-voice-open='true'] .map-first__voice-wrap,
+  .map-first[data-voice-open='true'] .map-first__voice-wrap > * {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
   }
 }

@@ -32,6 +32,7 @@ import RouteDetailSheet, {
   type DetailTab,
 } from './components/RouteDetailSheet';
 import RouteResultsSheet from './components/RouteResultsSheet';
+import type { RouteSheetSnap } from './routeSheetSnap';
 import SearchHeader from './components/SearchHeader';
 import SettingsPanel from './components/SettingsPanel';
 import {
@@ -115,7 +116,12 @@ function VoiceIcon() {
   );
 }
 
-export default function MapFirstApp() {
+export default function MapFirstApp({
+  voiceOpen = false,
+}: {
+  /** App이 소유한 VoiceChatDock open boolean. data-voice-open 연결용. */
+  voiceOpen?: boolean;
+} = {}) {
   const profile = useAppStore((state) => state.profile);
   const origin = useAppStore((state) => state.origin);
   const destination = useAppStore((state) => state.destination);
@@ -144,7 +150,7 @@ export default function MapFirstApp() {
 
   const [drawer, setDrawer] = useState<DrawerId | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('route');
-  const [sheetExpanded, setSheetExpanded] = useState(true);
+  const [sheetSnap, setSheetSnap] = useState<RouteSheetSnap>('expanded');
   // 최초 진입은 collapsed 한 줄 검색. true일 때만 전체 패널을 연다.
   const [searchPanelExpanded, setSearchPanelExpanded] = useState(false);
   const [showFacilities, setShowFacilities] = useState(false);
@@ -154,6 +160,7 @@ export default function MapFirstApp() {
   const [locating, setLocating] = useState(false);
   const [departureIsNow, setDepartureIsNow] = useState(true);
   const [departureRefreshing, setDepartureRefreshing] = useState(false);
+  const [mapInfoOpen, setMapInfoOpen] = useState(false);
   const originInputRef = useRef<HTMLInputElement>(null);
   const destinationInputRef = useRef<HTMLInputElement>(null);
   const locatingTimerRef = useRef<number>();
@@ -220,7 +227,7 @@ export default function MapFirstApp() {
       : ranked.length > 0 && origin && destination
         ? 'summary'
         : 'collapsed';
-  const showVoiceControl = drawer === null && !(ranked.length > 0 && sheetExpanded);
+  const showVoiceControl = drawer === null && !(ranked.length > 0 && sheetSnap === 'expanded');
   const profileMeta = PROFILES[profile];
   const showLabeledControls =
     largeUi || profile === 'elderly' || profile === 'child' || profile === 'disabled';
@@ -299,7 +306,7 @@ export default function MapFirstApp() {
       latestState.recommendations.length > 0
       && latestState.error === null;
     if (searchSucceeded) {
-      setSheetExpanded(true);
+      setSheetSnap('medium');
     }
     setSearchPanelExpanded(!searchSucceeded);
   };
@@ -361,7 +368,12 @@ export default function MapFirstApp() {
   );
 
   return (
-    <main className="map-first" id="main-content">
+    <main
+      className="map-first"
+      id="main-content"
+      data-voice-open={voiceOpen ? 'true' : undefined}
+      data-map-info-open={mapInfoOpen ? 'true' : undefined}
+    >
       <h1 className="map-first__sr-only">부산 접근성 길찾기</h1>
       <div className={frameClass} data-profile={profile}>
         <KakaoMap
@@ -374,7 +386,7 @@ export default function MapFirstApp() {
           showShade={shadeLayerVisible}
           showSlope={slopeLayerVisible}
           layoutFitKey={`${searchPanelMode}|${
-            sheetExpanded ? 'sheet-expanded' : 'sheet-collapsed'
+            sheetSnap === 'collapsed' ? 'sheet-collapsed' : 'sheet-expanded'
           }|${drawer ?? 'none'}`}
         />
 
@@ -438,6 +450,7 @@ export default function MapFirstApp() {
             if (!hasSlopeOverlay) return;
             setShowSlope((visible) => !visible);
           }}
+          onMapInfoOpenChange={setMapInfoOpen}
         />
 
         {shadeLayerVisible &&
@@ -515,7 +528,7 @@ export default function MapFirstApp() {
         )}
 
         <RouteResultsSheet
-          sheetExpanded={sheetExpanded}
+          sheetSnap={sheetSnap}
           loading={loading}
           ranked={ranked}
           profile={profile}
@@ -525,7 +538,7 @@ export default function MapFirstApp() {
           sheetMeta={sheetMeta}
           departureButtonLabel={departureButtonLabel}
           departureDrawerOpen={drawer === 'departure'}
-          onToggleSheet={() => setSheetExpanded((expanded) => !expanded)}
+          onSheetSnapChange={setSheetSnap}
           onOpenDeparture={() => setDrawer('departure')}
           onSelectRoute={selectRoute}
           onDetails={openDetails}

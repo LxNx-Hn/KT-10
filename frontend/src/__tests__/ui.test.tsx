@@ -1738,6 +1738,476 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     ).toContain('map-first__context-bar');
   });
 
+  it('경로 결과 시트는 collapsed·medium·expanded 3단계로 순환한다', () => {
+    act(() => seedResults());
+    const { container, getByRole } = render(<App />);
+    const sheet = () => container.querySelector('.map-first__sheet');
+
+    expect(sheet()?.className).toContain('map-first__sheet--expanded');
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('expanded');
+    expect(getByRole('button', { name: '경로 결과 접기' })).toBeTruthy();
+    expect(
+      getByRole('button', { name: '경로 결과 접기' }).getAttribute(
+        'aria-expanded',
+      ),
+    ).toBe('true');
+
+    fireEvent.click(getByRole('button', { name: '경로 결과 접기' }));
+    expect(sheet()?.className).toContain('map-first__sheet--collapsed');
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('collapsed');
+    expect(container.querySelector('.map-first__route-stack')).toBeNull();
+    expect(
+      getByRole('button', { name: '경로 결과 펼치기' }).getAttribute(
+        'aria-expanded',
+      ),
+    ).toBe('false');
+
+    fireEvent.click(getByRole('button', { name: '경로 결과 펼치기' }));
+    expect(sheet()?.className).toContain('map-first__sheet--medium');
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('medium');
+    expect(container.querySelector('.map-first__route-stack')).toBeTruthy();
+    expect(getByRole('button', { name: '음성 챗봇' })).toBeTruthy();
+
+    fireEvent.click(getByRole('button', { name: '경로 결과 더 크게' }));
+    expect(sheet()?.className).toContain('map-first__sheet--expanded');
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('expanded');
+    expect(container.querySelector('.map-first__frame--results')).toBeTruthy();
+  });
+
+  it('시트 핸들 drag 거리 미만이면 snap을 유지하고 cancel이면 복구한다', () => {
+    const PointerEventCtor =
+      typeof PointerEvent === 'undefined'
+        ? class extends MouseEvent {
+            pointerId: number;
+            constructor(type: string, init: MouseEventInit & { pointerId?: number } = {}) {
+              super(type, init);
+              this.pointerId = init.pointerId ?? 0;
+            }
+          }
+        : PointerEvent;
+    if (typeof PointerEvent === 'undefined') {
+      // jsdom 환경에서 Pointer Events 제스처 검증용
+      (globalThis as unknown as { PointerEvent: typeof PointerEventCtor }).PointerEvent =
+        PointerEventCtor;
+    }
+
+    act(() => seedResults());
+    const { container, getByRole } = render(<App />);
+    fireEvent.click(getByRole('button', { name: '경로 결과 접기' }));
+    fireEvent.click(getByRole('button', { name: '경로 결과 펼치기' }));
+    const toggle = getByRole('button', { name: '경로 결과 더 크게' });
+    const sheet = () => container.querySelector('.map-first__sheet');
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('medium');
+
+    const dispatchPointer = (
+      target: EventTarget,
+      type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel',
+      init: MouseEventInit & { pointerId?: number },
+    ) => {
+      target.dispatchEvent(
+        new PointerEventCtor(type, {
+          bubbles: true,
+          cancelable: true,
+          ...init,
+        }),
+      );
+    };
+
+    act(() => {
+      dispatchPointer(toggle, 'pointerdown', {
+        button: 0,
+        pointerId: 1,
+        clientY: 400,
+      });
+      dispatchPointer(window, 'pointermove', { pointerId: 1, clientY: 420 });
+      dispatchPointer(window, 'pointerup', { pointerId: 1, clientY: 420 });
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('medium');
+
+    act(() => {
+      dispatchPointer(toggle, 'pointerdown', {
+        button: 0,
+        pointerId: 2,
+        clientY: 400,
+      });
+      dispatchPointer(window, 'pointermove', { pointerId: 2, clientY: 330 });
+      dispatchPointer(window, 'pointerup', { pointerId: 2, clientY: 330 });
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('expanded');
+
+    act(() => {
+      dispatchPointer(getByRole('button', { name: '경로 결과 접기' }), 'pointerdown', {
+        button: 0,
+        pointerId: 3,
+        clientY: 200,
+      });
+      dispatchPointer(window, 'pointermove', { pointerId: 3, clientY: 280 });
+      dispatchPointer(window, 'pointercancel', { pointerId: 3, clientY: 280 });
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('expanded');
+  });
+
+  it('결과 데이터가 사라져도 시트는 유효한 snap만 유지한다', () => {
+    act(() => seedResults());
+    const { container, getByRole } = render(<App />);
+    fireEvent.click(getByRole('button', { name: '경로 결과 접기' }));
+    fireEvent.click(getByRole('button', { name: '경로 결과 펼치기' }));
+    expect(container.querySelector('.map-first__sheet')?.getAttribute('data-sheet-snap')).toBe(
+      'medium',
+    );
+
+    act(() => {
+      useAppStore.setState({
+        recommendations: [],
+        candidates: [],
+        selectedRouteId: null,
+      });
+    });
+    expect(container.querySelector('.map-first__sheet')?.getAttribute('data-sheet-snap')).toBe(
+      'expanded',
+    );
+    expect(container.querySelector('.map-first__sheet--empty')).toBeTruthy();
+  });
+
+  it('빈 결과 시트는 버튼·drag로 collapsed↔expanded만 오가며 medium이 남지 않는다', () => {
+    const PointerEventCtor =
+      typeof PointerEvent === 'undefined'
+        ? class extends MouseEvent {
+            pointerId: number;
+            constructor(
+              type: string,
+              init: MouseEventInit & { pointerId?: number } = {},
+            ) {
+              super(type, init);
+              this.pointerId = init.pointerId ?? 0;
+            }
+          }
+        : PointerEvent;
+    if (typeof PointerEvent === 'undefined') {
+      (globalThis as unknown as { PointerEvent: typeof PointerEventCtor }).PointerEvent =
+        PointerEventCtor;
+    }
+
+    const { container, getByRole } = render(<App />);
+    const sheet = () => container.querySelector('.map-first__sheet');
+    expect(sheet()?.classList.contains('map-first__sheet--empty')).toBe(true);
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('expanded');
+
+    fireEvent.click(getByRole('button', { name: '경로 결과 접기' }));
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('collapsed');
+    expect(sheet()?.classList.contains('map-first__sheet--medium')).toBe(false);
+
+    fireEvent.click(getByRole('button', { name: '경로 결과 펼치기' }));
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('expanded');
+    expect(sheet()?.classList.contains('map-first__sheet--medium')).toBe(false);
+    expect(sheet()?.classList.contains('map-first__sheet--empty')).toBe(true);
+
+    const dispatchPointer = (
+      target: EventTarget,
+      type: 'pointerdown' | 'pointermove' | 'pointerup',
+      init: MouseEventInit & { pointerId?: number },
+    ) => {
+      target.dispatchEvent(
+        new PointerEventCtor(type, { bubbles: true, cancelable: true, ...init }),
+      );
+    };
+
+    const heightsDuringDrag: number[] = [];
+    act(() => {
+      const toggle = getByRole('button', { name: '경로 결과 접기' });
+      dispatchPointer(toggle, 'pointerdown', {
+        button: 0,
+        pointerId: 11,
+        clientY: 200,
+      });
+      for (const y of [220, 260, 320]) {
+        dispatchPointer(window, 'pointermove', { pointerId: 11, clientY: y });
+        heightsDuringDrag.push(sheet()?.getBoundingClientRect().height ?? 0);
+      }
+      dispatchPointer(window, 'pointerup', { pointerId: 11, clientY: 320 });
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('collapsed');
+    expect(sheet()?.classList.contains('map-first__sheet--medium')).toBe(false);
+    // drag 중 medium(≈55% viewport)로 튀지 않아야 한다 — jsdom 높이가 0일 수 있어 클래스만 강제
+    expect(sheet()?.className).not.toContain('sheet--medium');
+
+    act(() => {
+      const toggle = getByRole('button', { name: '경로 결과 펼치기' });
+      dispatchPointer(toggle, 'pointerdown', {
+        button: 0,
+        pointerId: 12,
+        clientY: 400,
+      });
+      dispatchPointer(window, 'pointermove', { pointerId: 12, clientY: 320 });
+      dispatchPointer(window, 'pointerup', { pointerId: 12, clientY: 320 });
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('expanded');
+    expect(sheet()?.classList.contains('map-first__sheet--medium')).toBe(false);
+    // 중간 px 높이 역전은 jsdom에서 측정 불가 → e2e/empty-sheet-drag-height.spec.ts
+    expect(heightsDuringDrag.length).toBeGreaterThan(0);
+  });
+
+  it('손떨림(24px 미만) 후 pointer click은 한 단계만 전환한다', () => {
+    const PointerEventCtor =
+      typeof PointerEvent === 'undefined'
+        ? class extends MouseEvent {
+            pointerId: number;
+            constructor(
+              type: string,
+              init: MouseEventInit & { pointerId?: number } = {},
+            ) {
+              super(type, init);
+              this.pointerId = init.pointerId ?? 0;
+            }
+          }
+        : PointerEvent;
+    if (typeof PointerEvent === 'undefined') {
+      (globalThis as unknown as { PointerEvent: typeof PointerEventCtor }).PointerEvent =
+        PointerEventCtor;
+    }
+
+    const dispatchPointer = (
+      target: EventTarget,
+      type: 'pointerdown' | 'pointermove' | 'pointerup',
+      init: MouseEventInit & { pointerId?: number },
+    ) => {
+      target.dispatchEvent(
+        new PointerEventCtor(type, { bubbles: true, cancelable: true, ...init }),
+      );
+    };
+
+    act(() => seedResults());
+    const { container, getByRole } = render(<App />);
+    fireEvent.click(getByRole('button', { name: '경로 결과 접기' }));
+    fireEvent.click(getByRole('button', { name: '경로 결과 펼치기' }));
+    const sheet = () => container.querySelector('.map-first__sheet');
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('medium');
+
+    act(() => {
+      const toggle = getByRole('button', { name: '경로 결과 더 크게' });
+      dispatchPointer(toggle, 'pointerdown', {
+        button: 0,
+        pointerId: 41,
+        clientY: 400,
+      });
+      // 24px 미만 이동(손떨림) — snap 유지, suppress 미설정
+      dispatchPointer(window, 'pointermove', { pointerId: 41, clientY: 420 });
+      dispatchPointer(window, 'pointerup', { pointerId: 41, clientY: 420 });
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('medium');
+
+    fireEvent.click(getByRole('button', { name: '경로 결과 더 크게' }), {
+      detail: 1,
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('expanded');
+    expect(sheet()?.classList.contains('map-first__sheet--collapsed')).toBe(false);
+  });
+
+  it('유효 drag 후 합성 click 없이 다음 pointerdown+click은 정상 전환한다', () => {
+    const PointerEventCtor =
+      typeof PointerEvent === 'undefined'
+        ? class extends MouseEvent {
+            pointerId: number;
+            constructor(
+              type: string,
+              init: MouseEventInit & { pointerId?: number } = {},
+            ) {
+              super(type, init);
+              this.pointerId = init.pointerId ?? 0;
+            }
+          }
+        : PointerEvent;
+    if (typeof PointerEvent === 'undefined') {
+      (globalThis as unknown as { PointerEvent: typeof PointerEventCtor }).PointerEvent =
+        PointerEventCtor;
+    }
+
+    const dispatchPointer = (
+      target: EventTarget,
+      type: 'pointerdown' | 'pointermove' | 'pointerup',
+      init: MouseEventInit & { pointerId?: number },
+    ) => {
+      target.dispatchEvent(
+        new PointerEventCtor(type, { bubbles: true, cancelable: true, ...init }),
+      );
+    };
+
+    act(() => seedResults());
+    const { container, getByRole } = render(<App />);
+    fireEvent.click(getByRole('button', { name: '경로 결과 접기' }));
+    fireEvent.click(getByRole('button', { name: '경로 결과 펼치기' }));
+    const sheet = () => container.querySelector('.map-first__sheet');
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('medium');
+
+    act(() => {
+      const toggle = getByRole('button', { name: '경로 결과 더 크게' });
+      dispatchPointer(toggle, 'pointerdown', {
+        button: 0,
+        pointerId: 51,
+        clientY: 400,
+      });
+      dispatchPointer(window, 'pointermove', { pointerId: 51, clientY: 330 });
+      dispatchPointer(window, 'pointerup', { pointerId: 51, clientY: 330 });
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('expanded');
+    // 합성 click을 발생시키지 않는다 — suppress가 남아 있어도 다음 pointerdown에서 폐기
+
+    act(() => {
+      const toggle = getByRole('button', { name: '경로 결과 접기' });
+      dispatchPointer(toggle, 'pointerdown', {
+        button: 0,
+        pointerId: 52,
+        clientY: 200,
+      });
+      dispatchPointer(window, 'pointerup', { pointerId: 52, clientY: 200 });
+    });
+    fireEvent.click(getByRole('button', { name: '경로 결과 접기' }), {
+      detail: 1,
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('collapsed');
+  });
+
+  it('유효 drag 직후 pointer click만 무시하고 keyboard click은 정상 동작한다', () => {
+    const PointerEventCtor =
+      typeof PointerEvent === 'undefined'
+        ? class extends MouseEvent {
+            pointerId: number;
+            constructor(
+              type: string,
+              init: MouseEventInit & { pointerId?: number } = {},
+            ) {
+              super(type, init);
+              this.pointerId = init.pointerId ?? 0;
+            }
+          }
+        : PointerEvent;
+    if (typeof PointerEvent === 'undefined') {
+      (globalThis as unknown as { PointerEvent: typeof PointerEventCtor }).PointerEvent =
+        PointerEventCtor;
+    }
+
+    const dispatchPointer = (
+      target: EventTarget,
+      type: 'pointerdown' | 'pointermove' | 'pointerup',
+      init: MouseEventInit & { pointerId?: number },
+    ) => {
+      target.dispatchEvent(
+        new PointerEventCtor(type, { bubbles: true, cancelable: true, ...init }),
+      );
+    };
+
+    act(() => seedResults());
+    const { container, getByRole } = render(<App />);
+    fireEvent.click(getByRole('button', { name: '경로 결과 접기' }));
+    fireEvent.click(getByRole('button', { name: '경로 결과 펼치기' }));
+    const sheet = () => container.querySelector('.map-first__sheet');
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('medium');
+
+    act(() => {
+      const toggle = getByRole('button', { name: '경로 결과 더 크게' });
+      dispatchPointer(toggle, 'pointerdown', {
+        button: 0,
+        pointerId: 21,
+        clientY: 400,
+      });
+      dispatchPointer(window, 'pointermove', { pointerId: 21, clientY: 330 });
+      dispatchPointer(window, 'pointerup', { pointerId: 21, clientY: 330 });
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('expanded');
+
+    // 합성 pointer click(detail>0) — 한 번만 무시
+    fireEvent.click(getByRole('button', { name: '경로 결과 접기' }), {
+      detail: 1,
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('expanded');
+
+    // 다음 정상 pointer click
+    fireEvent.click(getByRole('button', { name: '경로 결과 접기' }), {
+      detail: 1,
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('collapsed');
+  });
+
+  it('유효 drag 후 합성 click 없이도 keyboard click(detail=0)은 전환한다', () => {
+    const PointerEventCtor =
+      typeof PointerEvent === 'undefined'
+        ? class extends MouseEvent {
+            pointerId: number;
+            constructor(
+              type: string,
+              init: MouseEventInit & { pointerId?: number } = {},
+            ) {
+              super(type, init);
+              this.pointerId = init.pointerId ?? 0;
+            }
+          }
+        : PointerEvent;
+    if (typeof PointerEvent === 'undefined') {
+      (globalThis as unknown as { PointerEvent: typeof PointerEventCtor }).PointerEvent =
+        PointerEventCtor;
+    }
+
+    act(() => seedResults());
+    const { container, getByRole } = render(<App />);
+    fireEvent.click(getByRole('button', { name: '경로 결과 접기' }));
+    fireEvent.click(getByRole('button', { name: '경로 결과 펼치기' }));
+    const sheet = () => container.querySelector('.map-first__sheet');
+
+    act(() => {
+      const toggle = getByRole('button', { name: '경로 결과 더 크게' });
+      toggle.dispatchEvent(
+        new PointerEventCtor('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          pointerId: 31,
+          clientY: 400,
+        }),
+      );
+      window.dispatchEvent(
+        new PointerEventCtor('pointermove', {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 31,
+          clientY: 330,
+        }),
+      );
+      window.dispatchEvent(
+        new PointerEventCtor('pointerup', {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 31,
+          clientY: 330,
+        }),
+      );
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('expanded');
+
+    // 합성 pointer click 없이 keyboard/AT click
+    fireEvent.click(getByRole('button', { name: '경로 결과 접기' }), {
+      detail: 0,
+    });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('collapsed');
+  });
+
+  it('시트 토글 Enter·Space로 3단계를 순환한다', () => {
+    act(() => seedResults());
+    const { container, getByRole } = render(<App />);
+    const sheet = () => container.querySelector('.map-first__sheet');
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('expanded');
+
+    const toggle = getByRole('button', { name: '경로 결과 접기' });
+    toggle.focus();
+    fireEvent.keyDown(toggle, { key: 'Enter' });
+    fireEvent.click(toggle, { detail: 0 });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('collapsed');
+
+    const expand = getByRole('button', { name: '경로 결과 펼치기' });
+    fireEvent.keyDown(expand, { key: ' ' });
+    fireEvent.click(expand, { detail: 0 });
+    expect(sheet()?.getAttribute('data-sheet-snap')).toBe('medium');
+  });
+
   it('경로 결과와 상세 drawer는 각각 하나의 세로 스크롤 소유자를 가진다', () => {
     act(() => seedResults());
     const { container } = render(<App />);
