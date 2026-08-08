@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useVoiceChatStore } from '@/chat/voiceChatStore';
 import { useSpeechRecognition } from '@/chat/useSpeechRecognition';
+import { useVisualViewportRect } from '@/hooks/useVisualViewportRect';
 import { primeSpeechOutput, stopSpeaking } from '@/voice/synthesis';
 import { PROFILE_LIST } from '@/config/profiles';
 import type { VoiceChatStatus } from '@/voice/intents';
@@ -46,6 +47,17 @@ export default function VoiceChatDock({
   );
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const trackViewport = variant === 'map-first' && open;
+  const visualViewport = useVisualViewportRect(trackViewport);
+  const viewportStyle: CSSProperties | undefined = trackViewport
+    ? {
+      '--mf-vv-width': `${visualViewport.width}px`,
+      '--mf-vv-height': `${visualViewport.height}px`,
+      '--mf-vv-offset-top': `${visualViewport.offsetTop}px`,
+      '--mf-vv-offset-left': `${visualViewport.offsetLeft}px`,
+      '--mf-vv-bottom-inset': `${visualViewport.bottomInset}px`,
+    } as CSSProperties
+    : undefined;
 
   const { supported, listening, start, stop } = useSpeechRecognition({
     onStart: () => useVoiceChatStore.getState().setStatus('listening'),
@@ -92,6 +104,8 @@ export default function VoiceChatDock({
       className={variant === 'map-first' ? 'voicedock voicedock--map-first' : 'voicedock'}
       role="region"
       aria-label="음성 챗봇"
+      data-vv-bound={trackViewport ? 'true' : undefined}
+      style={viewportStyle}
     >
       {variant === 'map-first' ? (
         <button
