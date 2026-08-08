@@ -1229,6 +1229,11 @@
   bottom: calc(132px + env(safe-area-inset-bottom, 0px));
 }
 
+.map-first__frame:has(.map-first__sheet--medium) .map-first__voice-wrap {
+  /* medium(55%) 시트 상단 + 16px 간격 — safe-area는 시트 padding에 이미 포함 */
+  bottom: calc(var(--mf-sheet-snap-medium) + 16px);
+}
+
 .map-first__frame:has(.map-first__sheet--empty.map-first__sheet--expanded) .map-first__voice-wrap {
   bottom: calc(224px + env(safe-area-inset-bottom, 0px));
 }
@@ -1295,6 +1300,12 @@
 }
 
 /* ── Bottom sheet ── */
+.map-first__frame {
+  --mf-sheet-snap-collapsed: 120px;
+  --mf-sheet-snap-medium: 55%;
+  --mf-sheet-snap-expanded: 90%;
+}
+
 .map-first__sheet {
   position: absolute;
   left: 0;
@@ -1307,23 +1318,35 @@
   border-radius: 24px 24px 0 0;
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.1);
   padding: 0 20px calc(16px + env(safe-area-inset-bottom, 0px));
-  transition: max-height 0.2s ease;
+  box-sizing: border-box;
+  min-height: 0;
+  height: var(--mf-sheet-height, var(--mf-sheet-snap-collapsed));
+  max-height: var(--mf-sheet-height, var(--mf-sheet-snap-collapsed));
+  transition: height 0.2s ease, max-height 0.2s ease;
   pointer-events: auto;
   /* 카드 목록만 스크롤하도록 outer sheet는 스크롤하지 않는다. */
   overflow: hidden;
 }
 
+.map-first__sheet--collapsed {
+  --mf-sheet-height: var(--mf-sheet-snap-collapsed);
+}
+
+.map-first__sheet--medium {
+  --mf-sheet-height: var(--mf-sheet-snap-medium);
+}
+
 .map-first__sheet--expanded {
-  max-height: 58%;
+  --mf-sheet-height: var(--mf-sheet-snap-expanded);
 }
 
 .map-first__frame[data-profile='elderly'] .map-first__sheet--expanded,
 .map-first__frame--easy .map-first__sheet--expanded {
-  max-height: 54%;
+  --mf-sheet-height: 86%;
 }
 
-.map-first__sheet--collapsed {
-  max-height: 120px;
+.map-first__sheet--dragging {
+  transition: none;
 }
 
 .map-first__sheet-stack {
@@ -1352,11 +1375,11 @@
 }
 
 .map-first__sheet--collapsed:has(.install-prompt) {
-  max-height: min(52%, 280px);
+  --mf-sheet-height: min(52%, 280px);
 }
 
 .map-first__sheet--empty.map-first__sheet--collapsed:has(.install-prompt) {
-  max-height: min(58%, 320px);
+  --mf-sheet-height: min(58%, 320px);
 }
 
 .map-first__sheet-toggle {
@@ -1371,6 +1394,10 @@
   font-family: inherit;
   color: inherit;
   min-height: var(--mf-tap);
+  flex: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .map-first__sheet-handle {
@@ -1879,7 +1906,7 @@
 }
 
 .map-first__sheet--empty.map-first__sheet--expanded {
-  max-height: 210px;
+  --mf-sheet-height: 210px;
 }
 
 .map-first__sheet-header {
@@ -1978,6 +2005,7 @@
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .map-first__score-note--list {
@@ -3171,11 +3199,79 @@
 
 @media (max-height: 700px) {
   .map-first__sheet--expanded {
-    max-height: 40%;
+    --mf-sheet-height: min(90%, calc(100% - 72px));
   }
 
   .map-first__map-legend {
     bottom: calc(260px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* 짧은 뷰포트(예: 320×568): medium 55%는 유지하고 고정·중복 영역만 압축.
+   카드 정보 위계(순위·수단·시간·도보·환승)는 변경하지 않는다. */
+@media (max-height: 600px) {
+  .map-first__sheet {
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .map-first__sheet-stack {
+    gap: 2px;
+  }
+
+  .map-first__sheet-handle {
+    padding: 4px 0 2px;
+  }
+
+  .map-first__sheet-handle-bar {
+    width: 36px;
+    height: 3px;
+  }
+
+  .map-first__sheet-title {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.2;
+  }
+
+  /* 시트 헤더 meta는 첫 카드 요약과 중복 — 짧은 화면에서 숨김 */
+  .map-first__frame--results .map-first__sheet-meta {
+    display: none;
+  }
+
+  .map-first__sheet-body {
+    padding-top: 4px;
+  }
+
+  .map-first__departure-btn {
+    min-height: 36px;
+    margin: 0 0 4px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  .map-first__route-list-heading {
+    margin-bottom: 2px;
+    gap: 6px;
+  }
+
+  .map-first__route-list-heading h2 {
+    font-size: 14px;
+    line-height: 1.2;
+  }
+
+  /* 안내 문구 — 경로 필수 정보 아님 */
+  .map-first__route-list-heading p {
+    display: none;
+  }
+
+  /* score note — 짧은 화면에서 목록 보조 설명 숨김(필수 경로 정보 유지) */
+  .map-first__score-note--list {
+    display: none;
+  }
+
+  .map-first__route-stack {
+    gap: 8px;
+    padding: 0 0 2px;
   }
 }
 
@@ -3285,6 +3381,10 @@
 
   .map-first__frame:has(.map-first__sheet--collapsed) {
     --mf-mobile-voice-bottom: calc(132px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .map-first__frame:has(.map-first__sheet--medium) {
+    --mf-mobile-voice-bottom: calc(var(--mf-sheet-snap-medium) + 16px);
   }
 
   .map-first__frame:has(.map-first__sheet--empty.map-first__sheet--expanded) {
