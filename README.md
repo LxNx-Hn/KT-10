@@ -108,10 +108,10 @@
 <table>
   <tr>
     <td width="42%" align="center" valign="middle">
-      <img src="./docs/app/route-cards.webp" alt="경로 카드 캐러셀 화면" style="max-width:220px; width:100%; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.12);" />
+      <img src="./docs/app/route-cards.webp" alt="결과 시트 세로 경로 목록 화면" style="max-width:220px; width:100%; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.12);" />
     </td>
     <td width="58%" valign="middle">
-      <h4>🧭 경로 카드</h4>
+      <h4>🧭 결과 시트 경로 목록</h4>
       <ul>
         <li>프로필 적합 점수 산출</li>
         <li>소요시간 · 도보거리 · 환승 계산</li>
@@ -129,10 +129,10 @@
     <td width="58%" valign="middle">
       <h4>🗺️ Map-first UI</h4>
       <ul>
-        <li>카드 선택 시 지도 경로 자동 인터랙션</li>
-        <li>모바일 터치 제스처 (스와이프)</li>
-        <li>이전·다음 내비게이션 버튼</li>
-        <li>키보드 방향키 및 Home / End 접근성</li>
+        <li>결과 시트 세로 목록에서 카드 선택 시 지도 경로 동기화</li>
+        <li>결과 시트 드래그·3단계 snap 제스처</li>
+        <li>목록 내부 세로 스크롤 우선, 시트 제스처의 배경 지도 비전파</li>
+        <li>클릭·키보드·스크린리더 기반 경로 선택</li>
       </ul>
     </td>
     <td width="42%" align="center" valign="middle">
@@ -296,7 +296,7 @@
     </td>
     <td width="50%" valign="top">
       <h3>♿ Accessible Interaction</h3>
-      <p>큰 글씨, 키보드 조작, 포커스 이동, 스크린리더용 레이블, 버튼 기반 카드 이동을 제공합니다.</p>
+      <p>큰 글씨, 키보드 조작, 포커스 이동, 스크린리더용 레이블, 클릭·키보드·스크린리더 기반 경로 선택을 제공합니다.</p>
     </td>
   </tr>
 </table>
