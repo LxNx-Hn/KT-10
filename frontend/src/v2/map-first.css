@@ -3478,8 +3478,10 @@
   }
 
   /* C) VoiceDock 모바일: visual viewport + safe area 안에 패널 고정.
-     키보드로 VV가 줄면 --mf-vv-* 로 경계 재계산. fallback은 100dvh/0. */
+     키보드로 VV가 줄면 --mf-vv-* 로 경계 재계산. fallback은 100dvh/0.
+     입력 focus 시 iOS 자동완성/보조 바(≈44px) 여유는 --mf-voice-kb-accessory. */
   .voicedock.voicedock--map-first {
+    --mf-voice-kb-accessory: 0px;
     position: fixed !important;
     left: var(--mf-vv-offset-left, 0px) !important;
     right: auto !important;
@@ -3494,7 +3496,12 @@
     padding-top: 8px;
     padding-left: max(14px, env(safe-area-inset-left, 0px));
     padding-right: max(14px, env(safe-area-inset-right, 0px));
-    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    /* safe-area와 보조 바 여백은 합산하지 않고 더 큰 쪽만 적용 */
+    padding-bottom: max(
+      8px,
+      env(safe-area-inset-bottom, 0px),
+      var(--mf-voice-kb-accessory)
+    );
     max-height: calc(
       var(--mf-vv-height, 100dvh)
       - env(safe-area-inset-top, 0px)
@@ -3504,6 +3511,11 @@
     overflow-y: hidden;
     display: flex;
     flex-direction: column;
+  }
+
+  /* 텍스트 입력 포커스 중: 키보드 보조 바 보호(로그 높이가 flex로 축소) */
+  .voicedock.voicedock--map-first:has(.voicedock__textentry:focus-within) {
+    --mf-voice-kb-accessory: calc(44px + 8px);
   }
 
   .voicedock.voicedock--map-first .voicedock__handle {
@@ -3548,9 +3560,11 @@
     flex-wrap: wrap;
   }
 
+  /* iOS Safari: 16px 미만 입력 포커스 시 자동 확대 방지(모바일 map-first만) */
   .voicedock.voicedock--map-first .voicedock__textentry input {
     min-width: 0;
     flex: 1 1 10rem;
+    font-size: 16px;
   }
 
   /* VoiceDock open: React data-voice-open (App voiceOpen boolean) */
