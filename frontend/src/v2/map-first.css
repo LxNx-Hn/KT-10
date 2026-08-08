@@ -2051,6 +2051,15 @@
   box-shadow: 0 0 0 5px #fff;
 }
 
+/* 상단(순위·수단·시간) / 중단(도보·환승·특성) / 하단(상세) 위계 래퍼 */
+.map-first__route-card-header,
+.map-first__route-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
 .map-first__route-card-topline {
   display: flex;
   align-items: center;
@@ -2066,7 +2075,9 @@
   line-height: var(--mf-line-height-tight);
 }
 
+/* 데스크톱: 배지+프로필 맞춤 다음 줄에 경로명 (기존 시각 배치 유지) */
 .map-first__route-card-summary {
+  flex: 1 1 100%;
   margin: 0;
   min-width: 0;
   color: var(--mf-ink);
@@ -2262,7 +2273,9 @@
   color: #8a5100;
 }
 
-.map-first__route-card .map-first__sheet-cta {
+.map-first__route-card .map-first__sheet-cta,
+.map-first__route-card .map-first__route-card-cta {
+  position: static;
   width: 100%;
   min-height: max(44px, var(--mf-tap));
   margin-top: 2px;
@@ -2271,7 +2284,9 @@
 }
 
 .map-first__frame--easy .map-first__route-card .map-first__sheet-cta,
-.map-first__frame[data-profile='elderly'] .map-first__route-card .map-first__sheet-cta {
+.map-first__frame--easy .map-first__route-card .map-first__route-card-cta,
+.map-first__frame[data-profile='elderly'] .map-first__route-card .map-first__sheet-cta,
+.map-first__frame[data-profile='elderly'] .map-first__route-card .map-first__route-card-cta {
   min-height: max(52px, var(--mf-tap));
 }
 
@@ -3273,6 +3288,25 @@
     gap: 8px;
     padding: 0 0 2px;
   }
+
+  /* MOB-08: 짧은 화면에서도 순위·수단·시간·도보·환승은 유지하고 간격만 압축 */
+  .map-first__route-card {
+    gap: 6px;
+    padding: 10px 12px;
+  }
+
+  .map-first__route-card-header,
+  .map-first__route-card-body {
+    gap: 6px;
+  }
+
+  .map-first__route-stats li {
+    padding: 6px 8px;
+  }
+
+  .map-first__route-card-reasons {
+    gap: 4px;
+  }
 }
 
 .map-first__kakao-facility {
@@ -3330,6 +3364,90 @@
 
 /* ── Mobile ≤479px: map controls / voice FAB / voice dock overlap ── */
 @media (max-width: 479px) {
+  /* MOB-08: 경로 카드 본문 우선 — 순위·수단·시간 상단, 상세는 하단 보조 액션 */
+  .map-first__route-card {
+    gap: 8px;
+  }
+
+  .map-first__route-card-header {
+    gap: 6px;
+  }
+
+  .map-first__route-card-body {
+    gap: 8px;
+  }
+
+  /* Image 2 일관: 1순위 배지 + 이동수단명 한 줄. 프로필 '맞춤' 라벨은 숨김 */
+  .map-first__route-card-type {
+    display: none;
+  }
+
+  .map-first__route-card-topline {
+    align-items: flex-start;
+  }
+
+  .map-first__route-card-summary {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 100%;
+    font-size: var(--mf-section-size);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .map-first__route-card-metrics {
+    align-items: baseline;
+  }
+
+  .map-first__route-card-duration strong {
+    font-size: 26px;
+  }
+
+  .map-first__route-score {
+    max-width: 42%;
+  }
+
+  .map-first__route-stats {
+    min-width: 0;
+  }
+
+  .map-first__route-card .map-first__badges {
+    max-width: 100%;
+  }
+
+  /* 상세 버튼: 문서 흐름 하단 보조 액션(절대배치·본문 오버레이 금지) */
+  .map-first__route-card .map-first__sheet-cta,
+  .map-first__route-card .map-first__route-card-cta {
+    position: static;
+    order: 0;
+    flex: none;
+    width: 100%;
+    margin-top: 0;
+    padding: 0 12px;
+    border: 1.5px solid var(--mf-line);
+    border-radius: var(--mf-radius-control);
+    background: var(--mf-surface);
+    color: var(--mf-blue);
+    box-shadow: none;
+    font-size: var(--mf-meta-size);
+    font-weight: var(--mf-button-weight);
+    letter-spacing: -0.01em;
+  }
+
+  .map-first__route-card .map-first__route-card-cta:hover,
+  .map-first__route-card .map-first__route-card-cta:focus-visible {
+    border-color: var(--mf-blue);
+    background: rgba(49, 130, 246, 0.06);
+  }
+
+  .map-first__frame--easy .map-first__route-card .map-first__sheet-cta,
+  .map-first__frame--easy .map-first__route-card .map-first__route-card-cta,
+  .map-first__frame[data-profile='elderly'] .map-first__route-card .map-first__sheet-cta,
+  .map-first__frame[data-profile='elderly'] .map-first__route-card .map-first__route-card-cta {
+    min-height: max(52px, var(--mf-tap));
+    font-size: var(--mf-body-size);
+  }
+
   /* MOB-01: document를 가시 viewport에 고정해 body 이중 스크롤을 막는다.
      overflow-x는 숨기지 않는다(가로 문제를 가리지 않음). */
   html {
