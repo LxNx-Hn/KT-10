@@ -115,7 +115,12 @@ function VoiceIcon() {
   );
 }
 
-export default function MapFirstApp() {
+export default function MapFirstApp({
+  voiceOpen = false,
+}: {
+  /** App이 소유한 VoiceChatDock open boolean. data-voice-open 연결용. */
+  voiceOpen?: boolean;
+} = {}) {
   const profile = useAppStore((state) => state.profile);
   const origin = useAppStore((state) => state.origin);
   const destination = useAppStore((state) => state.destination);
@@ -154,6 +159,7 @@ export default function MapFirstApp() {
   const [locating, setLocating] = useState(false);
   const [departureIsNow, setDepartureIsNow] = useState(true);
   const [departureRefreshing, setDepartureRefreshing] = useState(false);
+  const [mapInfoOpen, setMapInfoOpen] = useState(false);
   const originInputRef = useRef<HTMLInputElement>(null);
   const destinationInputRef = useRef<HTMLInputElement>(null);
   const locatingTimerRef = useRef<number>();
@@ -361,7 +367,12 @@ export default function MapFirstApp() {
   );
 
   return (
-    <main className="map-first" id="main-content">
+    <main
+      className="map-first"
+      id="main-content"
+      data-voice-open={voiceOpen ? 'true' : undefined}
+      data-map-info-open={mapInfoOpen ? 'true' : undefined}
+    >
       <h1 className="map-first__sr-only">부산 접근성 길찾기</h1>
       <div className={frameClass} data-profile={profile}>
         <KakaoMap
@@ -438,6 +449,7 @@ export default function MapFirstApp() {
             if (!hasSlopeOverlay) return;
             setShowSlope((visible) => !visible);
           }}
+          onMapInfoOpenChange={setMapInfoOpen}
         />
 
         {shadeLayerVisible &&

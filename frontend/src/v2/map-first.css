@@ -3094,16 +3094,22 @@
 /* Voice and install overlays remain inside the same phone-width visual system. */
 .voicedock--map-first {
   z-index: 60;
-  left: 50%;
-  right: auto;
-  width: min(100%, 430px);
   max-height: min(78dvh, 680px);
   margin: 0;
-  transform: translateX(-50%);
   overflow-y: auto;
   border: 1px solid var(--mf-line, #e5e8eb);
   border-radius: 24px 24px 0 0;
   box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.18);
+}
+
+/* Desktop/phone-frame centering only — mobile must not inherit translateX(-50%). */
+@media (min-width: 480px) {
+  .voicedock--map-first {
+    left: 50%;
+    right: auto;
+    width: min(100%, 430px);
+    transform: translateX(-50%);
+  }
 }
 
 @media (max-width: 370px) {
@@ -3220,5 +3226,154 @@
   .map-first__search-dot,
   .map-first__kakao-user-dot {
     forced-color-adjust: none;
+  }
+}
+
+/* ── Mobile ≤479px: map controls / voice FAB / voice dock overlap ── */
+@media (max-width: 479px) {
+  /* 1) 경로 시트 상태 → 음성 FAB 하단 오프셋 (기존 bottom 값과 동일) */
+  .map-first__frame {
+    --mf-mobile-voice-bottom: calc(224px + env(safe-area-inset-bottom, 0px));
+    --mf-mobile-voice-height: var(--mf-voice-size);
+    --mf-mobile-fab-gap: 16px;
+  }
+
+  .map-first__frame--labeled,
+  .map-first__frame[data-profile='elderly'] {
+    --mf-mobile-voice-bottom: calc(236px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .map-first__frame:has(.map-first__sheet--collapsed) {
+    --mf-mobile-voice-bottom: calc(132px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .map-first__frame:has(.map-first__sheet--empty.map-first__sheet--expanded) {
+    --mf-mobile-voice-bottom: calc(224px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .map-first__voice-wrap {
+    bottom: var(--mf-mobile-voice-bottom);
+  }
+
+  /* 2) 현재 위치·지도 정보·음성 FAB를 하단 기준 한 줄 수직 흐름으로 정렬 */
+  .map-first__fab-stack {
+    top: auto;
+    bottom: calc(
+      var(--mf-mobile-voice-bottom)
+      + var(--mf-mobile-voice-height)
+      + var(--mf-mobile-fab-gap)
+    );
+    gap: var(--mf-mobile-fab-gap);
+  }
+
+  /* A) 결과 있는 시트 expanded: 세로 공간 부족 → 지도 컨트롤·음성 FAB 숨김
+     frame--results = ranked.length > 0 (empty 시트에는 없음) */
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__fab-stack,
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__fab-stack > *,
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__voice-wrap,
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__voice-wrap > * {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* B) 지도 정보 open: React data-map-info-open (MapControls open boolean) */
+  .map-first[data-map-info-open='true'] .map-first__voice-wrap,
+  .map-first[data-map-info-open='true'] .map-first__voice-wrap > * {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .map-first[data-map-info-open='true'] .map-first__fab-stack {
+    bottom: calc(var(--mf-mobile-voice-bottom) + var(--mf-mobile-fab-gap));
+  }
+
+  /* 6) 지도 정보 패널: 위로 펼치고 viewport 내 스크롤 */
+  .map-first__map-info-panel {
+    top: auto;
+    bottom: calc(100% + 8px);
+    max-height: min(
+      52dvh,
+      calc(100dvh - var(--mf-mobile-voice-bottom) - 96px)
+    );
+    overflow-x: hidden;
+    overflow-y: auto;
+    box-sizing: border-box;
+  }
+
+  /* C) VoiceDock 모바일: translate 중앙정렬 제거.
+     공용/데스크톱 left:50%+translateX(-50%)가 남으면 전체 폭 패널이 반 폭 밀림.
+     위치 관련만 !important — cascade에서 left가 지고 transform만 남는 충돌 차단. */
+  .voicedock.voicedock--map-first {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    transform: none !important;
+    translate: none !important;
+    box-sizing: border-box;
+    min-width: 0;
+    margin: 0;
+    padding-left: max(14px, env(safe-area-inset-left, 0px));
+    padding-right: max(14px, env(safe-area-inset-right, 0px));
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px));
+    overflow-x: hidden;
+    overflow-y: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .voicedock.voicedock--map-first .voicedock__handle {
+    flex: 0 0 auto;
+  }
+
+  .voicedock.voicedock--map-first .voicedock__body {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .voicedock.voicedock--map-first .voicedock__log {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .voicedock.voicedock--map-first .voicedock__quick,
+  .voicedock.voicedock--map-first .voicedock__controls,
+  .voicedock.voicedock--map-first .voicedock__textentry {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* D) 좁은 화면: 말하기·다시 듣기·정지 줄바꿈, 입력/보내기 viewport 내 유지 */
+  .voicedock.voicedock--map-first .voicedock__controls {
+    flex-wrap: wrap;
+  }
+
+  .voicedock.voicedock--map-first .voicedock__textentry {
+    flex-wrap: wrap;
+  }
+
+  .voicedock.voicedock--map-first .voicedock__textentry input {
+    min-width: 0;
+    flex: 1 1 10rem;
+  }
+
+  /* VoiceDock open: React data-voice-open (App voiceOpen boolean) */
+  .map-first[data-voice-open='true'] .map-first__fab-stack,
+  .map-first[data-voice-open='true'] .map-first__fab-stack > *,
+  .map-first[data-voice-open='true'] .map-first__voice-wrap,
+  .map-first[data-voice-open='true'] .map-first__voice-wrap > * {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
   }
 }
