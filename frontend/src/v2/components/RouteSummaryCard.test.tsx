@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ScoredRoute } from '@/types';
+import type { ProfileId, ScoredRoute } from '@/types';
 import { buildRouteViewModel } from '../routeViewModel';
 import RouteSummaryCard from './RouteSummaryCard';
 
@@ -51,30 +51,38 @@ function makeItem(overrides: Partial<ScoredRoute['route']> = {}): ScoredRoute {
   };
 }
 
+function renderCard(
+  profile: ProfileId,
+  itemOverrides: Partial<ScoredRoute['route']> = {},
+  handlers?: { onSelect?: () => void; onDetails?: () => void },
+) {
+  const item = makeItem(itemOverrides);
+  const peer = makeItem({
+    id: 'route-b',
+    summary: '지하철 1호선',
+    totalDurationMin: 30,
+    totalWalkM: 500,
+    transferCount: 2,
+    characteristics: ['fewest_transfers'],
+  });
+  const view = buildRouteViewModel(item, 1, profile, [item, peer]);
+  const onSelect = handlers?.onSelect ?? vi.fn();
+  const onDetails = handlers?.onDetails ?? vi.fn();
+  const result = render(
+    <RouteSummaryCard
+      view={view}
+      selected
+      refining={false}
+      onSelect={onSelect}
+      onDetails={onDetails}
+    />,
+  );
+  return { ...result, item, view, onSelect, onDetails };
+}
+
 describe('RouteSummaryCard 정보 위계', () => {
   it('소요 시간·추천 근거·상세 CTA를 순서대로 노출하고 선택은 route id를 유지한다', () => {
-    const item = makeItem();
-    const peer = makeItem({
-      id: 'route-b',
-      summary: '지하철 1호선',
-      totalDurationMin: 30,
-      totalWalkM: 500,
-      transferCount: 2,
-      characteristics: ['fewest_transfers'],
-    });
-    const view = buildRouteViewModel(item, 1, 'general', [item, peer]);
-    const onSelect = vi.fn();
-    const onDetails = vi.fn();
-
-    const { container } = render(
-      <RouteSummaryCard
-        view={view}
-        selected
-        refining={false}
-        onSelect={onSelect}
-        onDetails={onDetails}
-      />,
-    );
+    const { container, onSelect, onDetails } = renderCard('general');
 
     const card = container.querySelector('.map-first__route-card');
     expect(card?.getAttribute('data-route-id')).toBe('route-a');
@@ -129,5 +137,173 @@ describe('RouteSummaryCard 정보 위계', () => {
     expect(screen.getByRole('button', { name: '상세 정보 보기' })).toBeTruthy();
     expect(screen.getByText('적합도 산정 불가')).toBeTruthy();
     expect(screen.getByText(/2순위/)).toBeTruthy();
+  });
+});
+
+describe('MOB-08 경로 카드 본문 우선 노출', () => {
+  it('순위·수단·소요시간이 본문(도보·환승)보다 먼저 렌더링된다', () => {
+    const { container } = renderCard('youth');
+    const card = container.querySelector('.map-first__route-card')!;
+    const header = card.querySelector('.map-first__route-card-header')!;
+    const body = card.querySelector('.map-first__route-card-body')!;
+    const cta = card.querySelector('.map-first__route-card-cta')!;
+
+    expect(header.querySelector('.map-first__rank-badge')?.textContent).toBe(
+      '1순위',
+    );
+    expect(
+      header.querySelector('.map-first__route-card-summary')?.textContent,
+    ).toContain('버스 1001');
+    expect(
+      header.querySelector('.map-first__route-card-duration')?.textContent,
+    ).toMatch(/24\s*분/);
+
+    expect(body.querySelector('.map-first__route-stats')?.textContent).toMatch(
+      /도보/,
+    );
+    expect(body.querySelector('.map-first__route-stats')?.textContent).toMatch(
+      /환승/,
+    );
+
+    expect(
+      header.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      body.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('상세 화면을 열지 않아도 도보·환승·핵심 특성이 카드에 존재한다', () => {
+    const { container } = renderCard('youth');
+    const card = container.querySelector('.map-first__route-card')!;
+    const body = card.querySelector('.map-first__route-card-body')!;
+
+    expect(body.textContent).toMatch(/380\s*m 도보/);
+    expect(body.textContent).toMatch(/1\s*회 환승/);
+    expect(
+      body.querySelector('.map-first__route-card-reasons, .map-first__badges'),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[aria-label="선택 경로 상세"]'),
+    ).toBeNull();
+  });
+
+  it('상세 정보 보기는 하단 보조 액션 클래스를 유지한다', () => {
+    const { container, onDetails, onSelect } = renderCard('general');
+    const cta = container.querySelector('.map-first__route-card-cta')!;
+
+    expect(cta.classList.contains('map-first__sheet-cta')).toBe(true);
+    expect(cta.classList.contains('map-first__route-card-cta')).toBe(true);
+    expect(cta.getAttribute('type')).toBe('button');
+    expect(getComputedStyle(cta).position).not.toBe('absolute');
+    expect(getComputedStyle(cta).position).not.toBe('fixed');
+
+    fireEvent.click(cta);
+    expect(onDetails).toHaveBeenCalledTimes(1);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'general',
+    'youth',
+    'elderly',
+    'child',
+    'disabled',
+    'pregnant',
+  ] as ProfileId[])(
+    '프로필 %s에서도 동일 정보 위계(header→body→cta)를 사용한다',
+    (profile) => {
+      const { container } = renderCard(profile);
+      const card = container.querySelector('.map-first__route-card')!;
+      const children = Array.from(card.children).map(
+        (el) => el.className.split(/\s+/)[0],
+      );
+
+      expect(children).toEqual([
+        'map-first__route-card-header',
+        'map-first__route-card-body',
+        'map-first__sheet-cta',
+      ]);
+      expect(
+        card.querySelector('.map-first__route-card-header .map-first__rank-badge'),
+      ).toBeTruthy();
+      expect(
+        card.querySelector(
+          '.map-first__route-card-header .map-first__route-card-summary',
+        ),
+      ).toBeTruthy();
+      expect(
+        card.querySelector(
+          '.map-first__route-card-header .map-first__route-card-duration',
+        ),
+      ).toBeTruthy();
+      expect(
+        card.querySelector('.map-first__route-card-body .map-first__route-stats'),
+      ).toBeTruthy();
+      expect(
+        card.querySelector('.map-first__route-card-cta')?.textContent,
+      ).toContain('상세 정보 보기');
+    },
+  );
+
+  it('짧은 화면 조건에서도 핵심 정보가 DOM에서 제거되지 않는다', () => {
+    const previous = {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 375,
+    });
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 667,
+    });
+
+    try {
+      const { container } = renderCard('youth', {
+        summary: '버스급행 1000(해운대구청) · 센텀시티환승센터 방면',
+      });
+      const card = container.querySelector('.map-first__route-card')!;
+      expect(card.querySelector('.map-first__rank-badge')?.textContent).toContain(
+        '1순위',
+      );
+      expect(
+        card.querySelector('.map-first__route-card-summary')?.textContent,
+      ).toContain('버스급행');
+      expect(
+        card.querySelector('.map-first__route-card-duration')?.textContent,
+      ).toMatch(/분/);
+      expect(
+        card.querySelector('.map-first__route-stats')?.textContent,
+      ).toMatch(/도보/);
+      expect(
+        card.querySelector('.map-first__route-stats')?.textContent,
+      ).toMatch(/환승/);
+      expect(
+        card.querySelector('.map-first__route-card-cta'),
+      ).toBeTruthy();
+    } finally {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        value: previous.width,
+      });
+      Object.defineProperty(window, 'innerHeight', {
+        configurable: true,
+        value: previous.height,
+      });
+    }
+  });
+
+  it('카드 선택과 상세 열기 이벤트가 분리되어 유지된다', () => {
+    const { container, onSelect, onDetails } = renderCard('youth');
+    const card = container.querySelector('.map-first__route-card')!;
+
+    fireEvent.keyDown(card, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '상세 정보 보기' }));
+    expect(onDetails).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 });

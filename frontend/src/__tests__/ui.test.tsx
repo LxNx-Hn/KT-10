@@ -613,6 +613,8 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(note.className).toContain('map-first__score-note--list');
     expect(note.className).not.toMatch(/fixed|absolute|sticky/);
     const card = container.querySelector('.map-first__route-card');
+    expect(card?.querySelector('.map-first__route-card-header')).toBeTruthy();
+    expect(card?.querySelector('.map-first__route-card-body')).toBeTruthy();
     expect(
       card?.querySelector('.map-first__route-card-duration')?.textContent,
     ).toMatch(/\d+\s*분/);
@@ -622,6 +624,9 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(
       card?.querySelector('.map-first__route-card-reasons'),
     ).toBeTruthy();
+    expect(
+      card?.querySelector('.map-first__route-card-cta')?.textContent,
+    ).toContain('상세 정보 보기');
     expect(
       getByRole('region', { name: '지도' }).getAttribute(
         'data-selected-route-id',

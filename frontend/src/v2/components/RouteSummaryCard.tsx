@@ -72,86 +72,92 @@ export default function RouteSummaryCard({
         }
       }}
     >
-      <div className="map-first__route-card-topline">
-        <span className="map-first__rank-badge">{view.rank}순위</span>
-        <span className="map-first__route-card-type">
-          {view.profileLabel}
-          {' '}
-          맞춤
-        </span>
-      </div>
+      {/* 상단: 순위 · 이동수단/경로명 · 소요시간(지표 행) */}
+      <div className="map-first__route-card-header">
+        <div className="map-first__route-card-topline">
+          <span className="map-first__rank-badge">{view.rank}순위</span>
+          <span className="map-first__route-card-type">
+            {view.profileLabel}
+            {' '}
+            맞춤
+          </span>
+          <h3 className="map-first__route-card-summary">{view.summary}</h3>
+        </div>
 
-      <h3 className="map-first__route-card-summary">{view.summary}</h3>
-
-      <div className="map-first__route-card-metrics">
-        <p
-          className="map-first__route-card-duration"
-          aria-label={`소요시간 ${durationLabel}`}
-        >
-          <strong>{view.stats.durationMin}</strong>
-          <span>분</span>
-        </p>
-        <div
-          className="map-first__route-score"
-          title={view.score.ariaLabel}
-          aria-label={view.score.ariaLabel}
-        >
-          {view.score.available && view.score.rounded !== null ? (
-            <span className="map-first__route-score-text">{scoreText}</span>
-          ) : (
-            <span className="map-first__route-score-unavailable">
-              {view.score.summaryLabel}
-            </span>
-          )}
+        <div className="map-first__route-card-metrics">
+          <p
+            className="map-first__route-card-duration"
+            aria-label={`소요시간 ${durationLabel}`}
+          >
+            <strong>{view.stats.durationMin}</strong>
+            <span>분</span>
+          </p>
+          <div
+            className="map-first__route-score"
+            title={view.score.ariaLabel}
+            aria-label={view.score.ariaLabel}
+          >
+            {view.score.available && view.score.rounded !== null ? (
+              <span className="map-first__route-score-text">{scoreText}</span>
+            ) : (
+              <span className="map-first__route-score-unavailable">
+                {view.score.summaryLabel}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      <ul className="map-first__route-stats" aria-label="경로 요약">
-        <li>
-          <strong>{view.stats.walkM}</strong>
-          <span>m 도보</span>
-        </li>
-        <li>
-          <strong>{view.stats.transferCount}</strong>
-          <span>회 환승</span>
-        </li>
-      </ul>
-
-      {displayReasons.length > 0 && (
-        <ul className="map-first__route-card-reasons" aria-label="추천 근거">
-          {displayReasons.map((reason) => (
-            <li key={reason}>{reason}</li>
-          ))}
+      {/* 중단: 도보 · 환승 · 핵심 특성 */}
+      <div className="map-first__route-card-body">
+        <ul className="map-first__route-stats" aria-label="경로 요약">
+          <li>
+            <strong>{view.stats.walkM}</strong>
+            <span>m 도보</span>
+          </li>
+          <li>
+            <strong>{view.stats.transferCount}</strong>
+            <span>회 환승</span>
+          </li>
         </ul>
-      )}
 
-      {attentionFacts.length > 0 && (
-        <div className="map-first__badges" aria-label="경사·접근성 정보">
-          {attentionFacts.map((fact) => (
-            <span
-              key={fact.id}
-              className={[
-                'map-first__badge',
-                `map-first__badge--${fact.kind}`,
-                fact.slopeLevel
-                  ? `map-first__badge--slope-${fact.slopeLevel}`
-                  : '',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              {...(fact.slopeLevel && fact.title
-                ? { title: fact.title, 'aria-label': fact.title }
-                : {})}
-            >
-              {fact.label}
-            </span>
-          ))}
-        </div>
-      )}
+        {displayReasons.length > 0 && (
+          <ul className="map-first__route-card-reasons" aria-label="추천 근거">
+            {displayReasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        )}
 
+        {attentionFacts.length > 0 && (
+          <div className="map-first__badges" aria-label="경사·접근성 정보">
+            {attentionFacts.map((fact) => (
+              <span
+                key={fact.id}
+                className={[
+                  'map-first__badge',
+                  `map-first__badge--${fact.kind}`,
+                  fact.slopeLevel
+                    ? `map-first__badge--slope-${fact.slopeLevel}`
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                {...(fact.slopeLevel && fact.title
+                  ? { title: fact.title, 'aria-label': fact.title }
+                  : {})}
+              >
+                {fact.label}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 하단: 상세 보조 액션 (본문 위에 겹치지 않음) */}
       <button
         type="button"
-        className="map-first__sheet-cta"
+        className="map-first__sheet-cta map-first__route-card-cta"
         onClick={(event) => {
           event.stopPropagation();
           onDetails();

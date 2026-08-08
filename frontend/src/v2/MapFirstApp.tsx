@@ -33,6 +33,8 @@ import RouteDetailSheet, {
 } from './components/RouteDetailSheet';
 import RouteResultsSheet from './components/RouteResultsSheet';
 import type { RouteSheetSnap } from './routeSheetSnap';
+import { sheetSnapLayoutFitToken } from './routeSheetSnap';
+import { useSettledSheetSnap } from './useSettledSheetSnap';
 import SearchHeader from './components/SearchHeader';
 import SettingsPanel from './components/SettingsPanel';
 import {
@@ -151,6 +153,7 @@ export default function MapFirstApp({
   const [drawer, setDrawer] = useState<DrawerId | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('route');
   const [sheetSnap, setSheetSnap] = useState<RouteSheetSnap>('expanded');
+  const settledSheetSnap = useSettledSheetSnap(sheetSnap);
   // 최초 진입은 collapsed 한 줄 검색. true일 때만 전체 패널을 연다.
   const [searchPanelExpanded, setSearchPanelExpanded] = useState(false);
   const [showFacilities, setShowFacilities] = useState(false);
@@ -385,9 +388,9 @@ export default function MapFirstApp({
           showFacilities={showFacilities}
           showShade={shadeLayerVisible}
           showSlope={slopeLayerVisible}
-          layoutFitKey={`${searchPanelMode}|${
-            sheetSnap === 'collapsed' ? 'sheet-collapsed' : 'sheet-expanded'
-          }|${drawer ?? 'none'}`}
+          layoutFitKey={`${searchPanelMode}|${sheetSnapLayoutFitToken(
+            settledSheetSnap,
+          )}|${drawer ?? 'none'}`}
         />
 
         <SearchHeader
