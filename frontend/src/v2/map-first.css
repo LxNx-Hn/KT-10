@@ -76,7 +76,10 @@
   --mf-slope-very-steep-bg: #fde8e6;
   --mf-slope-very-steep-fg: #b42318;
 
-  min-height: 100dvh;
+  /* MOB-01: 가시 viewport 높이 — 100vh fallback 후 100dvh */
+  --mf-app-height: 100vh;
+  --mf-app-height: 100dvh;
+  min-height: var(--mf-app-height);
   display: flex;
   align-items: stretch;
   justify-content: center;
@@ -91,8 +94,8 @@
   position: relative;
   width: 100%;
   max-width: 430px;
-  min-height: 100dvh;
-  height: 100dvh;
+  min-height: var(--mf-app-height);
+  height: var(--mf-app-height);
   overflow: hidden;
   overflow-x: hidden;
   background: var(--mf-bg);
@@ -3231,8 +3234,45 @@
 
 /* ── Mobile ≤479px: map controls / voice FAB / voice dock overlap ── */
 @media (max-width: 479px) {
+  /* MOB-01: document를 가시 viewport에 고정해 body 이중 스크롤을 막는다.
+     overflow-x는 숨기지 않는다(가로 문제를 가리지 않음). */
+  html {
+    height: 100%;
+    height: 100dvh;
+  }
+
+  body {
+    height: 100%;
+    height: 100dvh;
+    max-width: 100%;
+    overflow-y: hidden;
+  }
+
+  #root {
+    height: 100%;
+    height: 100dvh;
+    max-width: 100%;
+  }
+
+  .map-first {
+    --mf-app-height: 100%;
+    --mf-app-height: 100dvh;
+    width: 100%;
+    max-width: 100%;
+    height: var(--mf-app-height);
+    min-height: var(--mf-app-height);
+    box-sizing: border-box;
+    /* 좌우 safe-area는 shell에서 한 번만 (VoiceDock 자체 padding과 중복되지 않음) */
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
   /* 1) 경로 시트 상태 → 음성 FAB 하단 오프셋 (기존 bottom 값과 동일) */
   .map-first__frame {
+    width: 100%;
+    max-width: 100%;
+    height: var(--mf-app-height);
+    min-height: var(--mf-app-height);
     --mf-mobile-voice-bottom: calc(224px + env(safe-area-inset-bottom, 0px));
     --mf-mobile-voice-height: var(--mf-voice-size);
     --mf-mobile-fab-gap: 16px;
