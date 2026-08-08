@@ -3142,10 +3142,45 @@
   z-index: 60;
   max-height: min(78dvh, 680px);
   margin: 0;
-  overflow-y: auto;
+  /* MOB-22: 패널 전체 스크롤 금지 — 헤더·입력은 고정, 본문(log)만 스크롤 */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--mf-line, #e5e8eb);
   border-radius: 24px 24px 0 0;
   box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.18);
+}
+
+.voicedock--map-first .voicedock__handle {
+  flex: 0 0 auto;
+}
+
+.voicedock--map-first .voicedock__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.voicedock--map-first .voicedock__log {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.voicedock--map-first .voicedock__quick,
+.voicedock--map-first .voicedock__controls,
+.voicedock--map-first .voicedock__textentry {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Desktop/phone-frame centering only — mobile must not inherit translateX(-50%). */
@@ -3560,34 +3595,55 @@
     box-sizing: border-box;
   }
 
-  /* C) VoiceDock 모바일: translate 중앙정렬 제거.
-     공용/데스크톱 left:50%+translateX(-50%)가 남으면 전체 폭 패널이 반 폭 밀림.
-     위치 관련만 !important — cascade에서 left가 지고 transform만 남는 충돌 차단. */
+  /* C) VoiceDock 모바일: visual viewport + safe area 안에 패널 고정.
+     키보드로 VV가 줄면 --mf-vv-* 로 경계 재계산. fallback은 100dvh/0.
+     입력 focus 시 iOS 자동완성/보조 바(≈44px) 여유는 --mf-voice-kb-accessory. */
   .voicedock.voicedock--map-first {
+    --mf-voice-kb-accessory: 0px;
     position: fixed !important;
-    left: 0 !important;
-    right: 0 !important;
-    width: auto !important;
+    left: var(--mf-vv-offset-left, 0px) !important;
+    right: auto !important;
+    width: var(--mf-vv-width, 100%) !important;
     max-width: none !important;
+    bottom: var(--mf-vv-bottom-inset, 0px) !important;
     transform: none !important;
     translate: none !important;
     box-sizing: border-box;
     min-width: 0;
     margin: 0;
+    padding-top: 8px;
     padding-left: max(14px, env(safe-area-inset-left, 0px));
     padding-right: max(14px, env(safe-area-inset-right, 0px));
-    max-height: calc(100dvh - env(safe-area-inset-top, 0px));
+    /* safe-area와 보조 바 여백은 합산하지 않고 더 큰 쪽만 적용 */
+    padding-bottom: max(
+      8px,
+      env(safe-area-inset-bottom, 0px),
+      var(--mf-voice-kb-accessory)
+    );
+    max-height: calc(
+      var(--mf-vv-height, 100dvh)
+      - env(safe-area-inset-top, 0px)
+      - 8px
+    );
     overflow-x: hidden;
     overflow-y: hidden;
     display: flex;
     flex-direction: column;
   }
 
+  /* 텍스트 입력 포커스 중: 키보드 보조 바 보호(로그 높이가 flex로 축소) */
+  .voicedock.voicedock--map-first:has(.voicedock__textentry:focus-within) {
+    --mf-voice-kb-accessory: calc(44px + 8px);
+  }
+
   .voicedock.voicedock--map-first .voicedock__handle {
     flex: 0 0 auto;
+    min-height: 44px;
   }
 
   .voicedock.voicedock--map-first .voicedock__body {
+    display: flex;
+    flex-direction: column;
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
@@ -3601,6 +3657,8 @@
     max-height: none;
     overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .voicedock.voicedock--map-first .voicedock__quick,
@@ -3620,9 +3678,11 @@
     flex-wrap: wrap;
   }
 
+  /* iOS Safari: 16px 미만 입력 포커스 시 자동 확대 방지(모바일 map-first만) */
   .voicedock.voicedock--map-first .voicedock__textentry input {
     min-width: 0;
     flex: 1 1 10rem;
+    font-size: 16px;
   }
 
   /* VoiceDock open: React data-voice-open (App voiceOpen boolean) */
