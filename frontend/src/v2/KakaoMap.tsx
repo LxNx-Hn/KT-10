@@ -500,6 +500,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
   };
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const cancelLocationRaf = () => {
     if (locationRafRef.current !== null) {
@@ -996,9 +997,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       mapsRef.current = null;
       container.replaceChildren();
     };
-    // Map creation is intentionally mount-only; the data effect below owns updates.
+    // Map creation runs on mount and explicit retry only; the data effect below owns updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadAttempt]);
 
   useEffect(() => {
     if (!readyRef.current || status !== 'ready') return;
@@ -1036,13 +1037,30 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     >
       <div ref={containerRef} className="map-first__map-canvas map-first__kakao-canvas" />
       {status === 'loading' && (
-        <div className="map-first__map-status" role="status">
-          지도 불러오는 중…
+        <div
+          className="map-first__map-status"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <span className="map-first__map-spinner" aria-hidden="true" />
+          <strong>지도 불러오는 중…</strong>
+          <span>지도와 이동 정보를 준비하고 있어요.</span>
         </div>
       )}
       {status === 'error' && (
         <div className="map-first__map-status map-first__map-status--error" role="alert">
-          카카오맵을 불러오지 못했어요. 지도 키·허용 도메인·네트워크를 확인해 주세요.
+          <strong>지도를 불러오지 못했어요</strong>
+          <span>네트워크 상태를 확인한 뒤 다시 시도해 주세요.</span>
+          <button
+            type="button"
+            onClick={() => {
+              setStatus('loading');
+              setLoadAttempt((current) => current + 1);
+            }}
+          >
+            지도 다시 불러오기
+          </button>
         </div>
       )}
     </div>
