@@ -12,6 +12,7 @@ type QuickCondition = {
 
 export type SearchHeaderProps = {
   mode: SearchHeaderMode;
+  showMobileHome?: boolean;
   origin: Place | null;
   destination: Place | null;
   originInputRef?: RefObject<HTMLInputElement>;
@@ -69,18 +70,50 @@ function SearchIcon() {
  */
 export default function SearchHeader({
   mode,
+  showMobileHome = false,
   onExpand,
   onCollapse,
   ...panelProps
 }: SearchHeaderProps) {
   // KakaoMap overlay padding은 `.map-first__top` 실측을 사용한다.
   const panelModeAttr = mode === 'summary' ? 'compact' : mode;
+  const activeQuickConditions = [
+    ...panelProps.situationConditions,
+    ...panelProps.routeOptionConditions,
+  ]
+    .filter(({ key }) => Boolean(panelProps.optionState[key]))
+    .map(({ label }) => label);
+  const visibleConditionLabels = activeQuickConditions.slice(0, 2);
+  let representedConditionCount = visibleConditionLabels.length;
+  if (
+    visibleConditionLabels.length < 2
+    && panelProps.activeConditionCount > 0
+  ) {
+    visibleConditionLabels.push(`세부 조건 ${panelProps.activeConditionCount}개`);
+    representedConditionCount += panelProps.activeConditionCount;
+  }
+  const totalConditionCount =
+    activeQuickConditions.length + panelProps.activeConditionCount;
+  const extraConditionCount = Math.max(
+    0,
+    totalConditionCount - representedConditionCount,
+  );
+  const conditionSummaryLabels = [
+    ...activeQuickConditions,
+    ...(panelProps.activeConditionCount > 0
+      ? [`세부 조건 ${panelProps.activeConditionCount}개`]
+      : []),
+  ];
+  const conditionSummary = conditionSummaryLabels.length > 0
+    ? conditionSummaryLabels.join(', ')
+    : '이동 조건 없음';
 
   return (
     <div
       className="map-first__search-header map-first__top"
       data-search-header={mode}
       data-search-panel={panelModeAttr}
+      data-mobile-home={showMobileHome ? 'true' : undefined}
     >
       {mode === 'collapsed' ? (
         <button
@@ -111,6 +144,47 @@ export default function SearchHeader({
             mode={mode === 'summary' ? 'compact' : 'expanded'}
             onCollapse={mode === 'expanded' ? onCollapse : undefined}
           />
+        </div>
+      )}
+
+      {showMobileHome && mode !== 'expanded' && (
+        <div
+          className="map-first__mobile-home-summary"
+          role="group"
+          aria-label="현재 이동 설정"
+        >
+          <button
+            type="button"
+            className="map-first__mobile-home-profile"
+            aria-label={`현재 프로필 ${panelProps.profileLabel}, 내 설정에서 변경`}
+            onClick={panelProps.onOpenSettings}
+          >
+            <span className="map-first__mobile-home-kicker">현재 프로필</span>
+            <strong>{panelProps.profileLabel}</strong>
+          </button>
+          <button
+            type="button"
+            className="map-first__mobile-home-conditions"
+            aria-label={`현재 이동 조건: ${conditionSummary}, 내 설정에서 변경`}
+            onClick={panelProps.onOpenSettings}
+          >
+            {visibleConditionLabels.length > 0 ? (
+              <span className="map-first__mobile-home-condition-list">
+                {visibleConditionLabels.map((label) => (
+                  <span key={label} className="map-first__mobile-home-condition">
+                    {label}
+                  </span>
+                ))}
+                {extraConditionCount > 0 && (
+                  <span className="map-first__mobile-home-condition map-first__mobile-home-condition--more">
+                    +{extraConditionCount}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="map-first__mobile-home-empty">이동 조건 없음</span>
+            )}
+          </button>
         </div>
       )}
     </div>
