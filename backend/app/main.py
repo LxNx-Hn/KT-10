@@ -168,7 +168,10 @@ def _shade_gate_reason(
         or air_observed_at.tzinfo is None
     ):
         return "invalid-weather-observation"
-    ttl_seconds = settings.weather_cache_ttl_seconds
+    # 관측 유효 범위는 응답 재사용 창(weather_cache_ttl_seconds)과 다른 값이다.
+    # observedAt은 공급자 관측 시각이라 캐시에 머문 시간과 공급자 산출 지연이
+    # 함께 쌓이므로, 캐시 수명을 신선도 기준으로 쓰면 정상 관측도 만료된다.
+    ttl_seconds = settings.shade_weather_observation_validity_seconds
     if ttl_seconds <= 0:
         # 관측 유효기간을 정의할 수 없으면 현재 관측을 임의로 유효하다고
         # 가정하지 않는다.
@@ -347,10 +350,11 @@ async def _add_configured_shade(
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     known_heights, total_buildings = building_height_counts(buildings)
-    if total_buildings > 0 and known_heights < total_buildings:
-        # 관련 건물 높이가 불완전하면 그림자 폴리곤을 만들지 않는다.
+    if total_buildings > 0 and known_heights <= 0:
+        # 높이가 확인된 건물이 하나도 없으면 만들 그림자도 없다.
         # calculate_shade가 coverage gate에서 그림자 계산 없이
-        # unavailable을 반환한다.
+        # unavailable을 반환한다. 일부만 결측이면 확인된 건물로
+        # lower_bound 그림자를 만든다.
         prepared_context = None
     else:
         prepared_context = await asyncio.to_thread(

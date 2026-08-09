@@ -627,10 +627,11 @@ def calculate_shade(
     if (
         data_quality == "public"
         and total_buildings > 0
-        and known_heights < total_buildings
+        and known_heights <= 0
     ):
-        # 관련 건물 높이가 완전하지 않으면 부분 그림자를 실제 그늘 비율처럼
-        # 표시하지 않는다. lower bound 추정도 만들지 않는다.
+        # 높이가 확인된 건물이 하나도 없으면 그늘 0%가 아니라 미계산이다.
+        # 일부만 결측인 경우는 아래에서 lower_bound 추정으로 표시하며,
+        # 부분 그림자를 실제 그늘 비율처럼 주장하지 않는다.
         return ShadeSummary(
             status="unavailable",
             evaluated_at=evaluated_at,
@@ -646,7 +647,7 @@ def calculate_shade(
             data_quality=data_quality,
             walking_geometry_quality=walking_quality,
             calculation_note=(
-                "경로 주변 건물의 확인된 높이가 완전하지 않아 건물 그늘을 "
+                "경로 주변에 높이가 확인된 건물이 하나도 없어 건물 그늘을 "
                 "계산하지 않았습니다."
             ),
         )

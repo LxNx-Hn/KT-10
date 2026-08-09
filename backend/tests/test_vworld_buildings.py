@@ -20,6 +20,17 @@ from app.shade import calculate_shade
 KST = ZoneInfo("Asia/Seoul")
 
 
+#: _exact_route()의 보행선 위에 놓여 그림자가 경로와 교차하는 footprint.
+#: 경로에서 떨어진 건물은 route 필터에 걸려 그늘 계약을 검증하지 못한다.
+_ROUTE_ADJACENT_FOOTPRINT = [
+    {"lat": 35.1608, "lng": 129.0508},
+    {"lat": 35.1608, "lng": 129.0512},
+    {"lat": 35.1612, "lng": 129.0512},
+    {"lat": 35.1612, "lng": 129.0508},
+    {"lat": 35.1608, "lng": 129.0508},
+]
+
+
 def _exact_route():
     route = demo_candidates()[0].model_copy(deep=True)
     points = [
@@ -341,23 +352,17 @@ def test_public_shade_reports_height_coverage_without_zero_fill():
             {
                 "id": "known",
                 "heightM": 15.0,
-                "footprint": [
-                    {"lat": 35.1792, "lng": 129.0752},
-                    {"lat": 35.1792, "lng": 129.0754},
-                    {"lat": 35.1794, "lng": 129.0754},
-                    {"lat": 35.1794, "lng": 129.0752},
-                    {"lat": 35.1792, "lng": 129.0752},
-                ],
+                "footprint": _ROUTE_ADJACENT_FOOTPRINT,
             },
             {
                 "id": "unknown",
                 "heightM": None,
                 "footprint": [
-                    {"lat": 35.1795, "lng": 129.0755},
-                    {"lat": 35.1795, "lng": 129.0756},
-                    {"lat": 35.1796, "lng": 129.0756},
-                    {"lat": 35.1796, "lng": 129.0755},
-                    {"lat": 35.1795, "lng": 129.0755},
+                    {"lat": 35.1608, "lng": 129.0516},
+                    {"lat": 35.1608, "lng": 129.0518},
+                    {"lat": 35.1610, "lng": 129.0518},
+                    {"lat": 35.1610, "lng": 129.0516},
+                    {"lat": 35.1608, "lng": 129.0516},
                 ],
             },
         ],
@@ -367,30 +372,29 @@ def test_public_shade_reports_height_coverage_without_zero_fill():
         datetime(2026, 7, 23, 14, 0, tzinfo=KST),
         buildings,
     )
-    # 관련 건물 높이가 완전하지 않으면 부분 그림자를 실제 그늘처럼
-    # 표시하지 않고, lower bound 추정도 만들지 않는다.
-    assert shade.status == "unavailable"
+    # 결측 높이를 0m로 채우지 않고 coverage를 그대로 보고한다. 확인된
+    # 건물만으로 설명 가능한 최소 그늘이므로 lower_bound로 표시한다.
+    assert shade.status == "estimated_public"
     assert shade.data_quality == "public"
     assert shade.building_height_coverage == 0.5
     assert shade.known_height_building_count == 1
     assert shade.building_count == 2
-    assert shade.shade_ratio is None
-    assert shade.shaded_walk_m is None
-    assert shade.shadow_polygons == []
-    assert shade.path_segments == []
+    assert shade.estimate_kind == "lower_bound"
+    assert shade.shade_ratio is not None
+    assert shade.shadow_polygons
 
 
-def test_public_shade_with_99_percent_height_coverage_is_omitted():
-    """높이 coverage 99%는 계산 완료가 아니며 public shade로 노출하지 않는다."""
+def test_public_shade_with_partial_height_coverage_is_lower_bound():
+    """부분 높이 coverage는 생략이 아니라 lower_bound로 표시한다.
+
+    VWorld LT_C_BLDGINFO는 다수 건물의 height를 0으로 반환하므로 100%
+    coverage는 실데이터에서 성립하지 않는다. 확인된 건물만으로 설명
+    가능한 최소 그늘을 lower_bound로 알리고, 이를 실제 그늘 비율처럼
+    주장하지 않는다.
+    """
     from app.main import _normalize_shade_for_response
 
-    footprint = [
-        {"lat": 35.1792, "lng": 129.0752},
-        {"lat": 35.1792, "lng": 129.0754},
-        {"lat": 35.1794, "lng": 129.0754},
-        {"lat": 35.1794, "lng": 129.0752},
-        {"lat": 35.1792, "lng": 129.0752},
-    ]
+    footprint = _ROUTE_ADJACENT_FOOTPRINT
     buildings = {
         "source": "VWorld LT_C_BLDGINFO WFS",
         "dataQuality": "public",
@@ -415,13 +419,14 @@ def test_public_shade_with_99_percent_height_coverage_is_omitted():
         buildings,
     )
 
-    assert route.shade.status == "unavailable"
+    assert route.shade.status == "estimated_public"
     assert route.shade.building_height_coverage == pytest.approx(0.99)
-    assert route.shade.shade_ratio is None
+    assert route.shade.estimate_kind == "lower_bound"
+    assert route.shade.shade_ratio is not None
     _normalize_shade_for_response([route])
     assert route.shade is not None
-    assert route.shade.status == "unavailable"
-    assert "확인된 높이가 완전하지 않아" in route.shade.calculation_note
+    assert route.shade.status == "estimated_public"
+    assert "최소 그늘" in route.shade.calculation_note
 
 
 def test_public_shade_computes_ratio_with_complete_heights():
