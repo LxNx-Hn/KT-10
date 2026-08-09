@@ -145,6 +145,9 @@ export default function RouteResultsSheet({
   const bodyId = useId();
   const hasResults = ranked.length > 0;
   const showBody = sheetSnapShowsBody(sheetSnap);
+  const departureMode =
+    departureButtonLabel === '지금 출발' ? 'now' : 'scheduled';
+  const scheduledDepartureLabel = departureButtonLabel.replace(/^출발\s*/, '');
 
   sheetSnapRef.current = sheetSnap;
   hasResultsRef.current = hasResults;
@@ -338,6 +341,14 @@ export default function RouteResultsSheet({
     if (!showBody || !hasResults) return;
     if (event.button !== 0) return;
     if (dragRef.current || pendingBodyRef.current) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (
+      target?.closest(
+        'button, a, input, select, textarea, summary, [role="button"], [contenteditable="true"]',
+      )
+    ) {
+      return;
+    }
     const scroller = bodyRef.current?.querySelector(
       '.map-first__route-stack',
     ) as HTMLElement | null;
@@ -459,16 +470,32 @@ export default function RouteResultsSheet({
                 <button
                   type="button"
                   className="map-first__departure-btn"
+                  aria-label={departureButtonLabel}
                   aria-haspopup="dialog"
                   aria-expanded={departureDrawerOpen}
+                  data-departure-mode={departureMode}
                   disabled={loading}
                   onClick={onOpenDeparture}
                 >
                   <span className="map-first__departure-btn-icon" aria-hidden="true">
                     <ClockIcon />
                   </span>
-                  <span className="map-first__departure-btn-label">
+                  <span className="map-first__departure-btn-label map-first__departure-btn-label--desktop">
                     {departureButtonLabel}
+                  </span>
+                  <span
+                    className="map-first__departure-btn-mobile-copy"
+                    aria-hidden="true"
+                  >
+                    <span className="map-first__departure-btn-kicker">출발 시각</span>
+                    <strong className="map-first__departure-btn-state">
+                      {departureMode === 'now' ? '지금 출발' : '시간 지정'}
+                    </strong>
+                    {departureMode === 'scheduled' && (
+                      <span className="map-first__departure-btn-time">
+                        {scheduledDepartureLabel}
+                      </span>
+                    )}
                   </span>
                   <span className="map-first__departure-btn-chevron" aria-hidden="true">
                     ▾

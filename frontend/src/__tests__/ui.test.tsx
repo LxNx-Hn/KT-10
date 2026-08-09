@@ -108,6 +108,22 @@ function precedes(a: Element, b: Element): boolean {
   );
 }
 
+function stubViewport(matches: boolean) {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn((query: string) => ({
+      matches: query === '(max-width: 479px)' ? matches : false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(() => true),
+    } as MediaQueryList)),
+  );
+}
+
 function seedResults() {
   const candidates = demoCandidates();
   const weather = WEATHER_SCENARIOS.normal;
@@ -169,6 +185,37 @@ function seedShadedResults() {
   useAppStore.setState({ recommendations });
 }
 
+function seedSlopeResults() {
+  seedShadedResults();
+  const [first, ...rest] = useAppStore.getState().recommendations;
+  const start = first.route.path?.[0] ?? { lat: 35.16, lng: 129.05 };
+  const end = first.route.path?.[1] ?? { lat: 35.159, lng: 129.051 };
+  const updated = {
+    ...first,
+    route: {
+      ...first.route,
+      terrain: {
+        status: 'estimated_90m' as const,
+        avgSlopePercent: 3.61,
+        maxSlopePercent: 5.86,
+        minSlopePercent: -4.2,
+        slopeSegments: [
+          {
+            start,
+            end,
+            slopePercent: 3.2,
+            distanceM: 40,
+          },
+        ],
+      },
+    },
+  };
+  useAppStore.setState({
+    recommendations: [updated, ...rest],
+    selectedRouteId: updated.route.id,
+  });
+}
+
 function openSelectedRouteDetails(container: HTMLElement) {
   const selected =
     container.querySelector<HTMLElement>(
@@ -209,6 +256,7 @@ function dispatchInstallPrompt() {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, '', '/');
   useAppStore.setState({
     profile: 'general',
     origin: null,
@@ -218,6 +266,7 @@ beforeEach(() => {
     selectedRouteId: null,
     options: {},
     largeUi: false,
+    largeUiPreference: false,
     loading: false,
     error: null,
   });
@@ -264,6 +313,221 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(container.querySelector('#map-first-origin')).toBeNull();
   });
 
+  it('모바일 지도 홈은 현재 설정 요약과 3개 하단 메뉴만 제공한다', () => {
+    stubViewport(true);
+    const { container, getByRole } = render(<App />);
+
+    const navigation = getByRole('navigation', { name: '주요 메뉴' });
+    expect(within(navigation).getAllByRole('button')).toHaveLength(3);
+    expect(
+      within(navigation).getByRole('button', { name: '지도 홈 메뉴' })
+        .getAttribute('aria-current'),
+    ).toBe('page');
+    expect(
+      within(navigation).getByRole('button', { name: '검색 메뉴' }),
+    ).toBeTruthy();
+    expect(
+      within(navigation).getByRole('button', { name: '내 설정 메뉴' }),
+    ).toBeTruthy();
+    expect(
+      getByRole('button', { name: /현재 프로필 일반 프로필/ }),
+    ).toBeTruthy();
+    expect(
+      getByRole('button', { name: /현재 이동 조건: 이동 조건 없음/ }),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('.map-first__mobile-home-summary'),
+    ).toBeTruthy();
+  });
+
+  it('모바일 하단 메뉴는 검색과 내 설정을 열고 경로 결과 상태를 보존한다', () => {
+    stubViewport(true);
+    act(() => seedResults());
+    const { getByRole, queryByRole } = render(<App />);
+    const routeCount = useAppStore.getState().recommendations.length;
+
+    fireEvent.click(getByRole('button', { name: '검색 메뉴' }));
+    expect(window.location.pathname).toBe('/search');
+    expect(queryByRole('navigation', { name: '주요 메뉴' })).toBeNull();
+    expect(getByRole('button', { name: '검색창 접기' })).toBeTruthy();
+
+    fireEvent.click(getByRole('button', { name: '검색창 접기' }));
+    expect(getByRole('navigation', { name: '주요 메뉴' })).toBeTruthy();
+    fireEvent.click(getByRole('button', { name: '내 설정 메뉴' }));
+    expect(getByRole('dialog', { name: '내 설정' })).toBeTruthy();
+    expect(useAppStore.getState().recommendations).toHaveLength(routeCount);
+    expect(
+      getByRole('button', { name: '내 설정 메뉴' }).getAttribute('aria-current'),
+    ).toBe('page');
+  });
+
+  it('모바일 지도 홈은 활성 이동 조건을 2개까지만 보이고 나머지는 +N으로 묶는다', () => {
+    stubViewport(true);
+    act(() => {
+      useAppStore.setState({
+        options: {
+          carryLuggage: true,
+          avoidStairs: true,
+          stroller: true,
+          shadePriority: true,
+        },
+      });
+    });
+    const { container, getByRole } = render(<App />);
+
+    const summary = getByRole('button', { name: /현재 이동 조건:/ });
+    expect(summary.textContent).toContain('짐 많음');
+    expect(summary.textContent).toContain('계단 회피');
+    expect(summary.textContent).toContain('+2');
+    expect(
+      container.querySelectorAll('.map-first__mobile-home-condition'),
+    ).toHaveLength(3);
+  });
+
+  it('모바일 이동 조건 요약은 검색이 아니라 로그인 없는 내 설정을 연다', () => {
+    stubViewport(true);
+    const { container, getByRole } = render(<App />);
+
+    fireEvent.click(
+      getByRole('button', { name: /현재 이동 조건: 이동 조건 없음/ }),
+    );
+
+    expect(window.location.pathname).toBe('/');
+    const dialog = getByRole('dialog', { name: '내 설정' });
+    const settings = within(dialog);
+    expect(dialog.textContent).toContain('로그인 없이 바로 바꿀 수 있어요');
+
+    fireEvent.click(
+      settings.getByRole('radio', { name: /고령자/ }),
+    );
+    expect(useAppStore.getState()).toMatchObject({
+      profile: 'elderly',
+      largeUi: true,
+      largeUiPreference: false,
+    });
+    const frame = container.querySelector('.map-first__frame');
+    expect(frame?.getAttribute('data-profile')).toBe('elderly');
+    expect(frame?.classList.contains('map-first__frame--easy')).toBe(true);
+
+    fireEvent.click(settings.getByRole('radio', { name: /일반/ }));
+    expect(useAppStore.getState()).toMatchObject({
+      profile: 'general',
+      largeUi: false,
+      largeUiPreference: false,
+    });
+    expect(frame?.getAttribute('data-profile')).toBe('general');
+    expect(frame?.classList.contains('map-first__frame--easy')).toBe(false);
+
+    fireEvent.click(settings.getByRole('radio', { name: /고령자/ }));
+    expect(useAppStore.getState()).toMatchObject({
+      profile: 'elderly',
+      largeUi: true,
+      largeUiPreference: false,
+    });
+
+    const basicText = settings.getByRole('button', { name: '기본 글씨로 보기' });
+    expect(basicText.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(basicText);
+    expect(useAppStore.getState()).toMatchObject({
+      profile: 'elderly',
+      largeUi: false,
+    });
+    expect(frame?.getAttribute('data-profile')).toBe('elderly');
+    expect(frame?.classList.contains('map-first__frame--easy')).toBe(false);
+    const largeText = settings.getByRole('button', {
+      name: '큰 글씨와 큰 버튼 사용',
+    });
+    expect(largeText.getAttribute('aria-pressed')).toBe('false');
+
+    fireEvent.click(largeText);
+    expect(useAppStore.getState()).toMatchObject({
+      largeUi: true,
+      largeUiPreference: true,
+    });
+    expect(frame?.classList.contains('map-first__frame--easy')).toBe(true);
+
+    fireEvent.click(settings.getByRole('button', { name: '짐 많음' }));
+    fireEvent.click(
+      settings.getByRole('button', { name: /유아차 이용/ }),
+    );
+    expect(useAppStore.getState().options.carryLuggage).toBe(true);
+    expect(useAppStore.getState().options.stroller).toBe(true);
+  });
+
+  it('모바일 빈 지도 홈의 음성 버튼은 하단 메뉴와 함께 조작 가능하게 유지한다', () => {
+    stubViewport(true);
+    const { getByRole } = render(<App />);
+
+    expect(getByRole('button', { name: '음성 챗봇' })).toBeTruthy();
+    expect(getByRole('navigation', { name: '주요 메뉴' })).toBeTruthy();
+  });
+
+  it('데스크톱에는 모바일 홈 요약과 하단 내비게이션 DOM을 추가하지 않는다', () => {
+    stubViewport(false);
+    const { container, getByRole, queryByRole } = render(<App />);
+
+    expect(queryByRole('navigation', { name: '주요 메뉴' })).toBeNull();
+    expect(
+      container.querySelector('.map-first__mobile-home-summary'),
+    ).toBeNull();
+    fireEvent.click(getByRole('button', { name: '어디로 갈까요?' }));
+    expect(window.location.pathname).toBe('/');
+    expect(getByRole('button', { name: '검색창 접기' })).toBeTruthy();
+  });
+
+  it('상세 정보 버튼에서 시작한 터치는 경로 시트 drag로 가로채지 않는다', () => {
+    stubViewport(true);
+    const PointerEventCtor =
+      typeof PointerEvent === 'undefined'
+        ? class extends MouseEvent {
+            pointerId: number;
+            constructor(
+              type: string,
+              init: MouseEventInit & { pointerId?: number } = {},
+            ) {
+              super(type, init);
+              this.pointerId = init.pointerId ?? 0;
+            }
+          }
+        : PointerEvent;
+    if (typeof PointerEvent === 'undefined') {
+      (globalThis as unknown as { PointerEvent: typeof PointerEventCtor }).PointerEvent =
+        PointerEventCtor;
+    }
+
+    act(() => seedResults());
+    const { container, getAllByRole, getByRole } = render(<App />);
+    const [details] = getAllByRole('button', { name: '상세 정보 보기' });
+
+    act(() => {
+      details.dispatchEvent(new PointerEventCtor('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        pointerId: 91,
+        clientY: 500,
+      }));
+      window.dispatchEvent(new PointerEventCtor('pointermove', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 91,
+        clientY: 580,
+      }));
+      window.dispatchEvent(new PointerEventCtor('pointerup', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 91,
+        clientY: 580,
+      }));
+    });
+
+    expect(
+      container.querySelector('.map-first__sheet')?.getAttribute('data-sheet-snap'),
+    ).toBe('expanded');
+    fireEvent.click(details);
+    expect(getByRole('dialog', { name: '경로 상세 정보' })).toBeTruthy();
+  });
+
   it('App을 unmount/remount 해도 최초 화면은 collapsed를 유지한다', () => {
     const first = render(<App />);
     expect(
@@ -287,6 +551,13 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     const { container, getByRole, getByLabelText } = render(<App />);
     expandSearchFromCollapsed(getByRole);
 
+    expect(window.location.pathname).toBe('/search');
+    expect(
+      container.querySelector('.map-first__frame--search'),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('.map-first[data-search-open="true"]'),
+    ).toBeTruthy();
     expect(
       container.querySelector('[data-search-panel="expanded"]'),
     ).toBeTruthy();
@@ -301,6 +572,45 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(collapse.getAttribute('aria-expanded')).toBe('true');
     expect(collapse.getAttribute('aria-controls')).toBe('map-first-search-panel');
     expect(collapse.textContent).toContain('검색창 접기');
+    expect(
+      getByLabelText('출발지').closest('[data-place-field="origin"]'),
+    ).toBeTruthy();
+    expect(
+      getByLabelText('도착지').closest('[data-place-field="destination"]'),
+    ).toBeTruthy();
+    // 모바일 CSS에서만 숨기며 데스크톱 지도 DOM·상태는 유지한다.
+    expect(getByRole('region', { name: '지도' })).toBeTruthy();
+  });
+
+  it('/search 직접 진입과 popstate를 expanded 상태에 동기화한다', () => {
+    window.history.replaceState(null, '', '/search');
+    const { container, getByLabelText, getByRole } = render(<App />);
+
+    expect(
+      container.querySelector('[data-search-panel="expanded"]'),
+    ).toBeTruthy();
+    expect(getByLabelText('출발지')).toBeTruthy();
+
+    act(() => {
+      window.history.replaceState(null, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(
+      container.querySelector('[data-search-panel="collapsed"]'),
+    ).toBeTruthy();
+
+    act(() => {
+      window.history.pushState(
+        { mob06Search: true, mob06ReturnTo: '/' },
+        '',
+        '/search',
+      );
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(
+      container.querySelector('[data-search-panel="expanded"]'),
+    ).toBeTruthy();
+    expect(getByRole('button', { name: '검색창 접기' })).toBeTruthy();
   });
 
   it('검색 성공 후 compact summary를 보여주고 수정 시 API를 호출하지 않는다', async () => {
@@ -373,6 +683,8 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       ).toBeTruthy();
     });
 
+    expect(window.location.pathname).toBe('/');
+    expect(container.querySelector('.map-first__frame--search')).toBeNull();
     const summary = container.querySelector('.map-first__search--compact');
     expect(summary?.textContent).toContain(origin.name);
     expect(summary?.textContent).toContain(destination.name);
@@ -399,6 +711,45 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     );
   });
 
+  it('모바일 긴 장소명에서도 OD와 검색 수정 액션을 분리해 유지한다', () => {
+    stubViewport(true);
+    const origin = {
+      ...findPlace('gu-office')!,
+      id: 'long-origin',
+      name: '부산광역시 북구청 행정복지종합센터 정문',
+    };
+    const destination = {
+      ...findPlace('seomyeon-stn')!,
+      id: 'long-destination',
+      name: '서면역 부산도시철도 1호선 환승센터 출입구',
+    };
+    act(() => {
+      seedResults();
+      useAppStore.setState({ origin, destination });
+    });
+
+    const { container, getByRole } = render(<App />);
+    const summary = getByRole('button', { name: /검색 조건 수정/ });
+    const originLabel = summary.querySelector(
+      '.map-first__summary-place--origin',
+    );
+    const destinationLabel = summary.querySelector(
+      '.map-first__summary-place--destination',
+    );
+    const actions = summary.querySelector('.map-first__summary-actions');
+
+    expect(originLabel?.textContent).toBe(origin.name);
+    expect(originLabel?.getAttribute('title')).toBe(origin.name);
+    expect(destinationLabel?.textContent).toBe(destination.name);
+    expect(destinationLabel?.getAttribute('title')).toBe(destination.name);
+    expect(actions?.querySelector('.map-first__search-edit')?.textContent).toBe(
+      '검색 조건 수정',
+    );
+    expect(
+      container.querySelector('[data-search-panel="compact"]'),
+    ).toBeTruthy();
+  });
+
   it('검색창 접기는 입력값을 유지하고 collapsed로 돌아간다', () => {
     const origin = findPlace('gu-office')!;
     const { container, getByRole } = render(<App />);
@@ -408,9 +759,13 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     });
 
     fireEvent.click(getByRole('button', { name: '검색창 접기' }));
+    expect(window.location.pathname).toBe('/');
     expect(
       container.querySelector('[data-search-panel="collapsed"]'),
     ).toBeTruthy();
+    expect(
+      container.querySelector('.map-first__frame--search'),
+    ).toBeNull();
     expect(useAppStore.getState().origin?.id).toBe(origin.id);
 
     expandSearchFromCollapsed(getByRole);
@@ -1035,8 +1390,17 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       .spyOn(adapters.routes, 'refreshShade')
       .mockResolvedValue(useAppStore.getState().recommendations);
 
-    expect(getByRole('button', { name: '지금 출발' })).toBeTruthy();
-    fireEvent.click(getByRole('button', { name: '지금 출발' }));
+    const nowDeparture = getByRole('button', { name: '지금 출발' });
+    expect(nowDeparture.getAttribute('data-departure-mode')).toBe('now');
+    expect(
+      nowDeparture.querySelector('.map-first__departure-btn-mobile-copy')
+        ?.textContent,
+    ).toContain('출발 시각지금 출발');
+    expect(nowDeparture.closest('.map-first__route-stack')).toBeNull();
+    expect(
+      nowDeparture.parentElement?.querySelector('.map-first__route-list'),
+    ).toBeTruthy();
+    fireEvent.click(nowDeparture);
     expect(getByRole('dialog', { name: '출발 시간 설정' })).toBeTruthy();
 
     fireEvent.click(getByRole('button', { name: '오후 2시' }));
@@ -1049,7 +1413,14 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       expect(queryByRole('dialog', { name: '출발 시간 설정' })).toBeNull();
     });
     expect(useAppStore.getState().options.departureAt).toMatch(/T14:00/);
-    expect(getByRole('button', { name: '출발 오후 2:00' })).toBeTruthy();
+    const scheduledDeparture = getByRole('button', { name: '출발 오후 2:00' });
+    expect(scheduledDeparture.getAttribute('data-departure-mode')).toBe(
+      'scheduled',
+    );
+    expect(
+      scheduledDeparture.querySelector('.map-first__departure-btn-mobile-copy')
+        ?.textContent,
+    ).toContain('출발 시각시간 지정오후 2:00');
     expect(recommend).not.toHaveBeenCalled();
   });
 
@@ -1125,8 +1496,55 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(shadeSwitch).toHaveProperty('disabled', true);
     expect(shadeSwitch.getAttribute('aria-checked')).toBe('false');
     expect(container.textContent).toContain(
-      '현재 경로에서는 그늘 정보를 표시할 수 없어요',
+      '정보를 불러오지 못했어요. 다시 시도해 주세요.',
     );
+  });
+
+  it('검색 전 지도 정보는 경로 검색을 먼저 안내한다', () => {
+    const { getByRole } = render(<App />);
+
+    fireEvent.click(getByRole('button', { name: '지도 정보' }));
+
+    const dialog = getByRole('dialog', { name: '지도 정보' });
+    expect(dialog.textContent).toContain('경로를 먼저 검색해 주세요.');
+  });
+
+  it('그늘 제공 시간이 아니면 낮 시간대 안내를 표시한다', () => {
+    const { getByRole } = render(<App />);
+    act(() => {
+      seedResults();
+      const recommendations = useAppStore.getState().recommendations;
+      const selectedRouteId = useAppStore.getState().selectedRouteId;
+      useAppStore.setState({
+        recommendations: recommendations.map((item) =>
+          item.route.id === selectedRouteId
+            ? {
+                ...item,
+                route: {
+                  ...item.route,
+                  shade: {
+                    status: 'not_daylight' as const,
+                    evaluatedAt: '2026-07-24T02:00:00+09:00',
+                    source: 'test',
+                    dataQuality: 'demo' as const,
+                    shadowPolygons: [],
+                    pathSegments: [],
+                    calculationNote: '야간',
+                  },
+                },
+              }
+            : item,
+        ),
+      });
+    });
+
+    fireEvent.click(getByRole('button', { name: '지도 정보' }));
+
+    const dialog = getByRole('dialog', { name: '지도 정보' });
+    expect(dialog.textContent).toContain(
+      '그늘 정보는 낮 시간대에 제공해요.',
+    );
+    expect(dialog.textContent).not.toContain('야간');
   });
 
   it('경사 공간 데이터가 없으면 가짜 경사 레이어를 표시하지 않는다', () => {
@@ -1189,6 +1607,43 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(legend?.textContent).toContain('매우 급경사 >8%');
   });
 
+  it('모바일 경사 범례는 시트 위 한 줄 요약에서 설명을 펼치고 접는다', () => {
+    stubViewport(true);
+    act(() => seedSlopeResults());
+    const { container, getByRole, queryByRole } = render(<App />);
+
+    // 결과 full 상태에서는 지도 보조 범례가 경로 콘텐츠를 덮지 않는다.
+    expect(queryByRole('note', { name: '도보 경사 안내' })).toBeNull();
+
+    fireEvent.click(getByRole('button', { name: '경로 결과 접기' }));
+    const legend = getByRole('note', { name: '도보 경사 안내' });
+    const wrapper = container.querySelector('.map-first__mobile-map-legends');
+    const expand = getByRole('button', { name: '경사 안내 펼치기' });
+
+    expect(wrapper?.getAttribute('data-sheet-snap')).toBe('collapsed');
+    expect(expand.getAttribute('aria-expanded')).toBe('false');
+    expect(legend.textContent).toContain('경사 3.61%');
+    expect(legend.textContent).not.toContain('가장 가파른 구간의 기울기');
+    expect(legend.textContent).not.toContain('완만 ≤2%');
+
+    fireEvent.click(expand);
+    const collapse = getByRole('button', { name: '경사 안내 접기' });
+    expect(collapse.getAttribute('aria-expanded')).toBe('true');
+    expect(legend.textContent).toContain('평균 3.61%');
+    expect(legend.textContent).toContain('최대 5.86%');
+    expect(legend.textContent).toContain('도보 구간의 전반적인 기울기');
+    expect(legend.textContent).toContain('가장 가파른 구간의 기울기');
+    expect(legend.textContent).toContain('완만 ≤2%');
+    expect(legend.textContent).toContain('보통 ≤5%');
+    expect(legend.textContent).toContain('급경사 ≤8%');
+    expect(legend.textContent).toContain('매우 급경사 >8%');
+    expect(legend.textContent).toContain('우회 경로를 권장해요');
+
+    fireEvent.click(collapse);
+    expect(getByRole('button', { name: '경사 안내 펼치기' })).toBeTruthy();
+    expect(legend.textContent).not.toContain('완만 ≤2%');
+  });
+
   it('시설 overlay 좌표가 없으면 편의시설 스위치가 비활성이다', () => {
     const { getByRole } = render(<App />);
     act(() => {
@@ -1209,7 +1664,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     const facility = getByRole('switch', { name: '편의시설' });
     expect(facility).toHaveProperty('disabled', true);
     expect(getByRole('dialog', { name: '지도 정보' }).textContent).toContain(
-      '표시할 편의시설 정보가 없어요',
+      '이 경로에는 표시할 편의시설이 없어요.',
     );
     expect(map.getAttribute('data-facilities-visible')).toBe('false');
   });

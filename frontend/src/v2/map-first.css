@@ -122,8 +122,9 @@
   letter-spacing: -0.02em;
 }
 
-/* Profile adaptive defaults — 확대해도 위계 비율 유지 */
-.map-first__frame[data-profile='elderly'],
+/* Profile adaptive defaults — 확대해도 위계 비율 유지.
+   고령자는 setProfile에서 largeUi를 자동 활성화하므로 --easy만 크기를 소유한다.
+   그래야 사용자가 "기본 글씨로 보기"를 누르면 실제 기본 크기로 복귀한다. */
 .map-first__frame[data-profile='child'],
 .map-first__frame[data-profile='disabled'] {
   --mf-font-scale: 1.08;
@@ -138,19 +139,6 @@
   --mf-voice-size: 72px;
   --mf-content-gap: 12px;
   --mf-ink-soft: #3b4453;
-}
-
-.map-first__frame[data-profile='elderly'] {
-  --mf-font-scale: 1.16;
-  --mf-tap: 56px;
-  --mf-title-size: 20px;
-  --mf-section-size: 17px;
-  --mf-body-size: 16px;
-  --mf-meta-size: 15px;
-  --mf-desc-size: 16px;
-  --mf-caption-size: 14px;
-  --mf-cta-size: 18px;
-  --mf-voice-size: 76px;
 }
 
 .map-first__frame--easy {
@@ -434,6 +422,10 @@
   font-weight: 700;
 }
 
+.map-first__summary-actions {
+  display: contents;
+}
+
 .map-first__summary-conditions {
   flex: none;
   padding: 4px 8px;
@@ -624,7 +616,6 @@
   letter-spacing: -0.02em;
 }
 
-.map-first__frame[data-profile='elderly'] .map-first__search-submit,
 .map-first__frame--easy .map-first__search-submit {
   min-height: 60px;
 }
@@ -932,7 +923,7 @@
 
 .map-first__search-collapsed-title {
   color: var(--mf-ink);
-  font-size: 16px;
+  font-size: var(--mf-section-size);
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.25;
@@ -940,7 +931,7 @@
 
 .map-first__search-collapsed-hint {
   color: var(--mf-ink-soft);
-  font-size: 12px;
+  font-size: var(--mf-caption-size);
   font-weight: 500;
   line-height: 1.3;
 }
@@ -986,11 +977,11 @@
   }
 
   .map-first__search-collapsed-title {
-    font-size: 15px;
+    font-size: var(--mf-section-size);
   }
 
   .map-first__search-collapsed-hint {
-    font-size: 11px;
+    font-size: var(--mf-caption-size);
   }
 }
 
@@ -1220,8 +1211,7 @@
   pointer-events: none;
 }
 
-.map-first__frame--labeled .map-first__voice-wrap,
-.map-first__frame[data-profile='elderly'] .map-first__voice-wrap {
+.map-first__frame--labeled .map-first__voice-wrap {
   bottom: calc(236px + env(safe-area-inset-bottom, 0px));
 }
 
@@ -1340,7 +1330,6 @@
   --mf-sheet-height: var(--mf-sheet-snap-expanded);
 }
 
-.map-first__frame[data-profile='elderly'] .map-first__sheet--expanded,
 .map-first__frame--easy .map-first__sheet--expanded {
   --mf-sheet-height: 86%;
 }
@@ -1488,7 +1477,6 @@
   padding: 0 14px;
 }
 
-.map-first__frame[data-profile='elderly'] .map-first__sheet-cta,
 .map-first__frame--easy .map-first__sheet-cta {
   min-height: 62px;
 }
@@ -2284,14 +2272,11 @@
 }
 
 .map-first__frame--easy .map-first__route-card .map-first__sheet-cta,
-.map-first__frame--easy .map-first__route-card .map-first__route-card-cta,
-.map-first__frame[data-profile='elderly'] .map-first__route-card .map-first__sheet-cta,
-.map-first__frame[data-profile='elderly'] .map-first__route-card .map-first__route-card-cta {
+.map-first__frame--easy .map-first__route-card .map-first__route-card-cta {
   min-height: max(52px, var(--mf-tap));
 }
 
-.map-first__frame--easy .map-first__route-card-duration strong,
-.map-first__frame[data-profile='elderly'] .map-first__route-card-duration strong {
+.map-first__frame--easy .map-first__route-card-duration strong {
   font-size: 32px;
 }
 
@@ -2449,12 +2434,12 @@
 }
 
 .map-first__profile-option strong {
-  font-size: 15px;
+  font-size: var(--mf-section-size);
 }
 
 .map-first__profile-option span {
   color: var(--mf-ink-soft);
-  font-size: 11px;
+  font-size: var(--mf-caption-size);
   font-weight: 500;
 }
 
@@ -2484,6 +2469,7 @@
   border: 1px solid var(--mf-line);
   border-color: var(--mf-line);
   color: var(--mf-ink);
+  font-size: var(--mf-body-size);
   font-weight: 700;
 }
 
@@ -2527,6 +2513,10 @@
   flex: 1;
   text-align: left;
   letter-spacing: -0.02em;
+}
+
+.map-first__departure-btn-mobile-copy {
+  display: none;
 }
 
 .map-first__departure-btn-chevron {
@@ -2962,6 +2952,7 @@
   border-radius: 13px;
   background: #fff;
   color: var(--mf-ink);
+  font-size: var(--mf-body-size);
   font-weight: 700;
 }
 
@@ -2995,8 +2986,7 @@
   line-height: var(--mf-line-height-tight);
 }
 
-.map-first__frame--easy .map-first__tab-panel .btn,
-.map-first__frame[data-profile='elderly'] .map-first__tab-panel .btn {
+.map-first__frame--easy .map-first__tab-panel .btn {
   min-height: max(52px, var(--mf-tap));
 }
 
@@ -3096,9 +3086,7 @@
 }
 
 .map-first__frame--easy .map-first__tab-panel .bus__search,
-.map-first__frame[data-profile='elderly'] .map-first__tab-panel .bus__search,
-.map-first__frame--easy .map-first__tab-panel .bus__controls,
-.map-first__frame[data-profile='elderly'] .map-first__tab-panel .bus__controls {
+.map-first__frame--easy .map-first__tab-panel .bus__controls {
   grid-template-columns: 1fr;
 }
 
@@ -3126,8 +3114,7 @@
   min-height: var(--mf-tap);
 }
 
-.map-first__frame--easy .map-first__tab-panel .route-feedback__details,
-.map-first__frame[data-profile='elderly'] .map-first__tab-panel .route-feedback__details {
+.map-first__frame--easy .map-first__tab-panel .route-feedback__details {
   grid-template-columns: 1fr;
 }
 
@@ -3399,6 +3386,121 @@
 
 /* ── Mobile ≤479px: map controls / voice FAB / voice dock overlap ── */
 @media (max-width: 479px) {
+  /* MOB-14: 출발 시각은 경로 목록 스크롤 밖의 고정된 소형 셀렉터로 유지한다. */
+  .map-first__sheet-body > .map-first__departure-btn {
+    align-self: flex-start;
+    width: auto;
+    max-width: 100%;
+    min-height: 44px;
+    margin: 0 0 8px;
+    padding: 0 11px;
+    gap: 6px;
+    border-radius: 999px;
+    background: #f8fafc;
+    white-space: nowrap;
+  }
+
+  .map-first__departure-btn-label--desktop {
+    display: none;
+  }
+
+  .map-first__departure-btn-mobile-copy {
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    letter-spacing: -0.02em;
+  }
+
+  .map-first__departure-btn-kicker {
+    flex: none;
+    color: var(--mf-ink-soft);
+    font-size: var(--mf-caption-size);
+    font-weight: 600;
+  }
+
+  .map-first__departure-btn-state {
+    flex: none;
+    color: var(--mf-ink);
+    font-size: var(--mf-meta-size);
+    line-height: 1.2;
+  }
+
+  .map-first__departure-btn-time {
+    min-width: 0;
+    overflow: hidden;
+    padding-left: 6px;
+    border-left: 1px solid var(--mf-line);
+    color: var(--mf-blue);
+    font-size: var(--mf-caption-size);
+    font-weight: 700;
+    text-overflow: ellipsis;
+  }
+
+  .map-first__departure-btn-chevron {
+    flex: none;
+    margin-left: 2px;
+  }
+
+  /* MOB-10: 홈 검색 트리거의 문구를 카드 중심선에 맞춘다. */
+  .map-first__search-header[data-search-header='collapsed']
+    .map-first__search-collapsed {
+    position: relative;
+    justify-content: center;
+    margin-inline: 0;
+    padding-inline: 52px;
+    text-align: center;
+  }
+
+  .map-first__search-header[data-search-header='collapsed']
+    .map-first__search-collapsed-icon {
+    position: absolute;
+    left: 18px;
+  }
+
+  .map-first__search-header[data-search-header='collapsed']
+    .map-first__search-collapsed-copy {
+    align-items: center;
+    text-align: center;
+  }
+
+  /* 긴 OD 장소명은 같은 폭으로 줄이고 조건·수정 액션은 밀리지 않게 고정한다. */
+  .map-first__search-summary {
+    min-width: 0;
+  }
+
+  .map-first__summary-od {
+    flex: 1 1 0;
+    overflow: hidden;
+  }
+
+  .map-first__summary-place {
+    flex: 1 1 0;
+    max-width: 100%;
+  }
+
+  .map-first__summary-actions {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  /* 조건 칩의 체크 아이콘과 텍스트를 하나의 중앙 정렬 기준선으로 묶는다. */
+  .map-first__context-bar .map-first__chip {
+    align-items: center;
+    justify-content: center;
+    line-height: 1.2;
+  }
+
+  .map-first__context-bar .map-first__chip-check,
+  .map-first__context-bar .map-first__chip-text {
+    align-self: center;
+  }
+
   /* MOB-08: 경로 카드 본문 우선 — 순위·수단·시간 상단, 상세는 하단 보조 액션 */
   .map-first__route-card {
     gap: 8px;
@@ -3436,6 +3538,10 @@
 
   .map-first__route-card-duration strong {
     font-size: 26px;
+  }
+
+  .map-first__frame--easy .map-first__route-card-duration strong {
+    font-size: 32px;
   }
 
   .map-first__route-score {
@@ -3476,9 +3582,7 @@
   }
 
   .map-first__frame--easy .map-first__route-card .map-first__sheet-cta,
-  .map-first__frame--easy .map-first__route-card .map-first__route-card-cta,
-  .map-first__frame[data-profile='elderly'] .map-first__route-card .map-first__sheet-cta,
-  .map-first__frame[data-profile='elderly'] .map-first__route-card .map-first__route-card-cta {
+  .map-first__frame--easy .map-first__route-card .map-first__route-card-cta {
     min-height: max(52px, var(--mf-tap));
     font-size: var(--mf-body-size);
   }
@@ -3522,30 +3626,230 @@
     max-width: 100%;
     height: var(--mf-app-height);
     min-height: var(--mf-app-height);
-    --mf-mobile-voice-bottom: calc(224px + env(safe-area-inset-bottom, 0px));
+    --mf-mobile-nav-bar-height: 64px;
+    --mf-mobile-nav-height: calc(
+      var(--mf-mobile-nav-bar-height) + env(safe-area-inset-bottom, 0px)
+    );
+    --mf-mobile-voice-bottom: calc(224px + var(--mf-mobile-nav-height));
     --mf-mobile-voice-height: var(--mf-voice-size);
     --mf-mobile-fab-gap: 16px;
   }
 
-  .map-first__frame--labeled,
-  .map-first__frame[data-profile='elderly'] {
-    --mf-mobile-voice-bottom: calc(236px + env(safe-area-inset-bottom, 0px));
+  /* MOB-11·12: 지도 정보 오버레이는 결과 시트 상단을 하나의 기준선으로 사용한다. */
+  .map-first__mobile-map-legends {
+    position: absolute;
+    left: 16px;
+    bottom: var(--mf-mobile-voice-bottom);
+    z-index: 16;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    width: calc(100% - var(--mf-mobile-voice-height) - 56px);
+    max-width: 288px;
+    pointer-events: none;
+    transition: bottom 0.2s ease;
+  }
+
+  .map-first__mobile-map-legends .map-first__map-legend {
+    position: static;
+    bottom: auto;
+    width: max-content;
+    max-width: 100%;
+    margin: 0;
+    box-sizing: border-box;
+    pointer-events: auto;
+  }
+
+  .map-first__mobile-slope-legend {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .map-first__mobile-slope-toggle {
+    width: 100%;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 12px;
+    border: 0;
+    background: transparent;
+    color: var(--mf-ink);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .map-first__mobile-slope-toggle strong {
+    min-width: 0;
+    flex: 1 1 auto;
+    color: var(--mf-ink);
+    font-size: var(--mf-meta-size);
+    line-height: var(--mf-line-height-tight);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .map-first__mobile-slope-toggle > span {
+    flex: 0 0 auto;
+    color: var(--mf-blue);
+    font-size: var(--mf-caption-size);
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .map-first__mobile-slope-details {
+    max-height: min(
+      320px,
+      calc(100dvh - var(--mf-mobile-voice-bottom) - 72px)
+    );
+    padding: 10px 12px 12px;
+    border-top: 1px solid var(--mf-line);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .map-first__mobile-slope-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .map-first__mobile-slope-metrics > span {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 8px;
+    border-radius: 10px;
+    background: var(--mf-chip);
+  }
+
+  .map-first__mobile-slope-metrics > span:only-child {
+    grid-column: 1 / -1;
+  }
+
+  .map-first__mobile-slope-metrics b {
+    color: var(--mf-ink);
+    font-size: var(--mf-meta-size);
+  }
+
+  .map-first__mobile-slope-metrics small,
+  .map-first__mobile-slope-bands small {
+    color: var(--mf-ink-soft);
+    font-size: var(--mf-caption-size);
+    line-height: 1.35;
+  }
+
+  .map-first__mobile-slope-details > p {
+    margin: 8px 0;
+    color: var(--mf-ink-soft);
+    font-size: var(--mf-caption-size);
+    line-height: var(--mf-line-height);
+  }
+
+  .map-first__mobile-slope-bands {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .map-first__mobile-slope-bands li {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .map-first__mobile-slope-bands li > span {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  .map-first__mobile-slope-bands b {
+    color: var(--mf-ink);
+    font-size: var(--mf-caption-size);
+    line-height: 1.35;
+  }
+
+  /* 상세 범례를 요청한 동안에는 보조 오버레이를 비우고 설명 폭을 확보한다. */
+  .map-first__mobile-map-legends:has(.map-first__mobile-slope-legend[data-expanded='true']) {
+    right: 16px;
+    width: auto;
+    max-width: none;
+  }
+
+  .map-first__mobile-map-legends:has(.map-first__mobile-slope-legend[data-expanded='true'])
+    > .map-first__map-legend:not(.map-first__mobile-slope-legend) {
+    display: none;
+  }
+
+  .map-first__mobile-map-legends:has(.map-first__mobile-slope-legend[data-expanded='true'])
+    .map-first__mobile-slope-legend {
+    width: 100%;
+  }
+
+  .map-first__frame:has(.map-first__mobile-slope-legend[data-expanded='true'])
+    .map-first__voice-wrap,
+  .map-first__frame:has(.map-first__mobile-slope-legend[data-expanded='true'])
+    .map-first__voice-wrap > *,
+  .map-first__frame:has(.map-first__mobile-slope-legend[data-expanded='true'])
+    .map-first__fab-stack,
+  .map-first__frame:has(.map-first__mobile-slope-legend[data-expanded='true'])
+    .map-first__fab-stack > * {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .map-first__frame--labeled {
+    --mf-mobile-voice-bottom: calc(236px + var(--mf-mobile-nav-height));
+  }
+
+  /* 큰 글씨 모드는 모바일 내비게이션·시트가 확대된 터치 영역을 수용한다. */
+  .map-first__frame--easy {
+    --mf-mobile-nav-bar-height: 72px;
   }
 
   .map-first__frame:has(.map-first__sheet--collapsed) {
-    --mf-mobile-voice-bottom: calc(132px + env(safe-area-inset-bottom, 0px));
+    --mf-mobile-voice-bottom: calc(132px + var(--mf-mobile-nav-height));
   }
 
   .map-first__frame:has(.map-first__sheet--medium) {
-    --mf-mobile-voice-bottom: calc(var(--mf-sheet-snap-medium) + 16px);
+    --mf-mobile-voice-bottom: calc(
+      var(--mf-sheet-snap-medium) + var(--mf-mobile-nav-height) + 16px
+    );
   }
 
   .map-first__frame:has(.map-first__sheet--empty.map-first__sheet--expanded) {
-    --mf-mobile-voice-bottom: calc(224px + env(safe-area-inset-bottom, 0px));
+    --mf-mobile-voice-bottom: calc(224px + var(--mf-mobile-nav-height));
   }
 
-  .map-first__voice-wrap {
+  /* MOB-09: 경로 결과 시트는 하단 내비게이션 위에서 시작한다. */
+  .map-first__sheet {
+    bottom: var(--mf-mobile-nav-height);
+    padding-bottom: 16px;
+  }
+
+  /* 기존 state별 bottom 선택자보다 동일하거나 높은 specificity로 덮어쓴다. */
+  .map-first__frame:has(.map-first__sheet--collapsed) .map-first__voice-wrap,
+  .map-first__frame:has(.map-first__sheet--medium) .map-first__voice-wrap,
+  .map-first__frame:has(.map-first__sheet--empty.map-first__sheet--expanded) .map-first__voice-wrap {
     bottom: var(--mf-mobile-voice-bottom);
+    z-index: 17;
   }
 
   /* 2) 현재 위치·지도 정보·음성 FAB를 하단 기준 한 줄 수직 흐름으로 정렬 */
@@ -3568,6 +3872,21 @@
     visibility: hidden;
     opacity: 0;
     pointer-events: none;
+  }
+
+  /* 결과를 크게 펼치면 검색 요약과 지도 레이어가 본문을 덮지 않게 한다. */
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__search-header {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__sheet--expanded {
+    --mf-sheet-height: calc(
+      100% - var(--mf-mobile-nav-height)
+      - max(8px, env(safe-area-inset-top, 0px))
+    );
+    z-index: 17;
   }
 
   /* B) 지도 정보 open: React data-map-info-open (MapControls open boolean) */
@@ -3693,5 +4012,415 @@
     visibility: hidden;
     opacity: 0;
     pointer-events: none;
+  }
+
+  /* MOB-09: 지도 홈은 검색·현재 프로필·이동 조건만 간결하게 유지한다. */
+  .map-first__search-header[data-mobile-home='true'] .map-first__account-row,
+  .map-first__search-header[data-mobile-home='true'] .map-first__context,
+  .map-first__search-header[data-mobile-home='true'] .map-first__easy-hint {
+    display: none;
+  }
+
+  .map-first__mobile-home-summary {
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .map-first__mobile-home-profile,
+  .map-first__mobile-home-conditions {
+    min-width: 0;
+    min-height: max(44px, var(--mf-tap));
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--mf-line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: var(--mf-shadow);
+    color: var(--mf-ink);
+    font-family: inherit;
+    text-align: left;
+    box-sizing: border-box;
+    cursor: pointer;
+  }
+
+  .map-first__mobile-home-profile {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    max-width: 144px;
+  }
+
+  .map-first__mobile-home-kicker {
+    color: var(--mf-ink-soft);
+    font-size: calc(var(--mf-caption-size) - 1px);
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .map-first__mobile-home-profile strong {
+    overflow: hidden;
+    font-size: var(--mf-caption-size);
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .map-first__mobile-home-conditions {
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .map-first__mobile-home-condition-list {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .map-first__mobile-home-condition {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 92px;
+    min-height: 28px;
+    padding: 0 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--mf-blue-soft);
+    color: var(--mf-blue-dark);
+    font-size: var(--mf-caption-size);
+    font-weight: 700;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .map-first__mobile-home-condition--more {
+    flex: none;
+    max-width: none;
+    background: var(--mf-chip);
+    color: var(--mf-ink-soft);
+  }
+
+  .map-first__mobile-home-empty {
+    overflow: hidden;
+    color: var(--mf-ink-soft);
+    font-size: var(--mf-caption-size);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 내 설정: 프로필·이동 조건은 로그인보다 먼저, 한 화면에서 바로 조정한다. */
+  .map-first__mobile-personalization {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin-bottom: 16px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--mf-line);
+  }
+
+  .map-first__mobile-personalization-intro {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: var(--mf-blue-soft);
+    color: var(--mf-blue-dark);
+    font-size: var(--mf-caption-size);
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  .map-first__mobile-settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .map-first__mobile-settings-section h3,
+  .map-first__mobile-settings-account-title {
+    margin: 0;
+    color: var(--mf-ink);
+    font-size: var(--mf-section-size);
+    font-weight: var(--mf-title-weight);
+  }
+
+  .map-first__mobile-settings-section > p {
+    margin: -4px 0 0;
+    color: var(--mf-ink-soft);
+    font-size: var(--mf-caption-size);
+  }
+
+  .map-first__mobile-settings-section .map-first__profile-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .map-first__mobile-settings-section .map-first__profile-option {
+    min-width: 0;
+    padding: 10px 12px;
+  }
+
+  /* 큰 글씨에서는 프로필 설명이 2열에서 잘리지 않도록 한 줄 카드로 재배치한다. */
+  .map-first__frame--easy .map-first__mobile-settings-section .map-first__profile-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .map-first__mobile-settings-quick-conditions,
+  .map-first__mobile-settings-section .route-conditions__buttons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .map-first__mobile-settings-quick-conditions .condition-chip,
+  .map-first__mobile-settings-section .condition-chip {
+    width: 100%;
+    min-width: 0;
+    min-height: max(44px, var(--mf-tap));
+    margin: 0;
+    justify-content: center;
+    font-size: var(--mf-body-size);
+    white-space: normal;
+  }
+
+  .map-first__mobile-settings-section .route-conditions__hint {
+    margin-top: 0;
+  }
+
+  .map-first__mobile-settings-account-title {
+    margin-bottom: -8px;
+  }
+
+  /* MOB-09: 지도 홈 / 검색 / 내 설정 3개 메뉴. safe area는 nav에서 한 번만 반영한다. */
+  .map-first__mobile-nav {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 18;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    height: var(--mf-mobile-nav-height);
+    padding: 4px 8px env(safe-area-inset-bottom, 0px);
+    border-top: 1px solid var(--mf-line);
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 -4px 18px rgba(25, 31, 40, 0.08);
+    box-sizing: border-box;
+  }
+
+  .map-first__mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    min-height: max(44px, var(--mf-tap));
+    margin: 0;
+    padding: 4px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--mf-ink-soft);
+    font-family: inherit;
+    font-size: var(--mf-caption-size);
+    font-weight: 700;
+    line-height: 1.15;
+    cursor: pointer;
+  }
+
+  .map-first__mobile-nav-item svg {
+    width: 22px;
+    height: 22px;
+    flex: none;
+  }
+
+  .map-first__mobile-nav-item[aria-current='page'] {
+    color: var(--mf-blue-dark);
+    background: var(--mf-blue-soft);
+  }
+
+  /* MOB-06: /search는 모바일에서 지도와 분리된 visual viewport 전면 화면이다.
+     지도·시트는 상태 보존을 위해 DOM에 유지하고 화면·접근성 트리에서만 감춘다. */
+  .map-first__frame--search .map-first__map,
+  .map-first__frame--search .map-first__fab-stack,
+  .map-first__frame--search .map-first__map-legend,
+  .map-first__frame--search .map-first__voice-wrap,
+  .map-first__frame--search .map-first__sheet {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .map-first__frame--search .map-first__search-header {
+    position: fixed;
+    top: var(--mf-search-vv-offset-top, 0px);
+    left: var(--mf-search-vv-offset-left, 0px);
+    right: auto;
+    width: var(--mf-search-vv-width, 100%);
+    max-width: none;
+    height: var(--mf-search-vv-height, 100dvh);
+    margin: 0;
+    padding:
+      max(8px, env(safe-area-inset-top, 0px))
+      max(12px, env(safe-area-inset-right, 0px))
+      max(8px, env(safe-area-inset-bottom, 0px))
+      max(12px, env(safe-area-inset-left, 0px));
+    overflow: hidden;
+    box-sizing: border-box;
+    background: var(--mf-surface);
+    pointer-events: auto;
+  }
+
+  .map-first__frame--search .map-first__search-header-body {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .map-first__frame--search .map-first__search {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .map-first__frame--search .map-first__search-toolbar {
+    flex: 0 0 auto;
+    justify-content: flex-start;
+    margin: 0;
+    padding: 0 0 8px;
+  }
+
+  .map-first__frame--search .map-first__search-collapse {
+    min-height: var(--mf-tap);
+    padding: 0 10px 0 4px;
+    border: 0;
+    background: transparent;
+  }
+
+  .map-first__frame--search .map-first__search-collapse > span:first-child {
+    display: inline-flex;
+    width: 24px;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-size: 0;
+  }
+
+  .map-first__frame--search .map-first__search-collapse > span:first-child::before {
+    content: '←';
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  /* 두 입력은 고정된 상단 3개 행, 활성 자동완성만 남은 높이를 스크롤한다. */
+  .map-first__frame--search .map-first__search-body {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows:
+      minmax(var(--mf-tap), auto)
+      1px
+      minmax(var(--mf-tap), auto)
+      minmax(0, 1fr);
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .map-first__frame--search .map-first__combobox {
+    display: contents;
+  }
+
+  .map-first__frame--search .map-first__combobox--origin .map-first__search-row {
+    grid-row: 1;
+  }
+
+  .map-first__frame--search .map-first__search-divider {
+    grid-row: 2;
+    margin: 0 48px 0 22px;
+  }
+
+  .map-first__frame--search .map-first__combobox--destination .map-first__search-row {
+    grid-row: 3;
+  }
+
+  .map-first__frame--search .map-first__search-swap {
+    top: calc(var(--mf-tap) + 0.5px);
+  }
+
+  .map-first__frame--search .map-first__search-input {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 16px;
+  }
+
+  .map-first__frame--search .map-first__search-row {
+    min-width: 0;
+  }
+
+  .map-first__frame--search .map-first__search-swap {
+    right: 0;
+    flex: none;
+  }
+
+  .map-first__frame--easy.map-first__frame--search .map-first__search-input {
+    font-size: 18px;
+  }
+
+  .map-first__frame--search .map-first__suggest {
+    position: static;
+    grid-row: 4;
+    width: 100%;
+    max-height: none;
+    min-height: 0;
+    margin-top: 8px;
+    padding: 8px 0 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    border: 0;
+    border-top: 1px solid var(--mf-line);
+    border-radius: 0;
+    box-shadow: none;
+    box-sizing: border-box;
+  }
+
+  .map-first__frame--search .map-first__search-submit {
+    flex: 0 0 auto;
+    margin-top: 10px;
+  }
+
+  .map-first__frame--search .map-first__search-message {
+    flex: 0 0 auto;
+  }
+
+  /* 프로필·조건은 지도 화면 진입점에 유지하고 검색 화면은 OD 선택에 집중한다. */
+  .map-first__frame--search .map-first__search-header-body > .map-first__account-row,
+  .map-first__frame--search .map-first__search-header-body > .map-first__context,
+  .map-first__frame--search .map-first__search-header-body > .map-first__easy-hint {
+    display: none;
   }
 }
