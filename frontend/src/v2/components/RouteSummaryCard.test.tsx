@@ -140,6 +140,81 @@ describe('RouteSummaryCard 정보 위계', () => {
   });
 });
 
+describe('MOB-15 대중교통 경로 시각 언어', () => {
+  it('도보·버스·지하철을 아이콘과 텍스트로 함께 표시한다', () => {
+    const { container } = renderCard('general', {
+      segments: [
+        {
+          id: 'walk-start',
+          mode: 'walk',
+          description: '정류장까지 도보',
+          durationMin: 4,
+        },
+        {
+          id: 'bus-81',
+          mode: 'bus',
+          description: '81번 버스',
+          durationMin: 8,
+          busRouteName: '81',
+        },
+        {
+          id: 'subway-1',
+          mode: 'subway',
+          description: '부산 1호선',
+          durationMin: 5,
+        },
+      ],
+    });
+
+    const sequence = container.querySelector(
+      '.map-first__route-card-transit[aria-label="이동 수단 순서"]',
+    )!;
+    expect(sequence.querySelectorAll('li')).toHaveLength(3);
+    expect(sequence.textContent).toMatch(/도보.*4분/);
+    expect(sequence.textContent).toMatch(/버스.*81번.*8분/);
+    expect(sequence.textContent).toMatch(/지하철.*1호선.*5분/);
+    expect(
+      sequence.querySelector('[data-subway-line="busan-1"]'),
+    ).toBeTruthy();
+    expect(sequence.querySelectorAll('svg[aria-hidden="true"]')).toHaveLength(3);
+  });
+
+  it.each([
+    'general',
+    'youth',
+    'elderly',
+    'child',
+    'disabled',
+    'pregnant',
+  ] as ProfileId[])(
+    '프로필 %s에서도 동일한 이동수단 순서 DOM을 사용한다',
+    (profile) => {
+      const { container } = renderCard(profile, {
+        segments: [
+          {
+            id: 'walk-start',
+            mode: 'walk',
+            description: '도보',
+            durationMin: 3,
+          },
+          {
+            id: 'bus-81',
+            mode: 'bus',
+            description: '버스',
+            durationMin: 8,
+            busRouteName: '81',
+          },
+        ],
+      });
+      const sequence = container.querySelector(
+        '.map-first__route-card-transit',
+      )!;
+      expect(sequence.querySelectorAll('li')).toHaveLength(2);
+      expect(sequence.textContent).toMatch(/도보.*버스.*81번/);
+    },
+  );
+});
+
 describe('MOB-08 경로 카드 본문 우선 노출', () => {
   it('순위·수단·소요시간이 본문(도보·환승)보다 먼저 렌더링된다', () => {
     const { container } = renderCard('youth');

@@ -1,6 +1,7 @@
 import {
   type V2RouteFact,
   type V2RouteViewModel,
+  type V2TransitStep,
 } from '../routeViewModel';
 
 const ATTENTION_FACT_IDS = new Set([
@@ -29,6 +30,75 @@ function pickAttentionFacts(
     .filter((fact) => fact.kind !== 'neutral')
     .filter((fact) => !overlapsReason(fact.label, reasons))
     .slice(0, 3);
+}
+
+function TransitModeIcon({ mode }: { mode: V2TransitStep['mode'] }) {
+  if (mode === 'walk') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="13" cy="4.5" r="2" />
+        <path d="m11 8-2 5 3 2 1.5 5M11 8l4 3 2 4M9 13l-3 5" />
+      </svg>
+    );
+  }
+  if (mode === 'bus') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="5" y="3" width="14" height="15" rx="3" />
+        <path d="M7.5 7h9M8 13h.01M16 13h.01M8 18v2M16 18v2" />
+      </svg>
+    );
+  }
+  if (mode === 'subway') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="6" y="3" width="12" height="15" rx="4" />
+        <path d="M8.5 8h7M9 13h.01M15 13h.01M9 18l-2 3M15 18l2 3" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 8h12l-3-3M19 16H7l3 3" />
+    </svg>
+  );
+}
+
+function TransitSequence({ steps }: { steps: V2TransitStep[] }) {
+  if (steps.length === 0) return null;
+  return (
+    <ol className="map-first__route-card-transit" aria-label="이동 수단 순서">
+      {steps.map((step) => {
+        const accessibleLabel = [
+          step.modeLabel,
+          step.routeLabel,
+          `${step.durationMin}분`,
+        ]
+          .filter(Boolean)
+          .join(' ');
+        return (
+          <li
+            key={step.id}
+            data-mode={step.mode}
+            data-subway-line={step.subwayLineId}
+            aria-label={accessibleLabel}
+          >
+            <span className="map-first__transit-icon">
+              <TransitModeIcon mode={step.mode} />
+            </span>
+            <span className="map-first__transit-mode">{step.modeLabel}</span>
+            {step.routeLabel && (
+              <span className="map-first__transit-route">{step.routeLabel}</span>
+            )}
+            <span className="map-first__transit-duration">
+              {step.durationMin}
+              분
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
 export default function RouteSummaryCard({
@@ -83,6 +153,8 @@ export default function RouteSummaryCard({
           </span>
           <h3 className="map-first__route-card-summary">{view.summary}</h3>
         </div>
+
+        <TransitSequence steps={view.transitSteps} />
 
         <div className="map-first__route-card-metrics">
           <p
