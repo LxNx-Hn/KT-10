@@ -959,9 +959,8 @@ export default function MapFirstApp({
 
                 <section
                   className="map-first__mobile-settings-section"
-                  aria-labelledby="mobile-settings-conditions-title"
                 >
-                  <h3 id="mobile-settings-conditions-title">이번 이동 조건</h3>
+                  <h3>이번 이동 조건</h3>
                   <p>지금 이동에 필요한 조건만 선택하세요.</p>
                   <div className="map-first__mobile-settings-quick-conditions">
                     {[...SITUATION_CONDITIONS, ...ROUTE_OPTION_CONDITIONS].map(

@@ -4056,7 +4056,7 @@
   }
 
   .map-first__mobile-home-kicker {
-    color: var(--mf-ink-muted);
+    color: var(--mf-ink-soft);
     font-size: calc(var(--mf-caption-size) - 1px);
     font-weight: 600;
     line-height: 1.2;
@@ -4111,7 +4111,7 @@
 
   .map-first__mobile-home-empty {
     overflow: hidden;
-    color: var(--mf-ink-muted);
+    color: var(--mf-ink-soft);
     font-size: var(--mf-caption-size);
     font-weight: 600;
     text-overflow: ellipsis;
@@ -4232,7 +4232,7 @@
     border: 0;
     border-radius: 12px;
     background: transparent;
-    color: var(--mf-ink-muted);
+    color: var(--mf-ink-soft);
     font-family: inherit;
     font-size: var(--mf-caption-size);
     font-weight: 700;
@@ -4247,7 +4247,7 @@
   }
 
   .map-first__mobile-nav-item[aria-current='page'] {
-    color: var(--mf-blue);
+    color: var(--mf-blue-dark);
     background: var(--mf-blue-soft);
   }
 
