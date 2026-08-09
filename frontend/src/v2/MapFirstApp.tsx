@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from 'react';
 import { useVoiceChatStore } from '@/chat/voiceChatStore';
 import DepartureTimePicker, {
@@ -13,6 +14,7 @@ import RouteConditions, {
   ROUTE_CONDITION_KEYS,
 } from '@/components/RouteConditions';
 import { PROFILE_LIST, PROFILES } from '@/config/profiles';
+import { useVisualViewportRect } from '@/hooks/useVisualViewportRect';
 import {
   useAppStore,
   type ToggleableScoringOption,
@@ -43,6 +45,30 @@ import {
 import './map-first.css';
 
 type DrawerId = 'profile' | 'conditions' | 'details' | 'departure' | 'settings';
+
+const SEARCH_ROUTE_PATH = '/search';
+const SEARCH_ROUTE_STATE_KEY = 'mob06Search';
+const SEARCH_ROUTE_RETURN_KEY = 'mob06ReturnTo';
+
+type SearchHistoryState = Record<string, unknown> & {
+  [SEARCH_ROUTE_STATE_KEY]?: boolean;
+  [SEARCH_ROUTE_RETURN_KEY]?: string;
+};
+
+function currentRelativeUrl(): string {
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
+
+function safeSearchReturnUrl(state: SearchHistoryState | null): string {
+  const candidate = state?.[SEARCH_ROUTE_RETURN_KEY];
+  return (
+    typeof candidate === 'string'
+    && candidate.startsWith('/')
+    && !candidate.startsWith('//')
+  )
+    ? candidate
+    : '/';
+}
 
 const SITUATION_CONDITIONS: Array<{
   key: ToggleableScoringOption;
@@ -154,8 +180,11 @@ export default function MapFirstApp({
   const [detailTab, setDetailTab] = useState<DetailTab>('route');
   const [sheetSnap, setSheetSnap] = useState<RouteSheetSnap>('expanded');
   const settledSheetSnap = useSettledSheetSnap(sheetSnap);
-  // 최초 진입은 collapsed 한 줄 검색. true일 때만 전체 패널을 연다.
-  const [searchPanelExpanded, setSearchPanelExpanded] = useState(false);
+  // /search 직접 진입·브라우저 앞뒤 이동도 같은 검색 화면 상태를 사용한다.
+  const [searchPanelExpanded, setSearchPanelExpanded] = useState(
+    () => window.location.pathname === SEARCH_ROUTE_PATH,
+  );
+  const searchViewport = useVisualViewportRect(searchPanelExpanded);
   const [showFacilities, setShowFacilities] = useState(false);
   const [showShade, setShowShade] = useState(true);
   const [showSlope, setShowSlope] = useState(true);
@@ -270,6 +299,23 @@ export default function MapFirstApp({
     }
   }, [hasFacilityOverlay, showFacilities]);
 
+  useEffect(() => {
+    const syncSearchRoute = () => {
+      setSearchPanelExpanded(window.location.pathname === SEARCH_ROUTE_PATH);
+    };
+    window.addEventListener('popstate', syncSearchRoute);
+    return () => window.removeEventListener('popstate', syncSearchRoute);
+  }, []);
+
+  useEffect(() => {
+    if (!searchPanelExpanded) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (!origin) originInputRef.current?.focus();
+      else if (!destination) destinationInputRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [destination, origin, searchPanelExpanded]);
+
   // 그늘·경사가 없는 경로는 geometry가 없어 오버레이가 남지 않는다.
   // 사용자 ON/OFF 선호는 경로 변경 후에도 유지하고, 편의시설과 같이 가능 범위에서만 적용한다.
 
@@ -279,6 +325,46 @@ export default function MapFirstApp({
   // ranked.length === 0만으로 expanded를 강제하지 않는다(최초 진입은 collapsed).
 
   const closeDrawer = useCallback(() => setDrawer(null), []);
+
+  const expandSearchPanel = () => {
+    setDrawer(null);
+    if (window.location.pathname !== SEARCH_ROUTE_PATH) {
+      const previousState =
+        window.history.state && typeof window.history.state === 'object'
+          ? window.history.state as SearchHistoryState
+          : {};
+      window.history.pushState(
+        {
+          ...previousState,
+          [SEARCH_ROUTE_STATE_KEY]: true,
+          [SEARCH_ROUTE_RETURN_KEY]: currentRelativeUrl(),
+        },
+        '',
+        SEARCH_ROUTE_PATH,
+      );
+    }
+    setSearchPanelExpanded(true);
+  };
+
+  const collapseSearchPanel = () => {
+    if (window.location.pathname === SEARCH_ROUTE_PATH) {
+      const currentState =
+        window.history.state && typeof window.history.state === 'object'
+          ? window.history.state as SearchHistoryState
+          : null;
+      const nextState = currentState ? { ...currentState } : null;
+      if (nextState) {
+        delete nextState[SEARCH_ROUTE_STATE_KEY];
+        delete nextState[SEARCH_ROUTE_RETURN_KEY];
+      }
+      window.history.replaceState(
+        nextState && Object.keys(nextState).length > 0 ? nextState : null,
+        '',
+        safeSearchReturnUrl(currentState),
+      );
+    }
+    setSearchPanelExpanded(false);
+  };
 
   const swapPlaces = () => {
     const nextOrigin = destination;
@@ -293,12 +379,12 @@ export default function MapFirstApp({
   const runRouteSearch = async () => {
     if (!origin || !destination) {
       setSearchHint('검색 결과에서 출발지와 도착지를 모두 선택해 주세요.');
-      setSearchPanelExpanded(true);
+      expandSearchPanel();
       return;
     }
     if (origin.id === destination.id) {
       setSearchHint('출발지와 도착지가 같습니다. 다른 장소를 선택해 주세요.');
-      setSearchPanelExpanded(true);
+      expandSearchPanel();
       return;
     }
     setSearchHint(null);
@@ -310,20 +396,10 @@ export default function MapFirstApp({
       && latestState.error === null;
     if (searchSucceeded) {
       setSheetSnap('medium');
+      collapseSearchPanel();
+    } else {
+      expandSearchPanel();
     }
-    setSearchPanelExpanded(!searchSucceeded);
-  };
-
-  const expandSearchPanel = () => {
-    setSearchPanelExpanded(true);
-    window.requestAnimationFrame(() => {
-      if (!origin) originInputRef.current?.focus();
-      else if (!destination) destinationInputRef.current?.focus();
-    });
-  };
-
-  const collapseSearchPanel = () => {
-    setSearchPanelExpanded(false);
   };
 
   const editSearchConditions = () => {
@@ -349,6 +425,7 @@ export default function MapFirstApp({
     largeUi ? 'map-first__frame--easy' : '',
     showLabeledControls ? 'map-first__frame--labeled' : '',
     ranked.length > 0 ? 'map-first__frame--results' : '',
+    searchPanelExpanded ? 'map-first__frame--search' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -369,11 +446,21 @@ export default function MapFirstApp({
     options.departureAt,
     departureIsNow,
   );
+  const searchViewportStyle = searchPanelExpanded
+    ? {
+        '--mf-search-vv-width': `${searchViewport.width}px`,
+        '--mf-search-vv-height': `${searchViewport.height}px`,
+        '--mf-search-vv-offset-top': `${searchViewport.offsetTop}px`,
+        '--mf-search-vv-offset-left': `${searchViewport.offsetLeft}px`,
+      } as CSSProperties
+    : undefined;
 
   return (
     <main
       className="map-first"
       id="main-content"
+      style={searchViewportStyle}
+      data-search-open={searchPanelExpanded ? 'true' : undefined}
       data-voice-open={voiceOpen ? 'true' : undefined}
       data-map-info-open={mapInfoOpen ? 'true' : undefined}
     >

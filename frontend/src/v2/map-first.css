@@ -3694,4 +3694,160 @@
     opacity: 0;
     pointer-events: none;
   }
+
+  /* MOB-06: /search는 모바일에서 지도와 분리된 visual viewport 전면 화면이다.
+     지도·시트는 상태 보존을 위해 DOM에 유지하고 화면·접근성 트리에서만 감춘다. */
+  .map-first__frame--search .map-first__map,
+  .map-first__frame--search .map-first__fab-stack,
+  .map-first__frame--search .map-first__map-legend,
+  .map-first__frame--search .map-first__voice-wrap,
+  .map-first__frame--search .map-first__sheet {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .map-first__frame--search .map-first__search-header {
+    position: fixed;
+    top: var(--mf-search-vv-offset-top, 0px);
+    left: var(--mf-search-vv-offset-left, 0px);
+    right: auto;
+    width: var(--mf-search-vv-width, 100%);
+    max-width: none;
+    height: var(--mf-search-vv-height, 100dvh);
+    margin: 0;
+    padding:
+      max(8px, env(safe-area-inset-top, 0px))
+      max(12px, env(safe-area-inset-right, 0px))
+      max(8px, env(safe-area-inset-bottom, 0px))
+      max(12px, env(safe-area-inset-left, 0px));
+    overflow: hidden;
+    box-sizing: border-box;
+    background: var(--mf-surface);
+    pointer-events: auto;
+  }
+
+  .map-first__frame--search .map-first__search-header-body {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .map-first__frame--search .map-first__search {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .map-first__frame--search .map-first__search-toolbar {
+    flex: 0 0 auto;
+    justify-content: flex-start;
+    margin: 0;
+    padding: 0 0 8px;
+  }
+
+  .map-first__frame--search .map-first__search-collapse {
+    min-height: var(--mf-tap);
+    padding: 0 10px 0 4px;
+    border: 0;
+    background: transparent;
+  }
+
+  .map-first__frame--search .map-first__search-collapse > span:first-child {
+    display: inline-flex;
+    width: 24px;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-size: 0;
+  }
+
+  .map-first__frame--search .map-first__search-collapse > span:first-child::before {
+    content: '←';
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  /* 두 입력은 고정된 상단 3개 행, 활성 자동완성만 남은 높이를 스크롤한다. */
+  .map-first__frame--search .map-first__search-body {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows:
+      minmax(var(--mf-tap), auto)
+      1px
+      minmax(var(--mf-tap), auto)
+      minmax(0, 1fr);
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .map-first__frame--search .map-first__combobox {
+    display: contents;
+  }
+
+  .map-first__frame--search .map-first__combobox--origin .map-first__search-row {
+    grid-row: 1;
+  }
+
+  .map-first__frame--search .map-first__search-divider {
+    grid-row: 2;
+    margin: 0 48px 0 22px;
+  }
+
+  .map-first__frame--search .map-first__combobox--destination .map-first__search-row {
+    grid-row: 3;
+  }
+
+  .map-first__frame--search .map-first__search-swap {
+    top: calc(var(--mf-tap) + 0.5px);
+  }
+
+  .map-first__frame--search .map-first__search-input {
+    font-size: 16px;
+  }
+
+  .map-first__frame--search .map-first__suggest {
+    position: static;
+    grid-row: 4;
+    width: 100%;
+    max-height: none;
+    min-height: 0;
+    margin-top: 8px;
+    padding: 8px 0 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    border: 0;
+    border-top: 1px solid var(--mf-line);
+    border-radius: 0;
+    box-shadow: none;
+    box-sizing: border-box;
+  }
+
+  .map-first__frame--search .map-first__search-submit {
+    flex: 0 0 auto;
+    margin-top: 10px;
+  }
+
+  .map-first__frame--search .map-first__search-message {
+    flex: 0 0 auto;
+  }
+
+  /* 프로필·조건은 지도 화면 진입점에 유지하고 검색 화면은 OD 선택에 집중한다. */
+  .map-first__frame--search .map-first__search-header-body > .map-first__account-row,
+  .map-first__frame--search .map-first__search-header-body > .map-first__context,
+  .map-first__frame--search .map-first__search-header-body > .map-first__easy-hint {
+    display: none;
+  }
 }

@@ -61,6 +61,7 @@ export default function PlaceCombobox({
   const [empty, setEmpty] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const listboxId = `${fieldId}-listbox`;
+  const fieldKind = fieldId.includes('origin') ? 'origin' : 'destination';
 
   const assignInputRef = (node: HTMLInputElement | null) => {
     localInputRef.current = node;
@@ -293,11 +294,15 @@ export default function PlaceCombobox({
     open && (searching || results.length > 0 || empty || localError !== null);
 
   return (
-    <div className="map-first__combobox" ref={rootRef}>
+    <div
+      className={`map-first__combobox map-first__combobox--${fieldKind}`}
+      data-place-field={fieldKind}
+      ref={rootRef}
+    >
       <div className="map-first__search-row">
         <span
           className={`map-first__search-dot map-first__search-dot--${
-            fieldId.includes('origin') ? 'origin' : 'dest'
+            fieldKind === 'origin' ? 'origin' : 'dest'
           }`}
           aria-hidden="true"
         />

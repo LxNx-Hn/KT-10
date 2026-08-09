@@ -209,6 +209,7 @@ function dispatchInstallPrompt() {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, '', '/');
   useAppStore.setState({
     profile: 'general',
     origin: null,
@@ -287,6 +288,13 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     const { container, getByRole, getByLabelText } = render(<App />);
     expandSearchFromCollapsed(getByRole);
 
+    expect(window.location.pathname).toBe('/search');
+    expect(
+      container.querySelector('.map-first__frame--search'),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('.map-first[data-search-open="true"]'),
+    ).toBeTruthy();
     expect(
       container.querySelector('[data-search-panel="expanded"]'),
     ).toBeTruthy();
@@ -301,6 +309,45 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(collapse.getAttribute('aria-expanded')).toBe('true');
     expect(collapse.getAttribute('aria-controls')).toBe('map-first-search-panel');
     expect(collapse.textContent).toContain('검색창 접기');
+    expect(
+      getByLabelText('출발지').closest('[data-place-field="origin"]'),
+    ).toBeTruthy();
+    expect(
+      getByLabelText('도착지').closest('[data-place-field="destination"]'),
+    ).toBeTruthy();
+    // 모바일 CSS에서만 숨기며 데스크톱 지도 DOM·상태는 유지한다.
+    expect(getByRole('region', { name: '지도' })).toBeTruthy();
+  });
+
+  it('/search 직접 진입과 popstate를 expanded 상태에 동기화한다', () => {
+    window.history.replaceState(null, '', '/search');
+    const { container, getByLabelText, getByRole } = render(<App />);
+
+    expect(
+      container.querySelector('[data-search-panel="expanded"]'),
+    ).toBeTruthy();
+    expect(getByLabelText('출발지')).toBeTruthy();
+
+    act(() => {
+      window.history.replaceState(null, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(
+      container.querySelector('[data-search-panel="collapsed"]'),
+    ).toBeTruthy();
+
+    act(() => {
+      window.history.pushState(
+        { mob06Search: true, mob06ReturnTo: '/' },
+        '',
+        '/search',
+      );
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(
+      container.querySelector('[data-search-panel="expanded"]'),
+    ).toBeTruthy();
+    expect(getByRole('button', { name: '검색창 접기' })).toBeTruthy();
   });
 
   it('검색 성공 후 compact summary를 보여주고 수정 시 API를 호출하지 않는다', async () => {
@@ -373,6 +420,8 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       ).toBeTruthy();
     });
 
+    expect(window.location.pathname).toBe('/');
+    expect(container.querySelector('.map-first__frame--search')).toBeNull();
     const summary = container.querySelector('.map-first__search--compact');
     expect(summary?.textContent).toContain(origin.name);
     expect(summary?.textContent).toContain(destination.name);
@@ -408,9 +457,13 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     });
 
     fireEvent.click(getByRole('button', { name: '검색창 접기' }));
+    expect(window.location.pathname).toBe('/');
     expect(
       container.querySelector('[data-search-panel="collapsed"]'),
     ).toBeTruthy();
+    expect(
+      container.querySelector('.map-first__frame--search'),
+    ).toBeNull();
     expect(useAppStore.getState().origin?.id).toBe(origin.id);
 
     expandSearchFromCollapsed(getByRole);
