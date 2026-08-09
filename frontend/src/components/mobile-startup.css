@@ -166,13 +166,13 @@
 }
 
 .mobile-startup__start {
-  background: var(--startup-blue);
+  background: var(--startup-blue-dark);
   color: #ffffff;
   box-shadow: 0 9px 22px rgba(49, 130, 246, 0.25);
 }
 
 .mobile-startup__start:active {
-  background: var(--startup-blue-dark);
+  background: #1554ba;
   transform: translateY(1px);
 }
 
@@ -315,7 +315,7 @@
 
   .mobile-startup__start,
   .mobile-startup__login button {
-    min-height: 42px;
+    min-height: 44px;
     border-radius: 12px;
     font-size: 14px;
   }
