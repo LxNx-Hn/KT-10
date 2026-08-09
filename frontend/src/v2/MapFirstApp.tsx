@@ -40,6 +40,7 @@ import { sheetSnapLayoutFitToken } from './routeSheetSnap';
 import { useSettledSheetSnap } from './useSettledSheetSnap';
 import SearchHeader from './components/SearchHeader';
 import SettingsPanel from './components/SettingsPanel';
+import ProfileOptionCard from './components/ProfileOptionCard';
 import {
   buildRouteViewModel,
 } from './routeViewModel';
@@ -741,6 +742,7 @@ export default function MapFirstApp({
           loading={loading}
           searchHint={searchHint}
           error={error}
+          profileId={profile}
           profileLabel={profileTriggerLabel(profileMeta.label)}
           profileDrawerOpen={drawer === 'profile'}
           settingsDrawerOpen={drawer === 'settings'}
@@ -891,24 +893,16 @@ export default function MapFirstApp({
               aria-label="이동 프로필"
             >
               {PROFILE_LIST.map((item) => (
-                <button
+                <ProfileOptionCard
                   key={item.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={profile === item.id}
-                  className={`map-first__profile-option${
-                    profile === item.id
-                      ? ' map-first__profile-option--selected'
-                      : ''
-                  }`}
-                  onClick={() => {
-                    setProfile(item.id);
+                  item={item}
+                  selected={profile === item.id}
+                  mobile={mobileHomeEnabled}
+                  onSelect={(profileId) => {
+                    setProfile(profileId);
                     closeDrawer();
                   }}
-                >
-                  <strong>{item.label}</strong>
-                  <span>{item.description}</span>
-                </button>
+                />
               ))}
             </div>
           </BottomDrawer>
@@ -938,21 +932,13 @@ export default function MapFirstApp({
                     aria-label="내 설정 이동 프로필"
                   >
                     {PROFILE_LIST.map((item) => (
-                      <button
+                      <ProfileOptionCard
                         key={item.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={profile === item.id}
-                        className={`map-first__profile-option${
-                          profile === item.id
-                            ? ' map-first__profile-option--selected'
-                            : ''
-                        }`}
-                        onClick={() => setProfile(item.id)}
-                      >
-                        <strong>{item.label}</strong>
-                        <span>{item.description}</span>
-                      </button>
+                        item={item}
+                        selected={profile === item.id}
+                        mobile
+                        onSelect={setProfile}
+                      />
                     ))}
                   </div>
                 </section>
