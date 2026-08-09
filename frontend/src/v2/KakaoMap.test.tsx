@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   LatLng,
@@ -320,6 +320,31 @@ afterEach(() => {
 });
 
 describe('KakaoMap production overlays', () => {
+  it('SDK 로드 실패를 안내하고 같은 화면에서 다시 시도할 수 있다', async () => {
+    loaderMocks.loadKakaoMaps
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce(kakaoNamespace);
+
+    render(
+      <KakaoMap
+        origin={null}
+        destination={null}
+        recommendations={[]}
+        selectedRouteId={null}
+        onSelectRoute={vi.fn()}
+      />,
+    );
+
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      '지도를 불러오지 못했어요',
+    );
+    fireEvent.click(screen.getByRole('button', { name: '지도 다시 불러오기' }));
+
+    await waitUntilReady();
+    expect(loaderMocks.loadKakaoMaps).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('실제 출·도착점과 선택 경로의 전체선·구간선을 그리고 대안 경로 클릭을 전달한다', async () => {
     const onSelectRoute = vi.fn();
     const selected = scoredRoute('selected', {

@@ -17,6 +17,7 @@ import {
 import App from '@/App';
 import { adapters } from '@/adapters';
 import { useVoiceChatStore } from '@/chat/voiceChatStore';
+import { MOBILE_STARTUP_STORAGE_KEY } from '@/components/MobileStartupScreen';
 import { findPlace } from '@/data/places';
 import { demoCandidates } from '@/data/routes';
 import { WEATHER_SCENARIOS } from '@/data/weather';
@@ -257,6 +258,7 @@ function dispatchInstallPrompt() {
 
 beforeEach(() => {
   window.history.replaceState(null, '', '/');
+  window.localStorage.setItem(MOBILE_STARTUP_STORAGE_KEY, '1');
   useAppStore.setState({
     profile: 'general',
     origin: null,

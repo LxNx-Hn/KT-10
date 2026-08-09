@@ -30,6 +30,16 @@ function usesMobileHome(page: Page): boolean {
   return (page.viewportSize()?.width ?? Number.POSITIVE_INFINITY) <= 479;
 }
 
+const MOBILE_STARTUP_STORAGE_KEY = 'dongnet.startup.seen.v1';
+
+async function gotoMapHome(page: Page) {
+  await page.addInitScript(
+    (storageKey) => window.localStorage.setItem(storageKey, '1'),
+    MOBILE_STARTUP_STORAGE_KEY,
+  );
+  await page.goto('/');
+}
+
 /** 최초 진입은 collapsed 한 줄 검색. 출발지·도착지는 expanded 이후에만 존재한다. */
 async function expandSearchPanel(page: Page) {
   const collapsed = page.getByRole('button', { name: '어디로 갈까요?' });
@@ -38,15 +48,21 @@ async function expandSearchPanel(page: Page) {
   await expect(page.getByRole('combobox', { name: '출발지' })).toBeVisible();
 }
 
-test('초기 지도 검색 화면에 자동 탐지 가능한 접근성 위반이 없다', async ({ page }) => {
+test('첫 방문 시작 화면에 자동 탐지 가능한 접근성 위반이 없다', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('button', { name: '로그인 없이 시작하기' })).toBeVisible();
+  await expectNoAutomaticViolations(page);
+});
+
+test('초기 지도 검색 화면에 자동 탐지 가능한 접근성 위반이 없다', async ({ page }) => {
+  await gotoMapHome(page);
   await expectNoAutomaticViolations(page);
 });
 
 test('프로필과 이동 조건 drawer에 자동 탐지 가능한 접근성 위반이 없다', async ({
   page,
 }) => {
-  await page.goto('/');
+  await gotoMapHome(page);
 
   if (usesMobileHome(page)) {
     await page.getByRole('button', { name: '내 설정 메뉴' }).click();
@@ -92,7 +108,7 @@ test('프로필과 이동 조건 drawer에 자동 탐지 가능한 접근성 위
 test('모바일 핵심 조작부의 높이가 44px 이상이다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium-mobile-a11y');
   await page.setViewportSize({ width: 320, height: 700 });
-  await page.goto('/');
+  await gotoMapHome(page);
 
   const mapHomeControls: Array<[string, Locator]> = [
     ['검색 시작', page.getByRole('button', { name: '어디로 갈까요?' })],
