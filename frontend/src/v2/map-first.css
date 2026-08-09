@@ -4173,11 +4173,34 @@
   }
 
   .map-first__mobile-home-profile {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    max-width: 160px;
+  }
+
+  .map-first__mobile-home-profile-icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--mf-blue-soft);
+    color: var(--mf-blue-dark);
+  }
+
+  .map-first__mobile-home-profile-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .map-first__mobile-home-profile-copy {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    min-width: 0;
     gap: 1px;
-    max-width: 144px;
   }
 
   .map-first__mobile-home-kicker {
@@ -4287,7 +4310,7 @@
 
   .map-first__mobile-settings-section .map-first__profile-options {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
 
@@ -4296,9 +4319,81 @@
     padding: 10px 12px;
   }
 
-  /* 큰 글씨에서는 프로필 설명이 2열에서 잘리지 않도록 한 줄 카드로 재배치한다. */
-  .map-first__frame--easy .map-first__mobile-settings-section .map-first__profile-options {
-    grid-template-columns: minmax(0, 1fr);
+  /* MOB-16: 모바일 프로필은 아이콘·한 줄 설명·체크를 한 카드에서 구분한다. */
+  .map-first__profile-option--mobile {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) 24px;
+    align-items: center;
+    gap: 12px;
+    min-height: max(64px, var(--mf-tap));
+    padding: 10px 12px;
+  }
+
+  .map-first__profile-option-icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--mf-chip);
+    color: var(--mf-ink-soft);
+  }
+
+  .map-first__profile-option-icon svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .map-first__profile-option--mobile .map-first__profile-option-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+    gap: 2px;
+    color: var(--mf-ink);
+    font-size: inherit;
+  }
+
+  .map-first__profile-option-copy strong {
+    color: var(--mf-ink);
+    font-size: var(--mf-section-size);
+    line-height: 1.25;
+  }
+
+  .map-first__profile-option--mobile .map-first__profile-option-copy > span {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    color: var(--mf-ink-soft);
+    font-size: var(--mf-caption-size);
+    font-weight: 500;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .map-first__profile-option-check {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    color: var(--mf-blue-dark);
+  }
+
+  .map-first__profile-option-check svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .map-first__profile-option--mobile.map-first__profile-option--selected {
+    border-color: var(--mf-blue);
+    background: var(--mf-blue-soft);
+  }
+
+  .map-first__profile-option--mobile.map-first__profile-option--selected
+    .map-first__profile-option-icon {
+    background: var(--mf-blue);
+    color: #fff;
   }
 
   .map-first__mobile-settings-quick-conditions,

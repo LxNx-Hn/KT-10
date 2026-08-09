@@ -1,7 +1,8 @@
 import type { RefObject } from 'react';
-import type { Place } from '@/types';
+import type { Place, ProfileId } from '@/types';
 import type { ToggleableScoringOption } from '@/store/appStore';
 import RouteSearchPanel, { SEARCH_PANEL_ID } from './RouteSearchPanel';
+import { ProfileIcon } from './ProfileOptionCard';
 
 export type SearchHeaderMode = 'collapsed' | 'expanded' | 'summary';
 
@@ -20,6 +21,7 @@ export type SearchHeaderProps = {
   loading: boolean;
   searchHint: string | null;
   error: string | null;
+  profileId: ProfileId;
   profileLabel: string;
   profileDrawerOpen: boolean;
   settingsDrawerOpen: boolean;
@@ -159,8 +161,13 @@ export default function SearchHeader({
             aria-label={`현재 프로필 ${panelProps.profileLabel}, 내 설정에서 변경`}
             onClick={panelProps.onOpenSettings}
           >
-            <span className="map-first__mobile-home-kicker">현재 프로필</span>
-            <strong>{panelProps.profileLabel}</strong>
+            <span className="map-first__mobile-home-profile-icon" aria-hidden="true">
+              <ProfileIcon profileId={panelProps.profileId} />
+            </span>
+            <span className="map-first__mobile-home-profile-copy">
+              <span className="map-first__mobile-home-kicker">현재 프로필</span>
+              <strong>{panelProps.profileLabel}</strong>
+            </span>
           </button>
           <button
             type="button"
