@@ -89,6 +89,96 @@ function shade(
 }
 
 describe('v2 경로 표시 모델', () => {
+  it('원본 구간 순서대로 도보·버스 번호·도시철도 호선을 만든다', () => {
+    const view = buildRouteViewModel(
+      makeItem({
+        segments: [
+          { ...BASE_SEGMENT, id: 'walk-start', durationMin: 4 },
+          {
+            id: 'bus-81',
+            mode: 'bus',
+            description: '81번 저상버스 승차',
+            durationMin: 8,
+            busRouteName: '81',
+          },
+          {
+            id: 'subway-1',
+            mode: 'subway',
+            description: '부산 도시철도 1호선 부전→서면',
+            durationMin: 5,
+          },
+        ],
+      }),
+      1,
+      'general',
+    );
+
+    expect(view.transitSteps).toEqual([
+      {
+        id: 'walk-start',
+        mode: 'walk',
+        modeLabel: '도보',
+        durationMin: 4,
+      },
+      {
+        id: 'bus-81',
+        mode: 'bus',
+        modeLabel: '버스',
+        durationMin: 8,
+        routeLabel: '81번',
+      },
+      {
+        id: 'subway-1',
+        mode: 'subway',
+        modeLabel: '지하철',
+        durationMin: 5,
+        routeLabel: '1호선',
+        subwayLineId: 'busan-1',
+      },
+    ]);
+  });
+
+  it('구조화 노선 정보가 없으면 번호나 호선을 추측하지 않는다', () => {
+    const view = buildRouteViewModel(
+      makeItem({
+        segments: [
+          {
+            id: 'bus-unknown',
+            mode: 'bus',
+            description: '버스 이동',
+            durationMin: 5,
+          },
+          {
+            id: 'subway-unknown',
+            mode: 'subway',
+            description: '도시철도 이동',
+            durationMin: 7,
+          },
+        ],
+      }),
+      1,
+      'general',
+    );
+
+    expect(view.transitSteps).toEqual([
+      {
+        id: 'bus-unknown',
+        mode: 'bus',
+        modeLabel: '버스',
+        durationMin: 5,
+        routeLabel: undefined,
+      },
+      {
+        id: 'subway-unknown',
+        mode: 'subway',
+        modeLabel: '지하철',
+        durationMin: 7,
+        routeLabel: undefined,
+        subwayLineId: 'unknown',
+      },
+    ]);
+  });
+
   it('계단 정보가 미확인이면 배지를 노출하지 않는다', () => {
     const view = buildRouteViewModel(makeItem(), 1, 'general');
     const stairs = view.facts.find((fact) => fact.id === 'stairs');

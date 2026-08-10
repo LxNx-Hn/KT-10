@@ -2,8 +2,10 @@ import { PROFILES } from '@/config/profiles';
 import type {
   ProfileId,
   RouteCandidate,
+  RouteSegment,
   RouteScore,
   ScoredRoute,
+  SegmentMode,
 } from '@/types';
 import {
   formatSlopePercent,
@@ -268,6 +270,26 @@ export interface V2RouteFact {
   title?: string;
 }
 
+export type V2SubwayLineId =
+  | 'busan-1'
+  | 'busan-2'
+  | 'busan-3'
+  | 'busan-4'
+  | 'busan-gimhae'
+  | 'donghae'
+  | 'unknown';
+
+export interface V2TransitStep {
+  id: string;
+  mode: SegmentMode;
+  modeLabel: '도보' | '버스' | '지하철' | '환승';
+  durationMin: number;
+  /** 버스 번호 또는 도시철도 호선명. 구조화 값/확인 가능한 설명이 없으면 생략한다. */
+  routeLabel?: string;
+  /** 도시철도 노선색 선택용 식별자. 호선을 판별하지 못하면 unknown이다. */
+  subwayLineId?: V2SubwayLineId;
+}
+
 export interface V2RouteViewModel {
   routeId: string;
   rank: number;
@@ -281,6 +303,7 @@ export interface V2RouteViewModel {
     walkM: number;
     transferCount: number;
   };
+  transitSteps: V2TransitStep[];
   score: V2ScoreDisplay;
   scoreKindLabel: string;
   characteristicLabels: string[];
@@ -294,6 +317,103 @@ export interface V2RouteViewModel {
 
 function unique(values: string[]): string[] {
   return Array.from(new Set(values));
+}
+
+const SUBWAY_LINE_PATTERNS: Array<{
+  id: Exclude<V2SubwayLineId, 'unknown'>;
+  label: string;
+  pattern: RegExp;
+}> = [
+  {
+    id: 'busan-gimhae',
+    label: '부산김해경전철',
+    pattern: /(?:부산\s*[-·]?\s*김해|김해)\s*경전철/i,
+  },
+  { id: 'donghae', label: '동해선', pattern: /동해선/i },
+  {
+    id: 'busan-1',
+    label: '1호선',
+    pattern: /(?:부산(?:도시철도)?\s*)?1\s*호선/i,
+  },
+  {
+    id: 'busan-2',
+    label: '2호선',
+    pattern: /(?:부산(?:도시철도)?\s*)?2\s*호선/i,
+  },
+  {
+    id: 'busan-3',
+    label: '3호선',
+    pattern: /(?:부산(?:도시철도)?\s*)?3\s*호선/i,
+  },
+  {
+    id: 'busan-4',
+    label: '4호선',
+    pattern: /(?:부산(?:도시철도)?\s*)?4\s*호선/i,
+  },
+];
+
+function resolveSubwayLine(
+  segment: RouteSegment,
+): { id: V2SubwayLineId; label?: string } {
+  const source = [segment.transitRouteId, segment.description]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join(' ');
+  const matched = SUBWAY_LINE_PATTERNS.find(({ pattern }) =>
+    pattern.test(source),
+  );
+  return matched
+    ? { id: matched.id, label: matched.label }
+    : { id: 'unknown' };
+}
+
+function formatBusRouteLabel(value: string | undefined): string | undefined {
+  const routeName = value?.trim();
+  if (!routeName) return undefined;
+  return /번$/u.test(routeName) ? routeName : `${routeName}번`;
+}
+
+/**
+ * 카드용 이동수단 순서. 원본 segment 순서를 유지하고 API에 없는 노선명은 추측하지 않는다.
+ */
+export function buildTransitSteps(route: RouteCandidate): V2TransitStep[] {
+  return route.segments.map((segment) => {
+    const durationMin = Math.max(0, Math.round(segment.durationMin));
+    switch (segment.mode) {
+      case 'walk':
+        return {
+          id: segment.id,
+          mode: segment.mode,
+          modeLabel: '도보',
+          durationMin,
+        };
+      case 'bus':
+        return {
+          id: segment.id,
+          mode: segment.mode,
+          modeLabel: '버스',
+          durationMin,
+          routeLabel: formatBusRouteLabel(segment.busRouteName),
+        };
+      case 'subway': {
+        const subway = resolveSubwayLine(segment);
+        return {
+          id: segment.id,
+          mode: segment.mode,
+          modeLabel: '지하철',
+          durationMin,
+          routeLabel: subway.label,
+          subwayLineId: subway.id,
+        };
+      }
+      case 'transfer':
+        return {
+          id: segment.id,
+          mode: segment.mode,
+          modeLabel: '환승',
+          durationMin,
+        };
+    }
+  });
 }
 
 function stairFact(route: RouteCandidate): V2RouteFact | null {
@@ -536,6 +656,7 @@ export function buildRouteViewModel(
       walkM: route.totalWalkM,
       transferCount: route.transferCount,
     },
+    transitSteps: buildTransitSteps(route),
     score: scoreDisplay,
     scoreKindLabel: SCORE_KIND_LABEL[scoreKind],
     characteristicLabels,

@@ -149,22 +149,30 @@ export default function RouteSearchPanel({
             onClick={onEditSearch}
           >
             <span className="map-first__summary-od">
-              <span className="map-first__summary-place">
+              <span
+                className="map-first__summary-place map-first__summary-place--origin"
+                title={origin?.name ?? '출발지'}
+              >
                 {origin?.name ?? '출발지'}
               </span>
               <span className="map-first__summary-arrow" aria-hidden="true">
                 →
               </span>
-              <span className="map-first__summary-place">
+              <span
+                className="map-first__summary-place map-first__summary-place--destination"
+                title={destination?.name ?? '도착지'}
+              >
                 {destination?.name ?? '도착지'}
               </span>
             </span>
-            {summaryConditionCount > 0 && (
-              <span className="map-first__summary-conditions">
-                조건 {summaryConditionCount}개
-              </span>
-            )}
-            <span className="map-first__search-edit">검색 조건 수정</span>
+            <span className="map-first__summary-actions">
+              {summaryConditionCount > 0 && (
+                <span className="map-first__summary-conditions">
+                  조건 {summaryConditionCount}개
+                </span>
+              )}
+              <span className="map-first__search-edit">검색 조건 수정</span>
+            </span>
           </button>
         </div>
       ) : (

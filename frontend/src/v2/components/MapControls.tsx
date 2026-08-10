@@ -86,6 +86,8 @@ export type MapControlsProps = {
   onToggleFacilities: () => void;
   onToggleShade: () => void;
   onToggleSlope: () => void;
+  /** 지도 정보 패널의 실제 open boolean을 상위로 전달한다. */
+  onMapInfoOpenChange?: (open: boolean) => void;
 };
 
 export default function MapControls({
@@ -104,6 +106,7 @@ export default function MapControls({
   onToggleFacilities,
   onToggleShade,
   onToggleSlope,
+  onMapInfoOpenChange,
 }: MapControlsProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -116,6 +119,11 @@ export default function MapControls({
     (showFacilities && hasFacilityOverlay)
     || (showShade && hasShadeOverlay)
     || (showSlope && hasSlopeOverlay);
+
+  useEffect(() => {
+    onMapInfoOpenChange?.(open);
+    return () => onMapInfoOpenChange?.(false);
+  }, [open, onMapInfoOpenChange]);
 
   useEffect(() => {
     if (!open) return;

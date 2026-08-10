@@ -167,6 +167,8 @@ interface AppState {
 
   /* UI/상태 */
   largeUi: boolean;
+  /** 프로필 기본값과 별도로 사용자가 직접 선택한 화면 크기. */
+  largeUiPreference: boolean;
   loading: boolean;
   error: string | null;
   lastSpoken: string;
@@ -222,6 +224,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedRouteId: null,
 
   largeUi: false,
+  largeUiPreference: false,
   loading: false,
   error: null,
   lastSpoken: '',
@@ -229,7 +232,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setProfile: (profile) => {
     const restartPendingSearch = get().loading && !get().candidates.length;
-    set({ profile, largeUi: PROFILES[profile].prefersLargeUi || get().largeUi });
+    const { largeUiPreference } = get();
+    set({
+      profile,
+      largeUi: PROFILES[profile].prefersLargeUi || largeUiPreference,
+    });
     if (get().candidates.length) {
       void get().rescore();
     } else if (restartPendingSearch && get().origin && get().destination) {
@@ -328,7 +335,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  toggleLargeUi: () => set((s) => ({ largeUi: !s.largeUi })),
+  toggleLargeUi: () => set((state) => {
+    const largeUi = !state.largeUi;
+    return { largeUi, largeUiPreference: largeUi };
+  }),
   clearError: () => set({ error: null }),
   /**
    * 카드 선택은 즉시 반영하고, 선택한 후보의 대중교통 표시 선형이 아직

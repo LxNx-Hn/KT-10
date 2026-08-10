@@ -4,6 +4,8 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
+  type CSSProperties,
 } from 'react';
 import { useVoiceChatStore } from '@/chat/voiceChatStore';
 import DepartureTimePicker, {
@@ -13,6 +15,7 @@ import RouteConditions, {
   ROUTE_CONDITION_KEYS,
 } from '@/components/RouteConditions';
 import { PROFILE_LIST, PROFILES } from '@/config/profiles';
+import { useVisualViewportRect } from '@/hooks/useVisualViewportRect';
 import {
   useAppStore,
   type ToggleableScoringOption,
@@ -32,14 +35,73 @@ import RouteDetailSheet, {
   type DetailTab,
 } from './components/RouteDetailSheet';
 import RouteResultsSheet from './components/RouteResultsSheet';
+import type { RouteSheetSnap } from './routeSheetSnap';
+import { sheetSnapLayoutFitToken } from './routeSheetSnap';
+import { useSettledSheetSnap } from './useSettledSheetSnap';
 import SearchHeader from './components/SearchHeader';
 import SettingsPanel from './components/SettingsPanel';
+import ProfileOptionCard from './components/ProfileOptionCard';
 import {
   buildRouteViewModel,
 } from './routeViewModel';
 import './map-first.css';
 
 type DrawerId = 'profile' | 'conditions' | 'details' | 'departure' | 'settings';
+
+const SEARCH_ROUTE_PATH = '/search';
+const SEARCH_ROUTE_STATE_KEY = 'mob06Search';
+const SEARCH_ROUTE_RETURN_KEY = 'mob06ReturnTo';
+const MOBILE_HOME_QUERY = '(max-width: 479px)';
+
+type SearchHistoryState = Record<string, unknown> & {
+  [SEARCH_ROUTE_STATE_KEY]?: boolean;
+  [SEARCH_ROUTE_RETURN_KEY]?: string;
+};
+
+function currentRelativeUrl(): string {
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
+
+function safeSearchReturnUrl(state: SearchHistoryState | null): string {
+  const candidate = state?.[SEARCH_ROUTE_RETURN_KEY];
+  return (
+    typeof candidate === 'string'
+    && candidate.startsWith('/')
+    && !candidate.startsWith('//')
+  )
+    ? candidate
+    : '/';
+}
+
+function subscribeMobileHome(onChange: () => void): () => void {
+  if (typeof window.matchMedia !== 'function') return () => undefined;
+  const media = window.matchMedia(MOBILE_HOME_QUERY);
+  if (typeof media.addEventListener === 'function') {
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }
+  media.addListener(onChange);
+  return () => media.removeListener(onChange);
+}
+
+function getMobileHomeSnapshot(): boolean {
+  return (
+    typeof window.matchMedia === 'function'
+    && window.matchMedia(MOBILE_HOME_QUERY).matches
+  );
+}
+
+function getMobileHomeServerSnapshot(): boolean {
+  return false;
+}
+
+function usesMobileSearchRoute(): boolean {
+  // matchMedia가 없는 테스트 환경은 기존 MOB-06 모바일 계약으로 처리한다.
+  return (
+    typeof window.matchMedia !== 'function'
+    || window.matchMedia(MOBILE_HOME_QUERY).matches
+  );
+}
 
 const SITUATION_CONDITIONS: Array<{
   key: ToggleableScoringOption;
@@ -97,13 +159,19 @@ function routeHasSlopeOverlay(terrain: RouteCandidate['terrain']): boolean {
   );
 }
 
-function shadeUnavailableHint(shade: RouteCandidate['shade']): string {
-  // status가 명시적 불가일 때만 calculationNote를 노출. 야간·날씨 등은 추측하지 않는다.
-  if (shade?.status === 'not_daylight' || shade?.status === 'unavailable') {
-    const note = shade.calculationNote?.trim();
-    if (note) return note;
+const MAP_INFO_SEARCH_FIRST_HINT = '경로를 먼저 검색해 주세요.';
+const MAP_INFO_LOAD_FAILED_HINT =
+  '정보를 불러오지 못했어요. 다시 시도해 주세요.';
+
+function shadeUnavailableHint(
+  shade: RouteCandidate['shade'],
+  hasSelectedRoute: boolean,
+): string {
+  if (!hasSelectedRoute) return MAP_INFO_SEARCH_FIRST_HINT;
+  if (shade?.status === 'not_daylight') {
+    return '그늘 정보는 낮 시간대에 제공해요.';
   }
-  return '현재 경로에서는 그늘 정보를 표시할 수 없어요';
+  return MAP_INFO_LOAD_FAILED_HINT;
 }
 
 function VoiceIcon() {
@@ -115,7 +183,142 @@ function VoiceIcon() {
   );
 }
 
-export default function MapFirstApp() {
+const SLOPE_BAND_FEEL = {
+  gentle: '편안한 경사',
+  moderate: '약간 힘들 수 있어요',
+  steep: '이동에 주의하세요',
+  'very-steep': '우회 경로를 권장해요',
+} as const;
+
+function MobileSlopeLegend({
+  average,
+  peak,
+}: {
+  average: string;
+  peak: string | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = 'map-first-mobile-slope-details';
+
+  return (
+    <section
+      className="map-first__map-legend map-first__map-legend--slope map-first__mobile-slope-legend"
+      role="note"
+      aria-label="도보 경사 안내"
+      data-expanded={expanded ? 'true' : 'false'}
+    >
+      <button
+        type="button"
+        className="map-first__mobile-slope-toggle"
+        aria-expanded={expanded}
+        aria-controls={detailsId}
+        aria-label={expanded ? '경사 안내 접기' : '경사 안내 펼치기'}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <strong>경사 {average}%</strong>
+        <span aria-hidden="true">{expanded ? '접기' : '보기'}</span>
+      </button>
+
+      {expanded && (
+        <div className="map-first__mobile-slope-details" id={detailsId}>
+          <div className="map-first__mobile-slope-metrics">
+            <span>
+              <b>평균 {average}%</b>
+              <small>도보 구간의 전반적인 기울기</small>
+            </span>
+            {peak !== null && (
+              <span>
+                <b>최대 {peak}%</b>
+                <small>가장 가파른 구간의 기울기</small>
+              </span>
+            )}
+          </div>
+          <p>
+            평균은 전체 도보 구간의 기울기이고, 최대는 이동 중 만나는 가장
+            가파른 구간이에요.
+          </p>
+          <ul className="map-first__mobile-slope-bands" aria-label="경사 색상 단계">
+            {SLOPE_LEGEND_BANDS.map((band) => (
+              <li key={band.id}>
+                <i
+                  className={`map-first__legend-dot map-first__legend-dot--slope-${band.id}`}
+                  style={{ backgroundColor: band.color }}
+                  aria-hidden="true"
+                />
+                <span>
+                  <b>{band.legendText}</b>
+                  <small>{SLOPE_BAND_FEEL[band.id]}</small>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MapHomeIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <path
+        d="M3 11.5 12 4l9 7.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5.5 10.5V20h13v-9.5M9.5 20v-5h5v5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function MobileSearchIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m16 16 4 4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MobileSettingsIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="8" r="3.5" />
+      <path
+        d="M5.5 20c.6-4 2.8-6 6.5-6s5.9 2 6.5 6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export default function MapFirstApp({
+  voiceOpen = false,
+}: {
+  /** App이 소유한 VoiceChatDock open boolean. data-voice-open 연결용. */
+  voiceOpen?: boolean;
+} = {}) {
   const profile = useAppStore((state) => state.profile);
   const origin = useAppStore((state) => state.origin);
   const destination = useAppStore((state) => state.destination);
@@ -141,12 +344,24 @@ export default function MapFirstApp() {
   const search = useAppStore((state) => state.search);
   const voiceStatus = useVoiceChatStore((state) => state.status);
   const requestListen = useVoiceChatStore((state) => state.requestListen);
+  const mobileHomeEnabled = useSyncExternalStore(
+    subscribeMobileHome,
+    getMobileHomeSnapshot,
+    getMobileHomeServerSnapshot,
+  );
 
   const [drawer, setDrawer] = useState<DrawerId | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('route');
-  const [sheetExpanded, setSheetExpanded] = useState(true);
-  // 최초 진입은 collapsed 한 줄 검색. true일 때만 전체 패널을 연다.
-  const [searchPanelExpanded, setSearchPanelExpanded] = useState(false);
+  const [sheetSnap, setSheetSnap] = useState<RouteSheetSnap>('expanded');
+  const settledSheetSnap = useSettledSheetSnap(sheetSnap);
+  // /search 직접 진입·브라우저 앞뒤 이동도 같은 검색 화면 상태를 사용한다.
+  const [searchPanelExpanded, setSearchPanelExpanded] = useState(
+    () => (
+      usesMobileSearchRoute()
+      && window.location.pathname === SEARCH_ROUTE_PATH
+    ),
+  );
+  const searchViewport = useVisualViewportRect(searchPanelExpanded);
   const [showFacilities, setShowFacilities] = useState(false);
   const [showShade, setShowShade] = useState(true);
   const [showSlope, setShowSlope] = useState(true);
@@ -154,6 +369,7 @@ export default function MapFirstApp() {
   const [locating, setLocating] = useState(false);
   const [departureIsNow, setDepartureIsNow] = useState(true);
   const [departureRefreshing, setDepartureRefreshing] = useState(false);
+  const [mapInfoOpen, setMapInfoOpen] = useState(false);
   const originInputRef = useRef<HTMLInputElement>(null);
   const destinationInputRef = useRef<HTMLInputElement>(null);
   const locatingTimerRef = useRef<number>();
@@ -195,13 +411,19 @@ export default function MapFirstApp() {
   );
   const facilityDisabledHint = hasFacilityOverlay
     ? ''
-    : '표시할 편의시설 정보가 없어요';
+    : selectedItem
+      ? '이 경로에는 표시할 편의시설이 없어요.'
+      : MAP_INFO_SEARCH_FIRST_HINT;
   const shadeDisabledHint = hasShadeOverlay
     ? ''
-    : shadeUnavailableHint(selectedShade);
+    : shadeUnavailableHint(selectedShade, Boolean(selectedItem));
   const slopeDisabledHint = hasSlopeOverlay
     ? ''
-    : '경로 상세에서 경사 수치를 확인할 수 있어요';
+    : !selectedItem
+      ? MAP_INFO_SEARCH_FIRST_HINT
+      : selectedTerrain?.status === 'estimated_90m'
+        ? '경로 상세에서 경사 수치를 확인할 수 있어요.'
+        : MAP_INFO_LOAD_FAILED_HINT;
   const shadeLayerVisible = showShade && hasShadeOverlay;
   const slopeLayerVisible = showSlope && hasSlopeOverlay;
   const activeConditionCount = ROUTE_CONDITION_KEYS.filter(
@@ -220,7 +442,7 @@ export default function MapFirstApp() {
       : ranked.length > 0 && origin && destination
         ? 'summary'
         : 'collapsed';
-  const showVoiceControl = drawer === null && !(ranked.length > 0 && sheetExpanded);
+  const showVoiceControl = drawer === null && !(ranked.length > 0 && sheetSnap === 'expanded');
   const profileMeta = PROFILES[profile];
   const showLabeledControls =
     largeUi || profile === 'elderly' || profile === 'child' || profile === 'disabled';
@@ -260,6 +482,24 @@ export default function MapFirstApp() {
     }
   }, [hasFacilityOverlay, showFacilities]);
 
+  useEffect(() => {
+    const syncSearchRoute = () => {
+      if (!usesMobileSearchRoute()) return;
+      setSearchPanelExpanded(window.location.pathname === SEARCH_ROUTE_PATH);
+    };
+    window.addEventListener('popstate', syncSearchRoute);
+    return () => window.removeEventListener('popstate', syncSearchRoute);
+  }, []);
+
+  useEffect(() => {
+    if (!searchPanelExpanded) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (!origin) originInputRef.current?.focus();
+      else if (!destination) destinationInputRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [destination, origin, searchPanelExpanded]);
+
   // 그늘·경사가 없는 경로는 geometry가 없어 오버레이가 남지 않는다.
   // 사용자 ON/OFF 선호는 경로 변경 후에도 유지하고, 편의시설과 같이 가능 범위에서만 적용한다.
 
@@ -269,6 +509,52 @@ export default function MapFirstApp() {
   // ranked.length === 0만으로 expanded를 강제하지 않는다(최초 진입은 collapsed).
 
   const closeDrawer = useCallback(() => setDrawer(null), []);
+
+  const expandSearchPanel = () => {
+    setDrawer(null);
+    if (
+      usesMobileSearchRoute()
+      && window.location.pathname !== SEARCH_ROUTE_PATH
+    ) {
+      const previousState =
+        window.history.state && typeof window.history.state === 'object'
+          ? window.history.state as SearchHistoryState
+          : {};
+      window.history.pushState(
+        {
+          ...previousState,
+          [SEARCH_ROUTE_STATE_KEY]: true,
+          [SEARCH_ROUTE_RETURN_KEY]: currentRelativeUrl(),
+        },
+        '',
+        SEARCH_ROUTE_PATH,
+      );
+    }
+    setSearchPanelExpanded(true);
+  };
+
+  const collapseSearchPanel = () => {
+    if (
+      usesMobileSearchRoute()
+      && window.location.pathname === SEARCH_ROUTE_PATH
+    ) {
+      const currentState =
+        window.history.state && typeof window.history.state === 'object'
+          ? window.history.state as SearchHistoryState
+          : null;
+      const nextState = currentState ? { ...currentState } : null;
+      if (nextState) {
+        delete nextState[SEARCH_ROUTE_STATE_KEY];
+        delete nextState[SEARCH_ROUTE_RETURN_KEY];
+      }
+      window.history.replaceState(
+        nextState && Object.keys(nextState).length > 0 ? nextState : null,
+        '',
+        safeSearchReturnUrl(currentState),
+      );
+    }
+    setSearchPanelExpanded(false);
+  };
 
   const swapPlaces = () => {
     const nextOrigin = destination;
@@ -283,12 +569,12 @@ export default function MapFirstApp() {
   const runRouteSearch = async () => {
     if (!origin || !destination) {
       setSearchHint('검색 결과에서 출발지와 도착지를 모두 선택해 주세요.');
-      setSearchPanelExpanded(true);
+      expandSearchPanel();
       return;
     }
     if (origin.id === destination.id) {
       setSearchHint('출발지와 도착지가 같습니다. 다른 장소를 선택해 주세요.');
-      setSearchPanelExpanded(true);
+      expandSearchPanel();
       return;
     }
     setSearchHint(null);
@@ -299,25 +585,26 @@ export default function MapFirstApp() {
       latestState.recommendations.length > 0
       && latestState.error === null;
     if (searchSucceeded) {
-      setSheetExpanded(true);
+      setSheetSnap('medium');
+      collapseSearchPanel();
+    } else {
+      expandSearchPanel();
     }
-    setSearchPanelExpanded(!searchSucceeded);
-  };
-
-  const expandSearchPanel = () => {
-    setSearchPanelExpanded(true);
-    window.requestAnimationFrame(() => {
-      if (!origin) originInputRef.current?.focus();
-      else if (!destination) destinationInputRef.current?.focus();
-    });
-  };
-
-  const collapseSearchPanel = () => {
-    setSearchPanelExpanded(false);
   };
 
   const editSearchConditions = () => {
     expandSearchPanel();
+  };
+
+  const openMapHome = () => {
+    collapseSearchPanel();
+    setDrawer(null);
+    if (ranked.length > 0) setSheetSnap('collapsed');
+  };
+
+  const openMobileSettings = () => {
+    collapseSearchPanel();
+    setDrawer('settings');
   };
 
   const locate = () => {
@@ -339,6 +626,7 @@ export default function MapFirstApp() {
     largeUi ? 'map-first__frame--easy' : '',
     showLabeledControls ? 'map-first__frame--labeled' : '',
     ranked.length > 0 ? 'map-first__frame--results' : '',
+    searchPanelExpanded ? 'map-first__frame--search' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -359,9 +647,75 @@ export default function MapFirstApp() {
     options.departureAt,
     departureIsNow,
   );
+  const searchViewportStyle = searchPanelExpanded
+    ? {
+        '--mf-search-vv-width': `${searchViewport.width}px`,
+        '--mf-search-vv-height': `${searchViewport.height}px`,
+        '--mf-search-vv-offset-top': `${searchViewport.offsetTop}px`,
+        '--mf-search-vv-offset-left': `${searchViewport.offsetLeft}px`,
+      } as CSSProperties
+    : undefined;
+  const shadeLegend = shadeLayerVisible
+    && selectedShade?.shadeRatio !== undefined && (
+      <div className="map-first__map-legend" role="note">
+        <strong>
+          {selectedShade.estimateKind === 'lower_bound'
+            ? '확인된 건물 그늘 최소 '
+            : '건물 그늘 '}
+          {Math.round(selectedShade.shadeRatio * 100)}%
+        </strong>
+        <span><i className="map-first__legend-dot map-first__legend-dot--shade" />그늘</span>
+        <span><i className="map-first__legend-dot map-first__legend-dot--sun" />햇빛</span>
+        {selectedShade.status === 'estimated_demo' && <em>건물 높이 반영</em>}
+      </div>
+    );
+  const slopeLegend = slopeLayerVisible && selectedTerrainAvgText !== null
+    ? mobileHomeEnabled
+      ? (
+          <MobileSlopeLegend
+            key={selectedRouteId ?? 'selected-route'}
+            average={selectedTerrainAvgText}
+            peak={selectedTerrainPeakText}
+          />
+        )
+      : (
+          <div className="map-first__map-legend map-first__map-legend--slope" role="note">
+            <strong>
+              도보 경사 {selectedTerrainAvgText}%
+              {selectedTerrainPeakText !== null
+                ? ` (최대 ${selectedTerrainPeakText}%)`
+                : ''}
+            </strong>
+            {SLOPE_LEGEND_BANDS.map((band) => (
+              <span key={band.id}>
+                <i
+                  className={`map-first__legend-dot map-first__legend-dot--slope-${band.id}`}
+                  style={{ backgroundColor: band.color }}
+                  aria-hidden="true"
+                />
+                {band.legendText}
+              </span>
+            ))}
+          </div>
+        )
+    : null;
+  const mobileMapLegendsVisible =
+    mobileHomeEnabled
+    && drawer === null
+    && !mapInfoOpen
+    && !voiceOpen
+    && !searchPanelExpanded
+    && !(ranked.length > 0 && sheetSnap === 'expanded');
 
   return (
-    <main className="map-first" id="main-content">
+    <main
+      className="map-first"
+      id="main-content"
+      style={searchViewportStyle}
+      data-search-open={searchPanelExpanded ? 'true' : undefined}
+      data-voice-open={voiceOpen ? 'true' : undefined}
+      data-map-info-open={mapInfoOpen ? 'true' : undefined}
+    >
       <h1 className="map-first__sr-only">부산 접근성 길찾기</h1>
       <div className={frameClass} data-profile={profile}>
         <KakaoMap
@@ -373,13 +727,14 @@ export default function MapFirstApp() {
           showFacilities={showFacilities}
           showShade={shadeLayerVisible}
           showSlope={slopeLayerVisible}
-          layoutFitKey={`${searchPanelMode}|${
-            sheetExpanded ? 'sheet-expanded' : 'sheet-collapsed'
-          }|${drawer ?? 'none'}`}
+          layoutFitKey={`${searchPanelMode}|${sheetSnapLayoutFitToken(
+            settledSheetSnap,
+          )}|${drawer ?? 'none'}`}
         />
 
         <SearchHeader
           mode={searchPanelMode}
+          showMobileHome={mobileHomeEnabled}
           origin={origin}
           destination={destination}
           originInputRef={originInputRef}
@@ -387,6 +742,7 @@ export default function MapFirstApp() {
           loading={loading}
           searchHint={searchHint}
           error={error}
+          profileId={profile}
           profileLabel={profileTriggerLabel(profileMeta.label)}
           profileDrawerOpen={drawer === 'profile'}
           settingsDrawerOpen={drawer === 'settings'}
@@ -438,43 +794,25 @@ export default function MapFirstApp() {
             if (!hasSlopeOverlay) return;
             setShowSlope((visible) => !visible);
           }}
+          onMapInfoOpenChange={setMapInfoOpen}
         />
 
-        {shadeLayerVisible &&
-          selectedShade?.shadeRatio !== undefined && (
-            <div className="map-first__map-legend" role="note">
-              <strong>
-                {selectedShade.estimateKind === 'lower_bound'
-                  ? '확인된 건물 그늘 최소 '
-                  : '건물 그늘 '}
-                {Math.round(selectedShade.shadeRatio * 100)}%
-              </strong>
-              <span><i className="map-first__legend-dot map-first__legend-dot--shade" />그늘</span>
-              <span><i className="map-first__legend-dot map-first__legend-dot--sun" />햇빛</span>
-              {selectedShade.status === 'estimated_demo' && <em>건물 높이 반영</em>}
-            </div>
-          )}
-
-        {slopeLayerVisible && selectedTerrainAvgText !== null && (
-            <div className="map-first__map-legend map-first__map-legend--slope" role="note">
-              <strong>
-                도보 경사 {selectedTerrainAvgText}%
-                {selectedTerrainPeakText !== null
-                  ? ` (최대 ${selectedTerrainPeakText}%)`
-                  : ''}
-              </strong>
-              {SLOPE_LEGEND_BANDS.map((band) => (
-                <span key={band.id}>
-                  <i
-                    className={`map-first__legend-dot map-first__legend-dot--slope-${band.id}`}
-                    style={{ backgroundColor: band.color }}
-                    aria-hidden="true"
-                  />
-                  {band.legendText}
-                </span>
-              ))}
-            </div>
-          )}
+        {mobileHomeEnabled
+          ? mobileMapLegendsVisible && (shadeLegend || slopeLegend) && (
+              <div
+                className="map-first__mobile-map-legends"
+                data-sheet-snap={sheetSnap}
+              >
+                {shadeLegend}
+                {slopeLegend}
+              </div>
+            )
+          : (
+              <>
+                {shadeLegend}
+                {slopeLegend}
+              </>
+            )}
 
         {showVoiceControl && (
           <div className="map-first__voice-wrap">
@@ -515,7 +853,7 @@ export default function MapFirstApp() {
         )}
 
         <RouteResultsSheet
-          sheetExpanded={sheetExpanded}
+          sheetSnap={sheetSnap}
           loading={loading}
           ranked={ranked}
           profile={profile}
@@ -525,7 +863,7 @@ export default function MapFirstApp() {
           sheetMeta={sheetMeta}
           departureButtonLabel={departureButtonLabel}
           departureDrawerOpen={drawer === 'departure'}
-          onToggleSheet={() => setSheetExpanded((expanded) => !expanded)}
+          onSheetSnapChange={setSheetSnap}
           onOpenDeparture={() => setDrawer('departure')}
           onSelectRoute={selectRoute}
           onDetails={openDetails}
@@ -555,24 +893,16 @@ export default function MapFirstApp() {
               aria-label="이동 프로필"
             >
               {PROFILE_LIST.map((item) => (
-                <button
+                <ProfileOptionCard
                   key={item.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={profile === item.id}
-                  className={`map-first__profile-option${
-                    profile === item.id
-                      ? ' map-first__profile-option--selected'
-                      : ''
-                  }`}
-                  onClick={() => {
-                    setProfile(item.id);
+                  item={item}
+                  selected={profile === item.id}
+                  mobile={mobileHomeEnabled}
+                  onSelect={(profileId) => {
+                    setProfile(profileId);
                     closeDrawer();
                   }}
-                >
-                  <strong>{item.label}</strong>
-                  <span>{item.description}</span>
-                </button>
+                />
               ))}
             </div>
           </BottomDrawer>
@@ -584,6 +914,68 @@ export default function MapFirstApp() {
             title="내 설정"
             onClose={closeDrawer}
           >
+            {mobileHomeEnabled && (
+              <div className="map-first__mobile-personalization">
+                <p className="map-first__mobile-personalization-intro">
+                  프로필과 이번 이동 조건은 로그인 없이 바로 바꿀 수 있어요.
+                  카카오 로그인은 설정 저장과 동기화에만 사용됩니다.
+                </p>
+
+                <section
+                  className="map-first__mobile-settings-section"
+                  aria-labelledby="mobile-settings-profile-title"
+                >
+                  <h3 id="mobile-settings-profile-title">이동 프로필</h3>
+                  <div
+                    className="map-first__profile-options"
+                    role="radiogroup"
+                    aria-label="내 설정 이동 프로필"
+                  >
+                    {PROFILE_LIST.map((item) => (
+                      <ProfileOptionCard
+                        key={item.id}
+                        item={item}
+                        selected={profile === item.id}
+                        mobile
+                        onSelect={setProfile}
+                      />
+                    ))}
+                  </div>
+                </section>
+
+                <section
+                  className="map-first__mobile-settings-section"
+                >
+                  <h3>이번 이동 조건</h3>
+                  <p>지금 이동에 필요한 조건만 선택하세요.</p>
+                  <div className="map-first__mobile-settings-quick-conditions">
+                    {[...SITUATION_CONDITIONS, ...ROUTE_OPTION_CONDITIONS].map(
+                      ({ key, label }) => {
+                        const active = Boolean(options[key]);
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            className={`condition-chip${
+                              active ? ' condition-chip--active' : ''
+                            }`}
+                            aria-pressed={active}
+                            onClick={() => setScoringOption(key, !active)}
+                          >
+                            {label}
+                          </button>
+                        );
+                      },
+                    )}
+                  </div>
+                  <RouteConditions />
+                </section>
+
+                <h3 className="map-first__mobile-settings-account-title">
+                  계정 및 화면
+                </h3>
+              </div>
+            )}
             <SettingsPanel
               largeUi={largeUi}
               onToggleLargeUi={toggleLargeUi}
@@ -626,6 +1018,40 @@ export default function MapFirstApp() {
               }}
             />
           </BottomDrawer>
+        )}
+
+        {mobileHomeEnabled && !searchPanelExpanded && (
+          <nav className="map-first__mobile-nav" aria-label="주요 메뉴">
+            <button
+              type="button"
+              className="map-first__mobile-nav-item"
+              aria-label="지도 홈 메뉴"
+              aria-current={drawer === null ? 'page' : undefined}
+              onClick={openMapHome}
+            >
+              <MapHomeIcon />
+              <span>지도 홈</span>
+            </button>
+            <button
+              type="button"
+              className="map-first__mobile-nav-item"
+              aria-label="검색 메뉴"
+              onClick={expandSearchPanel}
+            >
+              <MobileSearchIcon />
+              <span>검색</span>
+            </button>
+            <button
+              type="button"
+              className="map-first__mobile-nav-item"
+              aria-label="내 설정 메뉴"
+              aria-current={drawer === 'settings' ? 'page' : undefined}
+              onClick={openMobileSettings}
+            >
+              <MobileSettingsIcon />
+              <span>내 설정</span>
+            </button>
+          </nav>
         )}
       </div>
     </main>

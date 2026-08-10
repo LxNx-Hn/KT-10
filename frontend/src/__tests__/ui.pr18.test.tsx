@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import App from '@/App';
 import { adapters } from '@/adapters';
+import { MOBILE_STARTUP_STORAGE_KEY } from '@/components/MobileStartupScreen';
 import { findPlace } from '@/data/places';
 import { demoCandidates } from '@/data/routes';
 import { WEATHER_SCENARIOS } from '@/data/weather';
@@ -72,6 +73,7 @@ function cardFor(container: HTMLElement, routeId: string): HTMLElement {
 }
 
 beforeEach(() => {
+  window.localStorage.setItem(MOBILE_STARTUP_STORAGE_KEY, '1');
   useAppStore.setState({
     profile: 'general',
     origin: null,

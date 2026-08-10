@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useVoiceChatStore } from '@/chat/voiceChatStore';
 import { useSpeechRecognition } from '@/chat/useSpeechRecognition';
+import { useVisualViewportRect } from '@/hooks/useVisualViewportRect';
 import { primeSpeechOutput, stopSpeaking } from '@/voice/synthesis';
 import { PROFILE_LIST } from '@/config/profiles';
 import type { VoiceChatStatus } from '@/voice/intents';
@@ -16,8 +17,13 @@ const STATUS_LABEL: Record<VoiceChatStatus, string> = {
 /** 하단 고정 실시간 음성 챗봇 패널 (요구사항 §7) */
 export default function VoiceChatDock({
   variant = 'dock',
+  open: openProp,
+  onOpenChange,
 }: {
   variant?: 'dock' | 'map-first';
+  /** map-first에서는 App이 소유한 실제 open boolean을 그대로 전달한다. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const status = useVoiceChatStore((s) => s.status);
   const messages = useVoiceChatStore((s) => s.messages);
@@ -28,9 +34,30 @@ export default function VoiceChatDock({
   const repeatLast = useVoiceChatStore((s) => s.repeatLast);
   const setStatus = useVoiceChatStore((s) => s.setStatus);
 
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : internalOpen;
+  const setOpen = useCallback(
+    (next: boolean | ((prev: boolean) => boolean)) => {
+      const resolved = typeof next === 'function' ? next(open) : next;
+      if (!controlled) setInternalOpen(resolved);
+      onOpenChange?.(resolved);
+    },
+    [controlled, open, onOpenChange],
+  );
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const trackViewport = variant === 'map-first' && open;
+  const visualViewport = useVisualViewportRect(trackViewport);
+  const viewportStyle: CSSProperties | undefined = trackViewport
+    ? {
+      '--mf-vv-width': `${visualViewport.width}px`,
+      '--mf-vv-height': `${visualViewport.height}px`,
+      '--mf-vv-offset-top': `${visualViewport.offsetTop}px`,
+      '--mf-vv-offset-left': `${visualViewport.offsetLeft}px`,
+      '--mf-vv-bottom-inset': `${visualViewport.bottomInset}px`,
+    } as CSSProperties
+    : undefined;
 
   const { supported, listening, start, stop } = useSpeechRecognition({
     onStart: () => useVoiceChatStore.getState().setStatus('listening'),
@@ -77,6 +104,8 @@ export default function VoiceChatDock({
       className={variant === 'map-first' ? 'voicedock voicedock--map-first' : 'voicedock'}
       role="region"
       aria-label="음성 챗봇"
+      data-vv-bound={trackViewport ? 'true' : undefined}
+      style={viewportStyle}
     >
       {variant === 'map-first' ? (
         <button
