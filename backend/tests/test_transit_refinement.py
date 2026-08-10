@@ -475,7 +475,7 @@ def _gate_weather(feels_like: float, observed: datetime) -> WeatherCondition:
         (9, 31.0, -60, "departure-outside-10-18-kst"),
         (18, 31.0, -60, "departure-outside-10-18-kst"),
         (14, 24.9, -60, "feels-like-below-25"),
-        (14, 31.0, -3600, "weather-observation-expired"),
+        (14, 31.0, -7200, "weather-observation-expired"),
         (14, 31.0, -60, None),
     ],
 )
@@ -490,6 +490,46 @@ def test_shade_gate_reasons(
     departure = _FIXED_NOW.replace(hour=hour, minute=11)
 
     assert _shade_gate_reason(weather, departure) == expected
+
+
+def test_shade_gate_accepts_observation_older_than_weather_cache_ttl(monkeypatch):
+    """관측 유효 범위는 응답 재사용 창이 아니라 전용 설정으로 판정한다.
+
+    observedAt은 공급자 관측 시각이므로 캐시에 머문 시간과 공급자 산출
+    지연이 함께 쌓인다. 캐시 수명을 신선도 기준으로 쓰면 정상 관측도
+    만료로 판정돼 그늘이 계산되지 않는다.
+    """
+    from datetime import timedelta
+
+    monkeypatch.setattr(app_main, "datetime", _FixedDatetime)
+    monkeypatch.setattr(settings, "weather_cache_ttl_seconds", 300)
+    monkeypatch.setattr(
+        settings,
+        "shade_weather_observation_validity_seconds",
+        3600,
+    )
+    # 캐시 수명(300초)보다 오래됐지만 관측 유효 범위(3600초) 안이다.
+    weather = _gate_weather(31.0, _FIXED_NOW - timedelta(seconds=900))
+    departure = _FIXED_NOW.replace(hour=14, minute=11)
+
+    assert _shade_gate_reason(weather, departure) is None
+
+
+def test_shade_gate_allows_departure_within_observation_validity(monkeypatch):
+    """시각별 그늘 갱신을 위해 유효 범위 안의 미래 출발시각은 허용한다."""
+    from datetime import timedelta
+
+    monkeypatch.setattr(app_main, "datetime", _FixedDatetime)
+    monkeypatch.setattr(
+        settings,
+        "shade_weather_observation_validity_seconds",
+        3600,
+    )
+    weather = _gate_weather(31.0, _FIXED_NOW - timedelta(seconds=60))
+    # 관측 시각 기준 약 50분 뒤 출발은 유효 범위 안이다.
+    departure = _FIXED_NOW.replace(hour=15, minute=0)
+
+    assert _shade_gate_reason(weather, departure) is None
 
 
 def test_shade_gate_requires_weather_context(monkeypatch):

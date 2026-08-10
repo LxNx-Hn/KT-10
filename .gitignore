@@ -39,3 +39,4 @@ ai/data/training/generated/
 
 # OSMnx 기본 HTTP 응답 캐시 (저장소 루트 기준 실행 시 자동 생성)
 /cache/
+.env.production.save

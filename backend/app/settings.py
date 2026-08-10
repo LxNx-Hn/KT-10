@@ -73,6 +73,17 @@ class Settings(BaseSettings):
     # 부산 전역이 공유하는 현재 날씨·대기질 성공 응답의 서버 캐시.
     # 0은 캐시 비활성 상태다.
     weather_cache_ttl_seconds: int = Field(default=300, ge=0, le=3600)
+    # 그늘 계산에서 현재 날씨 관측을 유효하다고 볼 시간 창(초).
+    # 관측 나이(now - observedAt)와 출발시각 차이에 모두 적용한다.
+    # 응답 재사용 창인 weather_cache_ttl_seconds와는 다른 값이다.
+    # observedAt은 요청 시각이 아니라 공급자 관측 시각이므로 캐시 수명을
+    # 신선도 기준으로 그대로 쓰면 정상 관측도 만료로 판정된다.
+    # 0은 유효 범위를 정의할 수 없는 상태다.
+    shade_weather_observation_validity_seconds: int = Field(
+        default=3600,
+        ge=0,
+        le=6 * 3600,
+    )
     # 모든 경로 유형에 동일하게 적용하는 총 도보거리 하드 상한.
     max_supported_total_walk_m: int = Field(default=15_000, ge=100, le=50_000)
 
