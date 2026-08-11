@@ -211,7 +211,9 @@ function validPath(path: LatLng[] | undefined, minimumLength = 2): LatLng[] | nu
 function segmentPathParts(route: RouteCandidate): RoutePathPart[] {
   const terrainParts = route.terrain?.status === 'estimated_90m'
     ? (route.terrain.slopeSegments ?? []).flatMap<RoutePathPart>((segment) => {
-      const path = validPath([segment.start, segment.end]);
+      // 서버가 준 원본 polyline 부분경로를 우선 쓴다. 표본 사이를 직선으로
+      // 이으면 90m 안의 코너가 잘려 건물을 가로지르는 선이 그려진다.
+      const path = validPath(segment.path) ?? validPath([segment.start, segment.end]);
       return path
         ? [{
             path,

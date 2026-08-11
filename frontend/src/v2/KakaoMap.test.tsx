@@ -487,6 +487,78 @@ describe('KakaoMap production overlays', () => {
     ).toBe(true);
   });
 
+  it('경사 구간 표시 경로가 있으면 표본 직선 대신 원본 보행 정점을 따라 그린다', async () => {
+    // 90m 표본 사이에서 실제 보행로가 직각으로 꺾이는 상황.
+    const cornerA: LatLng = { lat: 35.1151, lng: 129.044 };
+    const cornerB: LatLng = { lat: 35.117, lng: 129.0414 };
+    const walkPath = [ORIGIN, cornerA, MIDPOINT, cornerB, DESTINATION];
+    const selected = scoredRoute('slope-segment-path', {
+      path: walkPath,
+      geometryQuality: 'exact',
+      segments: [routeSegment('walk', walkPath, 'exact')],
+      terrain: {
+        status: 'estimated_90m',
+        avgSlopePercent: 5,
+        maxSlopePercent: 12,
+        minSlopePercent: 2,
+        source: 'Busan DEM 90m (QGIS precomputed)',
+        resolutionM: 90,
+        slopeSegments: [
+          {
+            start: ORIGIN,
+            end: MIDPOINT,
+            slopePercent: 2,
+            distanceM: 90,
+            path: [ORIGIN, cornerA, MIDPOINT],
+          },
+          {
+            start: MIDPOINT,
+            end: DESTINATION,
+            slopePercent: 12,
+            distanceM: 90,
+            path: [MIDPOINT, cornerB, DESTINATION],
+          },
+        ],
+      },
+    });
+
+    render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="slope-segment-path"
+        onSelectRoute={vi.fn()}
+      />,
+    );
+    await waitUntilReady();
+
+    const coloredSegments = activePolylines().filter(
+      (line) => ['#2FAE6B', '#E3362D'].includes(line.options.strokeColor),
+    );
+    expect(coloredSegments.map((line) => line.options.strokeColor)).toEqual([
+      '#2FAE6B',
+      '#E3362D',
+    ]);
+    // 표본 두 점이 아니라 그 사이 코너 정점까지 그린다.
+    expect(
+      coloredSegments.map((line) => line.options.path.map(
+        (point) => [point.lat, point.lng],
+      )),
+    ).toEqual([
+      [
+        [ORIGIN.lat, ORIGIN.lng],
+        [cornerA.lat, cornerA.lng],
+        [MIDPOINT.lat, MIDPOINT.lng],
+      ],
+      [
+        [MIDPOINT.lat, MIDPOINT.lng],
+        [cornerB.lat, cornerB.lng],
+        [DESTINATION.lat, DESTINATION.lng],
+      ],
+    ]);
+  });
+
   it.each([
     [2, '#2FAE6B'],
     [2.01, '#F7C948'],

@@ -366,6 +366,134 @@ def test_extract_elevation_parts_preserves_boundaries_in_one_api_batch(
     assert result["max_slope_percent"] == 0
 
 
+def _corner_walk_parts():
+    """직각으로 꺾이는 실제 보행로 모양의 두 part."""
+
+    def densify(waypoints, steps=20):
+        points = [waypoints[0]]
+        for start, end in zip(waypoints, waypoints[1:]):
+            for index in range(1, steps + 1):
+                ratio = index / steps
+                points.append((
+                    start[0] + (end[0] - start[0]) * ratio,
+                    start[1] + (end[1] - start[1]) * ratio,
+                ))
+        return points
+
+    first = densify([
+        (35.1000, 129.0000),
+        (35.1000, 129.0060),
+        (35.1040, 129.0060),
+    ])
+    second = densify([
+        (35.1200, 129.0000),
+        (35.1240, 129.0000),
+        (35.1240, 129.0050),
+    ])
+    return [first, second]
+
+
+def test_slope_segment_path_follows_original_walk_geometry(monkeypatch):
+    """경사 구간 표시 경로는 표본 직선이 아니라 원본 정점을 따라간다.
+
+    90m 표본만 이으면 그 사이의 코너가 잘려 실제 보행로를 벗어난 선이
+    그려지므로, 지도에 그릴 경로는 원본 polyline의 부분경로여야 한다.
+    """
+    monkeypatch.setattr(settings, "ELEVATION_NETWORK_FALLBACK_ENABLED", True)
+    monkeypatch.setattr(settings, "ELEVATION_CACHE_DIR", "")
+    parts = _corner_walk_parts()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        count = len(request.url.params.get("latitude", "").split(","))
+        return httpx.Response(
+            200, json={"elevation": [float(index) for index in range(count)]}
+        )
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            return await extract_elevation_features_for_parts(parts, client)
+
+    result = asyncio.run(run())
+
+    assert result["elevation_status"] == "estimated_90m"
+    segments = result["slope_segments"]
+    assert segments
+
+    part_vertices = [set(part) for part in parts]
+    for segment in segments:
+        path = segment["path"]
+        assert len(path) >= 2
+        # 표시 경로의 양 끝은 경사를 계산한 표본과 정확히 같아야 한다.
+        assert path[0] == segment["start"]
+        assert path[-1] == segment["end"]
+        # 표시 경로의 모든 정점은 원본 보행 part 하나 안에 있어야 한다.
+        # 서로 끊어진 part를 잇는 가짜 선을 만들지 않는다.
+        assert any(
+            all(
+                (point["lat"], point["lng"]) in vertices
+                or point in (segment["start"], segment["end"])
+                for point in path
+            )
+            for vertices in part_vertices
+        )
+
+    # 코너 정점이 실제로 살아 있어야 한다. 표본 직선이면 3점 이상 나오지 않는다.
+    assert any(len(segment["path"]) > 2 for segment in segments)
+
+
+def test_slope_segment_path_does_not_change_slope_metrics(monkeypatch):
+    """표시 경로를 추가해도 경사·고도 수치 계약은 그대로다."""
+    monkeypatch.setattr(settings, "ELEVATION_NETWORK_FALLBACK_ENABLED", True)
+    monkeypatch.setattr(settings, "ELEVATION_CACHE_DIR", "")
+    parts = _corner_walk_parts()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        count = len(request.url.params.get("latitude", "").split(","))
+        return httpx.Response(
+            200, json={"elevation": [float(index) for index in range(count)]}
+        )
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as client:
+            return await extract_elevation_features_for_parts(parts, client)
+
+    result = asyncio.run(run())
+    sampled = [_sample(part) for part in parts]
+    offset = 0
+    elevations = []
+    for part in sampled:
+        elevations.append([float(offset + index) for index in range(len(part))])
+        offset += len(part)
+    baseline = calculate_slope_features_for_parts(sampled, elevations)
+
+    metrics = (
+        "avg_slope_percent",
+        "max_slope_percent",
+        "min_slope_percent",
+        "slope_iqr",
+        "uphill_distance_m",
+        "downhill_distance_m",
+        "elevation_gain_m",
+        "elevation_loss_m",
+    )
+    for key in metrics:
+        assert result[key] == baseline[key]
+    assert len(result["slope_segments"]) == len(baseline["slope_segments"])
+    for enriched, plain in zip(
+        result["slope_segments"], baseline["slope_segments"]
+    ):
+        assert enriched["start"] == plain["start"]
+        assert enriched["end"] == plain["end"]
+        assert enriched["slope_percent"] == plain["slope_percent"]
+        assert enriched["distance_m"] == plain["distance_m"]
+    # 표시 경로 없이 계산한 결과에는 path를 만들어 넣지 않는다.
+    assert all("path" not in segment for segment in baseline["slope_segments"])
+
+
 def test_live_default_makes_no_elevation_network_fallback(monkeypatch, tmp_path):
     """지역 DEM이 응답하지 못해도 기본 설정에서는 network fallback이 없다."""
     monkeypatch.setattr(settings, "ELEVATION_DEM_DIR", str(tmp_path / "dem"))
