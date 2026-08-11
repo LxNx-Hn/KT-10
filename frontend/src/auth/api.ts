@@ -17,6 +17,7 @@ export interface UserPreferences {
 export interface CurrentUser {
   id: string;
   nickname?: string;
+  isAdmin: boolean;
   preference: Partial<UserPreferences>;
 }
 
@@ -55,7 +56,10 @@ export type ResolvedAuth =
 export async function resolveCurrentAuth(): Promise<ResolvedAuth> {
   // mock/demo·단위 테스트에서는 세션 API가 없으므로 제출 UI를 열어 둔다.
   if (!IS_LIVE) {
-    return { status: 'authenticated', user: { id: 'mock-user', preference: {} } };
+    return {
+      status: 'authenticated',
+      user: { id: 'mock-user', isAdmin: false, preference: {} },
+    };
   }
   try {
     const response = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' });

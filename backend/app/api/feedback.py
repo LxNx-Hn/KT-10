@@ -112,10 +112,53 @@ class FacilityModerationInput(ApiInput):
     resolution_note: str = Field(min_length=2, max_length=2000)
 
 
+class ReviewModerationInput(ApiInput):
+    status: Literal["pending", "verified", "rejected", "resolved"]
+    resolution_note: str = Field(min_length=2, max_length=2000)
+
+
 def current_admin(user: User = Depends(current_user)) -> User:
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Administrator permission required.")
     return user
+
+
+def _review_list_item(review: RouteReview, impression: RouteImpression | None) -> dict:
+    return {
+        "id": review.id,
+        "routeId": review.route_id,
+        "rating": review.rating,
+        "wasUsable": review.was_usable,
+        "issueType": review.issue_type,
+        "informationAccurate": review.information_accurate,
+        "trainingConsent": review.training_consent,
+        "moderationStatus": review.moderation_status,
+        "resolutionNote": review.resolution_note,
+        "reviewedAt": review.reviewed_at.isoformat() if review.reviewed_at else None,
+        "createdAt": review.created_at.isoformat(),
+        "rank": impression.rank if impression else None,
+        "profile": impression.profile if impression else None,
+        "modelVersion": impression.model_version if impression else None,
+    }
+
+
+def _review_detail(review: RouteReview, impression: RouteImpression | None) -> dict:
+    detail = _review_list_item(review, impression)
+    detail.update({
+        "stairsDifficulty": review.stairs_difficulty,
+        "slopeDifficulty": review.slope_difficulty,
+        "transferDifficulty": review.transfer_difficulty,
+        "crowdingDifficulty": review.crowding_difficulty,
+        "transferInformationDifficulty": review.transfer_information_difficulty,
+        "accessibilityFacilityDifficulty": review.accessibility_facility_difficulty,
+        "actualDurationMin": review.actual_duration_min,
+        "wouldReuse": review.would_reuse,
+        "comment": review.comment,
+        "featureSnapshot": (
+            json.loads(impression.feature_snapshot) if impression else None
+        ),
+    })
+    return detail
 
 
 @router.put("/me/preferences")
@@ -267,6 +310,87 @@ def report_facility(
     db.add(report)
     db.flush()
     return {"id": report.id, "status": report.status}
+
+
+@router.get("/admin/route-reviews")
+def list_route_reviews(
+    status_filter: Literal[
+        "pending", "verified", "rejected", "resolved"
+    ] | None = Query(default=None, alias="status"),
+    issue_type: IssueType | None = Query(default=None, alias="issueType"),
+    training_consent: bool | None = Query(default=None, alias="trainingConsent"),
+    information_accurate: bool | None = Query(default=None, alias="informationAccurate"),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    _: User = Depends(current_admin),
+    db: Session = Depends(database_session),
+) -> dict:
+    filters = []
+    if status_filter is not None:
+        filters.append(RouteReview.moderation_status == status_filter)
+    if issue_type is not None:
+        filters.append(RouteReview.issue_type == issue_type)
+    if training_consent is not None:
+        filters.append(RouteReview.training_consent == training_consent)
+    if information_accurate is not None:
+        filters.append(RouteReview.information_accurate == information_accurate)
+
+    total = db.query(RouteReview).filter(*filters).count()
+    rows = (
+        db.query(RouteReview, RouteImpression)
+        .outerjoin(RouteImpression, RouteReview.impression_id == RouteImpression.id)
+        .filter(*filters)
+        .order_by(RouteReview.created_at.desc(), RouteReview.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return {
+        "items": [_review_list_item(review, impression) for review, impression in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.get("/admin/route-reviews/{review_id}")
+def get_route_review(
+    review_id: str,
+    _: User = Depends(current_admin),
+    db: Session = Depends(database_session),
+) -> dict:
+    row = (
+        db.query(RouteReview, RouteImpression)
+        .outerjoin(RouteImpression, RouteReview.impression_id == RouteImpression.id)
+        .filter(RouteReview.id == review_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Route review not found.")
+    return _review_detail(*row)
+
+
+@router.patch("/admin/route-reviews/{review_id}")
+def moderate_route_review(
+    review_id: str,
+    payload: ReviewModerationInput,
+    admin: User = Depends(current_admin),
+    db: Session = Depends(database_session),
+) -> dict:
+    review = db.get(RouteReview, review_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="Route review not found.")
+    review.moderation_status = payload.status
+    review.resolution_note = payload.resolution_note
+    review.reviewed_by = admin.id
+    review.reviewed_at = datetime.now(UTC).replace(tzinfo=None)
+    db.flush()
+    impression = (
+        db.get(RouteImpression, review.impression_id)
+        if review.impression_id
+        else None
+    )
+    return _review_detail(review, impression)
 
 
 @router.get("/admin/facility-reports")

@@ -1,5 +1,6 @@
 import KakaoLoginButton from '@/components/KakaoLoginButton';
 import ProfilePreferences from '@/components/ProfilePreferences';
+import AdminReviewLink from '@/admin/AdminReviewLink';
 
 type SettingsPanelProps = {
   largeUi: boolean;
@@ -14,6 +15,7 @@ export default function SettingsPanel({
   return (
     <section className="map-first__settings" aria-label="로그인과 개인 설정">
       <KakaoLoginButton />
+      <AdminReviewLink />
       <button
         type="button"
         className={`map-first__settings-large${

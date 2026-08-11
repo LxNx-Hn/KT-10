@@ -55,7 +55,7 @@ describe('후기·신고 로그인 안내', () => {
   it('로그인 후에는 후기·신고 기능을 유지한다', async () => {
     resolveCurrentAuthMock.mockResolvedValue({
       status: 'authenticated',
-      user: { id: 'mock-user', preference: {} },
+      user: { id: 'mock-user', isAdmin: false, preference: {} },
     });
 
     render(<FeedbackTabPanel selectedRouteId="route-1" />);

@@ -191,7 +191,12 @@ def me(user: User | None = Depends(optional_current_user)) -> dict | Response:
     if user is None:
         return Response(status_code=204)
     pref = user.preference
-    return {"id": user.id, "nickname": user.nickname, "preference": _preference_dict(pref)}
+    return {
+        "id": user.id,
+        "nickname": user.nickname,
+        "isAdmin": user.is_admin,
+        "preference": _preference_dict(pref),
+    }
 
 
 def _preference_dict(pref: UserPreference | None) -> dict:
