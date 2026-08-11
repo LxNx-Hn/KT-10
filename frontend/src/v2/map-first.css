@@ -329,17 +329,18 @@
 }
 
 .map-first__kakao-facility {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
-  min-height: 48px;
-  border: none;
-  padding: 0;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 5px;
+  max-width: 180px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--mf-ink);
+  font-family: inherit;
+  pointer-events: auto;
 }
 
 .map-first__kakao-facility-dot {
@@ -1189,6 +1190,153 @@
   font-weight: var(--mf-section-weight);
   line-height: var(--mf-line-height);
   overflow-wrap: anywhere;
+}
+
+.map-first__map-info-detail {
+  margin: 0;
+  color: var(--mf-ink-soft);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-first__kakao-shelter {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+  z-index: 1;
+}
+
+.map-first__kakao-shelter--open {
+  z-index: 4;
+}
+
+.map-first__kakao-shelter-marker {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid #0f766e;
+  border-radius: 50%;
+  background: #fff;
+  color: #0f766e;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+}
+
+.map-first__kakao-shelter--open .map-first__kakao-shelter-marker {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  border-width: 2px;
+  background: #0f766e;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(15, 118, 110, 0.28);
+}
+
+.map-first__kakao-shelter-marker:focus-visible {
+  outline: 3px solid rgba(49, 130, 246, 0.55);
+  outline-offset: 2px;
+}
+
+.map-first__kakao-shelter-bubble {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 20;
+  width: min(220px, 70vw);
+  transform: translateX(-50%);
+  padding: 10px 12px 12px;
+  border: 1px solid var(--mf-line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: var(--mf-shadow-raised);
+  color: var(--mf-ink);
+  box-sizing: border-box;
+}
+
+.map-first__kakao-shelter-title {
+  display: block;
+  margin: 0 28px 8px 0;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.map-first__kakao-shelter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.map-first__kakao-shelter-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.map-first__kakao-shelter-list b {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.map-first__kakao-shelter-list span {
+  color: var(--mf-ink-soft);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.map-first__kakao-shelter-source {
+  display: block;
+  margin-top: 8px;
+  color: var(--mf-ink-muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.map-first__kakao-shelter-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--mf-ink-soft);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.map-first__kakao-shelter-close:focus-visible {
+  outline: 3px solid rgba(49, 130, 246, 0.55);
+  outline-offset: 1px;
 }
 
 .map-first__fab {
@@ -3581,37 +3729,70 @@
 .map-first__kakao-facility {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   max-width: 180px;
-  padding: 5px 9px 5px 5px;
-  border: 1px solid rgba(49, 130, 246, 0.3);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 4px 12px rgba(25, 31, 40, 0.16);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   color: var(--mf-ink);
   font-family: inherit;
-  font-size: 11px;
-  font-weight: 700;
   white-space: nowrap;
+  pointer-events: auto;
 }
 
 .map-first__kakao-facility-icon {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--mf-blue);
-  color: #fff;
+  background: #fff;
+  border: 1.5px solid #1e3a5f;
+  color: #1e3a5f;
   font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.map-first__kakao-facility-icon--elevator {
+  border-color: #1e3a5f;
+  color: #1e3a5f;
+}
+
+.map-first__kakao-facility-icon--bus {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.map-first__kakao-facility-pictogram {
+  display: block;
 }
 
 .map-first__kakao-facility-label {
   min-width: 0;
+  max-width: 140px;
+  padding: 3px 8px;
+  border: 1px solid rgba(30, 58, 95, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+  color: var(--mf-ink);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.map-first__kakao-facility--bus .map-first__kakao-facility-label {
+  border-color: rgba(37, 99, 235, 0.2);
 }
 
 @media (forced-colors: active) {

@@ -31,6 +31,7 @@ type LayerToggleRowProps = {
   checked: boolean;
   enabled: boolean;
   disabledHint: string;
+  detail?: string;
   onToggle: () => void;
 };
 
@@ -40,6 +41,7 @@ function LayerToggleRow({
   checked,
   enabled,
   disabledHint,
+  detail,
   onToggle,
 }: LayerToggleRowProps) {
   return (
@@ -63,6 +65,9 @@ function LayerToggleRow({
           <span className="map-first__map-info-switch-thumb" aria-hidden="true" />
         </button>
       </div>
+      {detail && enabled && (
+        <p className="map-first__map-info-detail">{detail}</p>
+      )}
       {!enabled && (
         <p className="map-first__map-info-hint">{disabledHint}</p>
       )}
@@ -76,6 +81,8 @@ export type MapControlsProps = {
   showFacilities: boolean;
   hasFacilityOverlay: boolean;
   facilityDisabledHint: string;
+  /** 편의시설 아래 짧은 설명(레이아웃을 깨지 않는 한 줄). */
+  facilityDetail?: string;
   showShade: boolean;
   hasShadeOverlay: boolean;
   shadeDisabledHint: string;
@@ -96,6 +103,7 @@ export default function MapControls({
   showFacilities,
   hasFacilityOverlay,
   facilityDisabledHint,
+  facilityDetail,
   showShade,
   hasShadeOverlay,
   shadeDisabledHint,
@@ -211,6 +219,7 @@ export default function MapControls({
                 checked={showFacilities}
                 enabled={hasFacilityOverlay}
                 disabledHint={facilityDisabledHint}
+                detail={facilityDetail}
                 onToggle={onToggleFacilities}
               />
               <LayerToggleRow

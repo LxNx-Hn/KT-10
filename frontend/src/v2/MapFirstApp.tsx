@@ -15,6 +15,9 @@ import RouteConditions, {
   ROUTE_CONDITION_KEYS,
 } from '@/components/RouteConditions';
 import { PROFILE_LIST, PROFILES } from '@/config/profiles';
+import {
+  hasKtClimateShelterData,
+} from '@/data/ktClimateShelters';
 import { useVisualViewportRect } from '@/hooks/useVisualViewportRect';
 import {
   useAppStore,
@@ -417,7 +420,7 @@ export default function MapFirstApp({
     );
     return peak === null ? null : formatSlopePercent(peak);
   })();
-  const hasFacilityOverlay = Boolean(
+  const hasRouteFacilityOverlay = Boolean(
     selectedItem?.route.segments.some(
       (segment) =>
         Boolean(segment.path && segment.path.length > 0) &&
@@ -425,11 +428,16 @@ export default function MapFirstApp({
           (segment.mode === 'bus' && segment.isLowFloorBus === true)),
     ),
   );
+  const hasKtShelterOverlay = hasKtClimateShelterData();
+  const hasFacilityOverlay = hasRouteFacilityOverlay || hasKtShelterOverlay;
   const facilityDisabledHint = hasFacilityOverlay
     ? ''
     : selectedItem
       ? '이 경로에는 표시할 편의시설이 없어요.'
       : MAP_INFO_SEARCH_FIRST_HINT;
+  const facilityDetail = hasKtShelterOverlay
+    ? 'KT 기후쉼터 · 승강기 · 저상버스'
+    : undefined;
   const shadeDisabledHint = hasShadeOverlay
     ? ''
     : shadeUnavailableHint(selectedShade, Boolean(selectedItem));
@@ -799,6 +807,7 @@ export default function MapFirstApp({
           showFacilities={showFacilities}
           hasFacilityOverlay={hasFacilityOverlay}
           facilityDisabledHint={facilityDisabledHint}
+          facilityDetail={facilityDetail}
           showShade={showShade}
           hasShadeOverlay={hasShadeOverlay}
           shadeDisabledHint={shadeDisabledHint}

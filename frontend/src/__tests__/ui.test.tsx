@@ -1762,7 +1762,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(legend.textContent).not.toContain('완만 ≤2%');
   });
 
-  it('시설 overlay 좌표가 없으면 편의시설 스위치가 비활성이다', () => {
+  it('경로 편의시설이 없어도 KT 기후쉼터 데이터면 편의시설 스위치를 쓸 수 있다', () => {
     const { getByRole } = render(<App />);
     act(() => {
       seedResults();
@@ -1780,11 +1780,14 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     const map = getByRole('region', { name: '지도' });
     fireEvent.click(getByRole('button', { name: '지도 정보' }));
     const facility = getByRole('switch', { name: '편의시설' });
-    expect(facility).toHaveProperty('disabled', true);
+    expect(facility).toHaveProperty('disabled', false);
     expect(getByRole('dialog', { name: '지도 정보' }).textContent).toContain(
-      '이 경로에는 표시할 편의시설이 없어요.',
+      'KT 기후쉼터 · 승강기 · 저상버스',
     );
-    expect(map.getAttribute('data-facilities-visible')).toBe('false');
+    expect(facility.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(facility);
+    expect(facility.getAttribute('aria-checked')).toBe('true');
+    expect(map.getAttribute('data-facilities-visible')).toBe('true');
   });
 
   it('시설 overlay 좌표가 있으면 편의시설 스위치로 마커만 토글한다', () => {

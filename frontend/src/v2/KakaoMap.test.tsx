@@ -8,7 +8,9 @@ import type {
   RouteSegment,
   ScoredRoute,
 } from '@/types';
-import KakaoMap from './KakaoMap';
+import KakaoMap, {
+  KT_CLIMATE_SHELTER_MAX_VISIBLE_LEVEL,
+} from './KakaoMap';
 
 const loaderMocks = vi.hoisted(() => ({
   hasKakaoKey: vi.fn(() => true),
@@ -88,6 +90,7 @@ class MockMap {
 
   readonly centerCalls: MockLatLngValue[] = [];
   readonly levelCalls: number[] = [];
+  level: number;
 
   constructor(
     public readonly container: HTMLElement,
@@ -98,6 +101,7 @@ class MockMap {
       scrollwheel?: boolean;
     },
   ) {
+    this.level = options.level;
     sdkRecords.maps.push(this);
   }
 
@@ -121,8 +125,14 @@ class MockMap {
     this.centerCalls.push(point);
   }
 
+  getLevel() {
+    return this.level;
+  }
+
   setLevel(level: number) {
+    this.level = level;
     this.levelCalls.push(level);
+    zoomChangedHandlers.get(this)?.();
   }
 
   relayout() {}
@@ -165,6 +175,10 @@ class MockCustomOverlay extends MockGraphic {
   setPosition(position: MockLatLngValue) {
     this.options.position = position;
   }
+
+  setZIndex(zIndex: number) {
+    this.options.zIndex = zIndex;
+  }
 }
 
 const sdkRecords = {
@@ -176,6 +190,7 @@ const sdkRecords = {
 };
 
 let eventHandlers = new WeakMap<object, () => void>();
+let zoomChangedHandlers = new WeakMap<object, () => void>();
 let viewportHeight = 640;
 
 const mapsApi = {
@@ -187,14 +202,21 @@ const mapsApi = {
   CustomOverlay: MockCustomOverlay,
   event: {
     addListener: vi.fn(
-      (target: object, type: 'click', handler: () => void) => {
+      (target: object, type: 'click' | 'zoom_changed', handler: () => void) => {
         if (type === 'click') eventHandlers.set(target, handler);
+        if (type === 'zoom_changed') zoomChangedHandlers.set(target, handler);
       },
     ),
     removeListener: vi.fn(
-      (target: object, type: 'click', handler: () => void) => {
+      (target: object, type: 'click' | 'zoom_changed', handler: () => void) => {
         if (type === 'click' && eventHandlers.get(target) === handler) {
           eventHandlers.delete(target);
+        }
+        if (
+          type === 'zoom_changed'
+          && zoomChangedHandlers.get(target) === handler
+        ) {
+          zoomChangedHandlers.delete(target);
         }
       },
     ),
@@ -282,6 +304,27 @@ async function waitUntilReady() {
   });
 }
 
+/** 시내 경로·주변시설을 볼 수 있는 가까운 축척으로 맞춘다. */
+function zoomMapToShelterVisibleLevel(
+  level = Math.min(5, KT_CLIMATE_SHELTER_MAX_VISIBLE_LEVEL),
+) {
+  const map = sdkRecords.maps[0];
+  expect(map).toBeTruthy();
+  map.setLevel(level);
+}
+
+function shelterOverlaysOnMap() {
+  return activeOverlays().filter((overlay) =>
+    overlay.options.content.classList.contains('map-first__kakao-shelter'),
+  );
+}
+
+function shelterOverlayInstances() {
+  return sdkRecords.overlays.filter((overlay) =>
+    overlay.options.content.classList.contains('map-first__kakao-shelter'),
+  );
+}
+
 beforeEach(() => {
   sdkRecords.maps.length = 0;
   sdkRecords.polylines.length = 0;
@@ -289,6 +332,7 @@ beforeEach(() => {
   sdkRecords.overlays.length = 0;
   sdkRecords.latLngs.length = 0;
   eventHandlers = new WeakMap<object, () => void>();
+  zoomChangedHandlers = new WeakMap<object, () => void>();
   viewportHeight = 640;
   mapsApi.event.addListener.mockClear();
   mapsApi.event.removeListener.mockClear();
@@ -914,6 +958,7 @@ describe('KakaoMap production overlays', () => {
         selectedRouteId="facilities"
         onSelectRoute={vi.fn()}
         showFacilities
+        climateShelterGroups={[]}
       />,
     );
     await waitUntilReady();
@@ -924,6 +969,22 @@ describe('KakaoMap production overlays', () => {
         .filter((label) => label?.startsWith('승강기') || label?.startsWith('저상버스')),
     ).toEqual(['승강기 부산역', '저상버스 1001번']);
 
+    const elevator = activeOverlays().find((overlay) =>
+      overlay.options.content.classList.contains('map-first__kakao-facility--elevator'),
+    );
+    const bus = activeOverlays().find((overlay) =>
+      overlay.options.content.classList.contains('map-first__kakao-facility--bus'),
+    );
+    expect(elevator).toBeTruthy();
+    expect(bus).toBeTruthy();
+    expect(elevator?.options.content.textContent).not.toContain('↕');
+    expect(
+      elevator?.options.content.querySelector('.map-first__kakao-facility-pictogram'),
+    ).toBeTruthy();
+    expect(
+      bus?.options.content.querySelector('.map-first__kakao-facility-icon')?.textContent,
+    ).toBe('저');
+
     view.rerender(
       <KakaoMap
         origin={ORIGIN}
@@ -932,6 +993,7 @@ describe('KakaoMap production overlays', () => {
         selectedRouteId="facilities"
         onSelectRoute={vi.fn()}
         showFacilities={false}
+        climateShelterGroups={[]}
       />,
     );
 
@@ -942,6 +1004,280 @@ describe('KakaoMap production overlays', () => {
         ),
       ).toHaveLength(0);
     });
+  });
+
+  it('편의시설 ON이면 KT 기후쉼터 marker를 그리고 OFF면 제거하며 fitBounds에는 넣지 않는다', async () => {
+    const selected = scoredRoute('shelters', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+      segments: [routeSegment('walk', [ORIGIN, DESTINATION], 'exact')],
+    });
+    const groups = [
+      {
+        key: 'g1',
+        lat: 35.2,
+        lng: 129.1,
+        shelters: [{
+          id: '1',
+          name: 'KT 테스트점',
+          address: '연제구 시험로 1',
+          lat: 35.2,
+          lng: 129.1,
+        }],
+      },
+      {
+        key: 'g2',
+        lat: 35.2098761,
+        lng: 129.0064230,
+        shelters: [
+          {
+            id: '2',
+            name: 'KT 씨엘 젊음의거리점',
+            address: '북구 A',
+            lat: 35.2098761,
+            lng: 129.0064230,
+          },
+          {
+            id: '3',
+            name: 'KT (주)엘에스컴퍼니 덕천역점',
+            address: '북구 B',
+            lat: 35.2098761,
+            lng: 129.0064230,
+          },
+        ],
+      },
+    ];
+
+    const view = render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="shelters"
+        onSelectRoute={vi.fn()}
+        showFacilities
+        climateShelterGroups={groups}
+      />,
+    );
+    await waitUntilReady();
+
+    zoomMapToShelterVisibleLevel();
+    const shelterOverlays = shelterOverlaysOnMap();
+    expect(shelterOverlays).toHaveLength(2);
+    expect(
+      shelterOverlays.map((overlay) =>
+        overlay.options.content
+          .querySelector('.map-first__kakao-shelter-marker')
+          ?.getAttribute('aria-label'),
+      ),
+    ).toEqual([
+      'KT 기후쉼터 KT 테스트점',
+      'KT 기후쉼터 2곳: KT 씨엘 젊음의거리점, KT (주)엘에스컴퍼니 덕천역점',
+    ]);
+
+    const map = sdkRecords.maps[0];
+    const lastBoundsCall = map.boundsCalls[map.boundsCalls.length - 1];
+    expect(lastBoundsCall).toBeTruthy();
+    const boundLats = lastBoundsCall.bounds.points.map(
+      (point: { lat: number }) => point.lat,
+    );
+    expect(boundLats).not.toContain(35.2);
+    expect(boundLats).not.toContain(35.2098761);
+
+    view.rerender(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="shelters"
+        onSelectRoute={vi.fn()}
+        showFacilities={false}
+        climateShelterGroups={groups}
+      />,
+    );
+    await waitFor(() => {
+      expect(shelterOverlaysOnMap()).toHaveLength(0);
+    });
+  });
+
+  it('가까운 zoom에서만 KT 기후쉼터를 표시하고 넓게 zoom-out하면 setMap으로 숨긴다', async () => {
+    const selected = scoredRoute('shelter-zoom', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+      segments: [
+        {
+          ...routeSegment('subway', [ORIGIN, MIDPOINT], 'exact'),
+          mode: 'subway',
+          stationName: '부산역',
+          hasElevator: true,
+        },
+      ],
+    });
+    const groups = [
+      {
+        key: 'g1',
+        lat: 35.2,
+        lng: 129.1,
+        shelters: [{
+          id: '1',
+          name: 'KT 테스트점',
+          address: '연제구 시험로 1',
+          lat: 35.2,
+          lng: 129.1,
+        }],
+      },
+    ];
+
+    const view = render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="shelter-zoom"
+        onSelectRoute={vi.fn()}
+        showFacilities
+        climateShelterGroups={groups}
+      />,
+    );
+    await waitUntilReady();
+
+    const map = sdkRecords.maps[0];
+    const boundsBeforeZoom = map.boundsCalls.length;
+    expect(map.getLevel()).toBeGreaterThan(KT_CLIMATE_SHELTER_MAX_VISIBLE_LEVEL);
+    expect(shelterOverlaysOnMap()).toHaveLength(0);
+    expect(shelterOverlayInstances().length).toBeGreaterThanOrEqual(1);
+    expect(
+      activeOverlays().some((overlay) =>
+        overlay.options.content.getAttribute('aria-label')?.startsWith('승강기'),
+      ),
+    ).toBe(true);
+
+    const instanceCountAtFar = shelterOverlayInstances().length;
+    zoomMapToShelterVisibleLevel();
+    expect(shelterOverlaysOnMap()).toHaveLength(1);
+    expect(shelterOverlayInstances()).toHaveLength(instanceCountAtFar);
+    const shelter = shelterOverlaysOnMap()[0];
+    const mapCallsAfterShow = shelter.mapCalls.length;
+
+    map.setLevel(KT_CLIMATE_SHELTER_MAX_VISIBLE_LEVEL + 1);
+    expect(shelterOverlaysOnMap()).toHaveLength(0);
+    expect(shelterOverlayInstances()).toHaveLength(instanceCountAtFar);
+    expect(shelter.map).toBeNull();
+    expect(shelter.mapCalls.length).toBeGreaterThan(mapCallsAfterShow);
+    expect(
+      activeOverlays().some((overlay) =>
+        overlay.options.content.getAttribute('aria-label')?.startsWith('승강기'),
+      ),
+    ).toBe(true);
+
+    zoomMapToShelterVisibleLevel();
+    expect(shelterOverlaysOnMap()).toHaveLength(1);
+    expect(shelterOverlayInstances()).toHaveLength(instanceCountAtFar);
+    expect(shelter.map).toBe(map);
+    expect(map.boundsCalls.length).toBe(boundsBeforeZoom);
+
+    view.rerender(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="shelter-zoom"
+        onSelectRoute={vi.fn()}
+        showFacilities={false}
+        climateShelterGroups={groups}
+      />,
+    );
+    await waitFor(() => {
+      expect(shelterOverlaysOnMap()).toHaveLength(0);
+    });
+    expect(
+      activeOverlays().some((overlay) =>
+        overlay.options.content.classList.contains('map-first__kakao-shelter'),
+      ),
+    ).toBe(false);
+    expect(map.boundsCalls.length).toBe(boundsBeforeZoom);
+  });
+
+  it('쉼터 기본/선택 marker 클래스와 detail bubble z-index를 분리하고 열리면 overlay 우선순위를 올린다', async () => {
+    const selected = scoredRoute('shelter-visual', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+      segments: [routeSegment('walk', [ORIGIN, DESTINATION], 'exact')],
+    });
+    const groups = [
+      {
+        key: 'g1',
+        lat: 35.2,
+        lng: 129.1,
+        shelters: [{
+          id: '1',
+          name: 'KT 테스트점',
+          address: '연제구 시험로 1',
+          lat: 35.2,
+          lng: 129.1,
+        }],
+      },
+      {
+        key: 'g2',
+        lat: 35.21,
+        lng: 129.11,
+        shelters: [{
+          id: '2',
+          name: 'KT 다른점',
+          address: '북구 시험로 2',
+          lat: 35.21,
+          lng: 129.11,
+        }],
+      },
+    ];
+
+    render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="shelter-visual"
+        onSelectRoute={vi.fn()}
+        showFacilities
+        climateShelterGroups={groups}
+      />,
+    );
+    await waitUntilReady();
+    zoomMapToShelterVisibleLevel();
+
+    const shelterOverlays = shelterOverlaysOnMap();
+    expect(shelterOverlays).toHaveLength(2);
+    expect(shelterOverlays.every((overlay) => overlay.options.zIndex === 5)).toBe(true);
+
+    const first = shelterOverlays[0];
+    const second = shelterOverlays[1];
+    const firstRoot = first.options.content;
+    const firstMarker = firstRoot.querySelector('.map-first__kakao-shelter-marker');
+    const firstBubble = firstRoot.querySelector('.map-first__kakao-shelter-bubble');
+    const secondMarker = second.options.content.querySelector(
+      '.map-first__kakao-shelter-marker',
+    );
+
+    expect(firstMarker?.textContent).toBe('쉼');
+    expect(firstRoot.classList.contains('map-first__kakao-shelter--open')).toBe(false);
+    expect(firstBubble).toBeTruthy();
+    expect(firstBubble).toHaveProperty('hidden', true);
+
+    fireEvent.click(firstMarker!);
+    expect(firstRoot.classList.contains('map-first__kakao-shelter--open')).toBe(true);
+    expect(firstMarker?.getAttribute('aria-expanded')).toBe('true');
+    expect(firstBubble).toHaveProperty('hidden', false);
+    expect(first.options.zIndex).toBe(12);
+    expect(second.options.zIndex).toBe(5);
+    expect(first.options.zIndex!).toBeGreaterThan(second.options.zIndex!);
+
+    fireEvent.click(secondMarker!);
+    expect(firstRoot.classList.contains('map-first__kakao-shelter--open')).toBe(false);
+    expect(first.options.zIndex).toBe(5);
+    expect(second.options.content.classList.contains('map-first__kakao-shelter--open')).toBe(
+      true,
+    );
+    expect(second.options.zIndex).toBe(12);
   });
 
   it('잘못된 좌표를 버리고 품질 미확인 구간을 임의 좌표나 실선으로 보정하지 않는다', async () => {

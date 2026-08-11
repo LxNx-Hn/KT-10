@@ -15,6 +15,11 @@ import type {
   SegmentMode,
 } from '@/types';
 import {
+  KT_CLIMATE_SHELTER_GROUPS,
+  KT_CLIMATE_SHELTER_SOURCE_LABEL,
+  type ClimateShelterMarkerGroup,
+} from '@/data/ktClimateShelters';
+import {
   SLOPE_COLOR_RAMP,
   slopeLevelLabel,
   slopeMapColor,
@@ -41,6 +46,11 @@ export type KakaoMapProps = {
   showSlope?: boolean;
   /** Overlay layout signature (search panel / sheet / drawer) for visible-area fits. */
   layoutFitKey?: string;
+  /**
+   * KT 기후쉼터 marker 그룹. 기본은 정적 CSV 데이터.
+   * 테스트에서 빈 배열/픽스처를 주입할 때 사용한다.
+   */
+  climateShelterGroups?: ClimateShelterMarkerGroup[];
 };
 
 type GeometryQuality = NonNullable<RouteCandidate['geometryQuality']>;
@@ -72,6 +82,7 @@ type KakaoMapInstance = {
   ) => void;
   setCenter: (latlng: KakaoLatLng) => void;
   setLevel: (level: number) => void;
+  getLevel: () => number;
   relayout: () => void;
   setDraggable: (draggable: boolean) => void;
   setZoomable: (zoomable: boolean) => void;
@@ -86,11 +97,22 @@ type KakaoPolygon = KakaoMapGraphic;
 
 type KakaoCustomOverlay = KakaoMapGraphic & {
   setPosition: (latlng: KakaoLatLng) => void;
+  setZIndex: (zIndex: number) => void;
 };
 
+type KakaoMapEventType = 'click' | 'zoom_changed';
+
 type KakaoEventApi = {
-  addListener: (target: object, type: 'click', handler: () => void) => void;
-  removeListener: (target: object, type: 'click', handler: () => void) => void;
+  addListener: (
+    target: object,
+    type: KakaoMapEventType,
+    handler: () => void,
+  ) => void;
+  removeListener: (
+    target: object,
+    type: KakaoMapEventType,
+    handler: () => void,
+  ) => void;
 };
 
 type KakaoMapsApi = {
@@ -141,6 +163,19 @@ type MapListener = {
   target: object;
   handler: () => void;
 };
+
+/**
+ * KT 기후쉼터를 표시할 수 있는 최대 Kakao map level.
+ * Kakao level은 값이 클수록 더 넓은 축척(zoom-out).
+ * 앱 참고값: 사용자 위치 3, 단일점 4, 경로 setBounds 대략 5–7, DISTRICT.defaultZoom 9.
+ * 시내 경로·주변 시설을 보는 수준(<=7)만 표시하고, 도시 전역(8+)에서는 숨겨
+ * 134개 marker가 경로보다 먼저 보이지 않게 한다.
+ */
+export const KT_CLIMATE_SHELTER_MAX_VISIBLE_LEVEL = 7;
+
+export function shouldShowClimateSheltersAtLevel(level: number): boolean {
+  return Number.isFinite(level) && level <= KT_CLIMATE_SHELTER_MAX_VISIBLE_LEVEL;
+}
 
 const MODE_COLOR: Record<SegmentMode, string> = {
   walk: '#16a34a',
@@ -426,20 +461,152 @@ function createUserContent(): HTMLDivElement {
   return root;
 }
 
+/** 경로 위 편의시설 marker z. shelter 기본보다 살짝 위, 선택 shelter보다 아래. */
+const FACILITY_OVERLAY_Z = 6;
+const SHELTER_OVERLAY_Z = 5;
+/** 열린 상세 bubble이 다른 쉼터/편의시설 marker에 가리지 않게. */
+const SHELTER_OPEN_OVERLAY_Z = 12;
+
+const shelterLayerPriorityByRoot = new WeakMap<
+  HTMLElement,
+  (open: boolean) => void
+>();
+const openShelterRoots = new Set<HTMLElement>();
+
+function createElevatorFacilityIcon(): HTMLSpanElement {
+  const icon = document.createElement('span');
+  icon.className =
+    'map-first__kakao-facility-icon map-first__kakao-facility-icon--elevator';
+  icon.setAttribute('aria-hidden', 'true');
+  // 저장소에 elevator SVG가 없어 인라인 pictogram(문 + 상하 화살표) 사용.
+  icon.innerHTML =
+    '<svg class="map-first__kakao-facility-pictogram" viewBox="0 0 16 16" width="14" height="14" focusable="false" aria-hidden="true">'
+    + '<rect x="3.25" y="2" width="9.5" height="12" rx="1.1" fill="none" stroke="currentColor" stroke-width="1.35"/>'
+    + '<path fill="currentColor" d="M8 3.9 6.35 5.85h3.3Z"/>'
+    + '<path fill="currentColor" d="M8 12.1 6.35 10.15h3.3Z"/>'
+    + '<path fill="none" stroke="currentColor" stroke-width="1.2" d="M8 6.15v3.7"/>'
+    + '</svg>';
+  return icon;
+}
+
 function createFacilityContent(label: string, detail: string): HTMLDivElement {
   const root = document.createElement('div');
-  root.className = 'map-first__kakao-facility';
+  const kind = label === '승강기' ? 'elevator' : 'bus';
+  root.className = `map-first__kakao-facility map-first__kakao-facility--${kind}`;
   root.setAttribute('aria-label', `${label} ${detail}`);
 
-  const icon = document.createElement('span');
-  icon.className = 'map-first__kakao-facility-icon';
-  icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = label === '승강기' ? '↕' : '저';
+  let icon: HTMLSpanElement;
+  if (label === '승강기') {
+    icon = createElevatorFacilityIcon();
+  } else {
+    icon = document.createElement('span');
+    icon.className =
+      'map-first__kakao-facility-icon map-first__kakao-facility-icon--bus';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '저';
+  }
 
   const copy = document.createElement('span');
   copy.className = 'map-first__kakao-facility-label';
   copy.textContent = `${label} · ${detail}`;
   root.append(icon, copy);
+  return root;
+}
+
+function closeOpenShelterBubbles(except?: HTMLElement) {
+  for (const node of [...openShelterRoots]) {
+    if (except && node === except) continue;
+    node.classList.remove('map-first__kakao-shelter--open');
+    const bubble = node.querySelector('.map-first__kakao-shelter-bubble');
+    const toggle = node.querySelector('.map-first__kakao-shelter-marker');
+    if (bubble instanceof HTMLElement) bubble.hidden = true;
+    if (toggle instanceof HTMLElement) {
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+    openShelterRoots.delete(node);
+    shelterLayerPriorityByRoot.get(node)?.(false);
+  }
+}
+
+function createClimateShelterContent(
+  group: ClimateShelterMarkerGroup,
+): HTMLDivElement {
+  const root = document.createElement('div');
+  root.className = 'map-first__kakao-shelter';
+  const names = group.shelters.map((item) => item.name).join(', ');
+  const count = group.shelters.length;
+  const accessibleName =
+    count > 1
+      ? `KT 기후쉼터 ${count}곳: ${names}`
+      : `KT 기후쉼터 ${group.shelters[0]?.name ?? ''}`;
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'map-first__kakao-shelter-marker';
+  button.setAttribute('aria-label', accessibleName);
+  button.setAttribute('aria-expanded', 'false');
+  button.textContent = '쉼';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'map-first__kakao-shelter-bubble';
+  bubble.hidden = true;
+  bubble.setAttribute('role', 'dialog');
+  bubble.setAttribute(
+    'aria-label',
+    count > 1 ? `KT 기후쉼터 ${count}곳` : 'KT 기후쉼터',
+  );
+
+  const title = document.createElement('strong');
+  title.className = 'map-first__kakao-shelter-title';
+  title.textContent =
+    count > 1 ? `KT 기후쉼터 ${count}곳` : 'KT 기후쉼터';
+
+  const list = document.createElement('ul');
+  list.className = 'map-first__kakao-shelter-list';
+  for (const shelter of group.shelters) {
+    const item = document.createElement('li');
+    const name = document.createElement('b');
+    name.textContent = shelter.name;
+    const address = document.createElement('span');
+    address.textContent = shelter.address;
+    item.append(name, address);
+    list.append(item);
+  }
+
+  const source = document.createElement('em');
+  source.className = 'map-first__kakao-shelter-source';
+  source.textContent = KT_CLIMATE_SHELTER_SOURCE_LABEL;
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'map-first__kakao-shelter-close';
+  close.setAttribute('aria-label', '기후쉼터 정보 닫기');
+  close.textContent = '×';
+
+  bubble.append(title, list, source, close);
+  root.append(button, bubble);
+
+  const setOpen = (open: boolean) => {
+    if (open) closeOpenShelterBubbles(root);
+    root.classList.toggle('map-first__kakao-shelter--open', open);
+    bubble.hidden = !open;
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) openShelterRoots.add(root);
+    else openShelterRoots.delete(root);
+    shelterLayerPriorityByRoot.get(root)?.(open);
+  };
+
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(bubble.hidden);
+  });
+  close.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(false);
+  });
+
   return root;
 }
 
@@ -462,6 +629,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     showShade = true,
     showSlope = true,
     layoutFitKey = '',
+    climateShelterGroups = KT_CLIMATE_SHELTER_GROUPS,
   },
   ref,
 ) {
@@ -470,7 +638,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
   const mapRef = useRef<KakaoMapInstance | null>(null);
   const readyRef = useRef(false);
   const graphicsRef = useRef<KakaoMapGraphic[]>([]);
+  const shelterOverlaysRef = useRef<KakaoCustomOverlay[]>([]);
   const listenersRef = useRef<MapListener[]>([]);
+  const zoomListenerRef = useRef<(() => void) | null>(null);
   const userRef = useRef<KakaoCustomOverlay | null>(null);
   const pendingUserLocationRef = useRef<LngLatTuple | null>(null);
   const locationRafRef = useRef<number | null>(null);
@@ -486,6 +656,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     showShade,
     showSlope,
     layoutFitKey,
+    climateShelterGroups,
   });
   propsRef.current = {
     origin,
@@ -497,6 +668,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     showShade,
     showSlope,
     layoutFitKey,
+    climateShelterGroups,
   };
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -526,12 +698,26 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     listenersRef.current = [];
     graphicsRef.current.forEach((graphic) => graphic.setMap(null));
     graphicsRef.current = [];
+    shelterOverlaysRef.current = [];
+    openShelterRoots.clear();
   };
 
   const addGraphic = <T extends KakaoMapGraphic>(graphic: T): T => {
     graphic.setMap(mapRef.current);
     graphicsRef.current.push(graphic);
     return graphic;
+  };
+
+  const syncShelterOverlayVisibility = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    const visible =
+      propsRef.current.showFacilities
+      && shouldShowClimateSheltersAtLevel(map.getLevel());
+    if (!visible) closeOpenShelterBubbles();
+    for (const overlay of shelterOverlaysRef.current) {
+      overlay.setMap(visible ? map : null);
+    }
   };
 
   const addEndpoint = (
@@ -717,37 +903,60 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     maps: KakaoMapsApi,
     route: RouteCandidate | undefined,
     visible: boolean,
+    shelterGroups: ClimateShelterMarkerGroup[],
   ) => {
-    if (!visible || !route) return;
+    if (!visible) return;
     const rendered = new Set<string>();
 
-    route.segments.forEach((segment) => {
-      const path = validPath(segment.path, 1);
-      if (!path) return;
+    if (route) {
+      route.segments.forEach((segment) => {
+        const path = validPath(segment.path, 1);
+        if (!path) return;
 
-      let label: string | null = null;
-      let detail: string | null = null;
-      if (segment.mode === 'subway' && segment.hasElevator === true) {
-        label = '승강기';
-        detail = segment.stationName ?? segment.description;
-      } else if (segment.mode === 'bus' && segment.isLowFloorBus === true) {
-        label = '저상버스';
-        detail = segment.busRouteName ?? segment.description;
-      }
-      if (!label || !detail) return;
+        let label: string | null = null;
+        let detail: string | null = null;
+        if (segment.mode === 'subway' && segment.hasElevator === true) {
+          label = '승강기';
+          detail = segment.stationName ?? segment.description;
+        } else if (segment.mode === 'bus' && segment.isLowFloorBus === true) {
+          label = '저상버스';
+          detail = segment.busRouteName ?? segment.description;
+        }
+        if (!label || !detail) return;
 
-      const anchor = path[0];
-      const key = `${label}:${detail}:${anchor.lat}:${anchor.lng}`;
-      if (rendered.has(key)) return;
-      rendered.add(key);
-      addGraphic(new maps.CustomOverlay({
-        position: toKakaoLatLng(maps, anchor),
-        content: createFacilityContent(label, detail),
+        const anchor = path[0];
+        const key = `${label}:${detail}:${anchor.lat}:${anchor.lng}`;
+        if (rendered.has(key)) return;
+        rendered.add(key);
+        addGraphic(new maps.CustomOverlay({
+          position: toKakaoLatLng(maps, anchor),
+          content: createFacilityContent(label, detail),
+          xAnchor: 0.5,
+          yAnchor: 1.25,
+          zIndex: FACILITY_OVERLAY_Z,
+        }));
+      });
+    }
+
+    // KT 기후쉼터는 fitBounds에 넣지 않는다. 동일 좌표는 그룹 1개.
+    // 넓은 zoom에서는 setMap(null)로만 숨기고 DOM/overlay는 재생성하지 않는다.
+    shelterGroups.forEach((group) => {
+      if (!Number.isFinite(group.lat) || !Number.isFinite(group.lng)) return;
+      const content = createClimateShelterContent(group);
+      const overlay = new maps.CustomOverlay({
+        position: toKakaoLatLng(maps, { lat: group.lat, lng: group.lng }),
+        content,
         xAnchor: 0.5,
-        yAnchor: 1.25,
-        zIndex: 6,
-      }));
+        yAnchor: 1.1,
+        zIndex: SHELTER_OVERLAY_Z,
+      });
+      shelterLayerPriorityByRoot.set(content, (open) => {
+        overlay.setZIndex(open ? SHELTER_OPEN_OVERLAY_Z : SHELTER_OVERLAY_Z);
+      });
+      graphicsRef.current.push(overlay);
+      shelterOverlaysRef.current.push(overlay);
     });
+    syncShelterOverlayVisibility();
   };
 
   const fitDataBounds = (
@@ -807,18 +1016,20 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     shadeVisible: boolean,
     slopeVisible: boolean,
     nextLayoutFitKey: string,
+    shelterGroups: ClimateShelterMarkerGroup[],
   ) => {
     const maps = mapsRef.current;
     const map = mapRef.current;
     if (!maps || !map) return;
 
     clearRouteGraphics();
+    closeOpenShelterBubbles();
     const boundsPoints: LatLng[] = [];
     const selectedRoute = routes.find(({ route }) => route.id === selectedId)?.route;
     addShadeOverlay(maps, selectedRoute, boundsPoints, shadeVisible);
     addAlternativeRoutes(maps, routes, selectedId, selectRoute, boundsPoints);
     addSelectedRoute(maps, selectedRoute, slopeVisible);
-    addFacilityOverlays(maps, selectedRoute, facilitiesVisible);
+    addFacilityOverlays(maps, selectedRoute, facilitiesVisible, shelterGroups);
     addEndpoint(maps, nextOrigin, 'origin');
     addEndpoint(maps, nextDestination, 'dest');
 
@@ -935,6 +1146,12 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
         mapRef.current = map;
         readyRef.current = true;
 
+        const onZoomChanged = () => {
+          syncShelterOverlayVisibility();
+        };
+        maps.event.addListener(map, 'zoom_changed', onZoomChanged);
+        zoomListenerRef.current = onZoomChanged;
+
         const current = propsRef.current;
         renderMapData(
           current.origin,
@@ -946,6 +1163,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
           current.showShade,
           current.showSlope,
           current.layoutFitKey,
+          current.climateShelterGroups,
         );
         const pending = pendingUserLocationRef.current;
         if (pending && applyUserLocation(pending)) {
@@ -988,6 +1206,13 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       resizeObserver?.disconnect();
       cancelLocationRaf();
       cancelFitRaf();
+      const maps = mapsRef.current;
+      const map = mapRef.current;
+      const zoomHandler = zoomListenerRef.current;
+      if (maps && map && zoomHandler) {
+        maps.event.removeListener(map, 'zoom_changed', zoomHandler);
+      }
+      zoomListenerRef.current = null;
       readyRef.current = false;
       lastFitKeyRef.current = null;
       pendingUserLocationRef.current = null;
@@ -1013,6 +1238,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       showShade,
       showSlope,
       layoutFitKey,
+      climateShelterGroups,
     );
     // Map data helpers use refs and are intentionally recreated with the latest props.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1026,6 +1252,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     showShade,
     showSlope,
     layoutFitKey,
+    climateShelterGroups,
     status,
   ]);
 
