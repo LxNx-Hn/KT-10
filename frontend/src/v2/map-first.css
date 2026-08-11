@@ -2435,9 +2435,211 @@
   overflow-wrap: anywhere;
 }
 
-/* MOB-15는 모바일 카드에만 노출한다. 데스크톱 레이아웃은 기존 기준선을 유지한다. */
+/* 이동수단 순서: 하나의 continuous track */
 .map-first__route-card-transit {
-  display: none;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+  border: 1px solid var(--mf-line);
+  border-radius: 10px;
+  background: var(--mf-surface);
+}
+
+.map-first__route-card-transit li {
+  --mf-transit-line: var(--mf-line);
+  --mf-transit-line-bg: #f1f5f9;
+  --mf-transit-line-fg: #475569;
+  --mf-transit-divider: rgba(25, 31, 40, 0.1);
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  /* icon + N분 가독성 floor — duration 비율보다 우선 */
+  min-width: 34px;
+  height: 38px;
+  min-height: 38px;
+  max-height: 38px;
+  padding: 0 4px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  border-right: 1px solid var(--mf-transit-divider);
+  background: var(--mf-transit-line-bg);
+  color: var(--mf-transit-line-fg);
+  font-size: 12px;
+  font-weight: var(--mf-section-weight);
+  line-height: 1.2;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.map-first__route-card-transit li:first-child {
+  border-top-left-radius: 9px;
+  border-bottom-left-radius: 9px;
+}
+
+.map-first__route-card-transit li:last-child {
+  border-right: 0;
+  border-top-right-radius: 9px;
+  border-bottom-right-radius: 9px;
+}
+
+/* 이동수단 블록 색 — transportModeVisual / CSS vars 재사용 */
+.map-first__route-card-transit li[data-mode='bus'] {
+  --mf-transit-line: var(--mf-mode-bus);
+  --mf-transit-line-bg: var(--mf-mode-bus);
+  --mf-transit-line-fg: #ffffff;
+  --mf-transit-divider: rgba(255, 255, 255, 0.35);
+}
+
+.map-first__route-card-transit li[data-mode='walk'] {
+  --mf-transit-line: var(--mf-mode-walk);
+  --mf-transit-line-bg: var(--mf-mode-walk-bg);
+  --mf-transit-line-fg: var(--mf-mode-walk-fg);
+  --mf-transit-divider: rgba(71, 85, 105, 0.14);
+}
+
+.map-first__route-card-transit li[data-mode='transfer'] {
+  --mf-transit-line: #64748b;
+  --mf-transit-line-bg: #e2e8f0;
+  --mf-transit-line-fg: #475569;
+  --mf-transit-divider: rgba(71, 85, 105, 0.16);
+}
+
+.map-first__route-card-transit li[data-subway-line='unknown'],
+.map-first__route-card-transit li[data-mode='subway']:not([data-subway-line]) {
+  --mf-transit-line: var(--mf-mode-subway);
+  --mf-transit-line-bg: var(--mf-mode-subway);
+  --mf-transit-line-fg: #ffffff;
+  --mf-transit-divider: rgba(255, 255, 255, 0.35);
+}
+
+.map-first__route-card-transit li[data-subway-line='busan-1'] {
+  --mf-transit-line: #f06a00;
+  --mf-transit-line-bg: #f06a00;
+  --mf-transit-line-fg: #ffffff;
+  --mf-transit-divider: rgba(255, 255, 255, 0.35);
+}
+
+.map-first__route-card-transit li[data-subway-line='busan-2'] {
+  --mf-transit-line: #81bf48;
+  --mf-transit-line-bg: #81bf48;
+  --mf-transit-line-fg: #1f330a;
+  --mf-transit-divider: rgba(31, 51, 10, 0.18);
+}
+
+.map-first__route-card-transit li[data-subway-line='busan-3'] {
+  --mf-transit-line: #bb8c00;
+  --mf-transit-line-bg: #bb8c00;
+  --mf-transit-line-fg: #1f1600;
+  --mf-transit-divider: rgba(31, 22, 0, 0.16);
+}
+
+.map-first__route-card-transit li[data-subway-line='busan-4'] {
+  --mf-transit-line: #217dcb;
+  --mf-transit-line-bg: #217dcb;
+  --mf-transit-line-fg: #ffffff;
+  --mf-transit-divider: rgba(255, 255, 255, 0.35);
+}
+
+.map-first__route-card-transit li[data-subway-line='busan-gimhae'] {
+  --mf-transit-line: #8652a1;
+  --mf-transit-line-bg: #8652a1;
+  --mf-transit-line-fg: #ffffff;
+  --mf-transit-divider: rgba(255, 255, 255, 0.35);
+}
+
+.map-first__route-card-transit li[data-subway-line='donghae'] {
+  --mf-transit-line: #0054a6;
+  --mf-transit-line-bg: #0054a6;
+  --mf-transit-line-fg: #ffffff;
+  --mf-transit-divider: rgba(255, 255, 255, 0.35);
+}
+
+/* bar 내부: glyph만 — 원형/점선 wrapper 없음 */
+.map-first__transit-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+}
+
+.map-first__transit-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.map-first__transit-copy {
+  display: block;
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* 다중 환승: 동일한 icon+시간, 높이만 축소 */
+.map-first__route-card-transit[data-compact='true'] li {
+  height: 36px;
+  min-height: 36px;
+  max-height: 36px;
+  min-width: 32px;
+  gap: 2px;
+  padding: 0 2px;
+}
+
+.map-first__route-card-transit[data-compact='true'] .map-first__transit-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.map-first__route-card-transit[data-compact='true'] .map-first__transit-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.map-first__route-card-transit[data-compact='true'] .map-first__transit-copy {
+  font-size: 11px;
+}
+
+.map-first__frame--easy .map-first__route-card-transit li {
+  height: 40px;
+  min-height: 40px;
+  max-height: 42px;
+  font-size: 13px;
+}
+
+.map-first__frame--easy .map-first__route-card-transit li .map-first__transit-copy {
+  font-size: 13px;
+}
+
+.map-first__frame--easy .map-first__route-card-transit[data-compact='true'] li {
+  height: 38px;
+  min-height: 38px;
+  max-height: 40px;
 }
 
 .map-first__route-card-metrics {
@@ -4009,143 +4211,33 @@
     word-break: break-word;
   }
 
-  /* MOB-15: 도보·버스·지하철을 텍스트와 아이콘으로 함께 표시한다. */
   .map-first__route-card-transit {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px 8px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
+    margin-top: 2px;
   }
 
   .map-first__route-card-transit li {
-    --mf-transit-line: var(--mf-line);
-    --mf-transit-line-bg: #f8fafc;
-    --mf-transit-line-fg: var(--mf-ink);
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    min-width: 0;
-    min-height: 28px;
-    color: var(--mf-ink);
-    font-size: var(--mf-caption-size);
-    font-weight: var(--mf-section-weight);
-    line-height: 1.2;
+    min-width: 32px;
+    padding: 0 3px;
+    font-size: 11px;
   }
 
-  .map-first__route-card-transit li:not(:last-child)::after {
-    content: '›';
-    margin-left: 4px;
-    color: var(--mf-ink-soft);
-    font-size: 16px;
-    font-weight: 700;
+  .map-first__route-card-transit[data-compact='true'] li {
+    min-width: 30px;
+    padding: 0 2px;
   }
 
   .map-first__transit-icon {
-    display: inline-grid;
-    place-items: center;
-    flex: 0 0 24px;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: var(--mf-transit-line-bg);
-    color: var(--mf-transit-line-fg);
+    width: 13px;
+    height: 13px;
   }
 
   .map-first__transit-icon svg {
-    width: 16px;
-    height: 16px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.8;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+    width: 13px;
+    height: 13px;
   }
 
-  .map-first__route-card-transit li[data-mode='bus'] {
-    --mf-transit-line: var(--mf-mode-bus);
-    --mf-transit-line-bg: var(--mf-mode-bus-bg);
-    --mf-transit-line-fg: var(--mf-mode-bus-fg);
-  }
-
-  .map-first__route-card-transit li[data-mode='walk'] {
-    --mf-transit-line: var(--mf-mode-walk);
-    --mf-transit-line-bg: var(--mf-mode-walk-bg);
-    --mf-transit-line-fg: var(--mf-mode-walk-fg);
-  }
-
-  /* 도보: 지도 차콜 실선과 맞춰 아이콘 테두리도 실선 */
-  .map-first__route-card-transit li[data-mode='walk'] .map-first__transit-icon {
-    border: 1.5px solid var(--mf-mode-walk);
-    background: var(--mf-mode-walk-bg);
-  }
-
-  .map-first__route-card-transit li[data-subway-line='unknown'],
-  .map-first__route-card-transit li[data-mode='subway']:not([data-subway-line]) {
-    --mf-transit-line: var(--mf-mode-subway);
-    --mf-transit-line-bg: var(--mf-mode-subway-bg);
-    --mf-transit-line-fg: var(--mf-mode-subway-fg);
-  }
-
-  .map-first__transit-route {
-    display: inline-flex;
-    align-items: center;
-    min-height: 24px;
-    max-width: 132px;
-    padding: 0 7px;
-    overflow: hidden;
-    border: 1px solid var(--mf-transit-line);
-    border-radius: 999px;
-    background: var(--mf-transit-line-bg);
-    color: var(--mf-transit-line-fg);
-    font-weight: var(--mf-button-weight);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .map-first__transit-duration {
-    color: var(--mf-ink-soft);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  .map-first__route-card-transit li[data-subway-line='busan-1'] {
-    --mf-transit-line: #f06a00;
-    --mf-transit-line-bg: #fff1e6;
-    --mf-transit-line-fg: #8a3a00;
-  }
-
-  .map-first__route-card-transit li[data-subway-line='busan-2'] {
-    --mf-transit-line: #81bf48;
-    --mf-transit-line-bg: #eef8e6;
-    --mf-transit-line-fg: #355f12;
-  }
-
-  .map-first__route-card-transit li[data-subway-line='busan-3'] {
-    --mf-transit-line: #bb8c00;
-    --mf-transit-line-bg: #fff7d6;
-    --mf-transit-line-fg: #684d00;
-  }
-
-  .map-first__route-card-transit li[data-subway-line='busan-4'] {
-    --mf-transit-line: #217dcb;
-    --mf-transit-line-bg: #e8f3fc;
-    --mf-transit-line-fg: #11538c;
-  }
-
-  .map-first__route-card-transit li[data-subway-line='busan-gimhae'] {
-    --mf-transit-line: #8652a1;
-    --mf-transit-line-bg: #f3eaf8;
-    --mf-transit-line-fg: #5d3472;
-  }
-
-  .map-first__route-card-transit li[data-subway-line='donghae'] {
-    --mf-transit-line: #0054a6;
-    --mf-transit-line-bg: #e7f1fb;
-    --mf-transit-line-fg: #003c78;
+  .map-first__transit-copy {
+    font-size: 11px;
   }
 
   .map-first__route-card-metrics {
