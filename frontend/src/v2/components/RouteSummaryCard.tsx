@@ -72,7 +72,7 @@ function TransitSequence({ steps }: { steps: V2TransitStep[] }) {
       {steps.map((step) => {
         const accessibleLabel = [
           step.modeLabel,
-          step.mode === 'walk' ? '지도에서 회색 점선' : null,
+          step.mode === 'walk' ? '지도에서 회색 선' : null,
           step.routeLabel,
           `${step.durationMin}분`,
         ]

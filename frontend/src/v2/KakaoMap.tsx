@@ -251,8 +251,19 @@ function validPath(path: LatLng[] | undefined, minimumLength = 2): LatLng[] | nu
   return path;
 }
 
-function segmentPathParts(route: RouteCandidate): RoutePathPart[] {
-  const terrainParts = route.terrain?.status === 'estimated_90m'
+/**
+ * 선택 경로의 구간별 선.
+ *
+ * `slopeVisible`이 false면 경사 구간을 만들지 않고 공급자 도보 geometry를
+ * 그대로 쓴다. 경사 parts는 `slopePercent`를 달고 다니고 색·선스타일이 그
+ * 값만 보고 결정되므로, 여기서 만들어 두면 토글이 꺼져 있어도 경사 등급색이
+ * 칠해진다.
+ */
+function segmentPathParts(
+  route: RouteCandidate,
+  slopeVisible: boolean,
+): RoutePathPart[] {
+  const terrainParts = slopeVisible && route.terrain?.status === 'estimated_90m'
     ? (route.terrain.slopeSegments ?? []).flatMap<RoutePathPart>((segment) => {
       // 서버가 준 원본 polyline 부분경로를 우선 쓴다. 표본 사이를 직선으로
       // 이으면 90m 안의 코너가 잘려 건물을 가로지르는 선이 그려진다.
@@ -285,16 +296,18 @@ function segmentPathParts(route: RouteCandidate): RoutePathPart[] {
 
 function alternativeRoutePathParts(route: RouteCandidate): RoutePathPart[] {
   const routePath = validPath(route.path);
+  // 다른 후보는 항상 흐린 회색 한 가지라 경사 구간이 필요 없다.
   return routePath
     ? [{ path: routePath, quality: route.geometryQuality }]
-    : segmentPathParts(route);
+    : segmentPathParts(route, false);
 }
 
 function collectSelectedRoutePoints(route: RouteCandidate | undefined): LatLng[] {
   if (!route) return [];
   const main = validPath(route.path);
   if (main) return [...main];
-  return segmentPathParts(route).flatMap((part) => part.path);
+  // bounds는 토글과 무관하게 공급자 원본 geometry 기준으로 잡는다.
+  return segmentPathParts(route, false).flatMap((part) => part.path);
 }
 
 function buildFitPoints(
@@ -637,9 +650,7 @@ function partStrokeColor(part: RoutePathPart): string {
 }
 
 function partStrokeStyle(part: RoutePathPart): string {
-  return transportModeStrokeStyle(part.mode, part.quality, {
-    slopePercent: part.slopePercent,
-  });
+  return transportModeStrokeStyle(part.mode, part.quality);
 }
 
 /**
@@ -800,8 +811,9 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
   ) => {
     if (!route) return;
     const routePath = validPath(route.path);
-    const segmentParts = segmentPathParts(route);
-    // terrain.slopeSegments → LatLng start/end 구간. 있을 때만 도보 경사색을 쓴다.
+    // 토글이 꺼져 있으면 경사 구간 자체를 만들지 않으므로 도보선은 기본 도보
+    // 색·점선으로 남는다.
+    const segmentParts = segmentPathParts(route, slopeVisible);
     const slopeWalkParts = segmentParts.filter(
       (part) =>
         part.mode === 'walk' && typeof part.slopePercent === 'number',
@@ -809,7 +821,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     const transitParts = segmentParts.filter(
       (part) => part.mode === 'bus' || part.mode === 'subway' || part.mode === 'transfer',
     );
-    const hasSlopeWalk = slopeVisible && slopeWalkParts.length > 0;
+    const hasSlopeWalk = slopeWalkParts.length > 0;
 
     const drawOutline = (path: LatLng[], quality?: GeometryQuality) => {
       addGraphic(new maps.Polyline({

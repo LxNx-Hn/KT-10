@@ -472,6 +472,133 @@ describe('KakaoMap production overlays', () => {
     expect(onSelectRoute).toHaveBeenCalledWith('alternative');
   });
 
+  it('경사 토글이 꺼져 있으면 slopeSegments가 있어도 경사색을 쓰지 않는다', async () => {
+    // 경사 parts는 slopePercent만으로 색·선스타일이 정해지므로, 토글이 꺼진
+    // 상태에서 만들어지면 도보선이 등급색으로 칠해진다.
+    const walkPath = [ORIGIN, MIDPOINT, DESTINATION];
+    const selected = scoredRoute('slope-toggle-off', {
+      path: walkPath,
+      geometryQuality: 'exact',
+      segments: [routeSegment('walk', walkPath, 'exact')],
+      terrain: {
+        status: 'estimated_90m',
+        avgSlopePercent: 6,
+        maxSlopePercent: 6,
+        minSlopePercent: 6,
+        source: 'Busan DEM 90m (QGIS precomputed)',
+        resolutionM: 90,
+        slopeSegments: [
+          {
+            start: ORIGIN,
+            end: MIDPOINT,
+            slopePercent: 6,
+            distanceM: 90,
+            path: [ORIGIN, MIDPOINT],
+          },
+          {
+            start: MIDPOINT,
+            end: DESTINATION,
+            slopePercent: 6,
+            distanceM: 90,
+            path: [MIDPOINT, DESTINATION],
+          },
+        ],
+      },
+    });
+
+    render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="slope-toggle-off"
+        onSelectRoute={vi.fn()}
+        showShade={false}
+        showSlope={false}
+      />,
+    );
+    await waitUntilReady();
+
+    // 경사 등급색은 하나도 쓰이지 않는다.
+    const slopeRampColors = ['#2FAE6B', '#F7C948', '#F58A2A', '#E3362D'];
+    expect(
+      activePolylines().filter(
+        (line) => slopeRampColors.includes(line.options.strokeColor),
+      ),
+    ).toHaveLength(0);
+
+    // 도보선은 기본 차콜 실선으로 남고, 공급자 원본 정점을 그대로 쓴다.
+    const walkLine = activePolylines().find(
+      (line) => line.options.strokeColor === '#475569',
+    );
+    expect(walkLine).toBeDefined();
+    expect(walkLine?.options.strokeStyle).toBe('solid');
+    expect(
+      walkLine?.options.path.map((point) => [point.lat, point.lng]),
+    ).toEqual(walkPath.map((point) => [point.lat, point.lng]));
+  });
+
+  it('경사 토글을 켜면 같은 경로가 경사 등급색으로 바뀐다', async () => {
+    const walkPath = [ORIGIN, MIDPOINT, DESTINATION];
+    const route = (id: string) => scoredRoute(id, {
+      path: walkPath,
+      geometryQuality: 'exact',
+      segments: [routeSegment('walk', walkPath, 'exact')],
+      terrain: {
+        status: 'estimated_90m',
+        avgSlopePercent: 6,
+        maxSlopePercent: 6,
+        minSlopePercent: 6,
+        source: 'Busan DEM 90m (QGIS precomputed)',
+        resolutionM: 90,
+        slopeSegments: [{
+          start: ORIGIN,
+          end: MIDPOINT,
+          slopePercent: 6,
+          distanceM: 90,
+          path: [ORIGIN, MIDPOINT],
+        }],
+      },
+    });
+
+    const { rerender } = render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[route('slope-toggle')]}
+        selectedRouteId="slope-toggle"
+        onSelectRoute={vi.fn()}
+        showShade={false}
+        showSlope={false}
+      />,
+    );
+    await waitUntilReady();
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#F58A2A'),
+    ).toBe(false);
+
+    rerender(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[route('slope-toggle')]}
+        selectedRouteId="slope-toggle"
+        onSelectRoute={vi.fn()}
+        showShade={false}
+        showSlope
+      />,
+    );
+    await waitFor(() => {
+      expect(
+        activePolylines().some((line) => line.options.strokeColor === '#F58A2A'),
+      ).toBe(true);
+    });
+    // 켠 뒤에는 기본 도보색 선이 남지 않는다.
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#475569'),
+    ).toBe(false);
+  });
+
   it('90m 지형 표본 사이 경사를 구간별 색상으로 표시한다', async () => {
     const selected = scoredRoute('slope-segments', {
       path: [ORIGIN, MIDPOINT, DESTINATION],
@@ -768,7 +895,8 @@ describe('KakaoMap production overlays', () => {
     const walk = activePolylines().find((line) => line.options.strokeColor === '#475569');
     const bus = activePolylines().find((line) => line.options.strokeColor === '#3182f6');
     const subway = activePolylines().find((line) => line.options.strokeColor === '#f06a00');
-    expect(walk?.options.strokeStyle).toBe('shortdash');
+    // 선 스타일은 이동수단이 아니라 geometry 품질을 나타낸다. 모두 exact다.
+    expect(walk?.options.strokeStyle).toBe('solid');
     expect(bus?.options.strokeStyle).toBe('solid');
     expect(subway?.options.strokeStyle).toBe('solid');
     expect(

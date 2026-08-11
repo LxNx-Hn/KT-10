@@ -16,23 +16,30 @@ describe('transportModeVisual', () => {
     expect(TRANSPORT_MODE_COLOR.subway.toLowerCase()).not.toBe(shadeGreen);
   });
 
-  it('도보는 차콜색 + 점선, 버스는 파랑 실선(exact)으로 구분한다', () => {
+  it('도보는 차콜색, 버스는 파랑으로 구분하고 둘 다 exact면 실선이다', () => {
     expect(transportModeStrokeColor('walk')).toBe(TRANSPORT_MODE_COLOR.walk);
-    expect(transportModeStrokeStyle('walk', 'exact')).toBe('shortdash');
+    expect(transportModeStrokeStyle('walk', 'exact')).toBe('solid');
     expect(transportModeStrokeColor('bus')).toBe(TRANSPORT_MODE_COLOR.bus);
     expect(transportModeStrokeStyle('bus', 'exact')).toBe('solid');
   });
 
-  it('도보 경사값이 있으면 점선 대신 solid를 쓰고 slopeColorFn 결과를 쓴다', () => {
+  it('선 스타일은 이동수단이 아니라 geometry 품질만 나타낸다', () => {
+    // 추정 선형은 이동수단과 무관하게 점선으로 남는다.
+    for (const mode of ['walk', 'bus', 'subway', 'transfer'] as const) {
+      expect(transportModeStrokeStyle(mode, 'exact')).toBe('solid');
+      expect(transportModeStrokeStyle(mode, 'estimated')).toBe('shortdash');
+      expect(transportModeStrokeStyle(mode, 'mixed')).toBe('shortdash');
+    }
+  });
+
+  it('도보 경사값이 있으면 slopeColorFn 결과를 쓴다', () => {
     expect(
       transportModeStrokeColor('walk', {
         slopePercent: 12,
         slopeColorFn: () => '#E3362D',
       }),
     ).toBe('#E3362D');
-    expect(
-      transportModeStrokeStyle('walk', 'exact', { slopePercent: 12 }),
-    ).toBe('solid');
+    expect(transportModeStrokeStyle('walk', 'exact')).toBe('solid');
   });
 
   it('지하철은 카드와 같은 부산 호선색을 쓰고, 미확인은 fallback 보라를 쓴다', () => {

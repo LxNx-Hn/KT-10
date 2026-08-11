@@ -178,7 +178,7 @@ describe('MOB-15 대중교통 경로 시각 언어', () => {
     expect(sequence.querySelector('[data-mode="walk"]')).toBeTruthy();
     expect(
       sequence.querySelector('[data-mode="walk"]')?.getAttribute('aria-label'),
-    ).toContain('지도에서 회색 점선');
+    ).toContain('지도에서 회색 선');
     expect(
       sequence.querySelector('[data-subway-line="busan-1"]'),
     ).toBeTruthy();

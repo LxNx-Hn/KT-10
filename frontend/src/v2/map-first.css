@@ -4077,9 +4077,9 @@
     --mf-transit-line-fg: var(--mf-mode-walk-fg);
   }
 
-  /* 도보: 지도 shortdash와 맞춰 아이콘 테두리를 점선으로 힌트 */
+  /* 도보: 지도 차콜 실선과 맞춰 아이콘 테두리도 실선 */
   .map-first__route-card-transit li[data-mode='walk'] .map-first__transit-icon {
-    border: 1.5px dashed var(--mf-mode-walk);
+    border: 1.5px solid var(--mf-mode-walk);
     background: var(--mf-mode-walk-bg);
   }
 
