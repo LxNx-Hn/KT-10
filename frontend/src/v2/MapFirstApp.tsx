@@ -44,6 +44,7 @@ import ProfileOptionCard from './components/ProfileOptionCard';
 import {
   buildRouteViewModel,
 } from './routeViewModel';
+import VoiceChatDock from '@/components/VoiceChatDock';
 import './map-first.css';
 
 type DrawerId = 'profile' | 'conditions' | 'details' | 'departure' | 'settings';
@@ -315,9 +316,11 @@ function MobileSettingsIcon() {
 
 export default function MapFirstApp({
   voiceOpen = false,
+  onVoiceOpenChange,
 }: {
   /** App이 소유한 VoiceChatDock open boolean. data-voice-open 연결용. */
   voiceOpen?: boolean;
+  onVoiceOpenChange?: (open: boolean) => void;
 } = {}) {
   const profile = useAppStore((state) => state.profile);
   const origin = useAppStore((state) => state.origin);
@@ -653,6 +656,7 @@ export default function MapFirstApp({
         '--mf-search-vv-height': `${searchViewport.height}px`,
         '--mf-search-vv-offset-top': `${searchViewport.offsetTop}px`,
         '--mf-search-vv-offset-left': `${searchViewport.offsetLeft}px`,
+        '--mf-search-vv-bottom-inset': `${searchViewport.bottomInset}px`,
       } as CSSProperties
     : undefined;
   const shadeLegend = shadeLayerVisible
@@ -707,6 +711,42 @@ export default function MapFirstApp({
     && !searchPanelExpanded
     && !(ranked.length > 0 && sheetSnap === 'expanded');
 
+  const searchHeaderProps = {
+    showMobileHome: mobileHomeEnabled,
+    origin,
+    destination,
+    originInputRef,
+    destinationInputRef,
+    loading,
+    searchHint,
+    error,
+    profileId: profile,
+    profileLabel: profileTriggerLabel(profileMeta.label),
+    profileDrawerOpen: drawer === 'profile',
+    settingsDrawerOpen: drawer === 'settings',
+    situationConditions: SITUATION_CONDITIONS,
+    routeOptionConditions: ROUTE_OPTION_CONDITIONS,
+    optionState: options,
+    largeUi,
+    activeConditionCount,
+    summaryConditionCount,
+    conditionsDrawerOpen: drawer === 'conditions',
+    onExpand: expandSearchPanel,
+    onCollapse: collapseSearchPanel,
+    onSelectOrigin: setOrigin,
+    onClearOrigin: () => setOrigin(null),
+    onSelectDestination: setDestination,
+    onClearDestination: () => setDestination(null),
+    onSwap: swapPlaces,
+    onSearch: () => void runRouteSearch(),
+    onEditSearch: editSearchConditions,
+    onOpenProfile: () => setDrawer('profile'),
+    onOpenSettings: () => setDrawer('settings'),
+    onToggleOption: setScoringOption,
+    onToggleLargeUi: toggleLargeUi,
+    onOpenConditions: () => setDrawer('conditions'),
+  };
+
   return (
     <main
       className="map-first"
@@ -732,42 +772,10 @@ export default function MapFirstApp({
           )}|${drawer ?? 'none'}`}
         />
 
-        <SearchHeader
-          mode={searchPanelMode}
-          showMobileHome={mobileHomeEnabled}
-          origin={origin}
-          destination={destination}
-          originInputRef={originInputRef}
-          destinationInputRef={destinationInputRef}
-          loading={loading}
-          searchHint={searchHint}
-          error={error}
-          profileId={profile}
-          profileLabel={profileTriggerLabel(profileMeta.label)}
-          profileDrawerOpen={drawer === 'profile'}
-          settingsDrawerOpen={drawer === 'settings'}
-          situationConditions={SITUATION_CONDITIONS}
-          routeOptionConditions={ROUTE_OPTION_CONDITIONS}
-          optionState={options}
-          largeUi={largeUi}
-          activeConditionCount={activeConditionCount}
-          summaryConditionCount={summaryConditionCount}
-          conditionsDrawerOpen={drawer === 'conditions'}
-          onExpand={expandSearchPanel}
-          onCollapse={collapseSearchPanel}
-          onSelectOrigin={setOrigin}
-          onClearOrigin={() => setOrigin(null)}
-          onSelectDestination={setDestination}
-          onClearDestination={() => setDestination(null)}
-          onSwap={swapPlaces}
-          onSearch={() => void runRouteSearch()}
-          onEditSearch={editSearchConditions}
-          onOpenProfile={() => setDrawer('profile')}
-          onOpenSettings={() => setDrawer('settings')}
-          onToggleOption={setScoringOption}
-          onToggleLargeUi={toggleLargeUi}
-          onOpenConditions={() => setDrawer('conditions')}
-        />
+        {/* expanded 검색은 frame overflow clip 밖(.map-first__search-screen)에 둔다. */}
+        {!searchPanelExpanded && (
+          <SearchHeader mode={searchPanelMode} {...searchHeaderProps} />
+        )}
 
         <MapControls
           locating={locating}
@@ -1053,7 +1061,25 @@ export default function MapFirstApp({
             </button>
           </nav>
         )}
+
+        {/* frame 내부 overlay — viewport fixed sibling이면 phone frame을 이탈한다 */}
+        <VoiceChatDock
+          variant="map-first"
+          open={voiceOpen}
+          onOpenChange={onVoiceOpenChange}
+        />
       </div>
+
+      {searchPanelExpanded && (
+        <div
+          className="map-first__search-screen"
+          role="dialog"
+          aria-modal="true"
+          aria-label="경로 검색"
+        >
+          <SearchHeader mode="expanded" {...searchHeaderProps} />
+        </div>
+      )}
     </main>
   );
 }

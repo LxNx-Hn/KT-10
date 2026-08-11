@@ -288,6 +288,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
+  Reflect.deleteProperty(window, 'visualViewport');
 });
 
 describe('프로덕션 v2 지도 중심 UI', () => {
@@ -582,6 +583,59 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     ).toBeTruthy();
     // 모바일 CSS에서만 숨기며 데스크톱 지도 DOM·상태는 유지한다.
     expect(getByRole('region', { name: '지도' })).toBeTruthy();
+  });
+
+  it('검색 확장 시 visualViewport CSS 변수를 main에 바인딩한다', () => {
+    const listeners = new Map<string, Set<EventListener>>();
+    const vv = {
+      width: 393,
+      height: 640,
+      offsetTop: 59,
+      offsetLeft: 0,
+      scale: 1,
+      pageLeft: 0,
+      pageTop: 0,
+      addEventListener: (type: string, listener: EventListener) => {
+        if (!listeners.has(type)) listeners.set(type, new Set());
+        listeners.get(type)!.add(listener);
+      },
+      removeEventListener: (type: string, listener: EventListener) => {
+        listeners.get(type)?.delete(listener);
+      },
+    };
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: 852,
+    });
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: vv,
+    });
+
+    const { container, getByRole } = render(<App />);
+    expandSearchFromCollapsed(getByRole);
+    const main = container.querySelector('.map-first') as HTMLElement;
+    expect(main.style.getPropertyValue('--mf-search-vv-width')).toBe('393px');
+    expect(main.style.getPropertyValue('--mf-search-vv-height')).toBe('640px');
+    expect(main.style.getPropertyValue('--mf-search-vv-offset-top')).toBe(
+      '59px',
+    );
+    expect(main.style.getPropertyValue('--mf-search-vv-offset-left')).toBe(
+      '0px',
+    );
+    // bottomInset = innerHeight - height - offsetTop = 852 - 640 - 59
+    expect(main.style.getPropertyValue('--mf-search-vv-bottom-inset')).toBe(
+      '153px',
+    );
+    const screenEl = container.querySelector('.map-first__search-screen');
+    expect(screenEl).toBeTruthy();
+    expect(
+      screenEl?.contains(getByRole('combobox', { name: '출발지' })),
+    ).toBe(true);
+    // 검색 overlay는 frame overflow 밖에 둔다.
+    expect(
+      container.querySelector('.map-first__frame .map-first__search-screen'),
+    ).toBeNull();
   });
 
   it('/search 직접 진입과 popstate를 expanded 상태에 동기화한다', () => {
@@ -923,7 +977,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
   });
 
   it('지도 음성 버튼은 실제 map-first VoiceChatDock을 연다', async () => {
-    const { queryByRole, getByRole, findByRole } = render(<App />);
+    const { container, queryByRole, getByRole, findByRole } = render(<App />);
     expect(
       queryByRole('region', { name: '음성 챗봇' }),
     ).toBeNull();
@@ -932,6 +986,9 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
     const dock = await findByRole('region', { name: '음성 챗봇' });
     expect(dock.classList.contains('voicedock--map-first')).toBe(true);
+    expect(
+      container.querySelector('.map-first__frame > .voicedock.voicedock--map-first'),
+    ).toBe(dock);
     expect(
       getByRole('button', { name: '음성 챗봇 닫기' }),
     ).toBeTruthy();
@@ -1743,6 +1800,34 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     fireEvent.click(trigger);
     fireEvent.pointerDown(document.body);
     expect(queryByRole('dialog', { name: '지도 정보' })).toBeNull();
+  });
+
+  it('지도 정보를 열어도 결과 sheet·recommendations·selection을 유지한다', () => {
+    const { container, getByRole } = render(<App />);
+    act(() => seedResults());
+
+    const beforeIds = useAppStore
+      .getState()
+      .recommendations.map((item) => item.route.id);
+    const beforeSelected = useAppStore.getState().selectedRouteId;
+    const sheet = container.querySelector('.map-first__sheet');
+    const beforeSnap = sheet?.getAttribute('data-sheet-snap');
+
+    fireEvent.click(getByRole('button', { name: '지도 정보' }));
+    expect(getByRole('dialog', { name: '지도 정보' })).toBeTruthy();
+    expect(
+      container.querySelector('.map-first[data-map-info-open="true"]'),
+    ).toBeTruthy();
+    expect(sheet?.getAttribute('data-sheet-snap')).toBe(beforeSnap);
+    expect(
+      useAppStore.getState().recommendations.map((item) => item.route.id),
+    ).toEqual(beforeIds);
+    expect(useAppStore.getState().selectedRouteId).toBe(beforeSelected);
+    expect(
+      getByRole('heading', {
+        name: `경로 ${beforeIds.length}개를 찾았어요`,
+      }),
+    ).toBeTruthy();
   });
 
   it('그늘 OFF는 지도 시각화만 숨기고 추천 점수는 유지한다', () => {

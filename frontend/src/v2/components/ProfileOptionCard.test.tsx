@@ -96,4 +96,27 @@ describe('MOB-16 모바일 프로필 선택 카드', () => {
     expect(container.querySelector('[data-profile-icon]')).toBeNull();
     expect(container.querySelector('.map-first__profile-option-check')).toBeNull();
   });
+
+  it('모바일 프로필 설명은 nowrap/ellipsis로 잘리지 않도록 CSS가 허용한다', async () => {
+    // @ts-expect-error node built-in
+    const { readFileSync } = await import('node:fs');
+    // @ts-expect-error node built-in
+    const { resolve } = await import('node:path');
+    const cwd = (globalThis as { process?: { cwd?: () => string } }).process
+      ?.cwd?.();
+    expect(cwd).toBeTruthy();
+    const css = readFileSync(
+      resolve(cwd!, 'src/v2/map-first.css'),
+      'utf8',
+    ) as string;
+    const blockStart = css.indexOf(
+      '.map-first__profile-option--mobile .map-first__profile-option-copy > span',
+    );
+    expect(blockStart).toBeGreaterThan(-1);
+    const block = css.slice(blockStart, blockStart + 450);
+    expect(block).toContain('white-space: normal');
+    expect(block).toContain('overflow: visible');
+    expect(block).not.toContain('text-overflow: ellipsis');
+    expect(block).not.toContain('white-space: nowrap');
+  });
 });

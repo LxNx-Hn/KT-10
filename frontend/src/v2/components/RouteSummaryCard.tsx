@@ -3,6 +3,7 @@ import {
   type V2RouteViewModel,
   type V2TransitStep,
 } from '../routeViewModel';
+import { formatDurationMin } from '@/utils/formatDurationMin';
 
 const ATTENTION_FACT_IDS = new Set([
   'terrain',
@@ -116,7 +117,7 @@ export default function RouteSummaryCard({
 }) {
   const displayReasons = view.reasons.slice(0, 3);
   const attentionFacts = pickAttentionFacts(view.facts, displayReasons);
-  const durationLabel = `${view.stats.durationMin}분`;
+  const durationLabel = formatDurationMin(view.stats.durationMin);
   const scoreText = view.score.available && view.score.rounded !== null
     ? `${view.scoreKindLabel} ${view.score.rounded}점`
     : view.score.summaryLabel;
@@ -161,8 +162,7 @@ export default function RouteSummaryCard({
             className="map-first__route-card-duration"
             aria-label={`소요시간 ${durationLabel}`}
           >
-            <strong>{view.stats.durationMin}</strong>
-            <span>분</span>
+            <strong>{durationLabel}</strong>
           </p>
           <div
             className="map-first__route-score"

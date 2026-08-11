@@ -7,6 +7,7 @@ import type {
   ScoredRoute,
   SegmentMode,
 } from '@/types';
+import { formatDurationMin } from '@/utils/formatDurationMin';
 import {
   formatSlopePercent,
   resolvePeakSlopePercent,
@@ -650,7 +651,7 @@ export function buildRouteViewModel(
     profileLabel,
     title: `${profileLabel} 맞춤 ${rank}순위`,
     summary: route.summary,
-    meta: `${Math.round(route.totalDurationMin)}분 · 도보 ${route.totalWalkM}m · 환승 ${route.transferCount}회`,
+    meta: `${formatDurationMin(route.totalDurationMin)} · 도보 ${route.totalWalkM}m · 환승 ${route.transferCount}회`,
     stats: {
       durationMin: Math.round(route.totalDurationMin),
       walkM: route.totalWalkM,
@@ -723,7 +724,7 @@ export function buildDisplayReasons(
       route.totalDurationMin === minDuration
       && durations.filter((value) => value === minDuration).length === 1
     ) {
-      add('duration', `후보 중 소요시간이 가장 짧아요 (${durationMin}분).`);
+      add('duration', `후보 중 소요시간이 가장 짧아요 (${formatDurationMin(durationMin)}).`);
     }
     if (
       route.totalWalkM === minWalk
@@ -815,7 +816,7 @@ export function buildDisplayReasons(
     add('walk', `도보 거리 ${walkM}m예요.`);
   }
   if (!usedKeys.has('duration')) {
-    add('duration', `소요시간 ${durationMin}분이에요.`);
+    add('duration', `소요시간 ${formatDurationMin(durationMin)}이에요.`);
   }
   if (!usedKeys.has('transfer') && route.transferCount > 0) {
     add('transfer', `환승 ${route.transferCount}회예요.`);

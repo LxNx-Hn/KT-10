@@ -885,6 +885,15 @@ describe('v2 경로 표시 모델', () => {
     expect(reasons.length).toBeLessThanOrEqual(3);
   });
 
+  it('총 소요시간 60분 이상을 시간·분 문구로 meta에 표시한다', () => {
+    const long = makeItem();
+    long.route.totalDurationMin = 69;
+    const view = buildRouteViewModel(long, 1, 'general');
+    expect(view.meta.startsWith('1시간 9분 ·')).toBe(true);
+    expect(view.stats.durationMin).toBe(69);
+    expect(view.meta).not.toMatch(/^69분/);
+  });
+
   it('경로 출처 라벨을 정규화한다', () => {
     expect(formatRouteSourceLabel('odsay')).toBe('경로 제공: ODsay');
     expect(formatRouteSourceLabel('경로 제공: ODsay')).toBe('경로 제공: ODsay');

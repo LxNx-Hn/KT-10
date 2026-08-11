@@ -248,6 +248,17 @@ describe('MOB-08 경로 카드 본문 우선 노출', () => {
     ).toBeTruthy();
   });
 
+  it('총 소요시간 60분 이상을 시간·분 문구로 표시한다', () => {
+    const { container } = renderCard('general', { totalDurationMin: 69 });
+    const duration = container.querySelector(
+      '.map-first__route-card-duration',
+    );
+    expect(duration?.textContent).toBe('1시간 9분');
+    expect(
+      duration?.getAttribute('aria-label'),
+    ).toBe('소요시간 1시간 9분');
+  });
+
   it('상세 화면을 열지 않아도 도보·환승·핵심 특성이 카드에 존재한다', () => {
     const { container } = renderCard('youth');
     const card = container.querySelector('.map-first__route-card')!;

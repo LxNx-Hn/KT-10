@@ -224,7 +224,7 @@ describe('VoiceChatDock MOB-22 viewport', () => {
     expect(form.querySelector('button[type="submit"]')).toBe(submit);
   });
 
-  it('모바일 CSS에 키보드 보조 바 보호·16px 입력이 있고 데스크톱 centering 규칙은 유지된다', async () => {
+  it('모바일 CSS에 키보드 보조 바 보호·16px 입력이 있고 desktop는 frame 내부 floating card다', async () => {
     const css = await readMapFirstCss();
     const mobileIdx = css.indexOf('@media (max-width: 479px)');
     const desktopIdx = css.indexOf('@media (min-width: 480px)');
@@ -238,6 +238,7 @@ describe('VoiceChatDock MOB-22 viewport', () => {
       '.voicedock.voicedock--map-first .voicedock__textentry input';
     const mobileInputBlock = css.indexOf(mobileFontMarker, mobileIdx);
     const font16 = css.indexOf('font-size: 16px', mobileInputBlock);
+    const desktop = css.slice(desktopIdx, desktopIdx + 4500);
 
     expect(mobileIdx).toBeGreaterThan(-1);
     expect(accessoryRule).toBeGreaterThan(mobileIdx);
@@ -249,8 +250,8 @@ describe('VoiceChatDock MOB-22 viewport', () => {
     expect(css).toContain('var(--mf-voice-kb-accessory)');
     expect(css).toContain('env(safe-area-inset-bottom, 0px)');
     expect(desktopIdx).toBeGreaterThan(-1);
-    expect(css).toContain('width: min(100%, 430px)');
-    expect(css).toContain('transform: translateX(-50%)');
+    expect(desktop).toContain('width: min(360px, calc(100% - 32px))');
+    expect(desktop).not.toContain('transform: translateX(-50%)');
     // 입력 16px·accessory는 max-width:479 모바일 블록 안에 있다.
     expect(font16).toBeGreaterThan(mobileIdx);
   });

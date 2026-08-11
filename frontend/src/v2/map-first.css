@@ -1093,8 +1093,8 @@
   top: calc(100% + 8px);
   right: 0;
   z-index: calc(var(--mf-z-fab) + 1);
-  width: min(280px, calc(100vw - 32px));
-  max-width: calc(100vw - 32px);
+  width: min(280px, calc(100% - 32px));
+  max-width: calc(100% - 32px);
   padding: 12px;
   border: 1px solid var(--mf-line);
   border-radius: 16px;
@@ -1764,6 +1764,121 @@
     min-height: min(100dvh - 48px, 900px);
     border-radius: 28px;
     overflow: hidden;
+    --mf-desktop-fab-gap: 16px;
+    --mf-desktop-control-right: 16px;
+  }
+
+  /*
+    Desktop control rail:
+    - 음성은 기존 sheet-relative bottom anchor 유지
+    - fab-stack은 voice 바로 위에 16px 간격으로 쌓아 동일 축 유지
+    - sheet handle 점유를 피하기 위해 expanded 결과는 fab/voice를 숨김(모바일과 동일)
+    - map-info panel은 FAB 왼쪽 floating popover (sheet 뒤로 넣지 않음)
+  */
+  .map-first__frame .map-first__fab-stack,
+  .map-first__frame .map-first__voice-wrap {
+    right: var(--mf-desktop-control-right);
+  }
+
+  .map-first__frame .map-first__fab-stack {
+    top: auto;
+    bottom: calc(
+      224px + env(safe-area-inset-bottom, 0px)
+      + var(--mf-voice-size)
+      + var(--mf-desktop-fab-gap)
+    );
+    gap: var(--mf-desktop-fab-gap);
+    overflow: visible;
+  }
+
+  .map-first__frame--labeled .map-first__fab-stack {
+    bottom: calc(
+      236px + env(safe-area-inset-bottom, 0px)
+      + var(--mf-voice-size)
+      + var(--mf-desktop-fab-gap)
+    );
+  }
+
+  .map-first__frame:has(.map-first__sheet--collapsed) .map-first__fab-stack {
+    bottom: calc(
+      132px + env(safe-area-inset-bottom, 0px)
+      + var(--mf-voice-size)
+      + var(--mf-desktop-fab-gap)
+    );
+  }
+
+  .map-first__frame:has(.map-first__sheet--medium) .map-first__fab-stack {
+    bottom: calc(
+      var(--mf-sheet-snap-medium) + 16px
+      + var(--mf-voice-size)
+      + var(--mf-desktop-fab-gap)
+    );
+  }
+
+  .map-first__frame:has(.map-first__sheet--empty.map-first__sheet--expanded)
+    .map-first__fab-stack {
+    bottom: calc(
+      224px + env(safe-area-inset-bottom, 0px)
+      + var(--mf-voice-size)
+      + var(--mf-desktop-fab-gap)
+    );
+  }
+
+  /* expanded 결과: 시트 handle이 지도를 되돌릴 수 있게 컨트롤·검색헤더가 가로채지 않음 */
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__fab-stack,
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__fab-stack > *,
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__voice-wrap,
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__voice-wrap > *,
+  .map-first__frame--results:has(.map-first__sheet--expanded) .map-first__search-header {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .map-first__map-info {
+    position: relative;
+    overflow: visible;
+  }
+
+  .map-first__map-info-panel {
+    position: absolute;
+    /* FAB top부터 아래로 펼치면 sheet와 겹쳐 하단이 잘림 → FAB 하단에 맞춰 위로 펼친다 */
+    top: auto;
+    right: calc(100% + 12px);
+    bottom: 0;
+    left: auto;
+    width: 220px;
+    max-width: 220px;
+    height: auto;
+    /* % max-height는 FAB wrapper 높이 기준이라 패널이 조각처럼 잘림 */
+    max-height: 280px;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    transform: none;
+    box-sizing: border-box;
+    z-index: calc(var(--mf-z-fab) + 2);
+  }
+
+  /*
+    VoiceChatDock은 frame 내부 absolute.
+    viewport fixed + translateX(-50%)는 phone frame 밖으로 빠진다.
+  */
+  .map-first__frame > .voicedock.voicedock--map-first,
+  .map-first__frame .voicedock.voicedock--map-first {
+    position: absolute;
+    left: auto;
+    right: 16px;
+    bottom: 16px;
+    width: min(360px, calc(100% - 32px));
+    max-width: min(360px, calc(100% - 32px));
+    max-height: min(70%, calc(100% - 32px));
+    transform: none;
+    translate: none;
+    margin: 0;
+    border-radius: 20px;
+    box-sizing: border-box;
+    z-index: 60;
   }
 }
 
@@ -2160,6 +2275,9 @@
   font-weight: var(--mf-title-weight);
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .map-first__route-card-duration span {
@@ -3185,7 +3303,7 @@
   }
 }
 
-/* Voice and install overlays remain inside the same phone-width visual system. */
+/* Voice dock defaults when nested inside .map-first__frame */
 .voicedock--map-first {
   z-index: 60;
   max-height: min(78dvh, 680px);
@@ -3197,6 +3315,12 @@
   border: 1px solid var(--mf-line, #e5e8eb);
   border-radius: 24px 24px 0 0;
   box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.18);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  transform: none;
 }
 
 .voicedock--map-first .voicedock__handle {
@@ -3229,16 +3353,6 @@
   flex: 0 0 auto;
   min-width: 0;
   max-width: 100%;
-}
-
-/* Desktop/phone-frame centering only — mobile must not inherit translateX(-50%). */
-@media (min-width: 480px) {
-  .voicedock--map-first {
-    left: 50%;
-    right: auto;
-    width: min(100%, 430px);
-    transform: translateX(-50%);
-  }
 }
 
 @media (max-width: 370px) {
@@ -4095,12 +4209,11 @@
     box-sizing: border-box;
   }
 
-  /* C) VoiceDock 모바일: visual viewport + safe area 안에 패널 고정.
-     키보드로 VV가 줄면 --mf-vv-* 로 경계 재계산. fallback은 100dvh/0.
-     입력 focus 시 iOS 자동완성/보조 바(≈44px) 여유는 --mf-voice-kb-accessory. */
-  .voicedock.voicedock--map-first {
+  /* C) VoiceDock 모바일: frame 내부 absolute + visualViewport 수치.
+     fixed는 frame overflow에 clip되고 viewport sibling이면 frame을 벗어난다. */
+  .map-first__frame .voicedock.voicedock--map-first {
     --mf-voice-kb-accessory: 0px;
-    position: fixed !important;
+    position: absolute !important;
     left: var(--mf-vv-offset-left, 0px) !important;
     right: auto !important;
     width: var(--mf-vv-width, 100%) !important;
@@ -4129,6 +4242,7 @@
     overflow-y: hidden;
     display: flex;
     flex-direction: column;
+    border-radius: 24px 24px 0 0;
   }
 
   /* 텍스트 입력 포커스 중: 키보드 보조 바 보호(로그 높이가 flex로 축소) */
@@ -4375,13 +4489,15 @@
     padding: 10px 12px;
   }
 
-  /* MOB-16: 모바일 프로필은 아이콘·한 줄 설명·체크를 한 카드에서 구분한다. */
+  /* MOB-16: 모바일 프로필은 아이콘·설명·체크를 한 카드에서 구분한다.
+     설명은 큰 글씨/확대 시 줄바꿈으로 전체를 보여 주며, 카드 높이는 내용에 맞춰 늘어난다. */
   .map-first__profile-option--mobile {
     display: grid;
     grid-template-columns: 40px minmax(0, 1fr) 24px;
     align-items: center;
     gap: 12px;
     min-height: max(64px, var(--mf-tap));
+    height: auto;
     padding: 10px 12px;
   }
 
@@ -4419,13 +4535,14 @@
   .map-first__profile-option--mobile .map-first__profile-option-copy > span {
     display: block;
     width: 100%;
-    overflow: hidden;
+    overflow: visible;
     color: var(--mf-ink-soft);
     font-size: var(--mf-caption-size);
     font-weight: 500;
     line-height: 1.35;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: keep-all;
   }
 
   .map-first__profile-option-check {
@@ -4527,8 +4644,13 @@
     background: var(--mf-blue-soft);
   }
 
-  /* MOB-06: /search는 모바일에서 지도와 분리된 visual viewport 전면 화면이다.
-     지도·시트는 상태 보존을 위해 DOM에 유지하고 화면·접근성 트리에서만 감춘다. */
+  /* MOB-06: /search는 map-first 최상위 overlay.
+     frame은 지도/시트 clip만 담당하고, 검색 UI는 .map-first__search-screen이
+     safe-area 단일 기준으로 채운다 (frame overflow 밖). */
+  .map-first {
+    position: relative;
+  }
+
   .map-first__frame--search .map-first__map,
   .map-first__frame--search .map-first__fab-stack,
   .map-first__frame--search .map-first__map-legend,
@@ -4538,27 +4660,47 @@
     pointer-events: none;
   }
 
-  .map-first__frame--search .map-first__search-header {
-    position: fixed;
-    top: var(--mf-search-vv-offset-top, 0px);
-    left: var(--mf-search-vv-offset-left, 0px);
-    right: auto;
-    width: var(--mf-search-vv-width, 100%);
-    max-width: none;
-    height: var(--mf-search-vv-height, 100dvh);
-    margin: 0;
-    padding:
-      max(8px, env(safe-area-inset-top, 0px))
-      max(12px, env(safe-area-inset-right, 0px))
-      max(8px, env(safe-area-inset-bottom, 0px))
-      max(12px, env(safe-area-inset-left, 0px));
-    overflow: hidden;
+  .map-first__search-screen {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: var(--mf-search-vv-bottom-inset, 0px);
+    left: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
     box-sizing: border-box;
+    padding-top: max(12px, env(safe-area-inset-top, 0px));
+    padding-right: max(12px, env(safe-area-inset-right, 0px));
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(12px, env(safe-area-inset-left, 0px));
+    overflow: hidden;
     background: var(--mf-surface);
-    pointer-events: auto;
   }
 
-  .map-first__frame--search .map-first__search-header-body {
+  .map-first__search-screen .map-first__search-header {
+    position: relative;
+    top: auto;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    transform: none;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    pointer-events: auto;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .map-first__search-screen .map-first__search-header-body {
     width: 100%;
     height: 100%;
     min-width: 0;
@@ -4567,7 +4709,7 @@
     overflow: hidden;
   }
 
-  .map-first__frame--search .map-first__search {
+  .map-first__search-screen .map-first__search {
     flex: 1 1 auto;
     width: 100%;
     min-width: 0;
@@ -4578,21 +4720,21 @@
     box-shadow: none;
   }
 
-  .map-first__frame--search .map-first__search-toolbar {
+  .map-first__search-screen .map-first__search-toolbar {
     flex: 0 0 auto;
     justify-content: flex-start;
     margin: 0;
     padding: 0 0 8px;
   }
 
-  .map-first__frame--search .map-first__search-collapse {
+  .map-first__search-screen .map-first__search-collapse {
     min-height: var(--mf-tap);
     padding: 0 10px 0 4px;
     border: 0;
     background: transparent;
   }
 
-  .map-first__frame--search .map-first__search-collapse > span:first-child {
+  .map-first__search-screen .map-first__search-collapse > span:first-child {
     display: inline-flex;
     width: 24px;
     align-items: center;
@@ -4601,14 +4743,13 @@
     font-size: 0;
   }
 
-  .map-first__frame--search .map-first__search-collapse > span:first-child::before {
+  .map-first__search-screen .map-first__search-collapse > span:first-child::before {
     content: '←';
     font-size: 22px;
     line-height: 1;
   }
 
-  /* 두 입력은 고정된 상단 3개 행, 활성 자동완성만 남은 높이를 스크롤한다. */
-  .map-first__frame--search .map-first__search-body {
+  .map-first__search-screen .map-first__search-body {
     flex: 1 1 auto;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -4623,28 +4764,30 @@
     overflow: hidden;
   }
 
-  .map-first__frame--search .map-first__combobox {
+  .map-first__search-screen .map-first__combobox {
     display: contents;
   }
 
-  .map-first__frame--search .map-first__combobox--origin .map-first__search-row {
+  .map-first__search-screen .map-first__combobox--origin .map-first__search-row {
     grid-row: 1;
   }
 
-  .map-first__frame--search .map-first__search-divider {
+  .map-first__search-screen .map-first__search-divider {
     grid-row: 2;
     margin: 0 48px 0 22px;
   }
 
-  .map-first__frame--search .map-first__combobox--destination .map-first__search-row {
+  .map-first__search-screen .map-first__combobox--destination .map-first__search-row {
     grid-row: 3;
   }
 
-  .map-first__frame--search .map-first__search-swap {
+  .map-first__search-screen .map-first__search-swap {
     top: calc(var(--mf-tap) + 0.5px);
+    right: 0;
+    flex: none;
   }
 
-  .map-first__frame--search .map-first__search-input {
+  .map-first__search-screen .map-first__search-input {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -4652,20 +4795,29 @@
     font-size: 16px;
   }
 
-  .map-first__frame--search .map-first__search-row {
+  .map-first__search-screen .map-first__search-row {
     min-width: 0;
   }
 
-  .map-first__frame--search .map-first__search-swap {
-    right: 0;
-    flex: none;
+  /*
+    overflow:hidden 조상(search / search-body / search-screen) 때문에
+    index.css의 outline + outline-offset:2px + 바깥 box-shadow 윗변이 잘린다.
+    focus ring은 inset box-shadow로 element 내부에 그린다 (outline만 none 금지).
+  */
+  .map-first__search-screen .map-first__search-input:focus,
+  .map-first__search-screen .map-first__search-input:focus-visible {
+    outline: none;
+    outline-offset: 0;
+    border-radius: 10px;
+    box-shadow: inset 0 0 0 3px rgba(25, 31, 40, 0.92);
+    color: var(--mf-blue);
   }
 
-  .map-first__frame--easy.map-first__frame--search .map-first__search-input {
+  .map-first__frame--easy .map-first__search-screen .map-first__search-input {
     font-size: 18px;
   }
 
-  .map-first__frame--search .map-first__suggest {
+  .map-first__search-screen .map-first__suggest {
     position: static;
     grid-row: 4;
     width: 100%;
@@ -4684,19 +4836,18 @@
     box-sizing: border-box;
   }
 
-  .map-first__frame--search .map-first__search-submit {
+  .map-first__search-screen .map-first__search-submit {
     flex: 0 0 auto;
     margin-top: 10px;
   }
 
-  .map-first__frame--search .map-first__search-message {
+  .map-first__search-screen .map-first__search-message {
     flex: 0 0 auto;
   }
 
-  /* 프로필·조건은 지도 화면 진입점에 유지하고 검색 화면은 OD 선택에 집중한다. */
-  .map-first__frame--search .map-first__search-header-body > .map-first__account-row,
-  .map-first__frame--search .map-first__search-header-body > .map-first__context,
-  .map-first__frame--search .map-first__search-header-body > .map-first__easy-hint {
+  .map-first__search-screen .map-first__search-header-body > .map-first__account-row,
+  .map-first__search-screen .map-first__search-header-body > .map-first__context,
+  .map-first__search-screen .map-first__search-header-body > .map-first__easy-hint {
     display: none;
   }
 }
