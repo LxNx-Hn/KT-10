@@ -35,7 +35,9 @@ SAMPLE_SPACING_M = 90.0
 SOURCE = "Copernicus DEM GLO-90 via Open-Meteo"
 LOCAL_DEM_SOURCE = "Copernicus DEM GLO-90 via AWS Open Data COG"
 REGIONAL_DEM_SOURCE = "Busan DEM 90m (QGIS precomputed)"
-CACHE_SCHEMA_VERSION = 3
+# v4: 경사 구간에 원본 polyline 부분경로(path)를 추가했다. v3 캐시를 그대로
+# 쓰면 path 없는 결과가 되살아나 지도가 다시 직선으로 그려지므로 무효화한다.
+CACHE_SCHEMA_VERSION = 4
 log = logging.getLogger("features.elevation")
 _dem_tile_locks: dict[str, Lock] = {}
 _dem_tile_locks_guard = Lock()
@@ -50,6 +52,19 @@ class RegionalDem(NamedTuple):
     transform: Affine
     crs: object
     nodata: float | None
+
+
+class SampleAnchor(NamedTuple):
+    """표본점과 그 점이 놓인 원본 polyline 위치.
+
+    ``vertex_index``는 표본 직전 원본 정점이고 ``ratio``는 그 정점부터
+    다음 정점까지의 비율이다.
+    """
+
+    lat: float
+    lng: float
+    vertex_index: int
+    ratio: float
 
 
 def _regional_dem_path() -> Path:
@@ -360,18 +375,18 @@ def _valid_coordinate(point: tuple[float, float]) -> bool:
     return isfinite(lat) and isfinite(lng) and -90 <= lat <= 90 and -180 <= lng <= 180
 
 
-def _sample(
+def _sample_anchors(
     coords: list[tuple[float, float]],
     limit: int = MAX_POINTS,
-) -> list[tuple[float, float]]:
-    """약 90m 누적거리 간격으로 보간하되 API 상한을 지킨다.
+) -> tuple[list[tuple[float, float]], list[SampleAnchor]]:
+    """표본점과 그 점이 놓인 원본 polyline 위치를 함께 만든다.
 
-    공급자 geometry는 같은 선도 정점 밀도가 다르고, 긴 직선은 시작·끝 두
-    점만 줄 수 있다. 정점 인덱스 표본은 이 경우 중간 지형을 완전히 놓치므로
-    실제 누적거리 기준으로 표본을 만든다.
+    첫 번째 반환값은 중복 정점을 제거한 원본 polyline이고, 두 번째는 각
+    표본의 좌표와 그 표본이 놓인 원본 구간(`vertex_index`부터 다음 정점까지)
+    및 구간 내 비율이다. 표본만 필요한 호출자는 ``_sample``을 쓴다.
     """
     if limit < 2 or len(coords) < 2 or any(not _valid_coordinate(point) for point in coords):
-        return []
+        return [], []
 
     compact = [(float(coords[0][0]), float(coords[0][1]))]
     for point in coords[1:]:
@@ -379,17 +394,17 @@ def _sample(
         if _haversine_m(compact[-1], normalized) > 1e-6:
             compact.append(normalized)
     if len(compact) < 2:
-        return []
+        return [], []
 
     cumulative = [0.0]
     for start, end in pairwise(compact):
         cumulative.append(cumulative[-1] + _haversine_m(start, end))
     total = cumulative[-1]
     if not isfinite(total) or total <= 0:
-        return []
+        return [], []
 
     count = min(limit, max(2, ceil(total / SAMPLE_SPACING_M) + 1))
-    sampled: list[tuple[float, float]] = []
+    anchors: list[SampleAnchor] = []
     segment_index = 0
     for index in range(count):
         target = total * index / (count - 1)
@@ -407,11 +422,53 @@ def _sample(
         )
         start = compact[segment_index]
         end = compact[segment_index + 1]
-        sampled.append((
-            start[0] + (end[0] - start[0]) * ratio,
-            start[1] + (end[1] - start[1]) * ratio,
+        anchors.append(SampleAnchor(
+            lat=start[0] + (end[0] - start[0]) * ratio,
+            lng=start[1] + (end[1] - start[1]) * ratio,
+            vertex_index=segment_index,
+            ratio=ratio,
         ))
-    return sampled
+    return compact, anchors
+
+
+def _sample(
+    coords: list[tuple[float, float]],
+    limit: int = MAX_POINTS,
+) -> list[tuple[float, float]]:
+    """약 90m 누적거리 간격으로 보간하되 API 상한을 지킨다.
+
+    공급자 geometry는 같은 선도 정점 밀도가 다르고, 긴 직선은 시작·끝 두
+    점만 줄 수 있다. 정점 인덱스 표본은 이 경우 중간 지형을 완전히 놓치므로
+    실제 누적거리 기준으로 표본을 만든다.
+    """
+    return [
+        (anchor.lat, anchor.lng)
+        for anchor in _sample_anchors(coords, limit)[1]
+    ]
+
+
+def _anchor_subpath(
+    compact: list[tuple[float, float]],
+    start: SampleAnchor,
+    end: SampleAnchor,
+) -> list[dict[str, float]]:
+    """두 표본 사이를 원본 정점으로 채운 표시용 부분경로.
+
+    표본 사이를 직선으로 이으면 90m 안의 코너가 잘려 실제 보행로를 벗어난
+    선이 그려진다. 경사 계산은 표본 간 직선을 그대로 쓰되, 화면에 그릴
+    선만 원본 polyline을 따라가도록 정점을 되살린다.
+    """
+    points = [{"lat": start.lat, "lng": start.lng}]
+
+    def append(lat: float, lng: float) -> None:
+        last = points[-1]
+        if abs(last["lat"] - lat) > 1e-12 or abs(last["lng"] - lng) > 1e-12:
+            points.append({"lat": lat, "lng": lng})
+
+    for index in range(start.vertex_index + 1, end.vertex_index + 1):
+        append(compact[index][0], compact[index][1])
+    append(end.lat, end.lng)
+    return points
 
 
 def _empty(status: str, source: str = SOURCE) -> dict:
@@ -436,8 +493,15 @@ def calculate_slope_features_for_parts(
     elevation_parts: list[list[float]],
     *,
     source: str = SOURCE,
+    display_path_parts: list[list[list[dict[str, float]]]] | None = None,
 ) -> dict:
-    """서로 끊어진 보행 구간을 연결하지 않고 경사 피처를 합산한다."""
+    """서로 끊어진 보행 구간을 연결하지 않고 경사 피처를 합산한다.
+
+    ``display_path_parts[part][i]``는 표본 i에서 i+1까지의 원본 polyline
+    부분경로다. 주어지면 각 경사 구간의 ``path``로 실어 보내 지도에서 실제
+    보행로 위에 색을 그릴 수 있게 한다. 경사 수치는 표본 간 직선 기준을
+    그대로 유지하므로 이 값이 있든 없든 달라지지 않는다.
+    """
     if (
         not coord_parts
         or len(coord_parts) != len(elevation_parts)
@@ -453,13 +517,21 @@ def calculate_slope_features_for_parts(
     grade_distances: list[float] = []
     slope_segments: list[dict] = []
     uphill_distance = downhill_distance = gain = loss = 0.0
-    for coords, elevations in zip(coord_parts, elevation_parts):
-        for start, end, z1, z2 in zip(
+    for part_index, (coords, elevations) in enumerate(
+        zip(coord_parts, elevation_parts)
+    ):
+        display_paths = (
+            display_path_parts[part_index]
+            if display_path_parts is not None
+            and part_index < len(display_path_parts)
+            else None
+        )
+        for sample_index, (start, end, z1, z2) in enumerate(zip(
             coords,
             coords[1:],
             elevations,
             elevations[1:],
-        ):
+        )):
             distance = _haversine_m(start, end)
             if distance < 1:
                 continue
@@ -478,12 +550,15 @@ def calculate_slope_features_for_parts(
                 return _empty("invalid", source)
             grades.append(grade)
             grade_distances.append(distance)
-            slope_segments.append({
+            segment = {
                 "start": {"lat": start[0], "lng": start[1]},
                 "end": {"lat": end[0], "lng": end[1]},
                 "slope_percent": round(grade, 3),
                 "distance_m": round(distance, 1),
-            })
+            }
+            if display_paths is not None and sample_index < len(display_paths):
+                segment["path"] = display_paths[sample_index]
+            slope_segments.append(segment)
             if delta > 0:
                 gain += delta
                 uphill_distance += distance
@@ -532,9 +607,21 @@ async def extract_elevation_features_for_parts(
     client: httpx.AsyncClient | None = None,
 ) -> dict:
     """보행 parts만 고도 조회하며 서로 떨어진 parts 사이 경사는 만들지 않는다."""
-    sampled_parts = [_sample(part) for part in route_parts]
+    anchored_parts = [_sample_anchors(part) for part in route_parts]
+    sampled_parts = [
+        [(anchor.lat, anchor.lng) for anchor in anchors]
+        for _, anchors in anchored_parts
+    ]
     if not sampled_parts or any(len(part) < 2 for part in sampled_parts):
         return _empty("unavailable")
+    # 표본 사이를 원본 정점으로 채운 표시용 부분경로. part 경계는 넘지 않는다.
+    display_path_parts = [
+        [
+            _anchor_subpath(compact, start, end)
+            for start, end in pairwise(anchors)
+        ]
+        for compact, anchors in anchored_parts
+    ]
     cached = await asyncio.to_thread(_read_cache, sampled_parts)
     if cached is not None:
         return cached
@@ -553,6 +640,7 @@ async def extract_elevation_features_for_parts(
             sampled_parts,
             elevation_parts,
             source=local_source,
+            display_path_parts=display_path_parts,
         )
         if result["elevation_status"] == "estimated_90m":
             try:
@@ -603,6 +691,7 @@ async def extract_elevation_features_for_parts(
         result = calculate_slope_features_for_parts(
             sampled_parts,
             elevation_parts,
+            display_path_parts=display_path_parts,
         )
         if result["elevation_status"] == "estimated_90m":
             try:

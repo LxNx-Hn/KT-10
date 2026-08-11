@@ -293,7 +293,8 @@ describe('MOB-15 대중교통 경로 시각 언어', () => {
     )!;
     const items = sequence.querySelectorAll('li');
     expect(items).toHaveLength(3);
-    expect(items[0].getAttribute('aria-label')).toBe('도보 4분');
+    // 도보는 지도 선 색 설명을 함께 읽어준다. 다른 수단은 노선명이 대신한다.
+    expect(items[0].getAttribute('aria-label')).toBe('도보 지도에서 회색 선 4분');
     expect(items[1].getAttribute('aria-label')).toBe('버스 81번 8분');
     expect(items[2].getAttribute('aria-label')).toBe('지하철 1호선 5분');
     expect(items[0].textContent).toMatch(/4분/);
@@ -305,6 +306,9 @@ describe('MOB-15 대중교통 경로 시각 언어', () => {
     expect(items[1].getAttribute('style')).toContain('flex-grow: 8');
     expect(items[2].getAttribute('style')).toContain('flex-grow: 5');
     expect(sequence.querySelector('[data-mode="walk"]')).toBeTruthy();
+    expect(
+      sequence.querySelector('[data-mode="walk"]')?.getAttribute('aria-label'),
+    ).toContain('지도에서 회색 선');
     expect(
       sequence.querySelector('[data-subway-line="busan-1"]'),
     ).toBeTruthy();
@@ -432,7 +436,7 @@ describe('MOB-15 대중교통 경로 시각 언어', () => {
     expect(items[1].getAttribute('aria-label')).toBe('버스 3006번 42분');
     expect(items[3].getAttribute('aria-label')).toBe('버스 58-2번 63분');
     expect(items[5].getAttribute('aria-label')).toBe('버스 1001(심야)번 67분');
-    expect(items[0].getAttribute('aria-label')).toBe('도보 11분');
+    expect(items[0].getAttribute('aria-label')).toBe('도보 지도에서 회색 선 11분');
   });
 
   it('walk + subway + bus 복합에서도 각 segment 시간만 bar에 표시한다', () => {
