@@ -8,6 +8,7 @@
 **/.venv
 **/__pycache__
 **/*.pyc
+**/.DS_Store
 **/.pytest_cache
 ai/data/cache
 ai/data/training/generated
