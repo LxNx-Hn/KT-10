@@ -3,33 +3,14 @@
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PROFILE_LIST, PROFILES } from '@/config/profiles';
-import type { ProfileId } from '@/types';
 import ProfileOptionCard from './ProfileOptionCard';
 
 afterEach(() => {
   cleanup();
 });
 
-const MOBILE_LABEL: Record<ProfileId, string> = {
-  general: '일반',
-  elderly: '고령자',
-  child: '아동',
-  youth: '청소년',
-  disabled: '장애인',
-  pregnant: '임산부',
-};
-
-const MOBILE_DESCRIPTION: Record<ProfileId, string> = {
-  general: '빠르기·편의·날씨를 균형 있게 봐요.',
-  elderly: '계단을 피하고 짧은 도보를 우선해요.',
-  child: '안전한 횡단과 단순한 환승을 우선해요.',
-  youth: '빠르고 단순한 이동을 우선해요.',
-  disabled: '승강기·저상버스·계단 회피를 우선해요.',
-  pregnant: '긴 도보·급경사·복잡한 환승을 줄여요.',
-};
-
 describe('MOB-16 모바일 프로필 선택 카드', () => {
-  it.each(PROFILE_LIST)('$label 프로필에 구분 가능한 아이콘과 짧은 설명을 표시한다', (item) => {
+  it.each(PROFILE_LIST)('$label 프로필에 아이콘과 핵심 키워드 chip을 표시한다', (item) => {
     const { container } = render(
       <ProfileOptionCard
         item={item}
@@ -43,11 +24,15 @@ describe('MOB-16 모바일 프로필 선택 카드', () => {
       `[data-profile-option="${item.id}"]`,
     );
     expect(option).toBeTruthy();
-    expect(option?.textContent).toContain(MOBILE_LABEL[item.id]);
+    expect(option?.textContent).toContain(item.label);
     expect(
       option?.querySelector(`svg[data-profile-icon="${item.id}"]`),
     ).toBeTruthy();
-    expect(option?.textContent).toContain(MOBILE_DESCRIPTION[item.id]);
+    expect(item.keywords.length).toBeGreaterThanOrEqual(2);
+    for (const keyword of item.keywords.slice(0, 2)) {
+      expect(option?.textContent).toContain(keyword);
+    }
+    expect(option?.getAttribute('aria-label')).toContain(item.description);
   });
 
   it('선택 상태를 aria, 색상용 class, 체크 아이콘으로 함께 표시한다', () => {
@@ -97,7 +82,7 @@ describe('MOB-16 모바일 프로필 선택 카드', () => {
     expect(container.querySelector('.map-first__profile-option-check')).toBeNull();
   });
 
-  it('모바일 프로필 설명은 nowrap/ellipsis로 잘리지 않도록 CSS가 허용한다', async () => {
+  it('모바일 키워드 chip은 nowrap/ellipsis로 잘리지 않도록 CSS가 허용한다', async () => {
     // @ts-expect-error node built-in
     const { readFileSync } = await import('node:fs');
     // @ts-expect-error node built-in
@@ -109,9 +94,7 @@ describe('MOB-16 모바일 프로필 선택 카드', () => {
       resolve(cwd!, 'src/v2/map-first.css'),
       'utf8',
     ) as string;
-    const blockStart = css.indexOf(
-      '.map-first__profile-option--mobile .map-first__profile-option-copy > span',
-    );
+    const blockStart = css.indexOf('.map-first__profile-keyword {');
     expect(blockStart).toBeGreaterThan(-1);
     const block = css.slice(blockStart, blockStart + 450);
     expect(block).toContain('white-space: normal');

@@ -51,6 +51,23 @@ describe('map-first P0 layout CSS contracts', () => {
     expect(panel).toContain('max-height: 280px');
   });
 
+  it('mobile mapInfo panel은 FAB % width가 아니라 고정 card 폭을 쓴다', async () => {
+    const css = await readMapFirstCss();
+    const mobileIdx = css.indexOf('@media (max-width: 479px)');
+    expect(mobileIdx).toBeGreaterThan(-1);
+    const mobile = css.slice(mobileIdx);
+    const panelIdx = mobile.indexOf(
+      '/* 6) 지도 정보 패널: FAB 위 floating card. width는 FAB %가 아니라 고정 px */',
+    );
+    expect(panelIdx).toBeGreaterThan(-1);
+    const panel = mobile.slice(panelIdx, panelIdx + 550);
+    expect(panel).toContain('width: 220px');
+    expect(panel).toContain('min-width: 200px');
+    expect(panel).toContain('max-width: 220px');
+    expect(panel).not.toContain('calc(100% - 32px)');
+    expect(panel).toContain('white-space: nowrap');
+  });
+
   it('desktop voice dock은 frame 내부 absolute floating card다', async () => {
     const css = await readMapFirstCss();
     const desktopIdx = css.indexOf('@media (min-width: 480px)');

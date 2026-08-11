@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatSlopePercent,
+  formatSlopeReasonChip,
   resolvePeakSlopePercent,
   resolveSlopeLevel,
   slopeLevelLabel,
   slopeMapColor,
   SLOPE_MAP_COLORS,
+  SLOPE_REASON_CHIP_LABELS,
 } from './slopeLevel';
 
 describe('resolveSlopeLevel 경계값', () => {
@@ -71,5 +73,22 @@ describe('formatSlopePercent / resolvePeakSlopePercent', () => {
     expect(resolvePeakSlopePercent(4.5, undefined)).toBeNull();
     expect(resolvePeakSlopePercent(undefined, -12)).toBeNull();
     expect(resolvePeakSlopePercent(null, null)).toBeNull();
+  });
+});
+
+describe('formatSlopeReasonChip', () => {
+  it('등급명에 이미 경사가 있으면 중복하지 않는다', () => {
+    expect(formatSlopeReasonChip(1.5)).toBe('완만한 경사');
+    expect(formatSlopeReasonChip(3.2)).toBe('보통 경사');
+    expect(formatSlopeReasonChip(6.5)).toBe('급경사');
+    expect(formatSlopeReasonChip(9.5)).toBe('매우 급경사');
+    expect(formatSlopeReasonChip(6.5)).not.toContain('급경사 경사');
+    expect(formatSlopeReasonChip(9.5)).not.toContain('매우 급경사 경사');
+  });
+
+  it('chip lookup table은 중복 "경사 경사"를 포함하지 않는다', () => {
+    for (const label of Object.values(SLOPE_REASON_CHIP_LABELS)) {
+      expect(label).not.toMatch(/경사 경사/);
+    }
   });
 });

@@ -27,7 +27,9 @@ import KakaoMap from './KakaoMap';
 import {
   formatSlopePercent,
   resolvePeakSlopePercent,
+  resolveSlopeLevel,
   SLOPE_LEGEND_BANDS,
+  SLOPE_LEVEL_LABELS,
 } from './utils/slopeLevel';
 import BottomDrawer from './components/BottomDrawer';
 import MapControls from './components/MapControls';
@@ -194,12 +196,17 @@ const SLOPE_BAND_FEEL = {
 function MobileSlopeLegend({
   average,
   peak,
+  gradeLabel,
 }: {
   average: string;
   peak: string | null;
+  gradeLabel: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const detailsId = 'map-first-mobile-slope-details';
+  const summary = gradeLabel
+    ? `경사 ${average}% · ${gradeLabel}`
+    : `경사 ${average}%`;
 
   return (
     <section
@@ -216,7 +223,7 @@ function MobileSlopeLegend({
         aria-label={expanded ? '경사 안내 접기' : '경사 안내 펼치기'}
         onClick={() => setExpanded((current) => !current)}
       >
-        <strong>경사 {average}%</strong>
+        <strong>{summary}</strong>
         <span aria-hidden="true">{expanded ? '접기' : '보기'}</span>
       </button>
 
@@ -366,8 +373,9 @@ export default function MapFirstApp({
   );
   const searchViewport = useVisualViewportRect(searchPanelExpanded);
   const [showFacilities, setShowFacilities] = useState(false);
-  const [showShade, setShowShade] = useState(true);
-  const [showSlope, setShowSlope] = useState(true);
+  // 기본은 이동수단 색. 경사·그늘은 상호 배타 분석 레이어.
+  const [showShade, setShowShade] = useState(false);
+  const [showSlope, setShowSlope] = useState(false);
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [departureIsNow, setDepartureIsNow] = useState(true);
@@ -396,6 +404,11 @@ export default function MapFirstApp({
     selectedTerrain?.status === 'estimated_90m'
       ? formatSlopePercent(selectedTerrain.avgSlopePercent)
       : null;
+  const selectedTerrainGradeLabel = (() => {
+    if (selectedTerrain?.status !== 'estimated_90m') return null;
+    const level = resolveSlopeLevel(selectedTerrain.avgSlopePercent);
+    return level ? SLOPE_LEVEL_LABELS[level] : null;
+  })();
   const selectedTerrainPeakText = (() => {
     if (selectedTerrain?.status !== 'estimated_90m') return null;
     const peak = resolvePeakSlopePercent(
@@ -680,12 +693,15 @@ export default function MapFirstApp({
             key={selectedRouteId ?? 'selected-route'}
             average={selectedTerrainAvgText}
             peak={selectedTerrainPeakText}
+            gradeLabel={selectedTerrainGradeLabel}
           />
         )
       : (
           <div className="map-first__map-legend map-first__map-legend--slope" role="note">
             <strong>
-              도보 경사 {selectedTerrainAvgText}%
+              {selectedTerrainGradeLabel
+                ? `도보 경사 ${selectedTerrainAvgText}% · ${selectedTerrainGradeLabel}`
+                : `도보 경사 ${selectedTerrainAvgText}%`}
               {selectedTerrainPeakText !== null
                 ? ` (최대 ${selectedTerrainPeakText}%)`
                 : ''}
@@ -796,11 +812,19 @@ export default function MapFirstApp({
           }}
           onToggleShade={() => {
             if (!hasShadeOverlay) return;
-            setShowShade((visible) => !visible);
+            setShowShade((visible) => {
+              const next = !visible;
+              if (next) setShowSlope(false);
+              return next;
+            });
           }}
           onToggleSlope={() => {
             if (!hasSlopeOverlay) return;
-            setShowSlope((visible) => !visible);
+            setShowSlope((visible) => {
+              const next = !visible;
+              if (next) setShowShade(false);
+              return next;
+            });
           }}
           onMapInfoOpenChange={setMapInfoOpen}
         />

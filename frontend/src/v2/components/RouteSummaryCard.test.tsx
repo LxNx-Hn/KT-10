@@ -82,7 +82,7 @@ function renderCard(
 
 describe('RouteSummaryCard 정보 위계', () => {
   it('소요 시간·추천 근거·상세 CTA를 순서대로 노출하고 선택은 route id를 유지한다', () => {
-    const { container, onSelect, onDetails } = renderCard('general');
+    const { container, onSelect, onDetails, view } = renderCard('general');
 
     const card = container.querySelector('.map-first__route-card');
     expect(card?.getAttribute('data-route-id')).toBe('route-a');
@@ -103,7 +103,9 @@ describe('RouteSummaryCard 정보 위계', () => {
     ).toMatch(/1\s*회 환승/);
     expect(
       card?.querySelector('.map-first__route-card-reasons')?.textContent,
-    ).toBeTruthy();
+    ).toMatch(/최단 시간|보통 경사|도보/);
+    expect(view.reasonHighlights.length).toBeGreaterThan(0);
+    expect(view.reasonHighlights.length).toBeLessThanOrEqual(3);
     // 순위 문구를 경로명 아래에 중복하지 않는다.
     expect(card?.textContent).not.toContain('일반 맞춤 1순위');
 

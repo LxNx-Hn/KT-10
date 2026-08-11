@@ -162,16 +162,34 @@ describe('VoiceChatDock MOB-22 viewport', () => {
       <VoiceChatDock variant="map-first" open onOpenChange={() => undefined} />,
     );
     const dock = container.querySelector('.voicedock--map-first')!;
-    const handle = dock.querySelector('.voicedock__handle')!;
+    const header = dock.querySelector('.voicedock__header')!;
+    const close = dock.querySelector('.voicedock__close')!;
     const body = dock.querySelector('.voicedock__body')!;
     const log = dock.querySelector('.voicedock__log')!;
     const entry = dock.querySelector('.voicedock__textentry')!;
 
-    expect(handle.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(header.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(log.compareDocumentPosition(entry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(handle.textContent).toContain('닫기');
+    expect(close.getAttribute('aria-label')).toBe('음성 챗봇 닫기');
+    expect(screen.getByRole('button', { name: '음성 챗봇 닫기' })).toBeTruthy();
     expect(screen.getByRole('textbox', { name: '챗봇 텍스트 입력' })).toBeTruthy();
     expect(log.querySelectorAll('.chatmsg').length).toBe(24);
+  });
+
+  it('map-first 닫기 버튼은 최소 44x44 CSS touch target을 유지한다', async () => {
+    // @ts-expect-error node built-in
+    const { readFileSync } = await import('node:fs');
+    // @ts-expect-error node built-in
+    const { resolve } = await import('node:path');
+    const cwd = (globalThis as { process?: { cwd?: () => string } }).process
+      ?.cwd?.();
+    expect(cwd).toBeTruthy();
+    const css = readFileSync(resolve(cwd!, 'src/v2/map-first.css'), 'utf8') as string;
+    const idx = css.indexOf('.voicedock--map-first .voicedock__close {');
+    expect(idx).toBeGreaterThan(-1);
+    const block = css.slice(idx, idx + 280);
+    expect(block).toContain('width: 44px');
+    expect(block).toContain('height: 44px');
   });
 
   it('닫히면 visual viewport listener 구독을 중단한다', () => {

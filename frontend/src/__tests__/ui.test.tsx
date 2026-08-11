@@ -1514,25 +1514,26 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     ).toBeTruthy();
   });
 
-  it('그늘 결과가 있으면 기본 ON으로 자동 표시하고 지도 정보에서 제어한다', () => {
+  it('그늘 결과가 있으면 기본은 OFF이며 지도 정보에서 켤 수 있다', () => {
     const { container, getByRole } = render(<App />);
     act(() => seedShadedResults());
 
     const map = getByRole('region', { name: '지도' });
+    expect(map.getAttribute('data-shade-visible')).toBe('false');
+    expect(
+      container.querySelector('.map-first__map-legend'),
+    ).toBeNull();
+
+    fireEvent.click(getByRole('button', { name: '지도 정보' }));
+    const shadeSwitch = getByRole('switch', { name: '건물 그늘' });
+    expect(shadeSwitch.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(shadeSwitch);
+    expect(shadeSwitch.getAttribute('aria-checked')).toBe('true');
     expect(map.getAttribute('data-shade-visible')).toBe('true');
-    expect(map.getAttribute('data-shadow-polygons')).toBe('1');
-    expect(map.getAttribute('data-path-segments')).toBe('2');
     expect(
       container.querySelector('.map-first__map-legend')?.textContent,
     ).toMatch(/건물 그늘 50%.*그늘.*햇빛.*건물 높이 반영/);
-    // 데모 경로에 slopeSegments가 없으면 가짜 경사 레이어/범례를 만들지 않는다.
     expect(container.querySelector('.map-first__map-legend--slope')).toBeNull();
-
-    expect(getByRole('button', { name: '지도 정보' })).toBeTruthy();
-    fireEvent.click(getByRole('button', { name: '지도 정보' }));
-    expect(getByRole('switch', { name: '건물 그늘' }).getAttribute('aria-checked')).toBe(
-      'true',
-    );
     expect(container.textContent).not.toContain('API 연결 모드');
     expect(container.textContent).not.toContain('검증용 내장 데이터');
   });
@@ -1656,6 +1657,11 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     });
 
     expect(getByRole('region', { name: '지도' }).getAttribute('data-slope-visible')).toBe(
+      'false',
+    );
+    fireEvent.click(getByRole('button', { name: '지도 정보' }));
+    fireEvent.click(getByRole('switch', { name: '도보 경사' }));
+    expect(getByRole('region', { name: '지도' }).getAttribute('data-slope-visible')).toBe(
       'true',
     );
     const legend = container.querySelector('.map-first__map-legend--slope');
@@ -1664,6 +1670,53 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(legend?.textContent).toContain('보통 ≤5%');
     expect(legend?.textContent).toContain('급경사 ≤8%');
     expect(legend?.textContent).toContain('매우 급경사 >8%');
+  });
+
+  it('경사와 건물 그늘은 동시에 켤 수 없고 편의시설은 독립이다', () => {
+    const { getByRole } = render(<App />);
+    act(() => {
+      seedShadedResults();
+      const [first, ...rest] = useAppStore.getState().recommendations;
+      const start = first.route.path?.[0] ?? { lat: 35.16, lng: 129.05 };
+      const end = first.route.path?.[1] ?? { lat: 35.159, lng: 129.051 };
+      useAppStore.setState({
+        recommendations: [{
+          ...first,
+          route: {
+            ...first.route,
+            terrain: {
+              ...(first.route.terrain ?? { status: 'estimated_90m' as const }),
+              status: 'estimated_90m' as const,
+              avgSlopePercent: 3,
+              slopeSegments: [{ start, end, slopePercent: 3, distanceM: 40 }],
+            },
+            segments: first.route.segments.map((segment, index) => (
+              index === 0
+                ? { ...segment, mode: 'subway' as const, hasElevator: true, path: segment.path ?? [start, end] }
+                : segment
+            )),
+          },
+        }, ...rest],
+        selectedRouteId: first.route.id,
+      });
+    });
+
+    fireEvent.click(getByRole('button', { name: '지도 정보' }));
+    const shade = getByRole('switch', { name: '건물 그늘' });
+    const slope = getByRole('switch', { name: '도보 경사' });
+    const facilities = getByRole('switch', { name: '편의시설' });
+
+    fireEvent.click(shade);
+    expect(shade.getAttribute('aria-checked')).toBe('true');
+    expect(slope.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.click(slope);
+    expect(slope.getAttribute('aria-checked')).toBe('true');
+    expect(shade.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.click(facilities);
+    expect(facilities.getAttribute('aria-checked')).toBe('true');
+    expect(slope.getAttribute('aria-checked')).toBe('true');
   });
 
   it('모바일 경사 범례는 시트 위 한 줄 요약에서 설명을 펼치고 접는다', () => {
@@ -1675,6 +1728,11 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(queryByRole('note', { name: '도보 경사 안내' })).toBeNull();
 
     fireEvent.click(getByRole('button', { name: '경로 결과 접기' }));
+    // 기본 OFF — 경사 레이어를 켠 뒤에 범례가 나타난다.
+    fireEvent.click(getByRole('button', { name: '지도 정보' }));
+    fireEvent.click(getByRole('switch', { name: '도보 경사' }));
+    fireEvent.click(getByRole('button', { name: '지도 정보' })); // close panel
+
     const legend = getByRole('note', { name: '도보 경사 안내' });
     const wrapper = container.querySelector('.map-first__mobile-map-legends');
     const expand = getByRole('button', { name: '경사 안내 펼치기' });
@@ -1682,6 +1740,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(wrapper?.getAttribute('data-sheet-snap')).toBe('collapsed');
     expect(expand.getAttribute('aria-expanded')).toBe('false');
     expect(legend.textContent).toContain('경사 3.61%');
+    expect(legend.textContent).toContain('보통');
     expect(legend.textContent).not.toContain('가장 가파른 구간의 기울기');
     expect(legend.textContent).not.toContain('완만 ≤2%');
 
@@ -1839,9 +1898,10 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     }));
 
     const map = getByRole('region', { name: '지도' });
+    fireEvent.click(getByRole('button', { name: '지도 정보' }));
+    fireEvent.click(getByRole('switch', { name: '건물 그늘' }));
     expect(map.getAttribute('data-shade-visible')).toBe('true');
 
-    fireEvent.click(getByRole('button', { name: '지도 정보' }));
     fireEvent.click(getByRole('switch', { name: '건물 그늘' }));
     expect(map.getAttribute('data-shade-visible')).toBe('false');
 
