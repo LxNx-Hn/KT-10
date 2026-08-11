@@ -152,6 +152,8 @@ export interface RouteCandidate {
       end: LatLng;
       slopePercent: number;
       distanceM: number;
+      /** 원본 보행 polyline을 따라가는 표시용 경로. 없으면 start/end 직선. */
+      path?: LatLng[];
     }>;
     status: 'estimated_90m' | 'unavailable' | 'invalid';
   };

@@ -36,8 +36,19 @@ function pickAttentionFacts(
     .slice(0, 3);
 }
 
+/**
+ * 도보는 지도에서 차콜 실선으로 그려진다. 화면을 보지 않는 사용자가 카드와
+ * 지도를 연결할 수 있도록 색 설명을 함께 읽어준다. 경사 오버레이를 켜면
+ * 도보선이 경사 등급색으로 바뀌지만, 카드는 지도 토글 상태를 알 수 없으므로
+ * 기본 상태를 기준으로 안내한다.
+ */
 function transitAccessibleLabel(step: V2TransitStep): string {
-  return [step.modeLabel, step.routeLabel, `${step.durationMin}분`]
+  return [
+    step.modeLabel,
+    step.mode === 'walk' ? '지도에서 회색 선' : null,
+    step.routeLabel,
+    `${step.durationMin}분`,
+  ]
     .filter(Boolean)
     .join(' ');
 }

@@ -1703,7 +1703,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
     fireEvent.click(getByRole('button', { name: '지도 정보' }));
     expect(getByRole('note', { name: '경로 선 이동수단 안내' }).textContent)
-      .toMatch(/경로 선:.*도보 점선.*버스.*지하철 노선색/);
+      .toMatch(/경로 선:.*도보 회색.*버스.*지하철 노선색/);
 
     const shade = getByRole('switch', { name: '건물 그늘' });
     const slope = getByRole('switch', { name: '도보 경사' });
@@ -1738,7 +1738,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     fireEvent.click(slope);
     expect(slope.getAttribute('aria-checked')).toBe('false');
     expect(getByRole('note', { name: '경로 선 이동수단 안내' }).textContent)
-      .toMatch(/경로 선:.*도보 점선.*버스.*지하철 노선색/);
+      .toMatch(/경로 선:.*도보 회색.*버스.*지하철 노선색/);
   });
 
   it('모바일 경사 범례는 시트 위 한 줄 요약에서 설명을 펼치고 접는다', () => {

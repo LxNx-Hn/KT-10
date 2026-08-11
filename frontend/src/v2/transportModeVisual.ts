@@ -2,7 +2,7 @@ import type { RouteSegment, SegmentMode } from '@/types';
 
 /**
  * 지도 polyline ↔ 경로 카드 이동수단 chip이 공유하는 색.
- * 그늘(#00b84a)·경사 ramp와 겹치지 않도록 도보는 차콜 + 점선으로 구분한다.
+ * 그늘(#00b84a)·경사 ramp와 겹치지 않도록 도보는 차콜색으로 구분한다.
  */
 export const TRANSPORT_MODE_COLOR = {
   walk: '#475569',
@@ -113,16 +113,13 @@ export function transportModeStrokeColor(
 }
 
 /**
- * 도보(경사색 아님)는 짧은 dash로 그늘/버스 실선과 구분한다.
- * 경사 구간은 등급색 가독을 위해 solid를 유지한다.
+ * 선 스타일은 이동수단이 아니라 geometry 품질만 나타낸다.
+ * exact는 실선, 추정 선형은 shortdash다. 도보는 차콜색으로 구분하므로
+ * 이동수단 때문에 점선이 되지 않는다.
  */
 export function transportModeStrokeStyle(
-  mode: SegmentMode | undefined,
+  _mode: SegmentMode | undefined,
   quality: string | undefined,
-  options?: { slopePercent?: number | null },
 ): string {
-  if (mode === 'walk' && typeof options?.slopePercent !== 'number') {
-    return 'shortdash';
-  }
   return quality === 'exact' ? 'solid' : 'shortdash';
 }

@@ -91,7 +91,7 @@ function MapInfoRouteKey({
     >
       경로 선:
       {' '}
-      <span data-mode="walk">도보 점선</span>
+      <span data-mode="walk">도보 회색</span>
       {' · '}
       <span data-mode="bus">버스</span>
       {' · '}

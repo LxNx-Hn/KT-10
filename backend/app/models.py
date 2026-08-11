@@ -91,6 +91,10 @@ class TerrainSlopeSegment(CamelModel):
     end: LatLng
     slope_percent: float
     distance_m: float = Field(gt=0)
+    # start~end 사이를 원본 보행 polyline 정점으로 채운 표시용 경로. 경사는
+    # 90m 표본 간 직선으로 계산하므로 이 값은 지도 렌더링에만 쓴다. 공급자가
+    # 주지 않으면 빈 목록이며, 그때 지도는 start/end 직선으로 되돌아간다.
+    path: list[LatLng] = Field(default_factory=list)
 
 
 class TerrainSummary(CamelModel):
