@@ -10,6 +10,8 @@ import {
 import {
   formatSlopePercent,
   resolvePeakSlopePercent,
+  resolveSlopeLevel,
+  SLOPE_LEVEL_LABELS,
 } from '../utils/slopeLevel';
 import TransitArrivalPanel from './TransitArrivalPanel';
 
@@ -75,11 +77,19 @@ export default function RouteDetails({
   const avgSlopeText = terrainReady
     ? formatSlopePercent(terrain.avgSlopePercent)
     : null;
+  const avgSlopeLevel = terrainReady
+    ? resolveSlopeLevel(terrain.avgSlopePercent)
+    : null;
+  const avgSlopeGrade = avgSlopeLevel ? SLOPE_LEVEL_LABELS[avgSlopeLevel] : null;
   const peakSlope = terrainReady
     ? resolvePeakSlopePercent(terrain.maxSlopePercent, terrain.minSlopePercent)
     : null;
   const peakSlopeText =
     peakSlope === null ? null : formatSlopePercent(peakSlope);
+  const peakSlopeLevel = resolveSlopeLevel(peakSlope);
+  const peakSlopeGrade = peakSlopeLevel
+    ? SLOPE_LEVEL_LABELS[peakSlopeLevel]
+    : null;
   const elevationGainM =
     terrainReady
     && terrain.elevationGainM !== undefined
@@ -129,12 +139,18 @@ export default function RouteDetails({
           <dl className="map-first__terrain-list">
             <div>
               <dt>보행구간 평균 경사</dt>
-              <dd>{avgSlopeText}%</dd>
+              <dd>
+                {avgSlopeText}%
+                {avgSlopeGrade ? ` · ${avgSlopeGrade}` : ''}
+              </dd>
             </div>
             {peakSlopeText !== null && (
               <div>
                 <dt>최대 경사</dt>
-                <dd>{peakSlopeText}%</dd>
+                <dd>
+                  {peakSlopeText}%
+                  {peakSlopeGrade ? ` · ${peakSlopeGrade}` : ''}
+                </dd>
               </div>
             )}
             {elevationGainM !== null && (

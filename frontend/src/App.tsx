@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { startKakaoLogin } from '@/auth/api';
-import VoiceChatDock from '@/components/VoiceChatDock';
 import MobileStartupScreen, {
   hasCompletedMobileStartup,
   rememberMobileStartup,
@@ -39,11 +38,9 @@ export default function App() {
       <a className="skip-link map-first__skip" href="#main-content">
         본문으로 바로가기
       </a>
-      <MapFirstApp voiceOpen={voiceOpen} />
-      <VoiceChatDock
-        variant="map-first"
-        open={voiceOpen}
-        onOpenChange={setVoiceOpen}
+      <MapFirstApp
+        voiceOpen={voiceOpen}
+        onVoiceOpenChange={setVoiceOpen}
       />
     </>
   );

@@ -17,7 +17,11 @@ export default function KakaoLoginButton() {
   }, [setProfile]);
 
   if (!user) {
-    return <button type="button" className="btn btn--ghost" onClick={startKakaoLogin}>카카오 로그인</button>;
+    return (
+      <button type="button" className="btn btn--kakao" onClick={startKakaoLogin}>
+        카카오 로그인
+      </button>
+    );
   }
   return (
     <button

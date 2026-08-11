@@ -47,7 +47,7 @@ export default function FeedbackTabPanel({
         </p>
         <button
           type="button"
-          className="btn btn--ghost map-first__feedback-login-cta"
+          className="btn btn--kakao map-first__feedback-login-cta"
           onClick={startKakaoLogin}
         >
           카카오 로그인

@@ -97,7 +97,13 @@ export default function MobileStartupScreen({
             <strong>내 설정을 저장하고 싶다면</strong>
             <span>카카오 로그인은 프로필·이동 설정 저장을 위한 선택 기능이에요.</span>
           </div>
-          <button type="button" onClick={onKakaoLogin}>카카오 로그인</button>
+          <button
+            type="button"
+            className="btn btn--kakao mobile-startup__kakao"
+            onClick={onKakaoLogin}
+          >
+            카카오 로그인
+          </button>
         </footer>
       </div>
     </main>

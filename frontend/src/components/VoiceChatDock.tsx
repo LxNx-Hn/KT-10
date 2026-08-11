@@ -108,21 +108,28 @@ export default function VoiceChatDock({
       style={viewportStyle}
     >
       {variant === 'map-first' ? (
-        <button
-          type="button"
-          className="voicedock__handle"
-          aria-expanded={open}
-          aria-label="음성 챗봇 닫기"
-          onClick={() => {
-            if (listening) stop();
-            stopSpeaking();
-            if (status === 'listening' || status === 'speaking') setStatus('idle');
-            setOpen(false);
-          }}
-        >
-          <span className={`voicedock__dot voicedock__dot--${status}`} aria-hidden="true" />
-          음성 챗봇 · {STATUS_LABEL[status]} · 닫기 ✕
-        </button>
+        <div className="voicedock__header">
+          <div className="voicedock__title">
+            <span className={`voicedock__dot voicedock__dot--${status}`} aria-hidden="true" />
+            <div className="voicedock__title-copy">
+              <strong>음성 챗봇</strong>
+              <span className="voicedock__status-text">{STATUS_LABEL[status]}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="voicedock__close"
+            aria-label="음성 챗봇 닫기"
+            onClick={() => {
+              if (listening) stop();
+              stopSpeaking();
+              if (status === 'listening' || status === 'speaking') setStatus('idle');
+              setOpen(false);
+            }}
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
       ) : (
         <button
           type="button"

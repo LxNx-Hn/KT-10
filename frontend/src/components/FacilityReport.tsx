@@ -115,7 +115,7 @@ export default function FacilityReport({
         <>
           <p>후기와 신고 기능을 이용하려면 카카오 로그인이 필요해요.</p>
           <div className="facility-report__actions">
-            <button type="button" className="btn btn--ghost" onClick={startKakaoLogin}>
+            <button type="button" className="btn btn--kakao" onClick={startKakaoLogin}>
               카카오 로그인
             </button>
           </div>

@@ -45,6 +45,9 @@ describe('후기·신고 로그인 안내', () => {
     await waitFor(() => {
       expect(screen.getAllByRole('button', { name: '카카오 로그인' })).toHaveLength(1);
     });
+    const login = screen.getByRole('button', { name: '카카오 로그인' });
+    expect(login.className).toContain('btn--kakao');
+    expect(login.textContent).toContain('카카오');
     expect(screen.getByText('후기와 신고 기능을 이용하려면 카카오 로그인이 필요해요.')).toBeTruthy();
     expect(screen.queryByText(/등록이 거절됩니다/)).toBeNull();
     expect(screen.queryByRole('button', { name: '후기 등록' })).toBeNull();

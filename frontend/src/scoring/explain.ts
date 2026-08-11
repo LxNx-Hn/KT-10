@@ -7,6 +7,7 @@ import type {
   ScoreComponents,
   WeatherCondition,
 } from '@/types';
+import { formatDurationMin } from '@/utils/formatDurationMin';
 
 /** 경로의 저상버스 종합 상태 판정 */
 export function deriveLowFloorStatus(r: RouteCandidate): LowFloorStatus {
@@ -94,7 +95,7 @@ export function buildVoiceSummary(
         : lowFloor === 'unknown'
           ? '대중교통 이용'
           : '버스 미이용';
-  let s = `${rank}번 경로, ${r.summary}. 예상 ${r.totalDurationMin}분, 도보 ${r.totalWalkM}미터, 환승 ${r.transferCount}회. ${lf}.`;
+  let s = `${rank}번 경로, ${r.summary}. 예상 ${formatDurationMin(r.totalDurationMin)}, 도보 ${r.totalWalkM}미터, 환승 ${r.transferCount}회. ${lf}.`;
   if (topCaution) s += ` 주의: ${topCaution}`;
   return s;
 }

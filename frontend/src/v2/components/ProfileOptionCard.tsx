@@ -1,35 +1,5 @@
 import type { ProfileId, ProfileMeta } from '@/types';
 
-const MOBILE_PROFILE_PRESENTATION: Record<
-  ProfileId,
-  { label: string; description: string }
-> = {
-  general: {
-    label: '일반',
-    description: '빠르기·편의·날씨를 균형 있게 봐요.',
-  },
-  elderly: {
-    label: '고령자',
-    description: '계단을 피하고 짧은 도보를 우선해요.',
-  },
-  child: {
-    label: '아동',
-    description: '안전한 횡단과 단순한 환승을 우선해요.',
-  },
-  youth: {
-    label: '청소년',
-    description: '빠르고 단순한 이동을 우선해요.',
-  },
-  disabled: {
-    label: '장애인',
-    description: '승강기·저상버스·계단 회피를 우선해요.',
-  },
-  pregnant: {
-    label: '임산부',
-    description: '긴 도보·급경사·복잡한 환승을 줄여요.',
-  },
-};
-
 export function ProfileIcon({ profileId }: { profileId: ProfileId }) {
   const common = (
     <>
@@ -117,6 +87,7 @@ export default function ProfileOptionCard({
   const selectedClass = selected
     ? ' map-first__profile-option--selected'
     : '';
+  const keywords = item.keywords.slice(0, 2);
 
   if (!mobile) {
     return (
@@ -124,6 +95,7 @@ export default function ProfileOptionCard({
         type="button"
         role="radio"
         aria-checked={selected}
+        aria-label={`${item.label}. ${item.description}`}
         className={`map-first__profile-option${selectedClass}`}
         onClick={() => onSelect(item.id)}
       >
@@ -133,13 +105,12 @@ export default function ProfileOptionCard({
     );
   }
 
-  const presentation = MOBILE_PROFILE_PRESENTATION[item.id];
-
   return (
     <button
       type="button"
       role="radio"
       aria-checked={selected}
+      aria-label={`${item.label}. ${item.description}`}
       className={`map-first__profile-option map-first__profile-option--mobile${selectedClass}`}
       data-profile-option={item.id}
       onClick={() => onSelect(item.id)}
@@ -148,8 +119,14 @@ export default function ProfileOptionCard({
         <ProfileIcon profileId={item.id} />
       </span>
       <span className="map-first__profile-option-copy">
-        <strong>{presentation.label}</strong>
-        <span>{presentation.description}</span>
+        <strong>{item.label}</strong>
+        <span className="map-first__profile-option-keywords" aria-hidden="true">
+          {keywords.map((keyword) => (
+            <span key={keyword} className="map-first__profile-keyword">
+              {keyword}
+            </span>
+          ))}
+        </span>
       </span>
       {selected && (
         <span className="map-first__profile-option-check" aria-hidden="true">
