@@ -439,16 +439,19 @@ describe('KakaoMap production overlays', () => {
       (line) => line.options.path.length === 3
         && line.options.strokeColor !== '#64748b',
     );
-    // slopeSegments 없음: 흰 외곽선 + 파란 선택 본선만 (도보 구간 녹색 오버레이 없음)
-    expect(fullRouteLines).toHaveLength(2);
+    // 이동수단별 본선: 전체 path 외곽선(white) + 구간 도보(차콜 점선)
     expect(fullRouteLines.map((line) => line.options.strokeColor)).toEqual([
       '#ffffff',
-      '#3182f6',
     ]);
-    expect(fullRouteLines.map((line) => line.options.zIndex)).toEqual([4, 5]);
+    expect(fullRouteLines.map((line) => line.options.zIndex)).toEqual([4]);
     expect(
       fullRouteLines.every((line) => line.options.strokeStyle === 'solid'),
     ).toBe(true);
+    const walkLine = activePolylines().find(
+      (line) => line.options.strokeColor === '#475569',
+    );
+    expect(walkLine?.options.strokeStyle).toBe('shortdash');
+    expect(walkLine?.options.path.length).toBe(2);
     expect(
       activePolylines().some((line) => line.options.strokeColor === '#16a34a'),
     ).toBe(false);
@@ -642,6 +645,69 @@ describe('KakaoMap production overlays', () => {
       activePolylines().filter((line) => line.options.strokeColor === '#3182f6')
         .every((line) => line.options.path.length === 2),
     ).toBe(true); // 버스 구간만 파랑 (전체 선택선 아님)
+  });
+
+  it('경사 OFF일 때 도보·버스·지하철 색/패턴이 카드 의미와 같고 그늘 초록과 겹치지 않는다', async () => {
+    const selected = scoredRoute('mode-colors', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'exact',
+      segments: [
+        {
+          id: 'w1',
+          mode: 'walk',
+          description: '도보',
+          durationMin: 3,
+          path: [ORIGIN, MIDPOINT],
+          geometryQuality: 'exact',
+        },
+        {
+          id: 'b1',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 8,
+          path: [MIDPOINT, { lat: 35.15, lng: 129.05 }],
+          geometryQuality: 'exact',
+          busRouteName: '1001',
+        },
+        {
+          id: 's1',
+          mode: 'subway',
+          description: '부산1호선',
+          durationMin: 10,
+          path: [{ lat: 35.15, lng: 129.05 }, DESTINATION],
+          geometryQuality: 'exact',
+        },
+      ],
+    });
+
+    render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="mode-colors"
+        onSelectRoute={vi.fn()}
+        showShade={false}
+        showSlope={false}
+      />,
+    );
+    await waitUntilReady();
+
+    const walk = activePolylines().find((line) => line.options.strokeColor === '#475569');
+    const bus = activePolylines().find((line) => line.options.strokeColor === '#3182f6');
+    const subway = activePolylines().find((line) => line.options.strokeColor === '#f06a00');
+    expect(walk?.options.strokeStyle).toBe('shortdash');
+    expect(bus?.options.strokeStyle).toBe('solid');
+    expect(subway?.options.strokeStyle).toBe('solid');
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#00b84a'),
+    ).toBe(false);
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#16a34a'),
+    ).toBe(false);
+    expect(
+      activePolylines().some((line) => line.options.strokeColor === '#7c3aed'),
+    ).toBe(false);
   });
 
   it('선택 경로 변경 시 이전 Polyline을 제거하고 새 경사선만 남긴다', async () => {

@@ -2,7 +2,6 @@ import { PROFILES } from '@/config/profiles';
 import type {
   ProfileId,
   RouteCandidate,
-  RouteSegment,
   RouteScore,
   ScoredRoute,
   SegmentMode,
@@ -16,6 +15,10 @@ import {
   SLOPE_LEVEL_LABELS,
   type SlopeLevelId,
 } from './utils/slopeLevel';
+import {
+  resolveSubwayLine,
+  type TransportSubwayLineId,
+} from './transportModeVisual';
 
 /**
  * live AI: relative_fit_score(후보 내 min–max) × 100.
@@ -272,15 +275,7 @@ export interface V2RouteFact {
   title?: string;
 }
 
-export type V2SubwayLineId =
-  | 'busan-1'
-  | 'busan-2'
-  | 'busan-3'
-  | 'busan-4'
-  | 'busan-gimhae'
-  | 'donghae'
-  | 'unknown';
-
+export type V2SubwayLineId = TransportSubwayLineId;
 export interface V2TransitStep {
   id: string;
   mode: SegmentMode;
@@ -322,53 +317,6 @@ export interface V2RouteViewModel {
 
 function unique(values: string[]): string[] {
   return Array.from(new Set(values));
-}
-
-const SUBWAY_LINE_PATTERNS: Array<{
-  id: Exclude<V2SubwayLineId, 'unknown'>;
-  label: string;
-  pattern: RegExp;
-}> = [
-  {
-    id: 'busan-gimhae',
-    label: '부산김해경전철',
-    pattern: /(?:부산\s*[-·]?\s*김해|김해)\s*경전철/i,
-  },
-  { id: 'donghae', label: '동해선', pattern: /동해선/i },
-  {
-    id: 'busan-1',
-    label: '1호선',
-    pattern: /(?:부산(?:도시철도)?\s*)?1\s*호선/i,
-  },
-  {
-    id: 'busan-2',
-    label: '2호선',
-    pattern: /(?:부산(?:도시철도)?\s*)?2\s*호선/i,
-  },
-  {
-    id: 'busan-3',
-    label: '3호선',
-    pattern: /(?:부산(?:도시철도)?\s*)?3\s*호선/i,
-  },
-  {
-    id: 'busan-4',
-    label: '4호선',
-    pattern: /(?:부산(?:도시철도)?\s*)?4\s*호선/i,
-  },
-];
-
-function resolveSubwayLine(
-  segment: RouteSegment,
-): { id: V2SubwayLineId; label?: string } {
-  const source = [segment.transitRouteId, segment.description]
-    .filter((value): value is string => Boolean(value?.trim()))
-    .join(' ');
-  const matched = SUBWAY_LINE_PATTERNS.find(({ pattern }) =>
-    pattern.test(source),
-  );
-  return matched
-    ? { id: matched.id, label: matched.label }
-    : { id: 'unknown' };
 }
 
 function formatBusRouteLabel(value: string | undefined): string | undefined {

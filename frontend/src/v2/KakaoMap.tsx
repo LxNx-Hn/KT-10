@@ -24,6 +24,13 @@ import {
   slopeLevelLabel,
   slopeMapColor,
 } from './utils/slopeLevel';
+import {
+  TRANSPORT_MODE_COLOR,
+  resolveSubwayLine,
+  transportModeStrokeColor,
+  transportModeStrokeStyle,
+  type TransportSubwayLineId,
+} from './transportModeVisual';
 
 export type LngLatTuple = [number, number];
 
@@ -61,6 +68,8 @@ type RoutePathPart = {
   quality?: GeometryQuality;
   /** Per-segment slope (walk only), used for color ramp. */
   slopePercent?: number;
+  /** 도시철도 호선. subway segment에서만 설정. */
+  subwayLineId?: TransportSubwayLineId;
 };
 
 type KakaoLatLng = {
@@ -178,10 +187,10 @@ export function shouldShowClimateSheltersAtLevel(level: number): boolean {
 }
 
 const MODE_COLOR: Record<SegmentMode, string> = {
-  walk: '#16a34a',
-  bus: '#3182f6',
-  subway: '#7c3aed',
-  transfer: '#64748b',
+  walk: TRANSPORT_MODE_COLOR.walk,
+  bus: TRANSPORT_MODE_COLOR.bus,
+  subway: TRANSPORT_MODE_COLOR.subway,
+  transfer: TRANSPORT_MODE_COLOR.transfer,
 };
 
 /** 구간 경사색. 값 없으면 기본 도보색. 판정은 slopeLevel 유틸과 동일. */
@@ -199,8 +208,7 @@ export function slopeLabel(
 
 export { SLOPE_COLOR_RAMP };
 
-const DEFAULT_ROUTE_COLOR = '#3182f6';
-const ALTERNATIVE_ROUTE_COLOR = '#64748b';
+const ALTERNATIVE_ROUTE_COLOR = TRANSPORT_MODE_COLOR.transfer;
 const SHADOW_FILL = '#8290a8';
 const SHADOW_STROKE = '#64748b';
 const SHADED_ROUTE_COLOR = '#00b84a';
@@ -265,6 +273,9 @@ function segmentPathParts(route: RouteCandidate): RoutePathPart[] {
       path,
       mode: segment.mode,
       quality: segment.geometryQuality ?? route.geometryQuality,
+      subwayLineId: segment.mode === 'subway'
+        ? resolveSubwayLine(segment).id
+        : undefined,
     }];
   });
   return [...routeParts, ...terrainParts];
@@ -614,6 +625,21 @@ function strokeStyle(quality: GeometryQuality | undefined): string {
   return quality === 'exact' ? 'solid' : 'shortdash';
 }
 
+function partStrokeColor(part: RoutePathPart): string {
+  return transportModeStrokeColor(part.mode, {
+    slopePercent: part.slopePercent,
+    subwayLineId: part.subwayLineId,
+    slopeColorFn: slopeColor,
+    walkFallback: MODE_COLOR.walk,
+  });
+}
+
+function partStrokeStyle(part: RoutePathPart): string {
+  return transportModeStrokeStyle(part.mode, part.quality, {
+    slopePercent: part.slopePercent,
+  });
+}
+
 /**
  * Production-data-only Kakao map surface.
  * Every route, marker, shadow, and shade segment comes from the supplied domain data.
@@ -783,19 +809,6 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     );
     const hasSlopeWalk = slopeVisible && slopeWalkParts.length > 0;
 
-    const colorForPart = ({
-      mode,
-      slopePercent,
-    }: RoutePathPart): string => {
-      if (mode === 'walk') {
-        // 구간 경사값이 있을 때만 등급색. 없으면 선택 경로 파란선 유지.
-        if (typeof slopePercent === 'number') return slopeColor(slopePercent);
-        return DEFAULT_ROUTE_COLOR;
-      }
-      if (mode) return MODE_COLOR[mode] ?? DEFAULT_ROUTE_COLOR;
-      return DEFAULT_ROUTE_COLOR;
-    };
-
     const drawOutline = (path: LatLng[], quality?: GeometryQuality) => {
       addGraphic(new maps.Polyline({
         path: path.map((point) => toKakaoLatLng(maps, point)),
@@ -815,28 +828,38 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       addGraphic(new maps.Polyline({
         path: part.path.map((point) => toKakaoLatLng(maps, point)),
         strokeWeight: weight,
-        strokeColor: colorForPart(part),
+        strokeColor: partStrokeColor(part),
         strokeOpacity: 0.96,
-        strokeStyle: strokeStyle(part.quality),
+        strokeStyle: partStrokeStyle(part),
         zIndex,
       }));
     };
 
     if (hasSlopeWalk) {
-      // 1) 외곽선만 (파란 본선은 그리지 않음 — 경사선을 덮지 않게)
+      // 1) 외곽선만 (선택 본선은 그리지 않음 — 경사선을 덮지 않게)
       if (routePath) {
         drawOutline(routePath, route.geometryQuality);
       } else {
         segmentParts.forEach((part) => drawOutline(part.path, part.quality));
       }
-      // 2) 버스·지하철
+      // 2) 버스·지하철(호선색)·환승
       transitParts.forEach((part) => drawBody(part, 5, 8));
       // 3) 경사도 도보 구간 (가장 위)
       slopeWalkParts.forEach((part) => drawBody(part, 6, 8));
       return;
     }
 
-    // slopeSegments 없음: 기존처럼 선택 경로 파란 본선 + 대중교통 색 오버레이
+    // 이동수단별 색·패턴(도보 점선/차콜, 버스 파랑, 지하철 노선색)
+    if (segmentParts.length > 0) {
+      if (routePath) {
+        drawOutline(routePath, route.geometryQuality);
+      } else {
+        segmentParts.forEach((part) => drawOutline(part.path, part.quality));
+      }
+      segmentParts.forEach((part) => drawBody(part, 5, 8));
+      return;
+    }
+
     if (routePath) {
       drawOutline(routePath, route.geometryQuality);
       drawBody(
@@ -844,13 +867,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
         5,
         8,
       );
-      transitParts.forEach((part) => drawBody(part, 6, 8));
-      return;
     }
-    segmentParts.forEach((part) => {
-      drawOutline(part.path, part.quality);
-      drawBody(part, 5, 8);
-    });
   };
 
   const addShadeOverlay = (

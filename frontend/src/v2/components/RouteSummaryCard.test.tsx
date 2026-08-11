@@ -175,6 +175,10 @@ describe('MOB-15 대중교통 경로 시각 언어', () => {
     expect(sequence.textContent).toMatch(/도보.*4분/);
     expect(sequence.textContent).toMatch(/버스.*81번.*8분/);
     expect(sequence.textContent).toMatch(/지하철.*1호선.*5분/);
+    expect(sequence.querySelector('[data-mode="walk"]')).toBeTruthy();
+    expect(
+      sequence.querySelector('[data-mode="walk"]')?.getAttribute('aria-label'),
+    ).toContain('지도에서 회색 점선');
     expect(
       sequence.querySelector('[data-subway-line="busan-1"]'),
     ).toBeTruthy();

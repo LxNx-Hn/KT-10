@@ -1,10 +1,12 @@
 import {
+  Fragment,
   useEffect,
   useId,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
+import { SLOPE_LEGEND_BANDS } from '../utils/slopeLevel';
 
 function LocationIcon() {
   return (
@@ -22,6 +24,79 @@ function LayersIcon() {
       <path d="M12 2l9 5-9 5-9-5 9-5z" strokeLinejoin="round" />
       <path d="M3 12l9 5 9-5M3 17l9 5 9-5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+/** MapInfo 상단 compact 범례. slope/shade ON 시 실제 polyline 의미와 맞춘다. */
+function MapInfoRouteKey({
+  showSlope,
+  showShade,
+}: {
+  showSlope: boolean;
+  showShade: boolean;
+}) {
+  if (showSlope) {
+    return (
+      <p
+        className="map-first__map-info-route-key map-first__map-info-route-key--slope"
+        role="note"
+        aria-label="경로 선 경사도 안내"
+      >
+        경사도:
+        {' '}
+        {SLOPE_LEGEND_BANDS.map((band, index) => (
+          <Fragment key={band.id}>
+            {index > 0 ? ' · ' : null}
+            <span data-slope-band={band.id}>
+              <i
+                className={`map-first__legend-dot map-first__legend-dot--slope-${band.id}`}
+                style={{ backgroundColor: band.color }}
+                aria-hidden="true"
+              />
+              {band.label}
+            </span>
+          </Fragment>
+        ))}
+      </p>
+    );
+  }
+
+  if (showShade) {
+    return (
+      <p
+        className="map-first__map-info-route-key map-first__map-info-route-key--shade"
+        role="note"
+        aria-label="경로 선 건물 그늘 안내"
+      >
+        건물 그늘:
+        {' '}
+        <span data-shade="shade">
+          <i className="map-first__legend-dot map-first__legend-dot--shade" aria-hidden="true" />
+          그늘
+        </span>
+        {' · '}
+        <span data-shade="sun">
+          <i className="map-first__legend-dot map-first__legend-dot--sun" aria-hidden="true" />
+          햇빛
+        </span>
+      </p>
+    );
+  }
+
+  return (
+    <p
+      className="map-first__map-info-route-key"
+      role="note"
+      aria-label="경로 선 이동수단 안내"
+    >
+      경로 선:
+      {' '}
+      <span data-mode="walk">도보 점선</span>
+      {' · '}
+      <span data-mode="bus">버스</span>
+      {' · '}
+      <span data-mode="subway">지하철 노선색</span>
+    </p>
   );
 }
 
@@ -212,6 +287,7 @@ export default function MapControls({
             aria-label="지도 정보"
           >
             <h2 className="map-first__map-info-title">지도 정보</h2>
+            <MapInfoRouteKey showSlope={showSlope} showShade={showShade} />
             <div className="map-first__map-info-list">
               <LayerToggleRow
                 id={facilityId}

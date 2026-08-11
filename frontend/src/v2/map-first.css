@@ -15,6 +15,16 @@
   --mf-surface: #ffffff;
   --mf-line: #e5e8eb;
   --mf-chip: #f2f4f6;
+  /* 지도 polyline ↔ 경로 카드 이동수단 chip (transportModeVisual.ts와 동기) */
+  --mf-mode-walk: #475569;
+  --mf-mode-walk-bg: #f1f5f9;
+  --mf-mode-walk-fg: #334155;
+  --mf-mode-bus: #3182f6;
+  --mf-mode-bus-bg: #eaf3ff;
+  --mf-mode-bus-fg: #175ea8;
+  --mf-mode-subway: #7c3aed;
+  --mf-mode-subway-bg: #f3e8ff;
+  --mf-mode-subway-fg: #5b21b6;
 
   /* 그림자·모서리 */
   --mf-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
@@ -1113,6 +1123,33 @@
   font-size: var(--mf-section-size);
   font-weight: var(--mf-button-weight);
   line-height: var(--mf-line-height-tight);
+}
+
+.map-first__map-info-route-key {
+  margin: -4px 0 12px;
+  color: var(--mf-ink-soft);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.map-first__map-info-route-key .map-first__legend-dot {
+  width: 8px;
+  height: 8px;
+  margin-right: 3px;
+  vertical-align: 0;
+}
+
+.map-first__map-info-route-key span[data-mode='walk'] {
+  color: var(--mf-mode-walk);
+}
+
+.map-first__map-info-route-key span[data-mode='bus'] {
+  color: var(--mf-mode-bus);
+}
+
+.map-first__map-info-route-key span[data-mode='subway'] {
+  color: var(--mf-mode-subway);
 }
 
 .map-first__map-info-list {
@@ -4017,9 +4054,28 @@
   }
 
   .map-first__route-card-transit li[data-mode='bus'] {
-    --mf-transit-line: #3182f6;
-    --mf-transit-line-bg: #eaf3ff;
-    --mf-transit-line-fg: #175ea8;
+    --mf-transit-line: var(--mf-mode-bus);
+    --mf-transit-line-bg: var(--mf-mode-bus-bg);
+    --mf-transit-line-fg: var(--mf-mode-bus-fg);
+  }
+
+  .map-first__route-card-transit li[data-mode='walk'] {
+    --mf-transit-line: var(--mf-mode-walk);
+    --mf-transit-line-bg: var(--mf-mode-walk-bg);
+    --mf-transit-line-fg: var(--mf-mode-walk-fg);
+  }
+
+  /* 도보: 지도 shortdash와 맞춰 아이콘 테두리를 점선으로 힌트 */
+  .map-first__route-card-transit li[data-mode='walk'] .map-first__transit-icon {
+    border: 1.5px dashed var(--mf-mode-walk);
+    background: var(--mf-mode-walk-bg);
+  }
+
+  .map-first__route-card-transit li[data-subway-line='unknown'],
+  .map-first__route-card-transit li[data-mode='subway']:not([data-subway-line]) {
+    --mf-transit-line: var(--mf-mode-subway);
+    --mf-transit-line-bg: var(--mf-mode-subway-bg);
+    --mf-transit-line-fg: var(--mf-mode-subway-fg);
   }
 
   .map-first__transit-route {
