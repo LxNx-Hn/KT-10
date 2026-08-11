@@ -82,7 +82,7 @@ function renderCard(
 
 describe('RouteSummaryCard 정보 위계', () => {
   it('소요 시간·추천 근거·상세 CTA를 순서대로 노출하고 선택은 route id를 유지한다', () => {
-    const { container, onSelect, onDetails } = renderCard('general');
+    const { container, onSelect, onDetails, view } = renderCard('general');
 
     const card = container.querySelector('.map-first__route-card');
     expect(card?.getAttribute('data-route-id')).toBe('route-a');
@@ -103,7 +103,9 @@ describe('RouteSummaryCard 정보 위계', () => {
     ).toMatch(/1\s*회 환승/);
     expect(
       card?.querySelector('.map-first__route-card-reasons')?.textContent,
-    ).toBeTruthy();
+    ).toMatch(/최단 시간|보통 경사|도보/);
+    expect(view.reasonHighlights.length).toBeGreaterThan(0);
+    expect(view.reasonHighlights.length).toBeLessThanOrEqual(3);
     // 순위 문구를 경로명 아래에 중복하지 않는다.
     expect(card?.textContent).not.toContain('일반 맞춤 1순위');
 
@@ -173,6 +175,10 @@ describe('MOB-15 대중교통 경로 시각 언어', () => {
     expect(sequence.textContent).toMatch(/도보.*4분/);
     expect(sequence.textContent).toMatch(/버스.*81번.*8분/);
     expect(sequence.textContent).toMatch(/지하철.*1호선.*5분/);
+    expect(sequence.querySelector('[data-mode="walk"]')).toBeTruthy();
+    expect(
+      sequence.querySelector('[data-mode="walk"]')?.getAttribute('aria-label'),
+    ).toContain('지도에서 회색 점선');
     expect(
       sequence.querySelector('[data-subway-line="busan-1"]'),
     ).toBeTruthy();
@@ -246,6 +252,17 @@ describe('MOB-08 경로 카드 본문 우선 노출', () => {
     expect(
       body.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('총 소요시간 60분 이상을 시간·분 문구로 표시한다', () => {
+    const { container } = renderCard('general', { totalDurationMin: 69 });
+    const duration = container.querySelector(
+      '.map-first__route-card-duration',
+    );
+    expect(duration?.textContent).toBe('1시간 9분');
+    expect(
+      duration?.getAttribute('aria-label'),
+    ).toBe('소요시간 1시간 9분');
   });
 
   it('상세 화면을 열지 않아도 도보·환승·핵심 특성이 카드에 존재한다', () => {

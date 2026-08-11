@@ -127,6 +127,13 @@ class RouteReview(Base):
     information_accurate: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     training_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    moderation_status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now_naive)
 
 

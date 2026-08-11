@@ -3,6 +3,7 @@ import {
   type V2RouteViewModel,
   type V2TransitStep,
 } from '../routeViewModel';
+import { formatDurationMin } from '@/utils/formatDurationMin';
 
 const ATTENTION_FACT_IDS = new Set([
   'terrain',
@@ -71,6 +72,7 @@ function TransitSequence({ steps }: { steps: V2TransitStep[] }) {
       {steps.map((step) => {
         const accessibleLabel = [
           step.modeLabel,
+          step.mode === 'walk' ? '지도에서 회색 점선' : null,
           step.routeLabel,
           `${step.durationMin}분`,
         ]
@@ -115,8 +117,13 @@ export default function RouteSummaryCard({
   onDetails: () => void;
 }) {
   const displayReasons = view.reasons.slice(0, 3);
+  const reasonHighlights = (
+    view.reasonHighlights.length > 0
+      ? view.reasonHighlights
+      : displayReasons
+  ).slice(0, 3);
   const attentionFacts = pickAttentionFacts(view.facts, displayReasons);
-  const durationLabel = `${view.stats.durationMin}분`;
+  const durationLabel = formatDurationMin(view.stats.durationMin);
   const scoreText = view.score.available && view.score.rounded !== null
     ? `${view.scoreKindLabel} ${view.score.rounded}점`
     : view.score.summaryLabel;
@@ -131,7 +138,7 @@ export default function RouteSummaryCard({
       data-route-id={view.routeId}
       aria-current={selected ? 'true' : undefined}
       aria-busy={refining ? 'true' : undefined}
-      aria-label={`${view.rank}순위 경로, 소요 ${durationLabel}, ${view.score.ariaLabel}`}
+      aria-label={`${view.rank}순위 경로, 소요 ${durationLabel}, ${reasonHighlights.join(', ')}, ${view.score.ariaLabel}`}
       onClick={onSelect}
       onKeyDown={(event) => {
         // Tab으로 focus만 옮기는 것은 선택이 아니다. 키보드 선택은
@@ -156,13 +163,25 @@ export default function RouteSummaryCard({
 
         <TransitSequence steps={view.transitSteps} />
 
+        {reasonHighlights.length > 0 && (
+          <ul
+            className="map-first__route-card-reasons"
+            aria-label="추천 근거"
+          >
+            {reasonHighlights.map((label, index) => (
+              <li key={`${label}-${index}`} title={displayReasons[index]}>
+                {label}
+              </li>
+            ))}
+          </ul>
+        )}
+
         <div className="map-first__route-card-metrics">
           <p
             className="map-first__route-card-duration"
             aria-label={`소요시간 ${durationLabel}`}
           >
-            <strong>{view.stats.durationMin}</strong>
-            <span>분</span>
+            <strong>{durationLabel}</strong>
           </p>
           <div
             className="map-first__route-score"
@@ -192,14 +211,6 @@ export default function RouteSummaryCard({
             <span>회 환승</span>
           </li>
         </ul>
-
-        {displayReasons.length > 0 && (
-          <ul className="map-first__route-card-reasons" aria-label="추천 근거">
-            {displayReasons.map((reason) => (
-              <li key={reason}>{reason}</li>
-            ))}
-          </ul>
-        )}
 
         {attentionFacts.length > 0 && (
           <div className="map-first__badges" aria-label="경사·접근성 정보">

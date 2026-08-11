@@ -2,18 +2,23 @@ import { PROFILES } from '@/config/profiles';
 import type {
   ProfileId,
   RouteCandidate,
-  RouteSegment,
   RouteScore,
   ScoredRoute,
   SegmentMode,
 } from '@/types';
+import { formatDurationMin } from '@/utils/formatDurationMin';
 import {
   formatSlopePercent,
+  formatSlopeReasonChip,
   resolvePeakSlopePercent,
   resolveSlopeLevel,
   SLOPE_LEVEL_LABELS,
   type SlopeLevelId,
 } from './utils/slopeLevel';
+import {
+  resolveSubwayLine,
+  type TransportSubwayLineId,
+} from './transportModeVisual';
 
 /**
  * live AI: relative_fit_score(후보 내 min–max) × 100.
@@ -270,15 +275,7 @@ export interface V2RouteFact {
   title?: string;
 }
 
-export type V2SubwayLineId =
-  | 'busan-1'
-  | 'busan-2'
-  | 'busan-3'
-  | 'busan-4'
-  | 'busan-gimhae'
-  | 'donghae'
-  | 'unknown';
-
+export type V2SubwayLineId = TransportSubwayLineId;
 export interface V2TransitStep {
   id: string;
   mode: SegmentMode;
@@ -310,6 +307,9 @@ export interface V2RouteViewModel {
   traitLabels: string[];
   facts: V2RouteFact[];
   needsConfirmation: string[];
+  /** 짧은 추천 이유 chip 라벨(최대 3). 기존 구조화 사실만 사용. */
+  reasonHighlights: string[];
+  /** chip에 대응하는 한 줄 설명(상세·접근성용). */
   reasons: string[];
   cautions: string[];
   voiceSummary: string;
@@ -317,53 +317,6 @@ export interface V2RouteViewModel {
 
 function unique(values: string[]): string[] {
   return Array.from(new Set(values));
-}
-
-const SUBWAY_LINE_PATTERNS: Array<{
-  id: Exclude<V2SubwayLineId, 'unknown'>;
-  label: string;
-  pattern: RegExp;
-}> = [
-  {
-    id: 'busan-gimhae',
-    label: '부산김해경전철',
-    pattern: /(?:부산\s*[-·]?\s*김해|김해)\s*경전철/i,
-  },
-  { id: 'donghae', label: '동해선', pattern: /동해선/i },
-  {
-    id: 'busan-1',
-    label: '1호선',
-    pattern: /(?:부산(?:도시철도)?\s*)?1\s*호선/i,
-  },
-  {
-    id: 'busan-2',
-    label: '2호선',
-    pattern: /(?:부산(?:도시철도)?\s*)?2\s*호선/i,
-  },
-  {
-    id: 'busan-3',
-    label: '3호선',
-    pattern: /(?:부산(?:도시철도)?\s*)?3\s*호선/i,
-  },
-  {
-    id: 'busan-4',
-    label: '4호선',
-    pattern: /(?:부산(?:도시철도)?\s*)?4\s*호선/i,
-  },
-];
-
-function resolveSubwayLine(
-  segment: RouteSegment,
-): { id: V2SubwayLineId; label?: string } {
-  const source = [segment.transitRouteId, segment.description]
-    .filter((value): value is string => Boolean(value?.trim()))
-    .join(' ');
-  const matched = SUBWAY_LINE_PATTERNS.find(({ pattern }) =>
-    pattern.test(source),
-  );
-  return matched
-    ? { id: matched.id, label: matched.label }
-    : { id: 'unknown' };
 }
 
 function formatBusRouteLabel(value: string | undefined): string | undefined {
@@ -519,12 +472,14 @@ function terrainFacts(route: RouteCandidate): V2RouteFact[] {
       terrain.minSlopePercent,
     );
     const peakText = peak === null ? null : formatSlopePercent(peak);
-    const label =
+    const slopeLevel = resolveSlopeLevel(terrain.avgSlopePercent) ?? undefined;
+    const gradeLabel = slopeLevel ? SLOPE_LEVEL_LABELS[slopeLevel] : undefined;
+    const baseLabel =
       peakText !== null
         ? `보행구간 평균 경사 ${avgText}% · 최대 ${peakText}%`
         : `보행구간 평균 경사 ${avgText}%`;
-    const slopeLevel = resolveSlopeLevel(terrain.avgSlopePercent) ?? undefined;
-    const gradeLabel = slopeLevel ? SLOPE_LEVEL_LABELS[slopeLevel] : undefined;
+    // 카드·배지에서 체감 등급이 숫자와 함께 바로 보이도록 한다.
+    const label = gradeLabel ? `${baseLabel} · ${gradeLabel}` : baseLabel;
     const facts: V2RouteFact[] = [
       {
         id: 'terrain',
@@ -532,7 +487,7 @@ function terrainFacts(route: RouteCandidate): V2RouteFact[] {
         kind: 'estimate',
         detail: terrain.source || undefined,
         slopeLevel,
-        title: gradeLabel ? `${label}, ${gradeLabel}` : label,
+        title: label,
       },
     ];
     if (
@@ -642,6 +597,7 @@ export function buildRouteViewModel(
       .filter((fact) => fact.kind === 'unknown')
       .map((fact) => fact.label),
   ]);
+  const displayReasons = buildDisplayReasonItems(item, peers);
 
   return {
     routeId: route.id,
@@ -650,7 +606,7 @@ export function buildRouteViewModel(
     profileLabel,
     title: `${profileLabel} 맞춤 ${rank}순위`,
     summary: route.summary,
-    meta: `${Math.round(route.totalDurationMin)}분 · 도보 ${route.totalWalkM}m · 환승 ${route.transferCount}회`,
+    meta: `${formatDurationMin(route.totalDurationMin)} · 도보 ${route.totalWalkM}m · 환승 ${route.transferCount}회`,
     stats: {
       durationMin: Math.round(route.totalDurationMin),
       walkM: route.totalWalkM,
@@ -663,7 +619,8 @@ export function buildRouteViewModel(
     traitLabels,
     facts,
     needsConfirmation,
-    reasons: buildDisplayReasons(item, peers),
+    reasonHighlights: displayReasons.map((entry) => entry.chip),
+    reasons: displayReasons.map((entry) => entry.sentence),
     cautions: [...score.cautions],
     voiceSummary: score.voiceSummary,
   };
@@ -672,34 +629,39 @@ export function buildRouteViewModel(
 const DISPLAY_REASON_FALLBACK =
   '경로 상세에서 이동 정보를 확인해 주세요';
 
+export type DisplayReasonItem = {
+  key: string;
+  chip: string;
+  sentence: string;
+};
+
 /**
  * 화면에 보이는 경로 특징만 만든다.
  * 점수 임계값 추정 문구(score.reasons)는 쓰지 않고,
  * 경로 구조화 필드·후보 간 실제 비교·근거 있는 trait만 사용한다.
  * 동일 사실은 key로 한 번만 넣는다.
  */
-export function buildDisplayReasons(
+export function buildDisplayReasonItems(
   item: ScoredRoute,
   peers: ScoredRoute[] = [item],
-): string[] {
+): DisplayReasonItem[] {
   const { route, score } = item;
-  const out: string[] = [];
+  const out: DisplayReasonItem[] = [];
   const usedKeys = new Set<string>();
   const peerRoutes = peers.length > 0 ? peers : [item];
   const canCompare = peerRoutes.length > 1;
 
-  const add = (key: string, text: string) => {
+  const add = (key: string, chip: string, sentence: string) => {
     if (usedKeys.has(key)) return;
     usedKeys.add(key);
-    out.push(text);
+    out.push({ key, chip, sentence });
   };
 
   const durationMin = Math.round(route.totalDurationMin);
   const walkM = route.totalWalkM;
 
-  // 1) 환승: 0회는 절대 사실만. 비교 “가장 적어요(0회)”와 중복하지 않는다.
   if (route.transferCount === 0) {
-    add('transfer', '환승 없이 이동해요.');
+    add('transfer', '환승 없음', '환승 없이 이동해요.');
   } else if (canCompare) {
     const transfers = peerRoutes.map(({ route: peer }) => peer.transferCount);
     const minTransfer = Math.min(...transfers);
@@ -708,11 +670,14 @@ export function buildDisplayReasons(
       && transfers.filter((value) => value === minTransfer).length === 1
       && Math.max(...transfers) > minTransfer
     ) {
-      add('transfer', `후보 중 환승이 가장 적어요 (${route.transferCount}회).`);
+      add(
+        'transfer',
+        '환승 최소',
+        `후보 중 환승이 가장 적어요 (${route.transferCount}회).`,
+      );
     }
   }
 
-  // 2) 시간·도보: 복수 후보에서만 최상급 비교, 단일/비교 실패 시 절대 사실
   if (canCompare) {
     const durations = peerRoutes.map(({ route: peer }) => peer.totalDurationMin);
     const walks = peerRoutes.map(({ route: peer }) => peer.totalWalkM);
@@ -723,23 +688,31 @@ export function buildDisplayReasons(
       route.totalDurationMin === minDuration
       && durations.filter((value) => value === minDuration).length === 1
     ) {
-      add('duration', `후보 중 소요시간이 가장 짧아요 (${durationMin}분).`);
+      add(
+        'duration',
+        '최단 시간',
+        `후보 중 소요시간이 가장 짧아요 (${formatDurationMin(durationMin)}).`,
+      );
     }
     if (
       route.totalWalkM === minWalk
       && walks.filter((value) => value === minWalk).length === 1
     ) {
-      add('walk', `후보 중 도보가 가장 짧아요 (${walkM}m).`);
+      add(
+        'walk',
+        '최단 도보',
+        `후보 중 도보가 가장 짧아요 (${walkM}m).`,
+      );
     }
   }
 
-  // 3) 시설·지형·그늘 등 경로별 구조화 사실
   const stairs = stairFact(route);
   if (stairs?.kind === 'advantage') {
-    add('stairs', '확인된 구간에서 계단이 없어요.');
+    add('stairs', '계단 없음', '확인된 구간에서 계단이 없어요.');
   } else if (stairs?.kind === 'caution') {
     add(
       'stairs',
+      '계단 주의',
       stairs.label.startsWith('계단 ')
         ? `${stairs.label}가 있어요.`
         : '계단이 포함돼요.',
@@ -749,14 +722,14 @@ export function buildDisplayReasons(
   const elevator = elevatorFact(route);
   if (elevator?.kind === 'advantage') {
     if (elevator.label === '승강기 이용 가능') {
-      add('elevator', '승강기 이용이 확인됐어요.');
+      add('elevator', '승강기', '승강기 이용이 확인됐어요.');
     } else {
-      add('elevator', `${elevator.label}예요.`);
+      add('elevator', elevator.label, `${elevator.label}예요.`);
     }
   }
 
   if (score.lowFloorStatus === 'confirmed') {
-    add('lowFloor', '경로의 버스가 저상버스로 확인됐어요.');
+    add('lowFloor', '저상버스', '경로의 버스가 저상버스로 확인됐어요.');
   }
 
   const terrain = route.terrain;
@@ -765,8 +738,18 @@ export function buildDisplayReasons(
     && terrain.avgSlopePercent !== undefined
   ) {
     const avgText = formatSlopePercent(terrain.avgSlopePercent);
+    const slopeLevel = resolveSlopeLevel(terrain.avgSlopePercent);
     if (avgText !== null) {
-      add('terrain', `보행구간 평균 경사 ${avgText}%로 추정돼요.`);
+      const grade = slopeLevel ? SLOPE_LEVEL_LABELS[slopeLevel] : null;
+      const chip = formatSlopeReasonChip(terrain.avgSlopePercent)
+        ?? `경사 ${avgText}%`;
+      add(
+        'terrain',
+        chip,
+        grade
+          ? `보행구간 평균 경사 ${avgText}%(${grade})로 추정돼요.`
+          : `보행구간 평균 경사 ${avgText}%로 추정돼요.`,
+      );
     }
   }
 
@@ -779,6 +762,7 @@ export function buildDisplayReasons(
     const ratio = Math.round(shade.shadeRatio * 100);
     add(
       'shade',
+      '건물 그늘',
       shade.estimateKind === 'lower_bound'
         ? `확인된 건물 그늘이 최소 ${ratio}%예요.`
         : `건물 그늘이 약 ${ratio}%로 추정돼요.`,
@@ -797,32 +781,58 @@ export function buildDisplayReasons(
     most_shade: 'shade',
   };
 
+  const characteristicChip: Partial<
+    Record<NonNullable<RouteCandidate['characteristics']>[number], string>
+  > = {
+    fastest: '최단 시간',
+    shortest_walk: '최단 도보',
+    fewest_transfers: '환승 최소',
+    stair_free: '계단 없음',
+    low_floor_confirmed: '저상버스',
+    lowest_slope: '완만한 경사',
+    most_shade: '그늘 많음',
+  };
+
   for (const characteristic of route.characteristics ?? []) {
     if (!canCompare && RELATIVE_CHARACTERISTICS.has(characteristic)) continue;
     const overlapKey = characteristicKey[characteristic];
     if (overlapKey && usedKeys.has(overlapKey)) continue;
     add(
       `characteristic:${characteristic}`,
+      characteristicChip[characteristic] ?? CHARACTERISTIC_LABEL[characteristic],
       `${CHARACTERISTIC_LABEL[characteristic]}로 표시된 후보예요.`,
     );
   }
 
-  // traitLabels의 "… 근거가 있어요."는 구체 사실이 없어 화면 근거로 쓰지 않는다.
-  // 동일 주제(최단시간·도보 등)는 위 구조화 key로 이미 중복 제거된다.
-
-  // 4) 아직 비어 있는 기본 절대 사실로 보강 (단일 후보·비교 탈락 시)
   if (!usedKeys.has('walk')) {
-    add('walk', `도보 거리 ${walkM}m예요.`);
+    add('walk', `도보 ${walkM}m`, `도보 거리 ${walkM}m예요.`);
   }
   if (!usedKeys.has('duration')) {
-    add('duration', `소요시간 ${durationMin}분이에요.`);
+    add(
+      'duration',
+      formatDurationMin(durationMin),
+      `소요시간 ${formatDurationMin(durationMin)}이에요.`,
+    );
   }
   if (!usedKeys.has('transfer') && route.transferCount > 0) {
-    add('transfer', `환승 ${route.transferCount}회예요.`);
+    add(
+      'transfer',
+      `환승 ${route.transferCount}회`,
+      `환승 ${route.transferCount}회예요.`,
+    );
   }
 
   const limited = out.slice(0, 3);
-  return limited.length > 0 ? limited : [DISPLAY_REASON_FALLBACK];
+  return limited.length > 0
+    ? limited
+    : [{ key: 'fallback', chip: '상세 확인', sentence: DISPLAY_REASON_FALLBACK }];
+}
+
+export function buildDisplayReasons(
+  item: ScoredRoute,
+  peers: ScoredRoute[] = [item],
+): string[] {
+  return buildDisplayReasonItems(item, peers).map((entry) => entry.sentence);
 }
 
 /** 경로 sources 항목을 출처 안내 문장으로 정규화한다. */

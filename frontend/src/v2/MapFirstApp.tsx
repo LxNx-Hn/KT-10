@@ -15,6 +15,9 @@ import RouteConditions, {
   ROUTE_CONDITION_KEYS,
 } from '@/components/RouteConditions';
 import { PROFILE_LIST, PROFILES } from '@/config/profiles';
+import {
+  hasKtClimateShelterData,
+} from '@/data/ktClimateShelters';
 import { useVisualViewportRect } from '@/hooks/useVisualViewportRect';
 import {
   useAppStore,
@@ -27,7 +30,9 @@ import KakaoMap from './KakaoMap';
 import {
   formatSlopePercent,
   resolvePeakSlopePercent,
+  resolveSlopeLevel,
   SLOPE_LEGEND_BANDS,
+  SLOPE_LEVEL_LABELS,
 } from './utils/slopeLevel';
 import BottomDrawer from './components/BottomDrawer';
 import MapControls from './components/MapControls';
@@ -44,6 +49,7 @@ import ProfileOptionCard from './components/ProfileOptionCard';
 import {
   buildRouteViewModel,
 } from './routeViewModel';
+import VoiceChatDock from '@/components/VoiceChatDock';
 import './map-first.css';
 
 type DrawerId = 'profile' | 'conditions' | 'details' | 'departure' | 'settings';
@@ -193,12 +199,17 @@ const SLOPE_BAND_FEEL = {
 function MobileSlopeLegend({
   average,
   peak,
+  gradeLabel,
 }: {
   average: string;
   peak: string | null;
+  gradeLabel: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const detailsId = 'map-first-mobile-slope-details';
+  const summary = gradeLabel
+    ? `경사 ${average}% · ${gradeLabel}`
+    : `경사 ${average}%`;
 
   return (
     <section
@@ -215,7 +226,7 @@ function MobileSlopeLegend({
         aria-label={expanded ? '경사 안내 접기' : '경사 안내 펼치기'}
         onClick={() => setExpanded((current) => !current)}
       >
-        <strong>경사 {average}%</strong>
+        <strong>{summary}</strong>
         <span aria-hidden="true">{expanded ? '접기' : '보기'}</span>
       </button>
 
@@ -315,9 +326,11 @@ function MobileSettingsIcon() {
 
 export default function MapFirstApp({
   voiceOpen = false,
+  onVoiceOpenChange,
 }: {
   /** App이 소유한 VoiceChatDock open boolean. data-voice-open 연결용. */
   voiceOpen?: boolean;
+  onVoiceOpenChange?: (open: boolean) => void;
 } = {}) {
   const profile = useAppStore((state) => state.profile);
   const origin = useAppStore((state) => state.origin);
@@ -363,8 +376,9 @@ export default function MapFirstApp({
   );
   const searchViewport = useVisualViewportRect(searchPanelExpanded);
   const [showFacilities, setShowFacilities] = useState(false);
-  const [showShade, setShowShade] = useState(true);
-  const [showSlope, setShowSlope] = useState(true);
+  // 기본은 이동수단 색. 경사·그늘은 상호 배타 분석 레이어.
+  const [showShade, setShowShade] = useState(false);
+  const [showSlope, setShowSlope] = useState(false);
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [departureIsNow, setDepartureIsNow] = useState(true);
@@ -393,6 +407,11 @@ export default function MapFirstApp({
     selectedTerrain?.status === 'estimated_90m'
       ? formatSlopePercent(selectedTerrain.avgSlopePercent)
       : null;
+  const selectedTerrainGradeLabel = (() => {
+    if (selectedTerrain?.status !== 'estimated_90m') return null;
+    const level = resolveSlopeLevel(selectedTerrain.avgSlopePercent);
+    return level ? SLOPE_LEVEL_LABELS[level] : null;
+  })();
   const selectedTerrainPeakText = (() => {
     if (selectedTerrain?.status !== 'estimated_90m') return null;
     const peak = resolvePeakSlopePercent(
@@ -401,7 +420,7 @@ export default function MapFirstApp({
     );
     return peak === null ? null : formatSlopePercent(peak);
   })();
-  const hasFacilityOverlay = Boolean(
+  const hasRouteFacilityOverlay = Boolean(
     selectedItem?.route.segments.some(
       (segment) =>
         Boolean(segment.path && segment.path.length > 0) &&
@@ -409,11 +428,16 @@ export default function MapFirstApp({
           (segment.mode === 'bus' && segment.isLowFloorBus === true)),
     ),
   );
+  const hasKtShelterOverlay = hasKtClimateShelterData();
+  const hasFacilityOverlay = hasRouteFacilityOverlay || hasKtShelterOverlay;
   const facilityDisabledHint = hasFacilityOverlay
     ? ''
     : selectedItem
       ? '이 경로에는 표시할 편의시설이 없어요.'
       : MAP_INFO_SEARCH_FIRST_HINT;
+  const facilityDetail = hasKtShelterOverlay
+    ? 'KT 기후쉼터 · 승강기 · 저상버스'
+    : undefined;
   const shadeDisabledHint = hasShadeOverlay
     ? ''
     : shadeUnavailableHint(selectedShade, Boolean(selectedItem));
@@ -653,6 +677,7 @@ export default function MapFirstApp({
         '--mf-search-vv-height': `${searchViewport.height}px`,
         '--mf-search-vv-offset-top': `${searchViewport.offsetTop}px`,
         '--mf-search-vv-offset-left': `${searchViewport.offsetLeft}px`,
+        '--mf-search-vv-bottom-inset': `${searchViewport.bottomInset}px`,
       } as CSSProperties
     : undefined;
   const shadeLegend = shadeLayerVisible
@@ -676,12 +701,15 @@ export default function MapFirstApp({
             key={selectedRouteId ?? 'selected-route'}
             average={selectedTerrainAvgText}
             peak={selectedTerrainPeakText}
+            gradeLabel={selectedTerrainGradeLabel}
           />
         )
       : (
           <div className="map-first__map-legend map-first__map-legend--slope" role="note">
             <strong>
-              도보 경사 {selectedTerrainAvgText}%
+              {selectedTerrainGradeLabel
+                ? `도보 경사 ${selectedTerrainAvgText}% · ${selectedTerrainGradeLabel}`
+                : `도보 경사 ${selectedTerrainAvgText}%`}
               {selectedTerrainPeakText !== null
                 ? ` (최대 ${selectedTerrainPeakText}%)`
                 : ''}
@@ -706,6 +734,42 @@ export default function MapFirstApp({
     && !voiceOpen
     && !searchPanelExpanded
     && !(ranked.length > 0 && sheetSnap === 'expanded');
+
+  const searchHeaderProps = {
+    showMobileHome: mobileHomeEnabled,
+    origin,
+    destination,
+    originInputRef,
+    destinationInputRef,
+    loading,
+    searchHint,
+    error,
+    profileId: profile,
+    profileLabel: profileTriggerLabel(profileMeta.label),
+    profileDrawerOpen: drawer === 'profile',
+    settingsDrawerOpen: drawer === 'settings',
+    situationConditions: SITUATION_CONDITIONS,
+    routeOptionConditions: ROUTE_OPTION_CONDITIONS,
+    optionState: options,
+    largeUi,
+    activeConditionCount,
+    summaryConditionCount,
+    conditionsDrawerOpen: drawer === 'conditions',
+    onExpand: expandSearchPanel,
+    onCollapse: collapseSearchPanel,
+    onSelectOrigin: setOrigin,
+    onClearOrigin: () => setOrigin(null),
+    onSelectDestination: setDestination,
+    onClearDestination: () => setDestination(null),
+    onSwap: swapPlaces,
+    onSearch: () => void runRouteSearch(),
+    onEditSearch: editSearchConditions,
+    onOpenProfile: () => setDrawer('profile'),
+    onOpenSettings: () => setDrawer('settings'),
+    onToggleOption: setScoringOption,
+    onToggleLargeUi: toggleLargeUi,
+    onOpenConditions: () => setDrawer('conditions'),
+  };
 
   return (
     <main
@@ -732,42 +796,10 @@ export default function MapFirstApp({
           )}|${drawer ?? 'none'}`}
         />
 
-        <SearchHeader
-          mode={searchPanelMode}
-          showMobileHome={mobileHomeEnabled}
-          origin={origin}
-          destination={destination}
-          originInputRef={originInputRef}
-          destinationInputRef={destinationInputRef}
-          loading={loading}
-          searchHint={searchHint}
-          error={error}
-          profileId={profile}
-          profileLabel={profileTriggerLabel(profileMeta.label)}
-          profileDrawerOpen={drawer === 'profile'}
-          settingsDrawerOpen={drawer === 'settings'}
-          situationConditions={SITUATION_CONDITIONS}
-          routeOptionConditions={ROUTE_OPTION_CONDITIONS}
-          optionState={options}
-          largeUi={largeUi}
-          activeConditionCount={activeConditionCount}
-          summaryConditionCount={summaryConditionCount}
-          conditionsDrawerOpen={drawer === 'conditions'}
-          onExpand={expandSearchPanel}
-          onCollapse={collapseSearchPanel}
-          onSelectOrigin={setOrigin}
-          onClearOrigin={() => setOrigin(null)}
-          onSelectDestination={setDestination}
-          onClearDestination={() => setDestination(null)}
-          onSwap={swapPlaces}
-          onSearch={() => void runRouteSearch()}
-          onEditSearch={editSearchConditions}
-          onOpenProfile={() => setDrawer('profile')}
-          onOpenSettings={() => setDrawer('settings')}
-          onToggleOption={setScoringOption}
-          onToggleLargeUi={toggleLargeUi}
-          onOpenConditions={() => setDrawer('conditions')}
-        />
+        {/* expanded 검색은 frame overflow clip 밖(.map-first__search-screen)에 둔다. */}
+        {!searchPanelExpanded && (
+          <SearchHeader mode={searchPanelMode} {...searchHeaderProps} />
+        )}
 
         <MapControls
           locating={locating}
@@ -775,6 +807,7 @@ export default function MapFirstApp({
           showFacilities={showFacilities}
           hasFacilityOverlay={hasFacilityOverlay}
           facilityDisabledHint={facilityDisabledHint}
+          facilityDetail={facilityDetail}
           showShade={showShade}
           hasShadeOverlay={hasShadeOverlay}
           shadeDisabledHint={shadeDisabledHint}
@@ -788,11 +821,19 @@ export default function MapFirstApp({
           }}
           onToggleShade={() => {
             if (!hasShadeOverlay) return;
-            setShowShade((visible) => !visible);
+            setShowShade((visible) => {
+              const next = !visible;
+              if (next) setShowSlope(false);
+              return next;
+            });
           }}
           onToggleSlope={() => {
             if (!hasSlopeOverlay) return;
-            setShowSlope((visible) => !visible);
+            setShowSlope((visible) => {
+              const next = !visible;
+              if (next) setShowShade(false);
+              return next;
+            });
           }}
           onMapInfoOpenChange={setMapInfoOpen}
         />
@@ -1053,7 +1094,25 @@ export default function MapFirstApp({
             </button>
           </nav>
         )}
+
+        {/* frame 내부 overlay — viewport fixed sibling이면 phone frame을 이탈한다 */}
+        <VoiceChatDock
+          variant="map-first"
+          open={voiceOpen}
+          onOpenChange={onVoiceOpenChange}
+        />
       </div>
+
+      {searchPanelExpanded && (
+        <div
+          className="map-first__search-screen"
+          role="dialog"
+          aria-modal="true"
+          aria-label="경로 검색"
+        >
+          <SearchHeader mode="expanded" {...searchHeaderProps} />
+        </div>
+      )}
     </main>
   );
 }

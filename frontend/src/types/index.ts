@@ -17,6 +17,8 @@ export interface ProfileMeta {
   id: ProfileId;
   label: string; // 화면 표시명
   description: string;
+  /** 모바일 카드용 핵심 키워드(2개 권장). description 의미를 압축한 표시 전용 값. */
+  keywords: string[];
   /** 큰 UI를 기본 적용할지 여부(고령자/아동) */
   prefersLargeUi: boolean;
 }

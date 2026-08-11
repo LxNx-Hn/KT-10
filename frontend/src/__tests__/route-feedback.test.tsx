@@ -28,7 +28,7 @@ afterEach(() => {
 beforeEach(() => {
   resolveCurrentAuthMock.mockResolvedValue({
     status: 'authenticated',
-    user: { id: 'mock-user', preference: {} },
+    user: { id: 'mock-user', isAdmin: false, preference: {} },
   });
 });
 

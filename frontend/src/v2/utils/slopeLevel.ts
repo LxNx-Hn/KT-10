@@ -101,6 +101,24 @@ export function slopeLevelLabel(
 }
 
 /**
+ * 추천 이유 chip 전용. 등급명이 이미 "경사"를 포함하면 중복하지 않는다.
+ * 상세 화면의 "% · 등급" 표시와는 별개다.
+ */
+export const SLOPE_REASON_CHIP_LABELS: Record<SlopeLevelId, string> = {
+  gentle: '완만한 경사',
+  moderate: '보통 경사',
+  steep: '급경사',
+  'very-steep': '매우 급경사',
+};
+
+export function formatSlopeReasonChip(
+  slopePercent: number | null | undefined,
+): string | null {
+  const level = resolveSlopeLevel(slopePercent);
+  return level ? SLOPE_REASON_CHIP_LABELS[level] : null;
+}
+
+/**
  * 표시용 경사 숫자. 최대 소수 2자리, 불필요한 0 제거.
  * 예: 8 → "8", 8.01 → "8.01", 11.2 → "11.2"
  */

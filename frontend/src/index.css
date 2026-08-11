@@ -190,6 +190,24 @@ summary:focus-visible,
 .btn--primary:hover { background: var(--brand-dark); }
 .btn--primary:disabled { opacity: 0.6; }
 .btn--ghost { background: #fff; border-color: var(--line); color: var(--ink); }
+/* 카카오 로그인 CTA — primary blue와 구분. 문구에 "카카오" 유지. */
+.btn--kakao {
+  background: #fee500;
+  border-color: #fee500;
+  color: #191919;
+}
+.btn--kakao:hover:not(:disabled) {
+  background: #f5dc00;
+  border-color: #f5dc00;
+}
+.btn--kakao:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.btn--kakao:focus-visible {
+  outline: 3px solid rgba(25, 25, 25, 0.35);
+  outline-offset: 2px;
+}
 .btn--listen { width: 100%; margin-top: 12px; background: var(--brand-soft); border-color: var(--brand); color: var(--brand-dark); }
 .btn--toggle { background: #fff; border-color: var(--line); }
 .btn--toggle-on { background: var(--good-bg); border-color: var(--good); color: var(--good); }
