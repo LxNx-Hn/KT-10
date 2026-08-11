@@ -3321,6 +3321,12 @@
   font-weight: 700;
 }
 
+.map-first__settings > .btn--kakao {
+  border-color: #fee500;
+  background: #fee500;
+  color: #191919;
+}
+
 .map-first__settings-large--active {
   border-color: var(--mf-blue);
   background: rgba(49, 130, 246, 0.1);
@@ -3365,6 +3371,12 @@
   background: var(--mf-surface);
   border-color: var(--mf-line);
   color: var(--mf-ink);
+}
+
+.map-first__tab-panel .btn--kakao {
+  background: #fee500;
+  border-color: #fee500;
+  color: #191919;
 }
 
 .map-first__tab-panel .chip {

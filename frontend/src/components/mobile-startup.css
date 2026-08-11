@@ -217,6 +217,20 @@
   box-shadow: none;
 }
 
+.mobile-startup__login button.btn--kakao,
+.mobile-startup__kakao {
+  border-color: #fee500;
+  background: #fee500;
+  color: #191919;
+  box-shadow: none;
+}
+
+.mobile-startup__login button.btn--kakao:active,
+.mobile-startup__kakao:active {
+  background: #f5dc00;
+  transform: translateY(1px);
+}
+
 .mobile-startup button:focus-visible {
   outline: 3px solid rgba(49, 130, 246, 0.5);
   outline-offset: 3px;

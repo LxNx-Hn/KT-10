@@ -33,6 +33,8 @@ describe('MOB-18 모바일 시작 화면', () => {
 
     expect(onStart).toHaveBeenCalledOnce();
     expect(onKakaoLogin).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: '카카오 로그인' }).className)
+      .toContain('btn--kakao');
   });
 
   it('완료 상태는 개인정보 없이 버전 키 하나로 저장한다', () => {
