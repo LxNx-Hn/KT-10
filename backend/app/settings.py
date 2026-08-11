@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     kakao_oauth_client_secret: str = ""
     kakao_oauth_redirect_uri: str = "http://localhost:8002/api/auth/kakao/callback"
     frontend_url: str = "http://localhost:5173"
+    # 탈퇴 시 카카오 연결 끊기에 쓰는 앱 어드민 키. REST API 키와 다른 값이다.
+    # 액세스 토큰을 저장하지 않으므로 어드민 키 없이는 연결을 끊을 수 없다.
+    # 비어 있으면 우리 DB만 정리하고 카카오 연결은 남는다.
+    kakao_admin_key: str = ""
+
+    # 탈퇴 신청 후 실제 파기까지의 보관기간(일). 신청 시점 값으로 고정되므로
+    # 나중에 이 값을 바꿔도 이미 신청한 사용자의 기한은 변하지 않는다.
+    withdrawal_retention_days: int = Field(default=30, ge=0, le=365)
 
     # CORS 허용 오리진(콤마 구분)
     allowed_origins: str = (

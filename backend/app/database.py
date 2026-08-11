@@ -31,7 +31,7 @@ class Base(DeclarativeBase):
     pass
 
 
-def _utc_now_naive() -> datetime:
+def utc_now_naive() -> datetime:
     """DB의 기존 timestamp without time zone 계약에 맞춘 UTC 시각."""
     return datetime.now(UTC).replace(tzinfo=None)
 
@@ -43,8 +43,38 @@ class User(Base):
     kakao_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     nickname: Mapped[str | None] = mapped_column(String(100), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now_naive)
-    preference: Mapped["UserPreference | None"] = relationship(back_populates="user", uselist=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
+    # passive_deletes: 사용자 삭제 시 ORM이 자식 FK를 NULL로 바꾸려 하지 않고
+    # DB의 ON DELETE CASCADE에 맡긴다. user_preferences.user_id는 기본키라
+    # blank-out이 불가능하고, 파기 정책은 애초에 DB 외래키가 담당한다.
+    preference: Mapped["UserPreference | None"] = relationship(
+        back_populates="user",
+        uselist=False,
+        passive_deletes=True,
+    )
+
+
+class UserWithdrawal(Base):
+    """탈퇴 신청 대기열.
+
+    행이 존재하면 탈퇴를 신청한 계정이다. 로그인은 즉시 차단되지만 사용자
+    데이터는 ``purge_after``까지 제자리에 남는다. 기한이 지나면 배치가
+    ``users`` 행을 삭제하고, 그때 기존 외래키 정책이 나머지를 정리한다.
+    설정·후기는 함께 삭제되고, 시설 신고와 impression은 익명으로 보존된다.
+    """
+
+    __tablename__ = "user_withdrawals"
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
+    # 파기 예정 시각. 신청 시점의 보관기간으로 고정해, 나중에 설정을 바꿔도
+    # 이미 신청한 사용자의 약속된 기한이 흔들리지 않게 한다.
+    purge_after: Mapped[datetime] = mapped_column(DateTime, index=True)
+    # 카카오 연결 끊기 성공 여부. 공급자 장애로 실패해도 탈퇴는 진행하며,
+    # 파기 배치가 재시도할 수 있도록 미완료 상태를 남긴다.
+    provider_unlinked: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class UserPreference(Base):
@@ -61,7 +91,7 @@ class UserPreference(Base):
     training_consent: Mapped[bool] = mapped_column(Boolean, default=False)
     personalization_state: Mapped[str] = mapped_column(Text, default='{"version":1,"bias":0.0,"weights":{},"updates":0}')
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=_utc_now_naive, onupdate=_utc_now_naive
+        DateTime, default=utc_now_naive, onupdate=utc_now_naive
     )
     user: Mapped[User] = relationship(back_populates="preference")
 
@@ -76,7 +106,7 @@ class RouteImpression(Base):
     profile: Mapped[str] = mapped_column(String(16), default="general")
     rank: Mapped[int] = mapped_column(Integer)
     feature_snapshot: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now_naive)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class RouteReview(Base):
@@ -134,7 +164,7 @@ class RouteReview(Base):
         nullable=True,
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now_naive)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 class FacilityReport(Base):
@@ -156,7 +186,7 @@ class FacilityReport(Base):
     resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now_naive)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
 
 _session_factory: sessionmaker[Session] | None = None
@@ -184,6 +214,14 @@ def init_database() -> None:
     config = Config(str(config_path))
     config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
     command.upgrade(config, "head")
+
+
+def new_session() -> Session:
+    """의존성 주입 밖(배치 스크립트 등)에서 쓰는 단발 세션.
+
+    호출자가 commit/rollback과 close를 직접 책임진다.
+    """
+    return _factory()()
 
 
 def database_session() -> Generator[Session, None, None]:

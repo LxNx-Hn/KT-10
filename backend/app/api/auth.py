@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from datetime import timedelta
 from urllib.parse import urlencode
 
 import httpx
@@ -12,13 +13,21 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..database import User, UserPreference, database_session, optional_database_session
+from ..database import (
+    User,
+    UserPreference,
+    UserWithdrawal,
+    database_session,
+    optional_database_session,
+    utc_now_naive,
+)
 from ..settings import settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 log = logging.getLogger("api.auth")
 _STATE_COOKIE = "kakao_oauth_state"
 _SESSION_COOKIE = "mobility_session"
+_KAKAO_UNLINK_URL = "https://kapi.kakao.com/v1/user/unlink"
 
 
 def _secure_cookie() -> bool:
@@ -85,6 +94,13 @@ def current_user(
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown session user.")
+    if _withdrawal_pending(db, user.id):
+        # 탈퇴 신청 계정은 파기 전이라 행이 남아 있을 뿐 접근 권한은 없다.
+        # 다른 기기에 남은 세션 쿠키로도 들어올 수 없어야 한다.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Withdrawn account.",
+        )
     return user
 
 
@@ -99,7 +115,14 @@ def optional_current_user(
         user_id = _serializer().loads(session_cookie, max_age=60 * 60 * 24 * 14)
     except BadSignature:
         return None
-    return db.get(User, user_id)
+    user = db.get(User, user_id)
+    if user is None or _withdrawal_pending(db, user.id):
+        return None
+    return user
+
+
+def _withdrawal_pending(db: Session, user_id: str) -> bool:
+    return db.get(UserWithdrawal, user_id) is not None
 
 
 @router.get("/kakao/login")
@@ -165,6 +188,13 @@ async def kakao_callback(
         db.flush()
         db.add(UserPreference(user_id=user.id))
     else:
+        # 보관기간 안에 다시 로그인하면 탈퇴를 철회한다. 유예기간을 둔 이유가
+        # 실수로 신청한 사용자를 되살리는 것이기 때문이다. 연결 끊기 후
+        # 회원번호가 바뀌는 경우에는 위의 신규 가입 분기로 흘러 충돌하지 않는다.
+        withdrawal = db.get(UserWithdrawal, user.id)
+        if withdrawal is not None:
+            db.delete(withdrawal)
+            log.info("탈퇴 신청이 재로그인으로 철회되었습니다.")
         user.nickname = nickname
     db.commit()
     service_session = _serializer().dumps(user.id)
@@ -181,6 +211,76 @@ async def kakao_callback(
 def logout() -> Response:
     response = Response(status_code=204)
     response.delete_cookie(_SESSION_COOKIE, secure=_secure_cookie(), samesite="lax")
+    return response
+
+
+async def unlink_kakao_account(kakao_id: str) -> bool:
+    """앱 어드민 키로 카카오 연결을 끊는다. 성공 여부만 돌려준다.
+
+    로그인 시 액세스 토큰을 저장하지 않으므로 사용자 토큰으로는 연결을 끊을 수
+    없고, 어드민 키가 유일한 경로다. 키가 없거나 공급자가 실패해도 예외를
+    올리지 않는다. 외부 장애 때문에 사용자가 탈퇴하지 못하는 상황을 만들지
+    않고, 실패는 대기열에 남겨 파기 배치가 재시도한다.
+    """
+    admin_key = settings.kakao_admin_key.strip()
+    if not admin_key:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
+            response = await client.post(
+                _KAKAO_UNLINK_URL,
+                headers={
+                    "Authorization": f"KakaoAK {admin_key}",
+                    "Content-Type":
+                        "application/x-www-form-urlencoded;charset=utf-8",
+                },
+                data={"target_id_type": "user_id", "target_id": kakao_id},
+            )
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        # 회원번호와 응답 본문은 남기지 않는다. 재시도 판단에는 실패 사실이면
+        # 충분하고, 로그는 개인 식별자를 담지 않는다.
+        log.warning("Kakao unlink failed (%s)", type(exc).__name__)
+        return False
+    return True
+
+
+@router.post("/withdraw", status_code=204)
+async def withdraw(
+    user: User = Depends(current_user),
+    db: Session = Depends(database_session),
+) -> Response:
+    """회원 탈퇴를 신청한다.
+
+    즉시 로그인을 막고 표시용 개인정보를 지우되, 사용자 행은 보관기간 동안
+    남긴다. 기한이 지나면 ``scripts/purge_withdrawn_users.py``가 삭제하고
+    그때 외래키 정책이 나머지를 정리한다.
+    """
+    if user.is_admin:
+        # reviewed_by가 SET NULL이라 관리자를 지우면 후기 검수 이력의 담당자가
+        # 통째로 비어 감사 추적이 끊긴다. 권한 회수 후 탈퇴해야 한다.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Administrator accounts cannot be withdrawn. "
+                   "Revoke the administrator role first.",
+        )
+
+    response = Response(status_code=204)
+    response.delete_cookie(_SESSION_COOKIE, secure=_secure_cookie(), samesite="lax")
+    if _withdrawal_pending(db, user.id):
+        # 이미 신청한 계정의 재요청은 기한을 늘리거나 줄이지 않는다.
+        return response
+
+    unlinked = await unlink_kakao_account(user.kakao_id)
+    db.add(UserWithdrawal(
+        user_id=user.id,
+        purge_after=utc_now_naive()
+        + timedelta(days=settings.withdrawal_retention_days),
+        provider_unlinked=unlinked,
+    ))
+    # 닉네임은 파기를 기다릴 이유가 없는 표시용 개인정보라 즉시 지운다.
+    user.nickname = None
+    db.commit()
     return response
 
 
