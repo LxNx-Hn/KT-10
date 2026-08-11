@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProfileId, ScoredRoute } from '@/types';
 import { buildRouteViewModel } from '../routeViewModel';
-import RouteSummaryCard from './RouteSummaryCard';
+import RouteSummaryCard, { formatRouteCardTitle } from './RouteSummaryCard';
 
 afterEach(() => {
   cleanup();
@@ -13,17 +13,26 @@ function makeItem(overrides: Partial<ScoredRoute['route']> = {}): ScoredRoute {
   return {
     route: {
       id: 'route-a',
-      summary: '버스 1001 · 서면역',
+      summary: '도보 + 1001',
       origin: '출발',
       destination: '도착',
-      segments: [{
-        id: 'w1',
-        mode: 'walk',
-        description: '도보',
-        durationMin: 6,
-        hasStairs: false,
-        stairsCount: 0,
-      }],
+      segments: [
+        {
+          id: 'w1',
+          mode: 'walk',
+          description: '도보',
+          durationMin: 6,
+          hasStairs: false,
+          stairsCount: 0,
+        },
+        {
+          id: 'b1',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 18,
+          busRouteName: '1001',
+        },
+      ],
       totalDurationMin: 24,
       totalWalkM: 380,
       transferCount: 1,
@@ -80,6 +89,115 @@ function renderCard(
   return { ...result, item, view, onSelect, onDetails };
 }
 
+describe('formatRouteCardTitle', () => {
+  it('도보만 있으면 도보로 표시한다', () => {
+    expect(
+      formatRouteCardTitle(
+        [{ id: 'w', mode: 'walk', modeLabel: '도보', durationMin: 12 }],
+        '도보 + 12',
+      ),
+    ).toBe('도보');
+  });
+
+  it('버스·지하철은 routeLabel이 있으면 함께 표시하고 없으면 fallback한다', () => {
+    expect(
+      formatRouteCardTitle(
+        [
+          { id: 'w', mode: 'walk', modeLabel: '도보', durationMin: 2 },
+          {
+            id: 'b',
+            mode: 'bus',
+            modeLabel: '버스',
+            durationMin: 56,
+            routeLabel: '59번',
+          },
+          { id: 'w2', mode: 'walk', modeLabel: '도보', durationMin: 1 },
+        ],
+        '도보 + 59',
+      ),
+    ).toBe('버스 59번');
+
+    expect(
+      formatRouteCardTitle(
+        [
+          {
+            id: 's',
+            mode: 'subway',
+            modeLabel: '지하철',
+            durationMin: 18,
+            routeLabel: '1호선',
+            subwayLineId: 'busan-1',
+          },
+        ],
+        '도보 + 1',
+      ),
+    ).toBe('지하철 1호선');
+
+    expect(
+      formatRouteCardTitle(
+        [{ id: 'b', mode: 'bus', modeLabel: '버스', durationMin: 10 }],
+        '도보 + 버스',
+      ),
+    ).toBe('버스');
+  });
+
+  it('버스+지하철 복합은 transitSteps 기준으로 연결한다', () => {
+    expect(
+      formatRouteCardTitle(
+        [
+          {
+            id: 'b',
+            mode: 'bus',
+            modeLabel: '버스',
+            durationMin: 20,
+            routeLabel: '59번',
+          },
+          {
+            id: 's',
+            mode: 'subway',
+            modeLabel: '지하철',
+            durationMin: 15,
+            routeLabel: '1호선',
+            subwayLineId: 'busan-1',
+          },
+        ],
+        '도보 + 복합',
+      ),
+    ).toBe('버스 59번 · 지하철 1호선');
+  });
+
+  it('복수 버스는 순서대로 join한다', () => {
+    expect(
+      formatRouteCardTitle(
+        [
+          {
+            id: 'b1',
+            mode: 'bus',
+            modeLabel: '버스',
+            durationMin: 42,
+            routeLabel: '3006번',
+          },
+          {
+            id: 'b2',
+            mode: 'bus',
+            modeLabel: '버스',
+            durationMin: 63,
+            routeLabel: '58-2번',
+          },
+          {
+            id: 'b3',
+            mode: 'bus',
+            modeLabel: '버스',
+            durationMin: 67,
+            routeLabel: '1001(심야)번',
+          },
+        ],
+        '도보 + 3006 + 58-2 + 1001(심야)',
+      ),
+    ).toBe('버스 3006번 · 버스 58-2번 · 버스 1001(심야)번');
+  });
+});
+
 describe('RouteSummaryCard 정보 위계', () => {
   it('소요 시간·추천 근거·상세 CTA를 순서대로 노출하고 선택은 route id를 유지한다', () => {
     const { container, onSelect, onDetails, view } = renderCard('general');
@@ -88,7 +206,10 @@ describe('RouteSummaryCard 정보 위계', () => {
     expect(card?.getAttribute('data-route-id')).toBe('route-a');
     expect(card?.getAttribute('aria-current')).toBe('true');
     expect(card?.textContent).toContain('1순위');
-    expect(card?.textContent).toContain('버스 1001 · 서면역');
+    expect(
+      card?.querySelector('.map-first__route-card-summary')?.textContent,
+    ).toBe('버스 1001번');
+    expect(card?.textContent).not.toContain('도보 + 1001');
     expect(
       card?.querySelector('.map-first__route-card-duration')?.textContent,
     ).toMatch(/24\s*분/);
@@ -106,7 +227,6 @@ describe('RouteSummaryCard 정보 위계', () => {
     ).toMatch(/최단 시간|보통 경사|도보/);
     expect(view.reasonHighlights.length).toBeGreaterThan(0);
     expect(view.reasonHighlights.length).toBeLessThanOrEqual(3);
-    // 순위 문구를 경로명 아래에 중복하지 않는다.
     expect(card?.textContent).not.toContain('일반 맞춤 1순위');
 
     fireEvent.click(card!);
@@ -143,7 +263,7 @@ describe('RouteSummaryCard 정보 위계', () => {
 });
 
 describe('MOB-15 대중교통 경로 시각 언어', () => {
-  it('도보·버스·지하철을 아이콘과 텍스트로 함께 표시한다', () => {
+  it('도보·버스·지하철을 segmented bar와 아이콘·텍스트로 표시한다', () => {
     const { container } = renderCard('general', {
       segments: [
         {
@@ -171,18 +291,247 @@ describe('MOB-15 대중교통 경로 시각 언어', () => {
     const sequence = container.querySelector(
       '.map-first__route-card-transit[aria-label="이동 수단 순서"]',
     )!;
-    expect(sequence.querySelectorAll('li')).toHaveLength(3);
-    expect(sequence.textContent).toMatch(/도보.*4분/);
-    expect(sequence.textContent).toMatch(/버스.*81번.*8분/);
-    expect(sequence.textContent).toMatch(/지하철.*1호선.*5분/);
+    const items = sequence.querySelectorAll('li');
+    expect(items).toHaveLength(3);
+    expect(items[0].getAttribute('aria-label')).toBe('도보 4분');
+    expect(items[1].getAttribute('aria-label')).toBe('버스 81번 8분');
+    expect(items[2].getAttribute('aria-label')).toBe('지하철 1호선 5분');
+    expect(items[0].textContent).toMatch(/4분/);
+    expect(items[1].textContent).toMatch(/8분/);
+    expect(items[2].textContent).toMatch(/5분/);
+    expect(sequence.textContent).not.toMatch(/81번/);
+    expect(sequence.textContent).not.toMatch(/1호선/);
+    expect(items[0].getAttribute('style')).toContain('flex-grow: 4');
+    expect(items[1].getAttribute('style')).toContain('flex-grow: 8');
+    expect(items[2].getAttribute('style')).toContain('flex-grow: 5');
     expect(sequence.querySelector('[data-mode="walk"]')).toBeTruthy();
-    expect(
-      sequence.querySelector('[data-mode="walk"]')?.getAttribute('aria-label'),
-    ).toContain('지도에서 회색 점선');
     expect(
       sequence.querySelector('[data-subway-line="busan-1"]'),
     ).toBeTruthy();
     expect(sequence.querySelectorAll('svg[aria-hidden="true"]')).toHaveLength(3);
+    expect(
+      container.querySelector('.map-first__route-card-summary')?.textContent,
+    ).toBe('버스 81번 · 지하철 1호선');
+  });
+
+  it('walk + bus + walk 제목은 버스로 요약하고 순서를 유지한다', () => {
+    const { container } = renderCard('general', {
+      summary: '도보 + 59',
+      segments: [
+        {
+          id: 'w1',
+          mode: 'walk',
+          description: '도보',
+          durationMin: 2,
+        },
+        {
+          id: 'b59',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 56,
+          busRouteName: '59',
+        },
+        {
+          id: 'w2',
+          mode: 'walk',
+          description: '도보',
+          durationMin: 5,
+        },
+      ],
+    });
+
+    expect(
+      container.querySelector('.map-first__route-card-summary')?.textContent,
+    ).toBe('버스 59번');
+    const items = container.querySelectorAll('.map-first__route-card-transit li');
+    expect(items).toHaveLength(3);
+    expect(items[0].getAttribute('data-mode')).toBe('walk');
+    expect(items[1].getAttribute('data-mode')).toBe('bus');
+    expect(items[2].getAttribute('data-mode')).toBe('walk');
+    expect(items[0].textContent).toMatch(/2분/);
+    expect(items[1].textContent).toMatch(/56분/);
+    expect(items[2].textContent).toMatch(/5분/);
+    expect(items[1].textContent).not.toMatch(/59/);
+    expect(items[1].getAttribute('aria-label')).toBe('버스 59번 56분');
+  });
+
+  it('7 segment 다중 환승에서도 모든 duration·aria를 보존하고 routeLabel은 bar에 없다', () => {
+    const { container, view } = renderCard('general', {
+      summary: '도보 + 3006 + 58-2 + 1001(심야)',
+      segments: [
+        { id: 'w1', mode: 'walk', description: '도보', durationMin: 11 },
+        {
+          id: 'b3006',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 42,
+          busRouteName: '3006',
+        },
+        { id: 'w2', mode: 'walk', description: '도보', durationMin: 4 },
+        {
+          id: 'b582',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 63,
+          busRouteName: '58-2',
+        },
+        { id: 'w3', mode: 'walk', description: '도보', durationMin: 6 },
+        {
+          id: 'b1001n',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 67,
+          busRouteName: '1001(심야)',
+        },
+        { id: 'w4', mode: 'walk', description: '도보', durationMin: 5 },
+      ],
+      totalDurationMin: 198,
+      transferCount: 2,
+    });
+
+    const title = formatRouteCardTitle(view.transitSteps, view.summary);
+    expect(title).toBe('버스 3006번 · 버스 58-2번 · 버스 1001(심야)번');
+    expect(
+      container.querySelector('.map-first__route-card-summary')?.textContent,
+    ).toBe(title);
+
+    const sequence = container.querySelector(
+      '.map-first__route-card-transit',
+    )!;
+    expect(sequence.getAttribute('data-compact')).toBe('true');
+    const items = sequence.querySelectorAll('li');
+    expect(items).toHaveLength(7);
+
+    const text = sequence.textContent ?? '';
+    expect(text).toMatch(/11분/);
+    expect(text).toMatch(/42분/);
+    expect(text).toMatch(/4분/);
+    expect(text).toMatch(/63분/);
+    expect(text).toMatch(/6분/);
+    expect(text).toMatch(/67분/);
+    expect(text).toMatch(/5분/);
+    expect(text).not.toContain('3006');
+    expect(text).not.toContain('58-2');
+    expect(text).not.toContain('1001');
+    expect(text).not.toMatch(/버스/);
+    expect(text).not.toMatch(/도보/);
+
+    expect(items[0].querySelector('.map-first__transit-copy')?.textContent).toBe(
+      '11분',
+    );
+    expect(items[2].querySelector('.map-first__transit-copy')?.textContent).toBe(
+      '4분',
+    );
+    expect(items[4].querySelector('.map-first__transit-copy')?.textContent).toBe(
+      '6분',
+    );
+    expect(items[6].querySelector('.map-first__transit-copy')?.textContent).toBe(
+      '5분',
+    );
+
+    expect(items[1].getAttribute('aria-label')).toBe('버스 3006번 42분');
+    expect(items[3].getAttribute('aria-label')).toBe('버스 58-2번 63분');
+    expect(items[5].getAttribute('aria-label')).toBe('버스 1001(심야)번 67분');
+    expect(items[0].getAttribute('aria-label')).toBe('도보 11분');
+  });
+
+  it('walk + subway + bus 복합에서도 각 segment 시간만 bar에 표시한다', () => {
+    const { container } = renderCard('general', {
+      summary: '도보 + 복합',
+      segments: [
+        { id: 'w1', mode: 'walk', description: '도보', durationMin: 4 },
+        {
+          id: 's1',
+          mode: 'subway',
+          description: '부산 2호선',
+          durationMin: 22,
+        },
+        { id: 'w2', mode: 'walk', description: '도보', durationMin: 2 },
+        {
+          id: 'b139',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 18,
+          busRouteName: '139',
+        },
+        { id: 'w3', mode: 'walk', description: '도보', durationMin: 3 },
+      ],
+    });
+
+    expect(
+      container.querySelector('.map-first__route-card-summary')?.textContent,
+    ).toBe('지하철 2호선 · 버스 139번');
+
+    const items = container.querySelectorAll('.map-first__route-card-transit li');
+    expect(items).toHaveLength(5);
+    expect(Array.from(items).map((el) => el.querySelector('.map-first__transit-copy')?.textContent)).toEqual([
+      '4분',
+      '22분',
+      '2분',
+      '18분',
+      '3분',
+    ]);
+    expect(container.querySelector('.map-first__route-card-transit')?.textContent).not.toMatch(
+      /2호선|139/,
+    );
+    expect(items[1].getAttribute('aria-label')).toBe('지하철 2호선 22분');
+    expect(items[3].getAttribute('aria-label')).toBe('버스 139번 18분');
+    expect(items[1].getAttribute('data-subway-line')).toBe('busan-2');
+  });
+
+  it('walk + subway 제목과 walk only / bus label 없음을 처리한다', () => {
+    const subway = renderCard('general', {
+      summary: '도보 + 1',
+      segments: [
+        { id: 'w1', mode: 'walk', description: '도보', durationMin: 3 },
+        {
+          id: 's1',
+          mode: 'subway',
+          description: '부산 2호선',
+          durationMin: 18,
+        },
+        { id: 'w2', mode: 'walk', description: '도보', durationMin: 2 },
+      ],
+    });
+    expect(
+      subway.container.querySelector('.map-first__route-card-summary')
+        ?.textContent,
+    ).toBe('지하철 2호선');
+    subway.unmount();
+
+    const walkOnly = renderCard('general', {
+      summary: '도보 12분',
+      segments: [
+        { id: 'w1', mode: 'walk', description: '도보', durationMin: 12 },
+      ],
+    });
+    expect(
+      walkOnly.container.querySelector('.map-first__route-card-summary')
+        ?.textContent,
+    ).toBe('도보');
+    walkOnly.unmount();
+
+    const busNoLabel = renderCard('general', {
+      summary: '도보 + 버스',
+      segments: [
+        { id: 'w1', mode: 'walk', description: '도보', durationMin: 2 },
+        {
+          id: 'b1',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 20,
+        },
+      ],
+    });
+    expect(
+      busNoLabel.container.querySelector('.map-first__route-card-summary')
+        ?.textContent,
+    ).toBe('버스');
+    expect(
+      busNoLabel.container
+        .querySelector('.map-first__route-card-transit li[data-mode="bus"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('버스 20분');
   });
 
   it.each([
@@ -216,7 +565,9 @@ describe('MOB-15 대중교통 경로 시각 언어', () => {
         '.map-first__route-card-transit',
       )!;
       expect(sequence.querySelectorAll('li')).toHaveLength(2);
-      expect(sequence.textContent).toMatch(/도보.*버스.*81번/);
+      expect(sequence.textContent).toMatch(/3분/);
+      expect(sequence.textContent).toMatch(/8분/);
+      expect(sequence.textContent).not.toMatch(/81번/);
     },
   );
 });
@@ -234,7 +585,7 @@ describe('MOB-08 경로 카드 본문 우선 노출', () => {
     );
     expect(
       header.querySelector('.map-first__route-card-summary')?.textContent,
-    ).toContain('버스 1001');
+    ).toBe('버스 1001번');
     expect(
       header.querySelector('.map-first__route-card-duration')?.textContent,
     ).toMatch(/24\s*분/);
@@ -345,16 +696,26 @@ describe('MOB-08 경로 카드 본문 우선 노출', () => {
     };
     Object.defineProperty(window, 'innerWidth', {
       configurable: true,
-      value: 375,
+      value: 353,
     });
     Object.defineProperty(window, 'innerHeight', {
       configurable: true,
-      value: 667,
+      value: 850,
     });
 
     try {
       const { container } = renderCard('youth', {
-        summary: '버스급행 1000(해운대구청) · 센텀시티환승센터 방면',
+        summary: '도보 + 1000',
+        segments: [
+          { id: 'w1', mode: 'walk', description: '도보', durationMin: 5 },
+          {
+            id: 'b1',
+            mode: 'bus',
+            description: '버스',
+            durationMin: 40,
+            busRouteName: '1000',
+          },
+        ],
       });
       const card = container.querySelector('.map-first__route-card')!;
       expect(card.querySelector('.map-first__rank-badge')?.textContent).toContain(
@@ -362,7 +723,7 @@ describe('MOB-08 경로 카드 본문 우선 노출', () => {
       );
       expect(
         card.querySelector('.map-first__route-card-summary')?.textContent,
-      ).toContain('버스급행');
+      ).toBe('버스 1000번');
       expect(
         card.querySelector('.map-first__route-card-duration')?.textContent,
       ).toMatch(/분/);
@@ -375,6 +736,9 @@ describe('MOB-08 경로 카드 본문 우선 노출', () => {
       expect(
         card.querySelector('.map-first__route-card-cta'),
       ).toBeTruthy();
+      expect(
+        card.querySelectorAll('.map-first__route-card-transit li').length,
+      ).toBe(2);
     } finally {
       Object.defineProperty(window, 'innerWidth', {
         configurable: true,

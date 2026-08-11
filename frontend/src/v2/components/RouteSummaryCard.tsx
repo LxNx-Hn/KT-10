@@ -3,7 +3,10 @@ import {
   type V2RouteViewModel,
   type V2TransitStep,
 } from '../routeViewModel';
+import { formatRouteTransitTitle } from '../formatRouteTransitTitle';
 import { formatDurationMin } from '@/utils/formatDurationMin';
+
+export { formatRouteTransitTitle, formatRouteCardTitle } from '../formatRouteTransitTitle';
 
 const ATTENTION_FACT_IDS = new Set([
   'terrain',
@@ -31,6 +34,22 @@ function pickAttentionFacts(
     .filter((fact) => fact.kind !== 'neutral')
     .filter((fact) => !overlapsReason(fact.label, reasons))
     .slice(0, 3);
+}
+
+function transitAccessibleLabel(step: V2TransitStep): string {
+  return [step.modeLabel, step.routeLabel, `${step.durationMin}분`]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
+ * bar 시각 라벨은 duration만. routeLabel은 title·aria에 둔다.
+ * 가독성(아이콘+N분)을 duration 비율보다 우선한다.
+ */
+function segmentFlexGrow(step: V2TransitStep, compact: boolean): number {
+  const base = Math.max(step.durationMin, 1);
+  // compact에서도 짧은 walk가 찌그러지지 않도록 floor 유지
+  return compact ? Math.max(base, 4) : base;
 }
 
 function TransitModeIcon({ mode }: { mode: V2TransitStep['mode'] }) {
@@ -67,38 +86,35 @@ function TransitModeIcon({ mode }: { mode: V2TransitStep['mode'] }) {
 
 function TransitSequence({ steps }: { steps: V2TransitStep[] }) {
   if (steps.length === 0) return null;
+  const compact = steps.length >= 5;
+
   return (
-    <ol className="map-first__route-card-transit" aria-label="이동 수단 순서">
-      {steps.map((step) => {
-        const accessibleLabel = [
-          step.modeLabel,
-          step.mode === 'walk' ? '지도에서 회색 점선' : null,
-          step.routeLabel,
-          `${step.durationMin}분`,
-        ]
-          .filter(Boolean)
-          .join(' ');
-        return (
-          <li
-            key={step.id}
-            data-mode={step.mode}
-            data-subway-line={step.subwayLineId}
-            aria-label={accessibleLabel}
-          >
-            <span className="map-first__transit-icon">
-              <TransitModeIcon mode={step.mode} />
-            </span>
-            <span className="map-first__transit-mode">{step.modeLabel}</span>
-            {step.routeLabel && (
-              <span className="map-first__transit-route">{step.routeLabel}</span>
-            )}
-            <span className="map-first__transit-duration">
-              {step.durationMin}
-              분
-            </span>
-          </li>
-        );
-      })}
+    <ol
+      className="map-first__route-card-transit"
+      aria-label="이동 수단 순서"
+      data-compact={compact ? 'true' : undefined}
+    >
+      {steps.map((step) => (
+        <li
+          key={step.id}
+          data-mode={step.mode}
+          data-subway-line={step.subwayLineId}
+          aria-label={transitAccessibleLabel(step)}
+          style={{
+            flexGrow: segmentFlexGrow(step, compact),
+            flexShrink: 1,
+            flexBasis: 0,
+          }}
+        >
+          <span className="map-first__transit-icon" aria-hidden="true">
+            <TransitModeIcon mode={step.mode} />
+          </span>
+          <span className="map-first__transit-copy">
+            {step.durationMin}
+            분
+          </span>
+        </li>
+      ))}
     </ol>
   );
 }
@@ -127,6 +143,7 @@ export default function RouteSummaryCard({
   const scoreText = view.score.available && view.score.rounded !== null
     ? `${view.scoreKindLabel} ${view.score.rounded}점`
     : view.score.summaryLabel;
+  const cardTitle = formatRouteTransitTitle(view.transitSteps, view.summary);
 
   return (
     <article
@@ -138,7 +155,7 @@ export default function RouteSummaryCard({
       data-route-id={view.routeId}
       aria-current={selected ? 'true' : undefined}
       aria-busy={refining ? 'true' : undefined}
-      aria-label={`${view.rank}순위 경로, 소요 ${durationLabel}, ${reasonHighlights.join(', ')}, ${view.score.ariaLabel}`}
+      aria-label={`${view.rank}순위 경로, ${cardTitle}, 소요 ${durationLabel}, ${reasonHighlights.join(', ')}, ${view.score.ariaLabel}`}
       onClick={onSelect}
       onKeyDown={(event) => {
         // Tab으로 focus만 옮기는 것은 선택이 아니다. 키보드 선택은
@@ -158,7 +175,7 @@ export default function RouteSummaryCard({
             {' '}
             맞춤
           </span>
-          <h3 className="map-first__route-card-summary">{view.summary}</h3>
+          <h3 className="map-first__route-card-summary">{cardTitle}</h3>
         </div>
 
         <TransitSequence steps={view.transitSteps} />

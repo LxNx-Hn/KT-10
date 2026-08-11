@@ -34,6 +34,7 @@ import {
   SLOPE_LEGEND_BANDS,
   SLOPE_LEVEL_LABELS,
 } from './utils/slopeLevel';
+import { formatRouteTransitTitle } from './formatRouteTransitTitle';
 import BottomDrawer from './components/BottomDrawer';
 import MapControls from './components/MapControls';
 import RouteDetailSheet, {
@@ -658,7 +659,7 @@ export default function MapFirstApp({
   const sheetTitle = loading
     ? '경로 찾는 중…'
     : selectedView
-      ? selectedView.summary
+      ? formatRouteTransitTitle(selectedView.transitSteps, selectedView.summary)
       : error
         ? '경로를 표시하지 못했어요'
         : '출발지와 도착지를 검색하세요';
