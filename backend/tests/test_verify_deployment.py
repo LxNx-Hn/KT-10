@@ -169,6 +169,40 @@ def test_local_readiness_flag_never_hides_other_missing_checks():
         )
 
 
+def _verified_route(*, route_id: str = "route-1", score_kind: str = "bootstrap_baseline"):
+    return {
+        "route": {
+            "id": route_id,
+            "path": [[129.0, 35.0], [129.1, 35.1]],
+            "geometryQuality": "exact",
+            "terrain": {"status": "estimated_90m"},
+            "shade": {
+                "status": "estimated_public",
+                "dataQuality": "public",
+                "shadeRatio": 0.4,
+            },
+        },
+        "score": {"finalScore": 80.0, "scoreKind": score_kind},
+    }
+
+
+def test_verify_recommended_routes_accepts_provider_limited_bootstrap_result():
+    verify_deployment.verify_recommended_routes(
+        [_verified_route()],
+        requested_top_n=3,
+    )
+
+
+def test_verify_recommended_routes_rejects_empty_or_excessive_results():
+    with pytest.raises(RuntimeError, match="실제 후보"):
+        verify_deployment.verify_recommended_routes([], requested_top_n=3)
+    with pytest.raises(RuntimeError, match="실제 후보"):
+        verify_deployment.verify_recommended_routes(
+            [_verified_route(route_id=f"route-{index}") for index in range(4)],
+            requested_top_n=3,
+        )
+
+
 def test_request_rejects_cross_origin_redirect(monkeypatch):
     class RedirectedResponse:
         headers = {"Content-Type": "application/json"}

@@ -44,8 +44,11 @@ python scripts\prepare_deployment_env.py --import-existing
   통과하지 않습니다. 운영에서는 응답시간이 안정적인 TMAP을 권장합니다.
 - 선택: `OSMNX_WALK_GEOMETRY_ENABLED`: 느린 OSM 보행망 복구를 허용할
   때만 `true`; 운영 기본값은 `false`
-- `RANKER_TIER`: 기본 `human_validated`, 비운영 비교 데모에서만
-  `bootstrap_baseline`
+- `RANKER_TIER`: 기본 `bootstrap_baseline`. 초기 AI 기반 경로 추천
+  기준선이며 사람 평가 완료나 휠체어 접근성 보장을 의미하지 않음
+- 선택: `NVIDIA_API_KEY`, `NIM_MODEL`: NVIDIA NIM 경로 설명. 기존 음성
+  챗봇이 읽는 추천 응답의 `voiceSummary`를 보강한다. NIM 본문이 생성되지
+  않으면 추천 단계의 규칙 기반 요약을 그대로 사용한다.
 
 `POSTGRES_PASSWORD`, `SESSION_SECRET`, `TRAINING_ANONYMIZATION_SALT`,
 `LABELING_API_TOKEN`은 준비 스크립트가 생성합니다.
@@ -111,6 +114,15 @@ docker compose --env-file .env.production -f docker-compose.prod.yml build
 loopback bind, PostgreSQL URL, 공급자·모델 tier, 개인화 범위,
 TMAP/OSMnx 실제 보행 geometry 조건을 검사합니다. 실제 외부 키 유효성은
 마지막 스모크 검증에서 확인합니다.
+
+### 5.1 NIM 경로 설명 설정
+
+`nvidia/nvidia-nemotron-nano-9b-v2`를 사용할 때는 기본값을 그대로 두고
+`NVIDIA_API_KEY`와 `NIM_MODEL`만 설정할 수 있습니다. 이 모델은 `/no_think`
+시스템 지시로 사용자용 본문을 생성합니다. `NIM_RESPONSE_ATTEMPTS`는 빈
+본문만 재시도하는 횟수(기본 2), `NIM_ROUTE_EXPLANATION_MAX_ROUTES`는 한
+추천 응답에서 보강할 최대 경로 수(기본 3)입니다. 키는 Backend 컨테이너에만
+전달됩니다.
 
 ## 6. 실행
 
@@ -219,11 +231,12 @@ PostgreSQL `postgres-data` 볼륨은 별도 주기로 백업합니다. 전역 �
 | `RANKER_TIER` | 필요한 파일 | 운영 의미 |
 | --- | --- | --- |
 | `human_validated` | `rankers.human-validated.zip` | 관리자 승인 사람 모델 |
-| `bootstrap_baseline` | `rankers.bootstrap-baseline.zip` | 초기 평가 비교 데모, 실사용자 검증 아님 |
+| `bootstrap_baseline` | `rankers.bootstrap-baseline.zip` | 초기 AI 기반 경로 추천 기준선, 실사용자 접근성 검증 아님 |
 
-배포 준비 검증기는 `bootstrap_baseline`을 `ROUTE_MODE=ai`인 로컬 origin에서만
-허용하며, 모델 ZIP·메타데이터·6개 프로필 계약을 직접 검사합니다. 공개
-origin에서는 `human_validated`만 허용합니다.
+배포 준비 검증기는 `bootstrap_baseline`을 `ROUTE_MODE=ai`에서 허용하며,
+모델 ZIP·메타데이터·6개 프로필 계약을 직접 검사합니다. 공개 origin에서도
+동일한 모델·환경 계약으로 실행할 수 있지만, 사람 평가 완료나 접근성 보장을
+표시해서는 안 됩니다.
 
 아카이브에는 프로필별 XGBoost JSON, 피처 스키마, 라벨 출처, 검증 지표와
 각 모델의 SHA-256이 들어갑니다. 실행 가능한 pickle은 읽지 않습니다.

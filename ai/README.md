@@ -12,7 +12,9 @@ fallback으로 사용합니다. 백엔드는 출발시각의 건물 그늘을 �
 `route_labels.csv`에는 헤더만입니다. 별도 초기 평가 데이터셋은
 `training/bootstrap_baseline/`의 380 OD·실제 후보 1,137개·6개 프로필
 평가 6,822개이며 `rankers.bootstrap-baseline.zip`을 학습했습니다.
-사람 평가와 관리자 승격을 거친 운영 모델은 아직 없습니다.
+사람 평가와 관리자 승격을 거친 모델은 아직 없습니다. 현재 배포 기준선은
+동결된 초기 평가 데이터로 학습한 `bootstrap_baseline` AI 경로 추천 모델이며,
+사람 평가 완료나 휠체어 접근성 보장을 뜻하지 않습니다.
 
 ## 공개 경로와 내부 API
 
@@ -78,10 +80,9 @@ opt-in된 OSMnx를 시도합니다. 둘 다 사용할 수 없으면 화면 연�
 - `ai/data/rankers.bootstrap-baseline.zip`: 초기 평가 기반 비운영 baseline
 - `ai/data/rankers.review-mixed-candidate.zip`: 동의 후기를 제한적으로 혼합한 후보
 
-기본 `RANKER_TIER=human_validated`는
-`rankers.human-validated.zip`만 로드합니다. `bootstrap_baseline`은
-명시적으로 설정한 환경에서만 별도 artifact를 로드합니다. 후기 혼합
-후보와 초기 평가 baseline은 운영 모델로 자동 승격되지 않습니다.
+기본 `RANKER_TIER=bootstrap_baseline`은 동결된 초기 평가 artifact를
+로드합니다. `human_validated`는 사람 평가와 수동 승인 후에만 선택합니다.
+후기 혼합 후보는 운영 모델로 자동 승격되지 않습니다.
 
 ## 실행과 초기 사람 평가
 

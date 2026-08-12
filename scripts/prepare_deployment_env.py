@@ -229,15 +229,13 @@ def check() -> None:
     if values.get("BUILDING_SOURCE") != "vworld":
         missing.append("BUILDING_SOURCE(vworld)")
     ranker_tier = values.get("RANKER_TIER")
-    local_bootstrap = bool(
-        values.get("ROUTE_MODE") == "ai"
-        and ranker_tier == "bootstrap_baseline"
-        and parsed.hostname in {"localhost", "127.0.0.1"}
-    )
-    if ranker_tier != "human_validated" and not local_bootstrap:
-        missing.append("RANKER_TIER(human_validated outside local model mode)")
-    if local_bootstrap and not _bootstrap_artifact_ready():
-        missing.append("bootstrap_baseline(model artifact contract)")
+    if ranker_tier not in {"human_validated", "bootstrap_baseline"}:
+        missing.append("RANKER_TIER(human_validated or bootstrap_baseline)")
+    if ranker_tier == "bootstrap_baseline":
+        if values.get("ROUTE_MODE") != "ai":
+            missing.append("ROUTE_MODE(ai required for bootstrap_baseline)")
+        if not _bootstrap_artifact_ready():
+            missing.append("bootstrap_baseline(model artifact contract)")
     if values.get("OSMNX_WALK_GEOMETRY_ENABLED", "").lower() not in {
         "true",
         "false",

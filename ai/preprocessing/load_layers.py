@@ -24,7 +24,7 @@ from shapely.geometry import Point
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RAW_DIR   = REPO_ROOT / "data" / "raw"
 CACHE_DIR = REPO_ROOT / "ai" / "data" / "cache"
-CACHE_SCHEMA_VERSION = "spatial-layer-cache-v1"
+CACHE_SCHEMA_VERSION = "spatial-layer-cache-v2"
 CACHE_GPKG_NAME = "all_layers.gpkg"
 CACHE_MANIFEST_NAME = "all_layers.manifest.json"
 
@@ -40,6 +40,9 @@ SOURCE_FILES = (
     "busan_subway_station_accessibility_processed.xlsx",
     "busan_crosswalk_signal_shp_processed.xlsx",
     "bus_stop_national_csv_processed.xlsx",
+    "busan_mobility_support_centers.csv",
+    "busan_disabled_welfare_facilities.csv",
+    "busan_barrier_free_culture_tourism.csv",
 )
 
 # 부산 좌표 유효 범위
@@ -139,6 +142,82 @@ def load_wheelchair_charger() -> gpd.GeoDataFrame:
     )
 
 
+def load_mobility_support_center() -> gpd.GeoDataFrame:
+    """교통약자 이동지원센터 위치와 보유 차량 정보 레이어."""
+    df = _read_csv("busan_mobility_support_centers.csv")
+    df = _filter_busan(df.dropna(subset=["위도", "경도"]))
+    return _to_gdf(
+        df[[
+            "센터명",
+            "도로명주소",
+            "예약전화번호",
+            "보유차량대수",
+            "슬로프형차량대수",
+            "리프트형차량대수",
+            "데이터기준일자",
+            "품질상태",
+            "위도",
+            "경도",
+        ]]
+    )
+
+
+def load_disabled_welfare_facility() -> gpd.GeoDataFrame:
+    """장애인복지시설 목적지 탐색용 위치·운영 정보 레이어."""
+    df = _read_csv("busan_disabled_welfare_facilities.csv")
+    df = _filter_busan(df.dropna(subset=["위도", "경도"]))
+    return _to_gdf(
+        df[[
+            "구군명",
+            "시설유형",
+            "시설명",
+            "도로명주소",
+            "전화번호",
+            "정원",
+            "데이터기준일자",
+            "위도",
+            "경도",
+        ]]
+    )
+
+
+def _yes_no_flag(values: pd.Series) -> pd.Series:
+    """원본의 Y/N 값만 이진값으로 정규화하고 그 외 값은 결측으로 보존한다."""
+    normalized = values.astype("string").str.strip().str.upper()
+    return normalized.map({"Y": 1, "N": 0}).astype("Int64")
+
+
+def load_barrier_free_culture_tourism() -> gpd.GeoDataFrame:
+    """배리어프리 문화·관광 목적지와 제공된 편의시설 정보 레이어."""
+    df = _read_csv("busan_barrier_free_culture_tourism.csv")
+    df = _filter_busan(df.dropna(subset=["위도", "경도"]))
+    flags = pd.DataFrame({
+        "accessible_entrance": _yes_no_flag(df["장애인용 출입문"]),
+        "wheelchair_rental": _yes_no_flag(df["휠체어 대여 가능 여부"]),
+        "accessible_toilet": _yes_no_flag(df["장애인 화장실 유무"]),
+        "accessible_parking": _yes_no_flag(df["장애인 전용 주차장 여부"]),
+        "guide_dog_allowed": _yes_no_flag(df["시각장애인 안내견 동반 가능 여부"]),
+        "braille_guide": _yes_no_flag(df["점자 가이드 여부"]),
+    }, index=df.index)
+    normalized = pd.concat([
+        df[[
+            "시설명",
+            "카테고리1",
+            "카테고리2",
+            "카테고리3",
+            "도로명주소",
+            "지번주소",
+            "전화번호",
+            "운영시간",
+            "최종작성일",
+            "위도",
+            "경도",
+        ]],
+        flags,
+    ], axis=1)
+    return _to_gdf(normalized)
+
+
 def load_dongbaekjeon() -> gpd.GeoDataFrame:
     """동백전 가맹점 레이어."""
     df = _read_csv("동백전_가맹점_현황.csv")
@@ -196,6 +275,9 @@ LAYER_LOADERS = {
     "cctv": load_cctv,
     "aed": load_aed,
     "wheelchair_charger": load_wheelchair_charger,
+    "mobility_support_center": load_mobility_support_center,
+    "disabled_welfare_facility": load_disabled_welfare_facility,
+    "barrier_free_culture_tourism": load_barrier_free_culture_tourism,
     "dongbaekjeon": load_dongbaekjeon,
     "smart_shelter": load_smart_shelter,
     "subway": load_subway,

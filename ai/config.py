@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     RANKER_TIER: Literal[
         "human_validated",
         "bootstrap_baseline",
-    ] = "human_validated"
+    ] = "bootstrap_baseline"
 
 
 settings = Settings()

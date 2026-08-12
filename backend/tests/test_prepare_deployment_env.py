@@ -168,12 +168,14 @@ def test_check_accepts_local_ai_mode_with_complete_bootstrap_artifact(
     prepare_deployment_env.check()
 
 
-def test_check_rejects_bootstrap_model_for_public_origin(
+def test_check_accepts_bootstrap_model_for_public_origin_with_artifact(
     tmp_path: Path,
     monkeypatch,
-    capsys,
 ):
     target = tmp_path / ".env.production"
+    model = tmp_path / "rankers.bootstrap-baseline.zip"
+    metadata = tmp_path / "rankers.bootstrap-baseline.metadata.json"
+    profiles = sorted(prepare_deployment_env.MODEL_PROFILES)
     target.write_text(
         _valid_production_env()
         .replace("ROUTE_MODE=live", "ROUTE_MODE=ai")
@@ -183,11 +185,48 @@ def test_check_rejects_bootstrap_model_for_public_origin(
         ),
         encoding="utf-8",
     )
+    metadata.write_text(
+        json.dumps({
+            "model_tier": "bootstrap_baseline",
+            "profiles": profiles,
+        }),
+        encoding="utf-8",
+    )
+    with zipfile.ZipFile(model, "w") as archive:
+        archive.writestr(
+            "manifest.json",
+            json.dumps({
+                "model_tier": "bootstrap_baseline",
+                "profiles": profiles,
+            }),
+        )
+        for profile in profiles:
+            archive.writestr(f"models/{profile}.json", "{}")
+    monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
+    monkeypatch.setattr(prepare_deployment_env, "BOOTSTRAP_MODEL", model)
+    monkeypatch.setattr(prepare_deployment_env, "BOOTSTRAP_METADATA", metadata)
+
+    prepare_deployment_env.check()
+
+
+def test_check_rejects_bootstrap_model_when_route_mode_is_not_ai(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    target = tmp_path / ".env.production"
+    target.write_text(
+        _valid_production_env().replace(
+            "RANKER_TIER=human_validated",
+            "RANKER_TIER=bootstrap_baseline",
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
 
     with pytest.raises(SystemExit):
         prepare_deployment_env.check()
-    assert "outside local model mode" in capsys.readouterr().out
+    assert "ROUTE_MODE(ai required for bootstrap_baseline)" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(

@@ -43,6 +43,8 @@ from .models import (
     CandidatesRequest,
     Place,
     RecommendRequest,
+    RouteExplanationRequest,
+    RouteExplanationResponse,
     RouteCandidate,
     RouteSetRescoreRequest,
     ScoredRoute,
@@ -65,6 +67,7 @@ from .providers import (
     search_places,
 )
 from .providers.ai_pipeline import AIProviderError
+from .providers.nim import NimExplanationError, enrich_voice_summaries, explain_route
 from .providers.transit_arrivals import get_route_transit_arrivals
 from .providers.vworld_buildings import get_vworld_buildings
 from .rule_demo import personalize_and_sign, select_representative_routes
@@ -131,6 +134,21 @@ async def attach_correlation_id(request, call_next):
 
 app.include_router(auth_router)
 app.include_router(feedback_router)
+
+
+@app.post("/api/routes/explain", response_model=RouteExplanationResponse)
+async def explain_selected_route(request: RouteExplanationRequest) -> RouteExplanationResponse:
+    cached = route_set_cache.get(request.route_set_token)
+    if cached is None:
+        raise HTTPException(status_code=409, detail="경로 계산 정보가 만료되었습니다. 경로를 다시 검색해 주세요.")
+    candidate = next((item for item in cached.candidates if item.id == request.route_id), None)
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="선택한 경로를 찾을 수 없습니다.")
+    try:
+        explanation = await explain_route(candidate)
+    except NimExplanationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return RouteExplanationResponse(route_id=candidate.id, explanation=explanation, provider="nvidia_nim")
 
 
 def _effective_departure(departure_at=None):
@@ -984,6 +1002,7 @@ async def routes_recommend(
             )
             # 순위·score·snapshot 확정 후 최종 1위 표시 선형만 정밀화한다.
             await _refine_top_ranked_transit(scored)
+            await enrich_voice_summaries(scored)
             return _create_cached_route_set(
                 scored,
                 candidates,
@@ -1064,6 +1083,7 @@ async def routes_recommend(
         )
         if settings.route_mode == "live":
             await _refine_top_ranked_transit(personalized)
+        await enrich_voice_summaries(personalized)
         return _create_cached_route_set(
             personalized,
             candidates,

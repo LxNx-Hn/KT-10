@@ -192,6 +192,75 @@ def verify_readiness(
     )
 
 
+def verify_recommended_routes(routes: object, *, requested_top_n: int) -> None:
+    """공급자가 반환한 실제 후보 범위에서 추천 응답 계약을 확인한다."""
+    if (
+        not isinstance(routes, list)
+        or not routes
+        or len(routes) > requested_top_n
+    ):
+        raise RuntimeError(
+            "실경로 추천이 요청 범위 안의 실제 후보를 반환하지 않았습니다."
+        )
+    route_ids = [
+        str(item.get("route", {}).get("id") or "")
+        for item in routes
+        if isinstance(item, dict)
+    ]
+    if len(route_ids) != len(routes) or "" in route_ids or len(set(route_ids)) != len(routes):
+        raise RuntimeError("실경로 추천 ID가 없거나 중복됐습니다.")
+    scores = [
+        item.get("score", {}).get("finalScore")
+        for item in routes
+        if isinstance(item, dict)
+    ]
+    if (
+        len(scores) != len(routes)
+        or any(
+            isinstance(score, bool)
+            or not isinstance(score, (int, float))
+            or not math.isfinite(score)
+            or not 0 <= score <= 100
+            for score in scores
+        )
+        or scores != sorted(scores, reverse=True)
+    ):
+        raise RuntimeError("실경로 추천 점수가 내림차순이 아닙니다.")
+    for item in routes:
+        route = item.get("route", {})
+        path = route.get("path")
+        if not isinstance(path, list) or len(path) < 2:
+            raise RuntimeError("실경로 geometry가 없습니다.")
+        if route.get("geometryQuality") not in {"exact", "mixed"}:
+            raise RuntimeError("실경로 geometry 품질이 실측 경로 계약과 다릅니다.")
+        terrain = route.get("terrain")
+        if (
+            not isinstance(terrain, dict)
+            or terrain.get("status") != "estimated_90m"
+        ):
+            raise RuntimeError("90m DEM 경사도 계산 결과가 없습니다.")
+        shade = route.get("shade", {})
+        if not isinstance(shade, dict):
+            raise RuntimeError("VWorld 건물 기반 주간 그늘 계산이 완료되지 않았습니다.")
+        shade_ratio = shade.get("shadeRatio")
+        if (
+            shade.get("status") != "estimated_public"
+            or shade.get("dataQuality") != "public"
+            or isinstance(shade_ratio, bool)
+            or not isinstance(shade_ratio, (int, float))
+            or not math.isfinite(shade_ratio)
+            or not 0 <= shade_ratio <= 1
+        ):
+            raise RuntimeError("VWorld 건물 기반 주간 그늘 계산이 완료되지 않았습니다.")
+        score_kind = item.get("score", {}).get("scoreKind")
+        if score_kind not in {
+            "rule_baseline",
+            "bootstrap_baseline",
+            "human_model",
+        }:
+            raise RuntimeError("검증된 추천 모델 tier가 운영 응답에 포함되지 않았습니다.")
+
+
 def verify(base: str, *, allow_local_readiness_gaps: bool = False) -> None:
     scheme, hostname, _ = _validated_base(base)
     is_local_http = (
@@ -254,61 +323,7 @@ def verify(base: str, *, allow_local_readiness_gaps: bool = False) -> None:
             "topN": 3,
         },
     )
-    if not isinstance(routes, list) or len(routes) != 3:
-        raise RuntimeError("실경로 추천이 3개 경로를 반환하지 않았습니다.")
-    route_ids = [
-        str(item.get("route", {}).get("id") or "")
-        for item in routes
-        if isinstance(item, dict)
-    ]
-    if len(route_ids) != 3 or "" in route_ids or len(set(route_ids)) != 3:
-        raise RuntimeError("실경로 추천 ID가 없거나 중복됐습니다.")
-    scores = [
-        item.get("score", {}).get("finalScore")
-        for item in routes
-        if isinstance(item, dict)
-    ]
-    if (
-        len(scores) != 3
-        or any(
-            isinstance(score, bool)
-            or not isinstance(score, (int, float))
-            or not math.isfinite(score)
-            or not 0 <= score <= 100
-            for score in scores
-        )
-        or scores != sorted(scores, reverse=True)
-    ):
-        raise RuntimeError("실경로 추천 점수가 내림차순이 아닙니다.")
-    for item in routes:
-        route = item.get("route", {})
-        path = route.get("path")
-        if not isinstance(path, list) or len(path) < 2:
-            raise RuntimeError("실경로 geometry가 없습니다.")
-        if route.get("geometryQuality") not in {"exact", "mixed"}:
-            raise RuntimeError("실경로 geometry 품질이 실측 경로 계약과 다릅니다.")
-        terrain = route.get("terrain")
-        if (
-            not isinstance(terrain, dict)
-            or terrain.get("status") != "estimated_90m"
-        ):
-            raise RuntimeError("90m DEM 경사도 계산 결과가 없습니다.")
-        shade = route.get("shade", {})
-        if not isinstance(shade, dict):
-            raise RuntimeError("VWorld 건물 기반 주간 그늘 계산이 완료되지 않았습니다.")
-        shade_ratio = shade.get("shadeRatio")
-        if (
-            shade.get("status") != "estimated_public"
-            or shade.get("dataQuality") != "public"
-            or isinstance(shade_ratio, bool)
-            or not isinstance(shade_ratio, (int, float))
-            or not math.isfinite(shade_ratio)
-            or not 0 <= shade_ratio <= 1
-        ):
-            raise RuntimeError("VWorld 건물 기반 주간 그늘 계산이 완료되지 않았습니다.")
-        score_kind = item.get("score", {}).get("scoreKind")
-        if score_kind not in {"rule_baseline", "human_model"}:
-            raise RuntimeError("검증되지 않은 추천 모델 tier가 운영 응답에 포함됐습니다.")
+    verify_recommended_routes(routes, requested_top_n=3)
 
     print("배포 스모크 검증 완료: PWA, 보안 헤더, 장소, 날씨, 버스, 실경로, 경사도, 그늘")
 

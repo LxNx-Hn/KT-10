@@ -397,6 +397,17 @@ class RecommendRequest(CamelModel):
     top_n: int | None = Field(default=None, ge=1, le=10)
 
 
+class RouteExplanationRequest(CamelModel):
+    route_set_token: str = Field(min_length=20, max_length=64)
+    route_id: str = Field(min_length=1, max_length=200)
+
+
+class RouteExplanationResponse(CamelModel):
+    route_id: str
+    explanation: str
+    provider: Literal["nvidia_nim"]
+
+
 class ShadeRefreshRequest(CamelModel):
     route_set_token: str = Field(min_length=20, max_length=64)
     profile: ProfileId = "general"

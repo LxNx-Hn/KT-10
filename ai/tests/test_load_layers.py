@@ -13,8 +13,8 @@ def layers():
 
 
 def test_all_layers_count(layers):
-    """총 9개 레이어가 로딩되어야 한다."""
-    assert len(layers) == 9
+    """총 12개 레이어가 로딩되어야 한다."""
+    assert len(layers) == 12
 
 
 def test_all_layers_nonempty(layers):
@@ -40,6 +40,25 @@ def test_bus_stop_busan_only(layers):
 def test_cctv_merged(layers):
     """CCTV 두 파일 병합 후 30,000행 이상이어야 한다."""
     assert len(layers["cctv"]) > 30000, f"CCTV 병합 결과 부족: {len(layers['cctv'])}행"
+
+
+def test_accessibility_destination_layers_preserve_declared_fields(layers):
+    mobility = layers["mobility_support_center"]
+    welfare = layers["disabled_welfare_facility"]
+    tourism = layers["barrier_free_culture_tourism"]
+
+    assert len(mobility) == 1
+    assert {"슬로프형차량대수", "리프트형차량대수"}.issubset(mobility.columns)
+    # 원본 243건 중 부산 유효 범위 밖 좌표 5건은 원본에 보존하고 지도 레이어에서만 제외한다.
+    assert len(welfare) == 238
+    assert {"시설유형", "전화번호"}.issubset(welfare.columns)
+    assert len(tourism) == 457
+    assert {
+        "accessible_entrance",
+        "wheelchair_rental",
+        "accessible_toilet",
+        "accessible_parking",
+    }.issubset(tourism.columns)
 
 
 def test_safe_cache_is_reused_and_invalidated_by_source_content(

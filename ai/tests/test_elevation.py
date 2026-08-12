@@ -26,11 +26,21 @@ from rasterio.transform import from_origin
 
 @pytest.fixture(autouse=True)
 def isolate_regional_dem(monkeypatch, tmp_path):
+    missing_regional_dem = tmp_path / "missing-regional-dem.tif"
     monkeypatch.setattr(
         settings,
         "ELEVATION_REGIONAL_DEM_PATH",
-        str(tmp_path / "missing-regional-dem.tif"),
+        str(missing_regional_dem),
     )
+    # 운영 Compose가 지역 DEM 경로를 주입하므로, 공급자 모의 테스트는
+    # 설정값뿐 아니라 경로 해석 자체를 격리한다.
+    monkeypatch.setattr(
+        elevation_module,
+        "_regional_dem_path",
+        lambda: missing_regional_dem,
+    )
+    monkeypatch.setattr(settings, "ELEVATION_DEM_DIR", "")
+    monkeypatch.setattr(settings, "ELEVATION_CACHE_DIR", "")
     monkeypatch.setattr(elevation_module, "_regional_dem", None)
     yield
     elevation_module._regional_dem = None
@@ -47,6 +57,11 @@ def test_bundled_qgis_regional_dem_avoids_remote_provider(monkeypatch, tmp_path)
         settings,
         "ELEVATION_REGIONAL_DEM_PATH",
         str(regional_path),
+    )
+    monkeypatch.setattr(
+        elevation_module,
+        "_regional_dem_path",
+        lambda: regional_path,
     )
     monkeypatch.setattr(settings, "ELEVATION_DEM_DIR", "")
     monkeypatch.setattr(settings, "ELEVATION_CACHE_DIR", str(tmp_path / "cache"))

@@ -5,6 +5,7 @@ class FakeUtterance {
   text: string;
   lang = '';
   rate = 1;
+  pitch = 1;
   volume = 1;
   voice: SpeechSynthesisVoice | null = null;
   onstart: (() => void) | null = null;
@@ -58,9 +59,25 @@ describe('브라우저 음성 출력', () => {
     const utterance = synthesis.speak.mock.calls[0][0] as unknown as FakeUtterance;
     expect(utterance.text).toBe('안녕하세요');
     expect(utterance.lang).toBe('ko-KR');
+    expect(utterance.rate).toBe(0.95);
     expect((utterance.voice as unknown as { lang: string }).lang).toBe('ko-KR');
     utterance.onend?.();
     expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('선호 한국어 음성과 수치 단위를 자연스러운 발화로 사용한다', async () => {
+    synthesis.getVoices.mockReturnValue([
+      { lang: 'ko-KR', name: 'Korean Basic', localService: false },
+      { lang: 'ko-KR', name: 'Microsoft SunHi Online', localService: true },
+    ] as unknown as SpeechSynthesisVoice[]);
+    const { speak } = await import('./synthesis');
+
+    speak('도보 14000m, 평균 경사 5.2%');
+    vi.runAllTimers();
+
+    const utterance = synthesis.speak.mock.calls[0][0] as unknown as FakeUtterance;
+    expect(utterance.text).toBe('도보 14000미터, 평균 경사 5.2퍼센트');
+    expect((utterance.voice as unknown as { name: string }).name).toBe('Microsoft SunHi Online');
   });
 
   it('사용자 클릭에서 무음 priming을 한 번만 수행한다', async () => {

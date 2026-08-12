@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     nim_model: str = ""
     nim_request_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
     nim_max_output_tokens: int = Field(default=800, ge=1, le=8192)
+    nim_response_attempts: int = Field(default=2, ge=1, le=3)
+    nim_route_explanation_max_routes: int = Field(default=3, ge=1, le=10)
 
     # PostgreSQL + Kakao 로그인. 실제 값은 배포 환경변수로만 주입한다.
     database_url: str = ""

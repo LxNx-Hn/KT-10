@@ -75,6 +75,7 @@ def test_static_route_cache_accepts_only_exact_90m_features():
 
 
 def test_model_status_reports_not_ready_without_fabricated_model(monkeypatch):
+    monkeypatch.setattr(api_router.settings, "RANKER_TIER", "human_validated")
     monkeypatch.setattr(api_router, "_rankers", None)
     monkeypatch.setattr(api_router, "load_rankers", lambda: (_ for _ in ()).throw(ModelNotReady("라벨 필요")))
     response = client.get("/model/status")
@@ -175,7 +176,7 @@ def test_readiness_rejects_candidate_pipeline_without_exact_walk_geometry(
 
     assert response.status_code == 503
     assert response.json()["ready"] is False
-    assert response.json()["spatial_layer_count"] == 9
+    assert response.json()["spatial_layer_count"] == 12
     assert response.json()["capabilities"] == {
         "exact_walking_geometry_configured": False,
     }
@@ -200,7 +201,7 @@ def test_readiness_reports_exact_walk_geometry_capability(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["ready"] is True
-    assert response.json()["spatial_layer_count"] == 10
+    assert response.json()["spatial_layer_count"] == 13
     assert response.json()["capabilities"] == {
         "exact_walking_geometry_configured": True,
     }
