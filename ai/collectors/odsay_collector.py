@@ -153,6 +153,9 @@ class OdsayRouteCollector(BaseRouteCollector):
     BASE_URL = "https://api.odsay.com/v1/api/searchPubTransPathT"
     LANE_URL = "https://api.odsay.com/v1/api/loadLane"
 
+    def __init__(self, *, avoid_stairs: bool = False):
+        self.avoid_stairs = avoid_stairs
+
     @staticmethod
     def _api_error(data: dict) -> str | None:
         error = data.get("error")
@@ -490,15 +493,20 @@ class OdsayRouteCollector(BaseRouteCollector):
         end = cls._transit_edge(following, "start") if following else destination
         return (start, end) if start and end else None
 
-    @staticmethod
-    async def _walk_geometry(start: Coordinate, end: Coordinate) -> tuple[list[Coordinate], str]:
+    async def _walk_geometry(
+        self,
+        start: Coordinate,
+        end: Coordinate,
+    ) -> tuple[list[Coordinate], str, dict]:
         # TMAP 공식 보행 경로를 우선하고, OSMnx는 명시적으로 활성화한
         # 환경의 보조 공급자다.
         from collectors.tmap_collector import TmapRouteCollector
 
         collectors = []
         if settings.TMAP_API_KEY and not settings.TMAP_API_KEY.startswith("YOUR_"):
-            collectors.append(TmapRouteCollector())
+            collectors.append(
+                TmapRouteCollector(avoid_stairs=self.avoid_stairs)
+            )
         if settings.OSMNX_WALK_GEOMETRY_ENABLED:
             from collectors.osmnx_collector import OsmnxRouteCollector
 
@@ -531,9 +539,13 @@ class OdsayRouteCollector(BaseRouteCollector):
                     )
                 continue
             if candidates and len(candidates[0].path) >= 2:
-                return candidates[0].path, "exact"
+                return (
+                    candidates[0].path,
+                    "exact",
+                    dict(getattr(candidates[0], "accessibility_evidence", {})),
+                )
         # 경로 시간이 아니라 화면 연결 geometry만 추정하며 상태를 반드시 estimated로 남긴다.
-        return [start, end], "estimated"
+        return [start, end], "estimated", {}
 
     async def _build_candidate(
         self,
@@ -634,8 +646,13 @@ class OdsayRouteCollector(BaseRouteCollector):
                         )
                     segment_path = [endpoints[0], endpoints[1]]
                     quality = "exact"
+                    accessibility_evidence = {}
                 else:
-                    segment_path, quality = await self._walk_geometry(*endpoints)
+                    (
+                        segment_path,
+                        quality,
+                        accessibility_evidence,
+                    ) = await self._walk_geometry(*endpoints)
             else:
                 segment_path = (
                     lane_paths[lane_index]
@@ -650,6 +667,7 @@ class OdsayRouteCollector(BaseRouteCollector):
                 # 정류장 좌표를 이은 선형은 실제 도로·철도 선형이 아니므로
                 # 정밀화 전까지 반드시 estimated로 기록한다.
                 quality = "estimated"
+                accessibility_evidence = {}
             if coords and coords[-1] == segment_path[0]:
                 coords.extend(segment_path[1:])
             else:
@@ -662,6 +680,7 @@ class OdsayRouteCollector(BaseRouteCollector):
                 "path": segment_path,
                 "geometry_quality": quality,
                 "raw": sub,
+                "accessibility_evidence": accessibility_evidence,
             })
         if len(coords) < 2:
             raise CollectorError("ODsay 후보의 조립된 geometry가 비어 있습니다.")

@@ -553,8 +553,9 @@ async def _collect_static_featured_routes(
     # Opt-in OSMnx is used only inside ODsay to recover walking geometry. It has
     # no authoritative travel-time value and therefore must not become a
     # scored standalone route candidate.
-    odsay_collector = OdsayRouteCollector()
-    tmap_collector = TmapRouteCollector()
+    avoid_stairs = req.uses_wheelchair or req.avoid_stairs
+    odsay_collector = OdsayRouteCollector(avoid_stairs=avoid_stairs)
+    tmap_collector = TmapRouteCollector(avoid_stairs=avoid_stairs)
     collectors = [odsay_collector, tmap_collector]
     source_names = [collector.source_name for collector in collectors]
     results = await asyncio.gather(
@@ -726,6 +727,7 @@ async def _collect_featured_routes(
         req.origin_lng,
         req.dest_lat,
         req.dest_lng,
+        avoid_stairs=req.uses_wheelchair or req.avoid_stairs,
     )
     cached = await asyncio.to_thread(
         read_route_feature_cache,
@@ -1126,9 +1128,14 @@ def _tmap_stair_feature_count(raw: dict) -> int | None:
         if not isinstance(properties, dict):
             return None
         raw_facility = properties.get("facilityType")
-        facility_str = str(raw_facility or "")
-        # TMAP API 규격: 1(계단), 11(육교 계단) 또는 "계단" 문자열 포함
-        if raw_facility in (1, 11, "1", "11") or "계단" in facility_str:
+        raw_turn = properties.get("turnType")
+        facility_str = str(properties.get("facilityName") or "")
+        # TMAP 보행자 API 공식 규격: facilityType=17 또는 turnType=127.
+        if (
+            raw_facility in (17, "17")
+            or raw_turn in (127, "127")
+            or "계단" in facility_str
+        ):
             count += 1
     # 명시된 계단은 확인 가능하지만, feature 부재만으로 계단 0을 단정하지 않는다.
     return count if count > 0 else None
@@ -1200,6 +1207,25 @@ def _parse_api_features(candidate) -> dict:
 
     if candidate.source == "tmap":
         stairs = _tmap_stair_feature_count(raw)
+
+    route_accessibility = _mapping(
+        getattr(candidate, "accessibility_evidence", {})
+    )
+    walk_accessibility = [
+        _mapping(segment.get("accessibility_evidence"))
+        for segment in candidate.segments
+        if segment.get("mode") in {"walk", "transfer"}
+    ]
+    if route_accessibility.get("stairs_excluded_by_provider") is True:
+        stairs = 0
+    elif (
+        walk_accessibility
+        and all(
+            evidence.get("stairs_excluded_by_provider") is True
+            for evidence in walk_accessibility
+        )
+    ):
+        stairs = 0
 
     return {
         "avg_slope_percent": None,
@@ -1316,12 +1342,16 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
             if mode in {"walk", "transfer"}
             else (None, None)
         )
+        accessibility = _mapping(item.get("accessibility_evidence"))
+        if accessibility.get("stairs_excluded_by_provider") is True:
+            stairs = 0
         observations.append({
             "item": item,
             "raw": raw,
             "mode": mode,
             "stairs": stairs,
             "elevator": elevator,
+            "accessibility": accessibility,
             "low_floor": (
                 _lane_low_floor_status(raw.get("lane"))
                 if mode == "bus"
@@ -1401,11 +1431,38 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
             if low_floor_complete
             else None
         )
+        ramp_points = observation["accessibility"].get("ramp_points")
+        if not isinstance(ramp_points, list) or not ramp_points:
+            ramp_points = None
+        public_ramp_points = (
+            [
+                {"lat": point["lat"], "lng": point["lng"]}
+                for point in ramp_points
+                if isinstance(point, dict)
+                and isinstance(point.get("lat"), (int, float))
+                and not isinstance(point.get("lat"), bool)
+                and isinstance(point.get("lng"), (int, float))
+                and not isinstance(point.get("lng"), bool)
+            ]
+            if ramp_points
+            else None
+        )
+        ramp_replaces_stairs = (
+            True
+            if ramp_points
+            and any(
+                isinstance(point, dict)
+                and point.get("replaces_stairs") is True
+                for point in ramp_points
+            )
+            else None
+        )
         needs_vertical_move = (
             True
             if (
                 (stairs is not None and stairs > 0)
                 or elevator is True
+                or bool(public_ramp_points)
             )
             else None
         )
@@ -1419,6 +1476,21 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
             "outdoor": None,
             "has_stairs": None if stairs is None else stairs > 0,
             "stairs_count": stairs,
+            "has_slope": True if public_ramp_points else None,
+            "ramp_points": public_ramp_points,
+            "ramp_replaces_stairs": ramp_replaces_stairs,
+            "ramp_evidence_source": (
+                "TMAP pedestrian turnType 128/129"
+                if public_ramp_points
+                else None
+            ),
+            "stairs_excluded_by_provider": (
+                True
+                if observation["accessibility"].get(
+                    "stairs_excluded_by_provider"
+                ) is True
+                else None
+            ),
             "bus_route_name": str(name) if mode == "bus" and name else None,
             "is_low_floor_bus": low_floor if mode == "bus" else None,
             "transit_start_id": (
@@ -1483,9 +1555,30 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
         return segments
     # OSMnx/TMAP 단일 보행 후보는 실제 geometry와 공급자 거리를 보유한다.
     if candidate.source in {"osmnx", "tmap"}:
+        accessibility = _mapping(
+            getattr(candidate, "accessibility_evidence", {})
+        )
         stairs = (
             _tmap_stair_feature_count(_mapping(candidate.raw_response))
             if candidate.source == "tmap"
+            else None
+        )
+        if accessibility.get("stairs_excluded_by_provider") is True:
+            stairs = 0
+        ramp_points = accessibility.get("ramp_points")
+        if not isinstance(ramp_points, list) or not ramp_points:
+            ramp_points = None
+        public_ramp_points = (
+            [
+                {"lat": point["lat"], "lng": point["lng"]}
+                for point in ramp_points
+                if isinstance(point, dict)
+                and isinstance(point.get("lat"), (int, float))
+                and not isinstance(point.get("lat"), bool)
+                and isinstance(point.get("lng"), (int, float))
+                and not isinstance(point.get("lng"), bool)
+            ]
+            if ramp_points
             else None
         )
         return [{
@@ -1496,9 +1589,38 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
             "distance_m": candidate.distance_m,
             # TMAP 보행 geometry만으로 실내·실외 여부를 단정할 수 없다.
             "outdoor": None,
-            "has_stairs": True if stairs is not None else None,
+            "has_stairs": None if stairs is None else stairs > 0,
             "stairs_count": stairs,
-            "needs_vertical_move": True if stairs is not None else None,
+            "has_slope": True if public_ramp_points else None,
+            "ramp_points": public_ramp_points,
+            "ramp_replaces_stairs": (
+                True
+                if ramp_points
+                and any(
+                    isinstance(point, dict)
+                    and point.get("replaces_stairs") is True
+                    for point in ramp_points
+                )
+                else None
+            ),
+            "ramp_evidence_source": (
+                "TMAP pedestrian turnType 128/129"
+                if public_ramp_points
+                else None
+            ),
+            "stairs_excluded_by_provider": (
+                True
+                if accessibility.get("stairs_excluded_by_provider") is True
+                else None
+            ),
+            "needs_vertical_move": (
+                True
+                if (
+                    (stairs is not None and stairs > 0)
+                    or bool(public_ramp_points)
+                )
+                else None
+            ),
             "path": [{"lat": point.lat, "lng": point.lng} for point in candidate.path],
             "geometry_quality": candidate.geometry_quality,
         }]

@@ -48,3 +48,18 @@ def test_route_feature_cache_singleflights_same_od():
         return first is second
 
     assert asyncio.run(run()) is True
+
+
+def test_wheelchair_cache_identity_is_separate_from_general_route():
+    general = cache_identity(35.1, 129.0, 35.2, 129.1)
+    wheelchair = cache_identity(
+        35.1,
+        129.0,
+        35.2,
+        129.1,
+        avoid_stairs=True,
+    )
+
+    assert general != wheelchair
+    assert general["geometryProfile"]["stairsExcluded"] is False
+    assert wheelchair["geometryProfile"]["stairsExcluded"] is True

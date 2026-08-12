@@ -30,6 +30,7 @@ from ..feedback_tokens import create_feedback_token
 from ..personalization import blended_rank_score, parse_state
 from ..scoring.utils import clamp, round1
 from ..settings import settings
+from ..wheelchair import effective_scoring_options
 
 log = logging.getLogger("providers.ai_pipeline")
 
@@ -85,6 +86,7 @@ def _pipeline_payload(
     weather_condition=None,
     candidate_limit: int = 5,
 ) -> dict:
+    options = effective_scoring_options(options, user_preference)
     return {
         "origin_lat": origin.lat, "origin_lng": origin.lng, "origin_name": origin.name,
         "dest_lat": destination.lat, "dest_lng": destination.lng, "dest_name": destination.name,
@@ -254,6 +256,7 @@ def _shade_enriched_features(
     AI ``_context_features`` 계약과 동일하며, 누락 관측값은 ``None``으로
     유지한다.
     """
+    options = effective_scoring_options(options, user_preference)
     if not route.model_features:
         raise AIProviderError(502, "AI candidate has no fixed model features.")
     features = dict(route.model_features)
@@ -751,6 +754,10 @@ def _to_segment(item: dict, rank: int, index: int) -> RouteSegment:
         has_stairs=item.get("has_stairs"),
         stairs_count=int(stairs) if stairs is not None else None,
         has_slope=item.get("has_slope"),
+        ramp_points=item.get("ramp_points"),
+        ramp_replaces_stairs=item.get("ramp_replaces_stairs"),
+        ramp_evidence_source=item.get("ramp_evidence_source"),
+        stairs_excluded_by_provider=item.get("stairs_excluded_by_provider"),
         crosswalk_count=item.get("crosswalk_count"),
         bus_route_name=item.get("bus_route_name"),
         is_low_floor_bus=item.get("is_low_floor_bus"),

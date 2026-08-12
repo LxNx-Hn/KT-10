@@ -58,6 +58,16 @@ class RouteSegment(CamelModel):
     has_stairs: Optional[bool] = None
     stairs_count: Optional[int] = Field(default=None, ge=0)
     has_slope: Optional[bool] = None
+    # 물리 경사로는 DEM 지형 경사와 별개다. 공급자 응답에 경사로 안내점이
+    # 있을 때만 좌표와 근거를 노출한다.
+    ramp_points: Optional[list[LatLng]] = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
+    ramp_replaces_stairs: Optional[bool] = None
+    ramp_evidence_source: Optional[str] = Field(default=None, max_length=200)
+    stairs_excluded_by_provider: Optional[bool] = None
     crosswalk_count: Optional[int] = Field(default=None, ge=0)
 
     # 버스 구간
@@ -84,6 +94,31 @@ class RouteSegment(CamelModel):
     needs_vertical_move: Optional[bool] = None
     path: Optional[list[LatLng]] = Field(default=None, min_length=2)
     geometry_quality: Optional[Literal["exact", "mixed", "estimated"]] = None
+
+    @model_validator(mode="after")
+    def validate_accessibility_evidence(self):
+        if self.has_slope is True and (
+            not self.ramp_points or not self.ramp_evidence_source
+        ):
+            raise ValueError(
+                "has_slope=True requires ramp_points and ramp_evidence_source"
+            )
+        if self.ramp_points and (
+            self.has_slope is not True or not self.ramp_evidence_source
+        ):
+            raise ValueError(
+                "ramp_points require has_slope=True and ramp_evidence_source"
+            )
+        if self.ramp_replaces_stairs is True and not self.ramp_points:
+            raise ValueError("ramp_replaces_stairs=True requires ramp_points")
+        if self.stairs_excluded_by_provider is True and not (
+            self.has_stairs is False and self.stairs_count == 0
+        ):
+            raise ValueError(
+                "stairs_excluded_by_provider=True requires "
+                "has_stairs=False and stairs_count=0"
+            )
+        return self
 
 
 class TerrainSlopeSegment(CamelModel):

@@ -24,7 +24,6 @@
         "outdoor": true,
         "hasStairs": true,
         "stairsCount": 30,
-        "hasSlope": true,
         "hasElevator": false,
         "needsVerticalMove": true
       },
@@ -172,7 +171,6 @@
         "durationMin": 3.0,
         "distanceM": 220.0,
         "outdoor": true,
-        "hasSlope": true,
         "crosswalkCount": 1
       }
     ],

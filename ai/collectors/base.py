@@ -63,6 +63,9 @@ class RouteCandidate:
     # 대중교통 표시 선형을 나중에 정밀화하기 위한 공급자 내부 서술자.
     # 서버 내부 전용이며 공개 API 응답에 원문을 노출하지 않는다.
     transit_refinement: Optional[dict] = field(default=None)
+    # 공급자가 경로 탐색 과정에서 직접 확인한 계단 제외·경사로 안내점.
+    # 지형 경사(DEM)와 물리 경사로를 혼동하지 않도록 별도 보존한다.
+    accessibility_evidence: dict[str, Any] = field(default_factory=dict)
 
 
 class BaseRouteCollector(ABC):

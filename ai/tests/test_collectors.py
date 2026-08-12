@@ -135,6 +135,115 @@ def test_tmap_persistent_cache_avoids_repeated_provider_call(
     assert "test-secret" not in cache_text
 
 
+def test_tmap_wheelchair_request_uses_official_stair_excluded_option_and_ramp_codes(
+    monkeypatch,
+):
+    import collectors.tmap_collector as module
+
+    payload = {
+        "features": [
+            {
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [129.05, 35.16],
+                },
+                "properties": {
+                    "turnType": 129,
+                    "totalTime": 600,
+                    "totalDistance": 1000,
+                },
+            },
+            {
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [
+                        [ORIGIN.lng, ORIGIN.lat],
+                        [DEST.lng, DEST.lat],
+                    ],
+                },
+                "properties": {"facilityType": 11},
+            },
+        ],
+    }
+    captured = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return payload
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, *_args, **kwargs):
+            captured.update(kwargs)
+            return Response()
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "test-secret")
+    monkeypatch.setattr(settings, "TMAP_CACHE_DIR", "")
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+
+    candidate = asyncio.run(
+        TmapRouteCollector(avoid_stairs=True).collect(ORIGIN, DEST)
+    )[0]
+
+    assert captured["json"]["searchOption"] == "30"
+    assert captured["params"] == {"version": "1"}
+    assert candidate.accessibility_evidence == {
+        "provider": "TMAP pedestrian",
+        "search_option": "30",
+        "stairs_excluded_by_provider": True,
+        "stair_feature_count": 0,
+        "ramp_points": [{
+            "lat": 35.16,
+            "lng": 129.05,
+            "turn_type": 129,
+            "replaces_stairs": True,
+        }],
+    }
+
+
+def test_tmap_stair_excluded_response_rejects_contradictory_stair_feature():
+    collector = TmapRouteCollector(avoid_stairs=True)
+    payload = {
+        "features": [
+            {
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [ORIGIN.lng, ORIGIN.lat],
+                },
+                "properties": {
+                    "turnType": 127,
+                    "totalTime": 600,
+                    "totalDistance": 1000,
+                },
+            },
+            {
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [
+                        [ORIGIN.lng, ORIGIN.lat],
+                        [DEST.lng, DEST.lat],
+                    ],
+                },
+                "properties": {"facilityType": 17},
+            },
+        ],
+    }
+
+    with pytest.raises(CollectorError, match="계단 제외 경로"):
+        collector._candidate_from_data(payload)
+
+
 def test_tmap_quota_backoff_limits_repeated_provider_calls(
     monkeypatch,
     tmp_path,
@@ -184,10 +293,13 @@ def test_odsay_walk_geometry_defaults_to_estimated_without_provider(monkeypatch)
     monkeypatch.setattr(settings, "TMAP_API_KEY", "")
     monkeypatch.setattr(settings, "OSMNX_WALK_GEOMETRY_ENABLED", False)
 
-    path, quality = asyncio.run(OdsayRouteCollector._walk_geometry(ORIGIN, DEST))
+    path, quality, evidence = asyncio.run(
+        OdsayRouteCollector()._walk_geometry(ORIGIN, DEST)
+    )
 
     assert path == [ORIGIN, DEST]
     assert quality == "estimated"
+    assert evidence == {}
 
 
 def test_odsay_walk_geometry_prefers_tmap(monkeypatch):
@@ -202,10 +314,13 @@ def test_odsay_walk_geometry_prefers_tmap(monkeypatch):
     monkeypatch.setattr(TmapRouteCollector, "collect", tmap_collect)
     monkeypatch.setattr(OsmnxRouteCollector, "collect", osmnx_collect)
 
-    path, quality = asyncio.run(OdsayRouteCollector._walk_geometry(ORIGIN, DEST))
+    path, quality, evidence = asyncio.run(
+        OdsayRouteCollector(avoid_stairs=True)._walk_geometry(ORIGIN, DEST)
+    )
 
     assert path == [ORIGIN, DEST]
     assert quality == "exact"
+    assert evidence == {}
 
 
 def test_odsay_walk_geometry_uses_osmnx_only_when_enabled(monkeypatch):
@@ -221,10 +336,13 @@ def test_odsay_walk_geometry_uses_osmnx_only_when_enabled(monkeypatch):
         osmnx_collect,
     )
 
-    path, quality = asyncio.run(OdsayRouteCollector._walk_geometry(ORIGIN, DEST))
+    path, quality, evidence = asyncio.run(
+        OdsayRouteCollector()._walk_geometry(ORIGIN, DEST)
+    )
 
     assert path == [ORIGIN, DEST]
     assert quality == "exact"
+    assert evidence == {}
 
 
 def test_odsay_walk_geometry_can_block_for_labeling_collection(monkeypatch):
@@ -244,12 +362,13 @@ def test_odsay_walk_geometry_can_block_for_labeling_collection(monkeypatch):
         cached_collect,
     )
 
-    path, quality = asyncio.run(
-        OdsayRouteCollector._walk_geometry(ORIGIN, DEST)
+    path, quality, evidence = asyncio.run(
+        OdsayRouteCollector()._walk_geometry(ORIGIN, DEST)
     )
 
     assert path == [ORIGIN, DEST]
     assert quality == "exact"
+    assert evidence == {}
 
 
 def test_odsay_walk_geometry_falls_back_when_enabled_providers_fail(monkeypatch):
@@ -265,10 +384,13 @@ def test_odsay_walk_geometry_falls_back_when_enabled_providers_fail(monkeypatch)
         fail_collect,
     )
 
-    path, quality = asyncio.run(OdsayRouteCollector._walk_geometry(ORIGIN, DEST))
+    path, quality, evidence = asyncio.run(
+        OdsayRouteCollector()._walk_geometry(ORIGIN, DEST)
+    )
 
     assert path == [ORIGIN, DEST]
     assert quality == "estimated"
+    assert evidence == {}
 
 
 def test_odsay_walk_geometry_returns_immediately_while_cache_warms(
@@ -295,17 +417,21 @@ def test_odsay_walk_geometry_returns_immediately_while_cache_warms(
 
     async def run():
         started = time.perf_counter()
-        path, quality = await OdsayRouteCollector._walk_geometry(ORIGIN, DEST)
+        path, quality, evidence = await OdsayRouteCollector()._walk_geometry(
+            ORIGIN,
+            DEST,
+        )
         elapsed = time.perf_counter() - started
         tasks = tuple(osmnx_collector._warm_tasks)
         if tasks:
             await asyncio.gather(*tasks)
-        return path, quality, elapsed
+        return path, quality, evidence, elapsed
 
-    path, quality, elapsed = asyncio.run(run())
+    path, quality, evidence, elapsed = asyncio.run(run())
 
     assert path == [ORIGIN, DEST]
     assert quality == "estimated"
+    assert evidence == {}
     assert elapsed < 0.04
     assert warmed is True
 
@@ -776,7 +902,7 @@ def test_odsay_zero_distance_transfer_does_not_create_detour(monkeypatch):
 
     async def fake_walk(start, end):
         walk_calls.append((start, end))
-        return [start, end], "exact"
+        return [start, end], "exact", {}
 
     monkeypatch.setattr(settings, "ODSAY_LOAD_LANE_ENABLED", False)
     monkeypatch.setattr(collector, "_walk_geometry", fake_walk)

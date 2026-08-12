@@ -1112,6 +1112,45 @@ def test_tmap_standalone_analysis_uses_full_walking_path():
     ]]
 
 
+def test_tmap_ramp_and_stair_exclusion_evidence_reaches_public_segment():
+    candidate = MergedRoute(
+        sources=["tmap"],
+        source="tmap",
+        path=[
+            Coordinate(35.1000, 129.0000),
+            Coordinate(35.1100, 129.0100),
+        ],
+        duration_min=10,
+        distance_m=900,
+        raw_response={"features": []},
+        accessibility_evidence={
+            "provider": "TMAP pedestrian",
+            "search_option": "30",
+            "stairs_excluded_by_provider": True,
+            "stair_feature_count": 0,
+            "ramp_points": [{
+                "lat": 35.105,
+                "lng": 129.005,
+                "turn_type": 129,
+                "replaces_stairs": True,
+            }],
+        },
+    )
+
+    features = _parse_api_features(candidate)
+    segment = _public_segments(candidate)[0]
+
+    assert features["stair_count"] == 0
+    assert segment["has_stairs"] is False
+    assert segment["stairs_count"] == 0
+    assert segment["stairs_excluded_by_provider"] is True
+    assert segment["has_slope"] is True
+    assert segment["ramp_points"] == [{"lat": 35.105, "lng": 129.005}]
+    assert segment["ramp_replaces_stairs"] is True
+    assert segment["ramp_evidence_source"] == "TMAP pedestrian turnType 128/129"
+    assert segment["needs_vertical_move"] is True
+
+
 def test_estimated_walk_geometry_is_not_used_as_observed_feature_path():
     path = [
         Coordinate(35.1000, 129.0000),

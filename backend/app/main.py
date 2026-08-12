@@ -87,6 +87,7 @@ from .shade import (
     resolve_shade_without_buildings,
 )
 from .settings import settings
+from .wheelchair import effective_scoring_options, filter_known_stair_candidates
 
 logging.basicConfig(level=logging.INFO)
 # httpx의 INFO 요청 로그에는 공급자 키가 포함된 query string이 기록될 수 있다.
@@ -706,6 +707,8 @@ async def _rescore_cached_route_set(
                 req.weather_scenario
             ].model_copy(deep=True)
         user_preference = user.preference if user and user.preference else None
+        effective_options = effective_scoring_options(req.options, user_preference)
+        candidates = _filter_wheelchair_candidates(candidates, user)
         try:
             candidates = await _add_configured_shade(
                 candidates,
@@ -728,7 +731,7 @@ async def _rescore_cached_route_set(
                 scored = await rank_ai_pipeline_candidates(
                     candidates,
                     req.profile,
-                    req.options,
+                    effective_options,
                     **rank_kwargs,
                 )
                 return _replace_cached_route_set(
@@ -743,19 +746,19 @@ async def _rescore_cached_route_set(
                 if user_preference is None:
                     await enrich_ai_pipeline_candidates(
                         candidates,
-                        req.options,
+                        effective_options,
                     )
                 else:
                     await enrich_ai_pipeline_candidates(
                         candidates,
-                        req.options,
+                        effective_options,
                         user_preference,
                     )
             scored = recommend_routes(
                 candidates,
                 rescore_weather,
                 req.profile,
-                req.options,
+                effective_options,
                 top_n=len(candidates),
             )
             selected = select_representative_routes(scored, effective_top_n)
@@ -763,7 +766,7 @@ async def _rescore_cached_route_set(
                 selected,
                 req.profile,
                 user.preference.personalization_state if user and user.preference else None,
-                req.options,
+                effective_options,
             )
             return _replace_cached_route_set(
                 personalized,
@@ -917,6 +920,24 @@ def _filter_viable_candidates(candidates: list[RouteCandidate]) -> list[RouteCan
     return filtered
 
 
+def _filter_wheelchair_candidates(
+    candidates: list[RouteCandidate],
+    user: User | None,
+) -> list[RouteCandidate]:
+    """공급자가 계단 제외로 검증한 후보만 휠체어 사용자에게 제시한다."""
+    preference = user.preference if user and user.preference else None
+    filtered = filter_known_stair_candidates(candidates, preference)
+    if candidates and not filtered:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "휠체어 설정에서 공급자가 계단 제외로 확인한 "
+                "보행 경로를 수집하지 못했습니다."
+            ),
+        )
+    return filtered
+
+
 @app.post(
     "/api/routes/candidates",
     response_model=list[RouteCandidate],
@@ -966,6 +987,8 @@ async def routes_recommend(
     """
     requested_top_n = req.top_n
     effective_top_n = _effective_top_n(requested_top_n)
+    user_preference = user.preference if user and user.preference else None
+    effective_options = effective_scoring_options(req.options, user_preference)
     if settings.route_mode == "ai":
         if not settings.live_ai_pipeline:
             raise HTTPException(status_code=503, detail="ROUTE_MODE=ai requires AI_SERVER_URL.")
@@ -976,29 +999,31 @@ async def routes_recommend(
                 req.destination,
                 req.profile,
                 req.weather_scenario,
-                req.options,
-                user_preference=(user.preference if user else None),
+                effective_options,
+                user_preference=user_preference,
                 weather_condition=current_weather,
                 candidate_limit=effective_top_n,
             )
-            candidates = _filter_viable_candidates(candidates)
+            candidates = _filter_wheelchair_candidates(
+                _filter_viable_candidates(candidates), user
+            )
             candidates = await _add_configured_shade(
                 candidates,
-                req.options.departure_at,
+                effective_options.departure_at,
                 weather=current_weather,
                 wait_for_buildings=True,
             )
             scored = await rank_ai_pipeline_candidates(
                 candidates,
                 req.profile,
-                req.options,
+                effective_options,
                 top_n=effective_top_n,
                 personalization_state=(
                     user.preference.personalization_state
                     if user and user.preference
                     else None
                 ),
-                user_preference=(user.preference if user else None),
+                user_preference=user_preference,
             )
             # 순위·score·snapshot 확정 후 최종 1위 표시 선형만 정밀화한다.
             await _refine_top_ranked_transit(scored)
@@ -1033,21 +1058,25 @@ async def routes_recommend(
                 req.destination,
                 req.profile,
                 req.weather_scenario,
-                req.options,
-                user_preference=(user.preference if user else None),
+                effective_options,
+                user_preference=user_preference,
                 weather_condition=current_weather,
                 candidate_limit=effective_top_n,
             )
-            candidates = _filter_viable_candidates(candidates)
+            candidates = _filter_wheelchair_candidates(
+                _filter_viable_candidates(candidates), user
+            )
         except AIProviderError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     else:
-        candidates = get_route_candidates(req.origin, req.destination)
+        candidates = _filter_wheelchair_candidates(
+            get_route_candidates(req.origin, req.destination), user
+        )
         if not candidates:
             raise HTTPException(status_code=503, detail="고정 데모 OD 외 경로는 AI live pipeline이 필요합니다.")
     candidates = await _add_configured_shade(
         candidates,
-        req.options.departure_at,
+        effective_options.departure_at,
         weather=weather,
         wait_for_buildings=(settings.route_mode == "live"),
     )
@@ -1055,8 +1084,8 @@ async def routes_recommend(
         try:
             await enrich_ai_pipeline_candidates(
                 candidates,
-                req.options,
-                user.preference if user else None,
+                effective_options,
+                user_preference,
             )
         except AIProviderError as exc:
             raise HTTPException(
@@ -1069,7 +1098,7 @@ async def routes_recommend(
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
     scored = recommend_routes(
-        candidates, weather, req.profile, req.options, top_n=len(candidates)
+        candidates, weather, req.profile, effective_options, top_n=len(candidates)
     )
     # 대표 특성은 배지로만 보존하고 결과 순서는 프로필·이번 이동 조건의
     # 비교 적합 점수순으로 유지한다.
@@ -1078,8 +1107,8 @@ async def routes_recommend(
         personalized = personalize_and_sign(
             selected,
             req.profile,
-            user.preference.personalization_state if user and user.preference else None,
-            req.options,
+            user_preference.personalization_state if user_preference else None,
+            effective_options,
         )
         if settings.route_mode == "live":
             await _refine_top_ranked_transit(personalized)

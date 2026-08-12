@@ -21,7 +21,12 @@ import httpx
 from collectors.base import BaseRouteCollector, CollectorError, CollectorNotConfigured, RouteCandidate, Coordinate
 from config import settings
 
-CACHE_SCHEMA_VERSION = 1
+CACHE_SCHEMA_VERSION = 2
+STAIR_EXCLUDED_SEARCH_OPTION = "30"
+DEFAULT_SEARCH_OPTION = "0"
+STAIR_FACILITY_TYPE = 17
+STAIR_TURN_TYPE = 127
+RAMP_TURN_TYPES = frozenset({128, 129})
 QUOTA_BACKOFF_SECONDS = 60.0
 log = logging.getLogger("collectors.tmap")
 _cache_write_locks: dict[str, Lock] = {}
@@ -36,13 +41,16 @@ _quota_backoff_guard = Lock()
 def _cache_identity(
     origin: Coordinate,
     destination: Coordinate,
-) -> dict[str, list[float]]:
+    *,
+    search_option: str,
+) -> dict:
     return {
         "origin": [round(origin.lat, 7), round(origin.lng, 7)],
         "destination": [
             round(destination.lat, 7),
             round(destination.lng, 7),
         ],
+        "searchOption": search_option,
     }
 
 
@@ -151,6 +159,74 @@ class TmapRouteCollector(BaseRouteCollector):
     source_name = "tmap"
     BASE_URL = "https://apis.openapi.sk.com/tmap/routes/pedestrian"
 
+    def __init__(self, *, avoid_stairs: bool = False):
+        self.avoid_stairs = avoid_stairs
+
+    @property
+    def search_option(self) -> str:
+        return (
+            STAIR_EXCLUDED_SEARCH_OPTION
+            if self.avoid_stairs
+            else DEFAULT_SEARCH_OPTION
+        )
+
+    @staticmethod
+    def _integer_code(value) -> int | None:
+        if isinstance(value, bool) or value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _accessibility_evidence(self, features: list[dict]) -> dict:
+        """TMAP 공식 안내 코드에서 물리 경사로와 계단을 추출한다."""
+        ramp_points: list[dict] = []
+        stair_feature_count = 0
+        for feature in features:
+            properties = feature.get("properties")
+            geometry = feature.get("geometry")
+            if not isinstance(properties, dict) or not isinstance(geometry, dict):
+                raise CollectorError("TMAP 접근성 feature 계약이 올바르지 않습니다.")
+            facility_type = self._integer_code(properties.get("facilityType"))
+            turn_type = self._integer_code(properties.get("turnType"))
+            if facility_type == STAIR_FACILITY_TYPE or turn_type == STAIR_TURN_TYPE:
+                stair_feature_count += 1
+            if turn_type not in RAMP_TURN_TYPES:
+                continue
+            coordinates = geometry.get("coordinates")
+            if (
+                geometry.get("type") != "Point"
+                or not isinstance(coordinates, list)
+                or len(coordinates) < 2
+            ):
+                raise CollectorError("TMAP 경사로 안내점에 유효한 좌표가 없습니다.")
+            try:
+                lng, lat = float(coordinates[0]), float(coordinates[1])
+            except (TypeError, ValueError) as exc:
+                raise CollectorError("TMAP 경사로 안내점 좌표가 숫자가 아닙니다.") from exc
+            if not (isfinite(lat) and isfinite(lng) and 33 <= lat <= 39 and 124 <= lng <= 132):
+                raise CollectorError("TMAP 경사로 안내점이 대한민국 범위를 벗어났습니다.")
+            ramp_points.append({
+                "lat": lat,
+                "lng": lng,
+                "turn_type": turn_type,
+                "replaces_stairs": turn_type == 129,
+            })
+        if self.avoid_stairs and stair_feature_count:
+            raise CollectorError(
+                "TMAP 계단 제외 경로에 계단 안내점이 포함되었습니다.",
+                code="invalid_response",
+                retryable=False,
+            )
+        return {
+            "provider": "TMAP pedestrian",
+            "search_option": self.search_option,
+            "stairs_excluded_by_provider": self.avoid_stairs,
+            "stair_feature_count": stair_feature_count,
+            "ramp_points": ramp_points,
+        }
+
     @staticmethod
     def _positive_number(value, field: str) -> float:
         if value is None or isinstance(value, bool):
@@ -226,19 +302,25 @@ class TmapRouteCollector(BaseRouteCollector):
             props.get("totalDistance"),
             "totalDistance",
         )
+        accessibility_evidence = self._accessibility_evidence(features)
         return RouteCandidate(
             source=self.source_name,
             path=coords,
             duration_min=duration,
             distance_m=distance,
             raw_response=data,
+            accessibility_evidence=accessibility_evidence,
         )
 
     async def collect(self, origin: Coordinate, destination: Coordinate) -> list:
         if not settings.TMAP_API_KEY or settings.TMAP_API_KEY.startswith("YOUR_"):
             raise CollectorNotConfigured("TMAP_API_KEY가 설정되지 않았습니다.")
 
-        identity = _cache_identity(origin, destination)
+        identity = _cache_identity(
+            origin,
+            destination,
+            search_option=self.search_option,
+        )
         cached = await asyncio.to_thread(_read_cache, identity)
         if cached is not None:
             try:
@@ -271,7 +353,15 @@ class TmapRouteCollector(BaseRouteCollector):
                             "startX": origin.lng, "startY": origin.lat,
                             "endX": destination.lng, "endY": destination.lat,
                             "startName": "출발지", "endName": "도착지",
-                        }, headers={"appKey": settings.TMAP_API_KEY}, timeout=10.0)
+                            "reqCoordType": "WGS84GEO",
+                            "resCoordType": "WGS84GEO",
+                            "sort": "index",
+                            "searchOption": self.search_option,
+                        }, params={"version": "1"}, headers={
+                            "appKey": settings.TMAP_API_KEY,
+                            "Accept": "application/json",
+                            "Content-Type": "application/json",
+                        }, timeout=10.0)
                 resp.raise_for_status()
                 data = resp.json()
                 if not isinstance(data, dict):

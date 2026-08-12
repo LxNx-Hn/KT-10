@@ -95,6 +95,25 @@ geometry 결측, 야간 상태를 임의의 그늘 0%로 바꾸지 않습니다.
 지도 경사 색상은 경로 전체 평균을 반복하지 않고 확인된 보행 geometry를
 따라 만든 각 표본 구간의 절대 경사 등급을 사용합니다.
 
+### 휠체어 보행 경로와 물리 경사로 계약
+
+휠체어 설정 또는 계단 회피 요청에서는 TMAP 보행자 경로 API에 공식
+`searchOption=30`(최단거리+계단제외)을 보낸다. 이 요청을 사용한 공급자
+응답만 `stairsExcludedByProvider=true`, `hasStairs=false`,
+`stairsCount=0`으로 공개하며, 이 근거가 없는 보행 후보는 휠체어 추천에서
+제외한다.
+
+TMAP 보행자 응답의 안내점 `turnType=128`(경사로 진입),
+`turnType=129`(계단+경사로 진입)만 물리 경사로 근거로 사용한다. 해당 좌표가
+있을 때만 `hasSlope=true`, `rampPoints`, `rampEvidenceSource`를 제공하고,
+129일 때만 `rampReplacesStairs=true`로 표시한다. DEM 경사도는 지형 높이
+변화 추정이며 물리 경사로의 존재나 계단 대체 가능성을 뜻하지 않는다.
+
+공식 계약:
+
+- 보행자 경로 요청: https://tmap-skopenapi.readme.io/reference/%EB%B3%B4%ED%96%89%EC%9E%90-%EA%B2%BD%EB%A1%9C%EC%95%88%EB%82%B4
+- 보행자 응답 코드: https://tmap-skopenapi.readme.io/reference/%EA%B2%BD%EB%A1%9C%EC%95%88%EB%82%B4-%EC%83%98%ED%94%8C%EC%98%88%EC%A0%9C
+
 ### 2단계: 적합도
 
 - 기본 프로필 ID

@@ -27,6 +27,27 @@ def test_route_segment_rejects_invalid_duration(invalid):
         )
 
 
+def test_route_segment_rejects_unsubstantiated_accessibility_claims():
+    with pytest.raises(ValidationError):
+        RouteSegment(
+            id="walk-ramp-without-evidence",
+            mode="walk",
+            description="도보",
+            duration_min=1,
+            has_slope=True,
+        )
+    with pytest.raises(ValidationError):
+        RouteSegment(
+            id="walk-contradictory-stairs",
+            mode="walk",
+            description="도보",
+            duration_min=1,
+            has_stairs=True,
+            stairs_count=1,
+            stairs_excluded_by_provider=True,
+        )
+
+
 def test_route_candidate_rejects_negative_counts_and_distances():
     segment = RouteSegment(
         id="walk-1",

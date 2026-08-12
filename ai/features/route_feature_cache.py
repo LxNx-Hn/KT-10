@@ -12,10 +12,9 @@ from weakref import WeakKeyDictionary
 
 from config import settings
 
-# v3: 대중교통 지연 정밀화(_transit_refinement 서술자, estimated 대중교통
-# 표시 선형)와 semantic route ID 도입. 이전 schema는 miss로 처리해
-# exact-only 시절 캐시와 혼합되지 않게 한다.
-CACHE_SCHEMA_VERSION = 3
+# v4: 계단 제외 탐색 여부를 캐시 identity에 포함한다. 일반 보행 선형이
+# 휠체어/계단 회피 요청에 재사용되지 않게 이전 schema는 miss로 처리한다.
+CACHE_SCHEMA_VERSION = 4
 _write_locks: dict[str, Lock] = {}
 _write_locks_guard = Lock()
 _request_locks: WeakKeyDictionary = WeakKeyDictionary()
@@ -27,12 +26,15 @@ def cache_identity(
     origin_lng: float,
     dest_lat: float,
     dest_lng: float,
+    *,
+    avoid_stairs: bool = False,
 ) -> dict:
     return {
         "schemaVersion": CACHE_SCHEMA_VERSION,
         "origin": [round(origin_lat, 5), round(origin_lng, 5)],
         "destination": [round(dest_lat, 5), round(dest_lng, 5)],
         "geometryProfile": {
+            "stairsExcluded": avoid_stairs,
             "odsayLoadLane": settings.ODSAY_LOAD_LANE_ENABLED,
             "tmapConfigured": bool(
                 settings.TMAP_API_KEY
