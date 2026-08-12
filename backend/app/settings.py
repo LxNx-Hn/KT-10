@@ -74,9 +74,24 @@ class Settings(BaseSettings):
     # 비어 있으면 우리 DB만 정리하고 카카오 연결은 남는다.
     kakao_admin_key: str = ""
 
-    # 탈퇴 신청 후 실제 파기까지의 보관기간(일). 신청 시점 값으로 고정되므로
-    # 나중에 이 값을 바꿔도 이미 신청한 사용자의 기한은 변하지 않는다.
+    # 탈퇴 기록의 분리 보관기간(일). 계정·서비스 데이터는 탈퇴 즉시 삭제되고,
+    # 부정 이용 방지와 처리 오류 대응에 필요한 최소 정보만 이 기간 동안 남는다.
+    # 신청 시점 값으로 고정되므로 나중에 바꿔도 기존 기록의 기한은 변하지 않는다.
     withdrawal_retention_days: int = Field(default=30, ge=0, le=365)
+    # 탈퇴 기록의 반복 탈퇴 판별용 해시 salt. 회원번호는 숫자라 salt 없이
+    # 해시하면 무차별 대입으로 역산되므로, 비어 있으면 약한 해시를 만들지 않고
+    # 식별값을 보관하지 않는다. 세션·학습 salt와 분리해 교차 대조를 막는다.
+    withdrawal_hash_salt: str = ""
+
+    # 이용기록(추천 표시 기록) 보유기간(일). 계정이 살아 있어도 이 기간이 지난
+    # 기록은 scripts/purge_expired_usage_logs.py가 파기한다. 0은 자동 파기를
+    # 하지 않는 상태다.
+    usage_log_retention_days: int = Field(default=365, ge=0, le=3650)
+
+    @property
+    def withdrawal_hashing_configured(self) -> bool:
+        """역산이 어려운 해시를 만들 수 있을 만큼 salt가 충분한지."""
+        return len(self.withdrawal_hash_salt.strip()) >= 16
 
     # CORS 허용 오리진(콤마 구분)
     allowed_origins: str = (

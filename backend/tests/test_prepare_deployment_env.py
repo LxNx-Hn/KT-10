@@ -84,6 +84,7 @@ def _valid_production_env() -> str:
         "TRAINING_ANONYMIZATION_SALT=" + "a" * 32,
         "LABELING_API_TOKEN=" + "l" * 48,
         "AI_INTERNAL_SERVICE_TOKEN=" + "i" * 48,
+        "WITHDRAWAL_HASH_SALT=" + "w" * 32,
         "REQUEST_TIMEOUT=8",
         "RANKER_TIER=human_validated",
         "OSMNX_WALK_GEOMETRY_ENABLED=false",
@@ -102,6 +103,41 @@ def test_check_accepts_hardened_production_contract(
     monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
 
     prepare_deployment_env.check()
+
+
+def test_check_rejects_missing_withdrawal_hash_salt(tmp_path: Path, monkeypatch):
+    """salt가 비면 탈퇴 기록이 반복 탈퇴를 판별하지 못한 채 배포된다."""
+    target = tmp_path / ".env.production"
+    target.write_text(
+        _valid_production_env().replace(
+            "WITHDRAWAL_HASH_SALT=" + "w" * 32,
+            "WITHDRAWAL_HASH_SALT=",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
+
+    with pytest.raises(SystemExit):
+        prepare_deployment_env.check()
+
+
+def test_check_rejects_withdrawal_salt_reused_from_another_secret(
+    tmp_path: Path,
+    monkeypatch,
+):
+    """세션·학습 salt를 재사용하면 서로 다른 목적의 해시를 교차 대조할 수 있다."""
+    target = tmp_path / ".env.production"
+    target.write_text(
+        _valid_production_env().replace(
+            "WITHDRAWAL_HASH_SALT=" + "w" * 32,
+            "WITHDRAWAL_HASH_SALT=" + "a" * 32,  # TRAINING_ANONYMIZATION_SALT와 동일
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
+
+    with pytest.raises(SystemExit):
+        prepare_deployment_env.check()
 
 
 def test_check_accepts_explicit_osmnx_when_tmap_is_absent(

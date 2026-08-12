@@ -55,26 +55,42 @@ class User(Base):
 
 
 class UserWithdrawal(Base):
-    """탈퇴 신청 대기열.
+    """탈퇴 기록의 분리 보관소.
 
-    행이 존재하면 탈퇴를 신청한 계정이다. 로그인은 즉시 차단되지만 사용자
-    데이터는 ``purge_after``까지 제자리에 남는다. 기한이 지나면 배치가
-    ``users`` 행을 삭제하고, 그때 기존 외래키 정책이 나머지를 정리한다.
-    설정·후기는 함께 삭제되고, 시설 신고와 impression은 익명으로 보존된다.
+    계정·프로필·서비스 데이터는 탈퇴 시점에 즉시 삭제하거나 익명화한다.
+    여기에는 부정 가입·탈퇴 반복 방지와 처리 오류 대응에 필요한 최소 정보만
+    보관기간 동안 남는다.
+
+    ``users``를 참조하는 외래키를 두지 않는다. 사용자 행이 이미 지워진 뒤에도
+    남아야 하는 기록이므로, 외래키가 있으면 CASCADE로 함께 사라진다.
     """
 
     __tablename__ = "user_withdrawals"
 
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    # 삭제된 users.id. 처리 상태 추적과 문의 대응에 쓰는 내부 식별자이며,
+    # 사용자 행이 사라진 뒤에는 그 자체로 개인을 특정하지 못한다.
+    user_ref: Mapped[str] = mapped_column(String(36), index=True)
+    # sha256(salt + 공급자 회원번호). 같은 사람의 반복 탈퇴만 판별하고
+    # 회원번호는 남기지 않는다. salt가 설정되지 않으면 역산이 가능한 약한
+    # 해시를 만들지 않고 미보관(None)으로 둔다.
+    subject_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
     )
     requested_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
     # 파기 예정 시각. 신청 시점의 보관기간으로 고정해, 나중에 설정을 바꿔도
     # 이미 신청한 사용자의 약속된 기한이 흔들리지 않게 한다.
     purge_after: Mapped[datetime] = mapped_column(DateTime, index=True)
-    # 카카오 연결 끊기 성공 여부. 공급자 장애로 실패해도 탈퇴는 진행하며,
-    # 파기 배치가 재시도할 수 있도록 미완료 상태를 남긴다.
-    provider_unlinked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # completed: 삭제와 공급자 연결 끊기까지 끝난 상태
+    # provider_unlink_pending: 삭제는 끝났고 연결 끊기만 재시도가 남은 상태
+    status: Mapped[str] = mapped_column(String(32), default="completed", index=True)
+    # 연결 끊기에 실패했을 때만 재시도를 위해 예외적으로 보관하는 회원번호.
+    # 재시도가 성공하면 즉시 지운다.
+    pending_provider_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
 
 
 class UserPreference(Base):
@@ -100,7 +116,10 @@ class RouteImpression(Base):
     __tablename__ = "route_impressions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    # 탈퇴 시 함께 삭제한다. profile과 feature_snapshot에 이동 경로와 프로필이
+    # 남아 user_id만 끊어서는 익명화됐다고 보기 어렵고, 짝이 되는 후기가 함께
+    # 삭제되므로 학습 데이터로도 쓸 수 없다.
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     route_id: Mapped[str] = mapped_column(String(120), index=True)
     model_version: Mapped[str] = mapped_column(String(64), default="rules-v1")
     profile: Mapped[str] = mapped_column(String(16), default="general")
