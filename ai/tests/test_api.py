@@ -1196,9 +1196,9 @@ def test_tmap_ramp_and_stair_exclusion_evidence_reaches_public_segment():
     features = _parse_api_features(candidate)
     segment = _public_segments(candidate)[0]
 
-    assert features["stair_count"] == 0
-    assert segment["has_stairs"] is False
-    assert segment["stairs_count"] == 0
+    assert features["stair_count"] is None
+    assert segment["has_stairs"] is None
+    assert segment["stairs_count"] is None
     assert segment["stairs_excluded_by_provider"] is True
     assert segment["has_slope"] is True
     assert segment["ramp_points"] == [{"lat": 35.105, "lng": 129.005}]

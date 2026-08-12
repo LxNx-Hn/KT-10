@@ -582,7 +582,7 @@ def _score_existing_ai_candidate(
     )
     if wheelchair_constrained:
         reasons = [
-            "기록된 계단·노면·폭·턱·경사 제한을 적용한 경로입니다.",
+            "지도에 기록된 계단·노면·폭·턱·경사 제한을 적용한 경로입니다.",
             *reasons,
         ][:4]
     cautions = (

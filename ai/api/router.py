@@ -1289,25 +1289,6 @@ def _parse_api_features(candidate) -> dict:
     if candidate.source == "tmap":
         stairs = _tmap_stair_feature_count(raw)
 
-    route_accessibility = _mapping(
-        getattr(candidate, "accessibility_evidence", {})
-    )
-    walk_accessibility = [
-        _mapping(segment.get("accessibility_evidence"))
-        for segment in candidate.segments
-        if segment.get("mode") in {"walk", "transfer"}
-    ]
-    if route_accessibility.get("stairs_excluded_by_provider") is True:
-        stairs = 0
-    elif (
-        walk_accessibility
-        and all(
-            evidence.get("stairs_excluded_by_provider") is True
-            for evidence in walk_accessibility
-        )
-    ):
-        stairs = 0
-
     return {
         "avg_slope_percent": None,
         "max_slope_percent": None,
@@ -1445,8 +1426,6 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
             else (None, None)
         )
         accessibility = _mapping(item.get("accessibility_evidence"))
-        if accessibility.get("stairs_excluded_by_provider") is True:
-            stairs = 0
         observations.append({
             "item": item,
             "raw": raw,
@@ -1668,8 +1647,6 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
             if candidate.source == "tmap"
             else None
         )
-        if accessibility.get("stairs_excluded_by_provider") is True:
-            stairs = 0
         ramp_points = accessibility.get("ramp_points")
         if not isinstance(ramp_points, list) or not ramp_points:
             ramp_points = None

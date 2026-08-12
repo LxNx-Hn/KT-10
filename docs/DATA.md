@@ -117,6 +117,9 @@ TMAP 보행자 응답의 안내점 `turnType=128`(경사로 진입),
 TMAP 경사로 안내점과 ORS wheelchair 제약은 평균 30m·최대 60m 이내로
 유사한 선형에서만 결합한다. 서로 다른 길의 경사로를 휠체어 경로 근거로
 옮기지 않는다. ORS는 OpenStreetMap 태그를 사용하므로
+`stairsExcludedByProvider=true`는 공급자가 지도에 기록된 계단을 회피해
+탐색했다는 뜻이다. 이를 `stairsCount=0` 또는 `hasStairs=false`로 바꾸지 않으며,
+별도 명시 계단 관측이 없으면 사용자 사실값은 `null`로 유지한다.
 `wheelchairConstraintsApplied=true`는 공급자 제약이 적용됐다는 뜻이지 현장
 전수 확인이나 통행 보장을 뜻하지 않는다. OSM 태그 누락과 공사·적치물·고장
 같은 임시 장애물 한계를 API의 `wheelchairDataLimitations`와 추천 주의문에

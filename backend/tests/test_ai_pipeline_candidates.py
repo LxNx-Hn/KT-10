@@ -167,8 +167,6 @@ def test_labeling_candidate_maps_geometry_and_terrain_without_invention():
 def test_ai_ranked_wheelchair_route_keeps_constraint_caution_in_voice():
     payload = _candidate_payload()
     payload["segments"][0].update({
-        "has_stairs": False,
-        "stairs_count": 0,
         "stairs_excluded_by_provider": True,
         "wheelchair_constraints_applied": True,
         "wheelchair_constraint_source": (
@@ -202,7 +200,7 @@ def test_ai_ranked_wheelchair_route_keeps_constraint_caution_in_voice():
         features={},
     )
 
-    assert "계단·노면·폭·턱·경사 제한" in scored.score.reasons[0]
+    assert "지도에 기록된 계단·노면·폭·턱·경사 제한" in scored.score.reasons[0]
     assert "임시 장애물" in scored.score.cautions[0]
     assert "주의:" in scored.score.voice_summary
 
