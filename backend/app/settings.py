@@ -51,6 +51,15 @@ class Settings(BaseSettings):
     # AI 내부 API 인증 토큰. AI 서비스에 같은 값을 주입한다.
     ai_internal_service_token: str = ""
 
+    # 임시 LLM 공급자: NVIDIA API Catalog 호스팅 NIM(OpenAI 호환 API).
+    # 키는 Backend에만 두고, NIM_MODEL은 제공자 카탈로그의 실제 모델 ID를
+    # 운영자가 명시한다. 설정만으로 챗봇을 활성화하지 않는다.
+    nvidia_api_key: str = ""
+    nim_base_url: str = "https://integrate.api.nvidia.com/v1"
+    nim_model: str = ""
+    nim_request_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    nim_max_output_tokens: int = Field(default=800, ge=1, le=8192)
+
     # PostgreSQL + Kakao 로그인. 실제 값은 배포 환경변수로만 주입한다.
     database_url: str = ""
     session_secret: str = ""

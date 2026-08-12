@@ -83,6 +83,7 @@ def _valid_production_env() -> str:
         "SESSION_SECRET=" + "s" * 48,
         "TRAINING_ANONYMIZATION_SALT=" + "a" * 32,
         "LABELING_API_TOKEN=" + "l" * 48,
+        "AI_INTERNAL_SERVICE_TOKEN=" + "i" * 48,
         "REQUEST_TIMEOUT=8",
         "RANKER_TIER=human_validated",
         "OSMNX_WALK_GEOMETRY_ENABLED=false",

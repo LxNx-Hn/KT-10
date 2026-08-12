@@ -32,12 +32,16 @@ GENERATED = {
     "SESSION_SECRET": 48,
     "TRAINING_ANONYMIZATION_SALT": 32,
     "LABELING_API_TOKEN": 48,
+    # Backend와 AI 사이의 내부 호출을 보호하는 공유 비밀이다. 운영 Compose는
+    # 이 값이 없으면 기동하지 않으므로 단일 .env.production에서 함께 생성한다.
+    "AI_INTERNAL_SERVICE_TOKEN": 48,
 }
 MIN_SECRET_LENGTHS = {
     "POSTGRES_PASSWORD": 16,
     "SESSION_SECRET": 32,
     "TRAINING_ANONYMIZATION_SALT": 16,
     "LABELING_API_TOKEN": 32,
+    "AI_INTERNAL_SERVICE_TOKEN": 32,
 }
 REQUIRED_EXTERNAL = (
     "VITE_KAKAO_MAP_KEY",

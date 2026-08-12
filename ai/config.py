@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     APP_ENV: Literal["development", "production", "test"] = "development"
 
     ODSAY_API_KEY: str = ""
+    # 공공데이터포털 승인 API용 Decoding 키. 수집 배치가 요청 파라미터를
+    # URL 인코딩하므로 Encoded 키를 별도로 보관하지 않는다.
+    DATA_GO_KR_SERVICE_KEY: str = ""
     ODSAY_CACHE_DIR: str = ""
     ODSAY_CACHE_TTL_SECONDS: int = Field(
         default=1800,
