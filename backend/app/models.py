@@ -133,6 +133,7 @@ class RouteSegment(CamelModel):
 
     # 역/수직이동
     station_name: Optional[str] = None
+    end_station_name: Optional[str] = None
     has_elevator: Optional[bool] = None  # None = 미확인
     needs_vertical_move: Optional[bool] = None
     # 역 단위 시설 재고이며 출구·보행 선형과 일치한다는 뜻이 아니다.
@@ -143,6 +144,14 @@ class RouteSegment(CamelModel):
         max_length=200,
     )
     station_ramp_route_match: Optional[bool] = None
+    # 공식 출구-승강장 엘리베이터 이동경로와 공급자 출구번호가 정확히
+    # 일치한 경우만 True다. 미일치·미제공은 False가 아니라 None이다.
+    start_station_elevator_exit_match: Optional[bool] = None
+    end_station_elevator_exit_match: Optional[bool] = None
+    station_elevator_route_evidence_source: Optional[str] = Field(
+        default=None,
+        max_length=200,
+    )
     path: Optional[list[LatLng]] = Field(default=None, min_length=2)
     geometry_quality: Optional[Literal["exact", "mixed", "estimated"]] = None
 
@@ -210,6 +219,26 @@ class RouteSegment(CamelModel):
         if self.station_ramp_route_match is not None:
             raise ValueError(
                 "station ramp route match requires exit-level geometry"
+            )
+        elevator_matches = (
+            self.start_station_elevator_exit_match,
+            self.end_station_elevator_exit_match,
+        )
+        if False in elevator_matches:
+            raise ValueError(
+                "unverified station elevator exit match must be null"
+            )
+        if any(value is True for value in elevator_matches) and not (
+            self.station_elevator_route_evidence_source
+        ):
+            raise ValueError(
+                "station elevator exit match requires evidence source"
+            )
+        if self.station_elevator_route_evidence_source and not any(
+            value is True for value in elevator_matches
+        ):
+            raise ValueError(
+                "station elevator route source requires a verified exit match"
             )
         return self
 

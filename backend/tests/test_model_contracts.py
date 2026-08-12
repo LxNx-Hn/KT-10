@@ -76,6 +76,22 @@ def test_route_segment_rejects_unsubstantiated_accessibility_claims():
             station_accessibility_evidence_source="공식 원본",
             station_ramp_route_match=True,
         )
+    with pytest.raises(ValidationError, match="must be null"):
+        RouteSegment(
+            id="subway-unverified-exit",
+            mode="subway",
+            description="도시철도",
+            duration_min=1,
+            start_station_elevator_exit_match=False,
+        )
+    with pytest.raises(ValidationError, match="requires evidence source"):
+        RouteSegment(
+            id="subway-exit-without-source",
+            mode="subway",
+            description="도시철도",
+            duration_min=1,
+            start_station_elevator_exit_match=True,
+        )
 
 
 def test_route_candidate_rejects_negative_counts_and_distances():

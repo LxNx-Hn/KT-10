@@ -40,6 +40,7 @@ SOURCE_FILES = (
     "부산광역시_스마트_버스쉘터_설치_현황.csv",
     "busan_subway_station_accessibility_processed.xlsx",
     "busan_subway_station_convenience_20251231.csv",
+    "busan_subway_elevator_routes_20251231.csv",
     "busan_crosswalk_signal_shp_processed.xlsx",
     "bus_stop_national_csv_processed.xlsx",
     "busan_mobility_support_centers.csv",
@@ -62,6 +63,14 @@ _STATION_UNSUFFIXED_LINES = {
     "연산": "(1)",
 }
 _STATION_NAME_ALIASES = {"시립미술관": "벡스코"}
+_STATION_ELEVATOR_ALIASES = {
+    (2, "국제금융센터"): "국제금융센터부산은행",
+    (4, "미남광장"): "미남",
+    (4, "반여"): "반여농산물시장",
+}
+_SUBWAY_ELEVATOR_ROUTE_SOURCE = (
+    "부산교통공사 도시철도 엘리베이터 이동경로 2025-12-31"
+)
 
 
 def _station_join_key(value: object, *, accessibility_source: bool) -> str:
@@ -78,6 +87,89 @@ def _station_join_key(value: object, *, accessibility_source: bool) -> str:
     if not accessibility_source and name == "동래":
         name = "동래(4)"
     return name
+
+
+def _station_base_name(value: object) -> str:
+    """노선 접미사를 제외한 역명 결합 키."""
+    if not isinstance(value, str):
+        raise ValueError("역명은 문자열이어야 합니다.")
+    name = value.strip().replace(".", "")
+    name = re.sub(r"역(?=\(|$)", "", name)
+    name = re.sub(r"\((?:\d+)(?:호선)?\)$", "", name)
+    return _STATION_NAME_ALIASES.get(name, name)
+
+
+def _parse_exit_numbers(value: object) -> set[str]:
+    """공식 원본의 단일·쉼표 출입구 번호만 보수적으로 파싱한다."""
+    if not isinstance(value, str) or not value.strip():
+        return set()
+    return set(re.findall(r"\d+", value))
+
+
+def _floor_node(kind: object, level: object) -> tuple[str, int] | None:
+    if not isinstance(kind, str) or not kind.strip():
+        return None
+    numeric = pd.to_numeric(level, errors="coerce")
+    if pd.isna(numeric) or float(numeric) <= 0 or not float(numeric).is_integer():
+        return None
+    return kind.strip(), int(numeric)
+
+
+def _accessible_elevator_exits(rows: pd.DataFrame) -> set[str]:
+    """지상 1층부터 승강장 엘리베이터까지 연결이 증명된 출구만 반환한다.
+
+    같은 출구번호가 부여된 엘리베이터 행을 층 간 간선으로 본다. 출구번호가
+    빈 승강장 행은 상세위치가 그 출구를 명시한 경우에만 연결한다. 역 단위
+    엘리베이터 보유 여부나 같은 층이라는 이유만으로 다른 대합실을 연결하지
+    않는다.
+    """
+    exit_column = "출입구번호"
+    detail_column = "상세위치"
+    start_kind = "시작층 구분"
+    start_level = "시작층(운행역층)"
+    end_kind = "종료층 구분"
+    end_level = "종료층(운행역층)"
+    explicit_exits = set().union(*(
+        _parse_exit_numbers(value) for value in rows[exit_column]
+    ))
+    accessible: set[str] = set()
+    for exit_no in explicit_exits:
+        graph: dict[tuple[str, int], set[tuple[str, int]]] = {}
+        platform_edges: set[frozenset[tuple[str, int]]] = set()
+        for _, row in rows.iterrows():
+            row_exits = _parse_exit_numbers(row.get(exit_column))
+            detail = row.get(detail_column)
+            mentions_exit = bool(
+                isinstance(detail, str)
+                and re.search(
+                    rf"(?<!\d){re.escape(exit_no)}\s*번(?:\s*/\s*\d+\s*번?)*\s*출입구",
+                    detail,
+                )
+            )
+            if exit_no not in row_exits and not (not row_exits and mentions_exit):
+                continue
+            start = _floor_node(row.get(start_kind), row.get(start_level))
+            end = _floor_node(row.get(end_kind), row.get(end_level))
+            if start is None or end is None:
+                continue
+            graph.setdefault(start, set()).add(end)
+            graph.setdefault(end, set()).add(start)
+            if isinstance(detail, str) and "승강장" in detail:
+                platform_edges.add(frozenset((start, end)))
+        ground = ("지상", 1)
+        if ground not in graph or not platform_edges:
+            continue
+        visited = {ground}
+        pending = [ground]
+        while pending:
+            current = pending.pop()
+            for neighbor in graph.get(current, set()):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    pending.append(neighbor)
+        if any(edge.issubset(visited) for edge in platform_edges):
+            accessible.add(exit_no)
+    return accessible
 
 
 def _filter_busan(df: pd.DataFrame, lat_col: str = "위도", lng_col: str = "경도") -> pd.DataFrame:
@@ -267,19 +359,19 @@ def load_smart_shelter() -> gpd.GeoDataFrame:
 
 
 def load_subway() -> gpd.GeoDataFrame:
-    """도시철도 역 접근성 레이어."""
+    """도시철도 역 접근성 및 출구-승강장 엘리베이터 연결 레이어."""
     df = pd.read_excel(RAW_DIR / "busan_subway_station_accessibility_processed.xlsx")
     df = _filter_busan(df.dropna(subset=["위도", "경도"]))
     df["elevator_accessible"] = (df["엘리베이터"] == "O").astype(int)
     convenience = _read_csv("busan_subway_station_convenience_20251231.csv")
     ramp_column = "외부경사로(지상역 출구)"
     lift_column = "휠체어리프트"
-    if not {"역명", ramp_column, lift_column}.issubset(convenience.columns):
+    if not {"구분", "역명", ramp_column, lift_column}.issubset(convenience.columns):
         raise ValueError(
             "역사 편의시설 원본에 외부경사로 또는 휠체어리프트 "
             "수량 컬럼이 없습니다."
         )
-    ramp_counts = convenience[["역명", ramp_column, lift_column]].copy()
+    ramp_counts = convenience[["구분", "역명", ramp_column, lift_column]].copy()
     ramp_counts["station_join_key"] = ramp_counts["역명"].map(
         lambda value: _station_join_key(value, accessibility_source=False)
     )
@@ -291,11 +383,19 @@ def load_subway() -> gpd.GeoDataFrame:
         ramp_counts[lift_column],
         errors="coerce",
     ).astype("Int64")
+    ramp_counts["station_line"] = pd.to_numeric(
+        ramp_counts["구분"].astype("string").str.extract(r"(\d+)")[0],
+        errors="coerce",
+    ).astype("Int64")
+    ramp_counts["station_base_name"] = ramp_counts["역명"].map(
+        _station_base_name
+    )
     if (
         ramp_counts[["external_ramp_count", "wheelchair_lift_count"]]
         .isna()
         .any()
         .any()
+        or ramp_counts["station_line"].isna().any()
         or (ramp_counts["external_ramp_count"] < 0).any()
         or (ramp_counts["wheelchair_lift_count"] < 0).any()
     ):
@@ -304,6 +404,76 @@ def load_subway() -> gpd.GeoDataFrame:
         )
     if ramp_counts["station_join_key"].duplicated().any():
         raise ValueError("역사 편의시설 원본에 중복된 결합 역명이 있습니다.")
+
+    elevator_routes = _read_csv("busan_subway_elevator_routes_20251231.csv")
+    elevator_columns = {
+        "호선",
+        "역명",
+        "출입구번호",
+        "상세위치",
+        "시작층 구분",
+        "시작층(운행역층)",
+        "종료층 구분",
+        "종료층(운행역층)",
+    }
+    if not elevator_columns.issubset(elevator_routes.columns):
+        raise ValueError("엘리베이터 이동경로 원본의 필수 컬럼이 없습니다.")
+    elevator_routes["station_line"] = pd.to_numeric(
+        elevator_routes["호선"], errors="coerce"
+    ).astype("Int64")
+    elevator_routes["station_base_name"] = elevator_routes["역명"].map(
+        _station_base_name
+    )
+    if elevator_routes["station_line"].isna().any():
+        raise ValueError("엘리베이터 이동경로 원본에 유효하지 않은 호선이 있습니다.")
+    # 환승역은 원본 역명에 호선 숫자가 접두어로 붙은 행이 있다(예: 1서면).
+    elevator_routes["station_base_name"] = [
+        _STATION_ELEVATOR_ALIASES.get(
+            (int(line), re.sub(rf"^{int(line)}", "", name)),
+            re.sub(rf"^{int(line)}", "", name),
+        )
+        for line, name in zip(
+            elevator_routes["station_line"],
+            elevator_routes["station_base_name"],
+        )
+    ]
+    station_key_lookup = {
+        (int(row["station_line"]), row["station_base_name"]): row["station_join_key"]
+        for _, row in ramp_counts.iterrows()
+    }
+    elevator_routes["station_join_key"] = [
+        station_key_lookup.get((int(line), name))
+        for line, name in zip(
+            elevator_routes["station_line"],
+            elevator_routes["station_base_name"],
+        )
+    ]
+    if elevator_routes["station_join_key"].isna().any():
+        missing = sorted(set(
+            elevator_routes.loc[
+                elevator_routes["station_join_key"].isna(), "역명"
+            ].astype(str)
+        ))
+        raise ValueError(
+            "엘리베이터 이동경로 원본의 역명을 편의시설 원본과 모두 "
+            f"결합하지 못했습니다: {missing[:3]}"
+        )
+    route_rows: list[dict[str, object]] = []
+    for station_join_key, rows in elevator_routes.groupby(
+        "station_join_key", sort=False
+    ):
+        exits = sorted(_accessible_elevator_exits(rows), key=int)
+        route_rows.append({
+            "station_join_key": station_join_key,
+            "elevator_route_count": len(rows),
+            "accessible_elevator_exits": ";".join(exits),
+            "station_elevator_route_evidence_source": (
+                _SUBWAY_ELEVATOR_ROUTE_SOURCE
+            ),
+        })
+    elevator_summary = pd.DataFrame(route_rows)
+    if elevator_summary["station_join_key"].duplicated().any():
+        raise ValueError("엘리베이터 이동경로 원본에 중복된 결합 역명이 있습니다.")
     df["station_join_key"] = df["역명"].map(
         lambda value: _station_join_key(value, accessibility_source=True)
     )
@@ -312,6 +482,7 @@ def load_subway() -> gpd.GeoDataFrame:
     df = df.merge(
         ramp_counts[[
             "station_join_key",
+            "station_line",
             "external_ramp_count",
             "wheelchair_lift_count",
         ]],
@@ -321,12 +492,32 @@ def load_subway() -> gpd.GeoDataFrame:
     )
     if df[["external_ramp_count", "wheelchair_lift_count"]].isna().any().any():
         raise ValueError("역 접근성 원본과 역사 외부경사로 원본의 역명을 모두 결합하지 못했습니다.")
+    df = df.merge(
+        elevator_summary,
+        on="station_join_key",
+        how="left",
+        validate="one_to_one",
+    )
+    missing_elevator_routes = set(
+        df.loc[df["elevator_route_count"].isna(), "station_join_key"]
+    )
+    # 공식 2025-12-31 원본은 2호선 서면을 두 표기로 중복 제공하고
+    # 3호선 수영은 제공하지 않는다. 누락을 다른 노선 값으로 채우지 않는다.
+    if missing_elevator_routes != {"수영(3)"}:
+        raise ValueError(
+            "엘리베이터 이동경로 원본의 예상하지 못한 역 누락입니다: "
+            f"{sorted(missing_elevator_routes)}"
+        )
     return _to_gdf(df[[
         "역코드",
         "역명",
+        "station_line",
         "elevator_accessible",
         "external_ramp_count",
         "wheelchair_lift_count",
+        "elevator_route_count",
+        "accessible_elevator_exits",
+        "station_elevator_route_evidence_source",
         "위도",
         "경도",
     ]])

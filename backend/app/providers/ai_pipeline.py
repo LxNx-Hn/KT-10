@@ -813,6 +813,7 @@ def _to_segment(item: dict, rank: int, index: int) -> RouteSegment:
         end_exit_no=item.get("end_exit_no"),
         smart_shelter_name=item.get("smart_shelter_name"),
         station_name=item.get("station_name"),
+        end_station_name=item.get("end_station_name"),
         has_elevator=item.get("has_elevator"),
         needs_vertical_move=item.get("needs_vertical_move"),
         station_external_ramp_count=item.get(
@@ -825,6 +826,15 @@ def _to_segment(item: dict, rank: int, index: int) -> RouteSegment:
             "station_accessibility_evidence_source"
         ),
         station_ramp_route_match=item.get("station_ramp_route_match"),
+        start_station_elevator_exit_match=item.get(
+            "start_station_elevator_exit_match"
+        ),
+        end_station_elevator_exit_match=item.get(
+            "end_station_elevator_exit_match"
+        ),
+        station_elevator_route_evidence_source=item.get(
+            "station_elevator_route_evidence_source"
+        ),
         path=item.get("path"),
         geometry_quality=item.get("geometry_quality"),
     )

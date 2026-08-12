@@ -1,5 +1,6 @@
 """데이터 레이어 로딩 테스트."""
 import geopandas as gpd
+import pandas as pd
 import pytest
 from shapely.geometry import Point
 
@@ -73,6 +74,48 @@ def test_subway_layer_keeps_official_station_external_ramp_counts(layers):
     # 같은 원본의 휠체어리프트는 3개 역, 총 6개다.
     assert int((subway["wheelchair_lift_count"] > 0).sum()) == 3
     assert int(subway["wheelchair_lift_count"].sum()) == 6
+
+
+def test_subway_layer_keeps_only_proven_exit_to_platform_elevator_chains(layers):
+    subway = layers["subway"]
+
+    assert int(subway["elevator_route_count"].sum()) == 448
+    # 공식 원본은 3호선 수영을 누락하고 2호선 서면을 중복 표기한다.
+    assert int(subway["elevator_route_count"].isna().sum()) == 1
+    busan_university = subway[
+        (subway["station_line"] == 1)
+        & (subway["역명"] == "부산대역")
+    ].iloc[0]
+    oncheonjang = subway[
+        (subway["station_line"] == 1)
+        & (subway["역명"] == "온천장역")
+    ].iloc[0]
+    assert busan_university["accessible_elevator_exits"] == "1;2"
+    # 온천장은 출구 엘리베이터 행만 있고 승강장 연결 설명이 없어 미확인이다.
+    assert oncheonjang["accessible_elevator_exits"] == ""
+
+
+def test_elevator_exit_chain_does_not_connect_unlabeled_concourses():
+    rows = pd.DataFrame([
+        {
+            "출입구번호": "3",
+            "상세위치": "3번 출입구와 대합실",
+            "시작층 구분": "지상",
+            "시작층(운행역층)": 1,
+            "종료층 구분": "지하",
+            "종료층(운행역층)": 1,
+        },
+        {
+            "출입구번호": "",
+            "상세위치": "1번 출입구 방향에서 승강장",
+            "시작층 구분": "지하",
+            "시작층(운행역층)": 1,
+            "종료층 구분": "지하",
+            "종료층(운행역층)": 2,
+        },
+    ])
+
+    assert load_layers_module._accessible_elevator_exits(rows) == set()
 
 
 def test_safe_cache_is_reused_and_invalidated_by_source_content(

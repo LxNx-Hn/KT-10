@@ -1325,14 +1325,43 @@ def _station_name_key(value: object) -> str | None:
     return normalized.casefold() or None
 
 
-def _subway_accessibility_lookup(layers: dict) -> dict[str, dict]:
-    """역명별 시설 재고. 중복 역명의 충돌 값은 보수적으로 제외한다."""
+def _subway_line_key(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and 1 <= value <= 4:
+        return value
+    if isinstance(value, str):
+        matched = re.search(r"[1-4]", value)
+        if matched:
+            return int(matched.group())
+    return None
+
+
+def _official_elevator_exits(value: object) -> frozenset[str]:
+    if not isinstance(value, str):
+        return frozenset()
+    return frozenset(re.findall(r"\d+", value))
+
+
+def _provider_exit_no(value: object) -> str | None:
+    text = _provider_text(value)
+    if not text:
+        return None
+    matched = re.search(r"\d+", text)
+    return matched.group() if matched else None
+
+
+def _subway_accessibility_lookup(
+    layers: dict,
+) -> dict[tuple[int | None, str], dict]:
+    """호선·역명별 시설 재고. 충돌 값은 보수적으로 제외한다."""
     subway = layers.get("subway")
     if subway is None:
         return {}
-    seen: dict[str, set[tuple[bool, int, int]]] = {}
+    seen: dict[tuple[int | None, str], set[tuple]] = {}
     for _, row in subway.iterrows():
         name = _station_name_key(row.get("역명"))
+        line = _subway_line_key(row.get("station_line"))
         elevator = row.get("elevator_accessible")
         ramp_count = _nonnegative_int(row.get("external_ramp_count"))
         lift_count = _nonnegative_int(row.get("wheelchair_lift_count"))
@@ -1343,21 +1372,53 @@ def _subway_accessibility_lookup(layers: dict) -> dict[str, dict]:
             or lift_count is None
         ):
             continue
-        seen.setdefault(name, set()).add((
+        route_count = _nonnegative_int(row.get("elevator_route_count"))
+        route_source = _provider_text(
+            row.get("station_elevator_route_evidence_source")
+        )
+        route_exits = _official_elevator_exits(
+            row.get("accessible_elevator_exits")
+        )
+        seen.setdefault((line, name), set()).add((
             bool(elevator),
             ramp_count,
             lift_count,
+            route_count,
+            route_source,
+            route_exits,
         ))
     return {
-        name: {
+        key: {
             "has_elevator": value[0],
             "station_external_ramp_count": value[1],
             "station_wheelchair_lift_count": value[2],
+            "elevator_route_count": value[3],
+            "station_elevator_route_evidence_source": value[4],
+            "accessible_elevator_exits": value[5],
         }
-        for name, values in seen.items()
+        for key, values in seen.items()
         if len(values) == 1
         for value in values
     }
+
+
+def _station_accessibility_value(
+    lookup: dict[tuple[int | None, str], dict],
+    line: int | None,
+    station_name: object,
+) -> dict | None:
+    name = _station_name_key(station_name)
+    if name is None:
+        return None
+    direct = lookup.get((line, name))
+    if direct is not None:
+        return direct
+    if line is not None:
+        # 구형/테스트 레이어처럼 호선 컬럼 자체가 없는 값만 허용한다.
+        return lookup.get((None, name))
+    # 공급자 호선도 없을 때는 역명 단독 값이 하나인 경우만 사용한다.
+    matches = [value for (known_line, key), value in lookup.items() if key == name]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _enrich_subway_elevator_accessibility(
@@ -1366,10 +1427,9 @@ def _enrich_subway_elevator_accessibility(
 ) -> list[dict]:
     """확인된 역사 시설 재고만 도시철도 구간에 추가한다.
 
-    역에 엘리베이터가 있다는 사실은 해당 환승 동선이 반드시 수직이동을
-    한다는 뜻이 아니므로 ``needs_vertical_move``은 여기서 추정하지 않는다.
-    외부경사로·휠체어리프트도 출구별 위치가 없는 역 단위 수량이므로 특정
-    보행 경로가 통과하거나 계단을 대체한다고 추정하지 않는다.
+    역 단위 시설 재고는 특정 동선을 증명하지 않는다. 출구 일치는 공식
+    엘리베이터 이동경로에서 지상 1층부터 승강장까지 연결된 출구와 ODsay의
+    출구번호가 정확히 일치할 때만 True로 추가한다.
     """
     lookup = _subway_accessibility_lookup(layers)
     if not lookup:
@@ -1377,7 +1437,10 @@ def _enrich_subway_elevator_accessibility(
     for segment in segments:
         if segment.get("mode") != "subway":
             continue
-        value = lookup.get(_station_name_key(segment.get("station_name")) or "")
+        line = _subway_line_key(segment.get("transit_route_id"))
+        value = _station_accessibility_value(
+            lookup, line, segment.get("station_name")
+        )
         if value is not None:
             if segment.get("has_elevator") is None:
                 segment["has_elevator"] = value["has_elevator"]
@@ -1391,6 +1454,30 @@ def _enrich_subway_elevator_accessibility(
                 "부산교통공사 도시철도 편의시설 현황 2025-12-31"
             )
             segment["station_ramp_route_match"] = None
+            start_exit = _provider_exit_no(segment.get("start_exit_no"))
+            if (
+                start_exit is not None
+                and value["station_elevator_route_evidence_source"]
+                and start_exit in value["accessible_elevator_exits"]
+            ):
+                segment["start_station_elevator_exit_match"] = True
+                segment["station_elevator_route_evidence_source"] = value[
+                    "station_elevator_route_evidence_source"
+                ]
+        end_value = _station_accessibility_value(
+            lookup, line, segment.get("end_station_name")
+        )
+        end_exit = _provider_exit_no(segment.get("end_exit_no"))
+        if (
+            end_value is not None
+            and end_exit is not None
+            and end_value["station_elevator_route_evidence_source"]
+            and end_exit in end_value["accessible_elevator_exits"]
+        ):
+            segment["end_station_elevator_exit_match"] = True
+            segment["station_elevator_route_evidence_source"] = end_value[
+                "station_elevator_route_evidence_source"
+            ]
     return segments
 
 
@@ -1677,6 +1764,7 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
                 else None
             ),
             "station_name": start_name if mode == "subway" else None,
+            "end_station_name": end_name if mode == "subway" else None,
             "has_elevator": elevator,
             "needs_vertical_move": needs_vertical_move,
             "path": [{"lat": point.lat, "lng": point.lng} for point in item.get("path") or []] or None,

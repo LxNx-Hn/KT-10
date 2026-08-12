@@ -175,6 +175,67 @@ def test_request_wheelchair_mode_filters_without_account_preference():
     assert [candidate.id for candidate in filtered] == ["verified"]
 
 
+def test_wheelchair_transit_requires_low_floor_bus_and_both_station_exits():
+    ordinary_bus = _candidate(
+        "ordinary-bus",
+        stairs=None,
+        count=None,
+        provider_excluded=True,
+        wheelchair_constrained=True,
+    )
+    ordinary_bus.segments.append(RouteSegment(
+        id="ordinary-bus-leg",
+        mode="bus",
+        description="일반버스",
+        duration_min=5,
+        is_low_floor_bus=None,
+    ))
+    low_floor_bus = ordinary_bus.model_copy(deep=True)
+    low_floor_bus.id = "low-floor-bus"
+    low_floor_bus.segments[-1].is_low_floor_bus = True
+
+    unknown_subway = _candidate(
+        "unknown-subway",
+        stairs=None,
+        count=None,
+        provider_excluded=True,
+        wheelchair_constrained=True,
+    )
+    unknown_subway.segments.append(RouteSegment(
+        id="unknown-subway-leg",
+        mode="subway",
+        description="도시철도",
+        duration_min=5,
+    ))
+    verified_subway = _candidate(
+        "verified-subway",
+        stairs=None,
+        count=None,
+        provider_excluded=True,
+        wheelchair_constrained=True,
+    )
+    verified_subway.segments.append(RouteSegment(
+        id="verified-subway-leg",
+        mode="subway",
+        description="도시철도",
+        duration_min=5,
+        start_station_elevator_exit_match=True,
+        end_station_elevator_exit_match=True,
+        station_elevator_route_evidence_source="부산교통공사 공식 이동경로",
+    ))
+
+    filtered = filter_known_stair_candidates(
+        [ordinary_bus, low_floor_bus, unknown_subway, verified_subway],
+        None,
+        request_uses_wheelchair=True,
+    )
+
+    assert [candidate.id for candidate in filtered] == [
+        "low-floor-bus",
+        "verified-subway",
+    ]
+
+
 def test_recommendation_boundary_rejects_unverified_wheelchair_route():
     user = SimpleNamespace(
         preference=SimpleNamespace(uses_wheelchair=True),

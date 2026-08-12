@@ -742,6 +742,70 @@ def test_subway_accessibility_layer_keeps_station_inventory_separate_from_route(
     assert enriched[1]["has_elevator"] is None
 
 
+def test_subway_exit_matches_require_exact_official_elevator_chain():
+    class SubwayLayer:
+        def iterrows(self):
+            common = {
+                "elevator_accessible": 1,
+                "external_ramp_count": 0,
+                "wheelchair_lift_count": 0,
+                "elevator_route_count": 2,
+                "station_elevator_route_evidence_source": "공식 이동경로",
+            }
+            return iter([
+                (0, {
+                    **common,
+                    "역명": "부산대역",
+                    "station_line": 1,
+                    "accessible_elevator_exits": "1;2",
+                }),
+                (1, {
+                    **common,
+                    "역명": "사하역",
+                    "station_line": 1,
+                    "accessible_elevator_exits": "1;2",
+                }),
+            ])
+
+    matched, unknown, wrong_line = _enrich_subway_elevator_accessibility([
+        {
+            "mode": "subway",
+            "station_name": "부산대역",
+            "end_station_name": "사하역",
+            "transit_route_id": 1,
+            "start_exit_no": "1번 출구",
+            "end_exit_no": "2",
+            "has_elevator": None,
+        },
+        {
+            "mode": "subway",
+            "station_name": "부산대역",
+            "end_station_name": "사하역",
+            "transit_route_id": 1,
+            "start_exit_no": "9",
+            "end_exit_no": None,
+            "has_elevator": None,
+        },
+        {
+            "mode": "subway",
+            "station_name": "부산대역",
+            "end_station_name": "사하역",
+            "transit_route_id": 2,
+            "start_exit_no": "1",
+            "end_exit_no": "2",
+            "has_elevator": None,
+        },
+    ], {"subway": SubwayLayer()})
+
+    assert matched["start_station_elevator_exit_match"] is True
+    assert matched["end_station_elevator_exit_match"] is True
+    assert matched["station_elevator_route_evidence_source"] == "공식 이동경로"
+    assert "start_station_elevator_exit_match" not in unknown
+    assert "end_station_elevator_exit_match" not in unknown
+    assert "start_station_elevator_exit_match" not in wrong_line
+    assert "end_station_elevator_exit_match" not in wrong_line
+
+
 def test_public_segments_preserve_existing_transit_guidance_and_lookup_ids():
     point = Coordinate(35.1000, 129.0000)
     bus_raw = {
@@ -814,6 +878,7 @@ def test_public_segments_preserve_existing_transit_guidance_and_lookup_ids():
     assert subway["fast_boarding_position"] == "3-2"
     assert subway["start_exit_no"] == "8"
     assert subway["end_exit_no"] == "1"
+    assert subway["end_station_name"] == "동래역"
 
 
 def test_smart_shelter_requires_same_boarding_stop_name_and_nearby_coordinate():

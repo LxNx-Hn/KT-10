@@ -11,6 +11,7 @@ claude/
 claude-preview/
 .claude.json
 .claude.local.json
+.codex-tmp/
 
 # 환경 변수
 .env

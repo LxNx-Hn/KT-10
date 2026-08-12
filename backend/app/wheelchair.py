@@ -38,7 +38,9 @@ def filter_known_stair_candidates(
     profile의 노면·평탄도·폭·턱·경사 제한도 적용돼야 한다. 다만 공급자의
     계단 회피는 미매핑 계단까지 현장 확인했다는 뜻이 아니므로 계단 수를
     0으로 요구하거나 만들지 않는다. 경사로는 TMAP 공급자 안내점이 있을 때만
-    별도로 노출하며, 지형 경사를 경사로로 대체하지 않는다.
+    별도로 노출하며, 지형 경사를 경사로로 대체하지 않는다. 버스는 모든
+    탑승 구간이 저상버스로 확인되어야 하고, 도시철도는 탑승·하차 출구가
+    공식 출구-승강장 엘리베이터 이동경로와 모두 일치해야 한다.
     """
     uses_wheelchair = bool(
         user_preference and getattr(user_preference, "uses_wheelchair", False)
@@ -54,6 +56,22 @@ def filter_known_stair_candidates(
             and (segment.distance_m is None or segment.distance_m > 0)
         ]
         if not walk_segments:
+            continue
+        bus_segments = [
+            segment for segment in candidate.segments if segment.mode == "bus"
+        ]
+        subway_segments = [
+            segment
+            for segment in candidate.segments
+            if segment.mode == "subway"
+        ]
+        if any(segment.is_low_floor_bus is not True for segment in bus_segments):
+            continue
+        if any(
+            segment.start_station_elevator_exit_match is not True
+            or segment.end_station_elevator_exit_match is not True
+            for segment in subway_segments
+        ):
             continue
         if all(
             segment.stairs_excluded_by_provider is True
