@@ -115,6 +115,10 @@ services:
       # 탈퇴 시 카카오 연결 끊기용. 없으면 연결 끊기만 생략하고 탈퇴는 진행한다.
       KAKAO_ADMIN_KEY: ${KAKAO_ADMIN_KEY:-}
       WITHDRAWAL_RETENTION_DAYS: ${WITHDRAWAL_RETENTION_DAYS:-30}
+      # 반복 탈퇴 판별용 해시 salt. 없으면 식별값을 보관하지 않는다.
+      WITHDRAWAL_HASH_SALT: ${WITHDRAWAL_HASH_SALT:-}
+      # 이용기록 보유기간. 탈퇴와 무관하게 기한이 지난 기록을 파기한다.
+      USAGE_LOG_RETENTION_DAYS: ${USAGE_LOG_RETENTION_DAYS:-365}
       KAKAO_OAUTH_REDIRECT_URI: ${PUBLIC_ORIGIN}/api/auth/kakao/callback
       FRONTEND_URL: ${PUBLIC_ORIGIN}
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:?OPENWEATHER_API_KEY is required}

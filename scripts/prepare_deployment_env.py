@@ -35,6 +35,10 @@ GENERATED = {
     # Backend와 AI 사이의 내부 호출을 보호하는 공유 비밀이다. 운영 Compose는
     # 이 값이 없으면 기동하지 않으므로 단일 .env.production에서 함께 생성한다.
     "AI_INTERNAL_SERVICE_TOKEN": 48,
+    # 탈퇴 기록의 반복 탈퇴 판별 해시 salt. 추측 가능한 값이면 회원번호가
+    # 역산되므로 사람이 손으로 짓지 않고 생성한다. 아래 중복 금지 검사가
+    # 세션·학습 salt 재사용도 함께 막는다.
+    "WITHDRAWAL_HASH_SALT": 32,
 }
 MIN_SECRET_LENGTHS = {
     "POSTGRES_PASSWORD": 16,
@@ -42,6 +46,8 @@ MIN_SECRET_LENGTHS = {
     "TRAINING_ANONYMIZATION_SALT": 16,
     "LABELING_API_TOKEN": 32,
     "AI_INTERNAL_SERVICE_TOKEN": 32,
+    # Settings.withdrawal_hashing_configured와 같은 하한이다.
+    "WITHDRAWAL_HASH_SALT": 16,
 }
 REQUIRED_EXTERNAL = (
     "VITE_KAKAO_MAP_KEY",

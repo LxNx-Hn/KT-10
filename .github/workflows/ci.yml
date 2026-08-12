@@ -137,6 +137,7 @@ jobs:
       TRAINING_ANONYMIZATION_SALT: ci-training-salt-at-least-32-characters
       LABELING_API_TOKEN: ci-labeling-token-at-least-32-characters
       AI_INTERNAL_SERVICE_TOKEN: ci-internal-service-token-at-least-32-characters
+      WITHDRAWAL_HASH_SALT: ci-withdrawal-hash-salt-at-least-16-characters
       VITE_KAKAO_MAP_KEY: ci-kakao-js-key
       KAKAO_REST_API_KEY: ci-kakao-rest-key
       KAKAO_OAUTH_CLIENT_SECRET: ci-kakao-oauth-secret
