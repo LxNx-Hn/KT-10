@@ -12,6 +12,7 @@ from app.providers.ai_pipeline import (
     _response_detail,
     _score_existing_ai_candidate,
     _to_route_candidate,
+    _to_segment,
     rank_ai_pipeline_candidates,
 )
 from app.settings import settings
@@ -21,6 +22,24 @@ from app.correlation import correlation_id
 
 ORIGIN = Place(id="origin", name="부산역", lat=35.1151, lng=129.0414)
 DESTINATION = Place(id="destination", name="서면역", lat=35.1578, lng=129.0594)
+
+
+def test_station_accessibility_inventory_survives_ai_adapter_without_route_claim():
+    segment = _to_segment({
+        "id": "subway-1",
+        "mode": "subway",
+        "description": "부산역 → 서면역",
+        "duration_min": 10,
+        "station_name": "부산역",
+        "station_external_ramp_count": 2,
+        "station_wheelchair_lift_count": 1,
+        "station_accessibility_evidence_source": "부산교통공사 공식 원본",
+        "station_ramp_route_match": None,
+    }, 1, 0)
+
+    assert segment.station_external_ramp_count == 2
+    assert segment.station_wheelchair_lift_count == 1
+    assert segment.station_ramp_route_match is None
 
 
 def test_internal_ai_headers_preserve_request_correlation_id(monkeypatch):

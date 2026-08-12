@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getCurrentUser, savePreferences, AUTH_SESSION_ENDED_EVENT, type UserPreferences } from '@/auth/api';
+import { getCurrentUser, savePreferences, type UserPreferences } from '@/auth/api';
 
 const EMPTY: UserPreferences = {
   profile: 'general',
@@ -24,15 +24,6 @@ export default function ProfilePreferences() {
       setLoggedIn(true);
       setValue({ ...EMPTY, ...user.preference });
     }).catch(() => setLoggedIn(false));
-  }, []);
-
-  useEffect(() => {
-    const onSessionEnded = () => {
-      setLoggedIn(false);
-      setMessage('');
-    };
-    window.addEventListener(AUTH_SESSION_ENDED_EVENT, onSessionEnded);
-    return () => window.removeEventListener(AUTH_SESSION_ENDED_EVENT, onSessionEnded);
   }, []);
 
   if (!loggedIn) return <p className="profile-preferences__guest">세부 이동지원 설정과 개인화는 카카오 로그인 후 저장됩니다.</p>;

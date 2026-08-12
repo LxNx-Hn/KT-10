@@ -57,6 +57,25 @@ def test_route_segment_rejects_unsubstantiated_accessibility_claims():
             stairs_excluded_by_provider=True,
             wheelchair_constraints_applied=True,
         )
+    with pytest.raises(ValidationError, match="station accessibility"):
+        RouteSegment(
+            id="subway-ramp-without-source",
+            mode="subway",
+            description="도시철도",
+            duration_min=1,
+            station_external_ramp_count=1,
+        )
+    with pytest.raises(ValidationError, match="exit-level geometry"):
+        RouteSegment(
+            id="subway-ramp-route-overclaim",
+            mode="subway",
+            description="도시철도",
+            duration_min=1,
+            station_external_ramp_count=1,
+            station_wheelchair_lift_count=0,
+            station_accessibility_evidence_source="공식 원본",
+            station_ramp_route_match=True,
+        )
 
 
 def test_route_candidate_rejects_negative_counts_and_distances():

@@ -4,7 +4,6 @@ import ProfileSelector from './ProfileSelector';
 import SuggestedVoiceCommands from './SuggestedVoiceCommands';
 import DemoDestinationList from './DemoDestinationList';
 import RouteConditions from './RouteConditions';
-import ProfilePreferences from './ProfilePreferences';
 
 /**
  * 검색 중심 홈 화면(요구사항 §2·§3·§10).
@@ -24,7 +23,6 @@ export default function SearchHome() {
       <VoiceChatEntryButton />
       <RouteConditions />
       <ProfileSelector />
-      <ProfilePreferences />
       <SuggestedVoiceCommands />
       <DemoDestinationList />
     </section>

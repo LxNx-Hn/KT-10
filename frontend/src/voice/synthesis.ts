@@ -7,14 +7,34 @@ let activeUtterance: SpeechSynthesisUtterance | null = null;
 let pendingSpeak: ReturnType<typeof setTimeout> | null = null;
 let primed = false;
 
+const PREFERRED_KOREAN_VOICE = [
+  /Google.*한국어/i,
+  /Microsoft.*(SunHi|Heami|Yuna)/i,
+  /Samsung.*한국어/i,
+];
+
 function pickKoreanVoice(): SpeechSynthesisVoice | null {
   if (!isSpeechSupported()) return null;
-  const voices = window.speechSynthesis.getVoices();
-  return (
-    voices.find((voice) => voice.lang === 'ko-KR')
-    ?? voices.find((voice) => voice.lang.startsWith('ko'))
-    ?? null
+  const voices = window.speechSynthesis.getVoices().filter(
+    (voice) => voice.lang === 'ko-KR' || voice.lang.startsWith('ko'),
   );
+  return voices.sort((left, right) => {
+    const leftRank = PREFERRED_KOREAN_VOICE.findIndex((pattern) => pattern.test(left.name));
+    const rightRank = PREFERRED_KOREAN_VOICE.findIndex((pattern) => pattern.test(right.name));
+    const normalizedLeft = leftRank < 0 ? PREFERRED_KOREAN_VOICE.length : leftRank;
+    const normalizedRight = rightRank < 0 ? PREFERRED_KOREAN_VOICE.length : rightRank;
+    if (normalizedLeft !== normalizedRight) return normalizedLeft - normalizedRight;
+    if (left.localService !== right.localService) return left.localService ? -1 : 1;
+    return left.name.localeCompare(right.name, 'ko-KR');
+  })[0] ?? null;
+}
+
+function naturalizeForSpeech(text: string): string {
+  return text
+    .replace(/(\d(?:[\d,.]*\d)?)\s*%/g, '$1퍼센트')
+    .replace(/(\d(?:[\d,.]*\d)?)\s*m\b/gi, '$1미터')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function isSpeechSupported(): boolean {
@@ -67,18 +87,21 @@ export function speak(
   text: string,
   opts: {
     rate?: number;
+    pitch?: number;
     onStart?: () => void;
     onEnd?: () => void;
     onError?: () => void;
   } = {},
 ): boolean {
-  const normalized = text.trim();
+  const normalized = naturalizeForSpeech(text);
   if (!isSpeechSupported() || !normalized) return false;
   clearPending();
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(normalized);
   utterance.lang = 'ko-KR';
-  utterance.rate = opts.rate ?? 1;
+  // 한국어 안내는 약간 느린 속도가 지명·수치·주의사항을 또렷하게 전달한다.
+  utterance.rate = opts.rate ?? 0.95;
+  utterance.pitch = opts.pitch ?? 1;
   koVoice = pickKoreanVoice();
   if (koVoice) utterance.voice = koVoice;
   utterance.onstart = () => opts.onStart?.();

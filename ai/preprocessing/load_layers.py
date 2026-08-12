@@ -273,9 +273,13 @@ def load_subway() -> gpd.GeoDataFrame:
     df["elevator_accessible"] = (df["엘리베이터"] == "O").astype(int)
     convenience = _read_csv("busan_subway_station_convenience_20251231.csv")
     ramp_column = "외부경사로(지상역 출구)"
-    if not {"역명", ramp_column}.issubset(convenience.columns):
-        raise ValueError("역사 편의시설 원본에 외부경사로 수량 컬럼이 없습니다.")
-    ramp_counts = convenience[["역명", ramp_column]].copy()
+    lift_column = "휠체어리프트"
+    if not {"역명", ramp_column, lift_column}.issubset(convenience.columns):
+        raise ValueError(
+            "역사 편의시설 원본에 외부경사로 또는 휠체어리프트 "
+            "수량 컬럼이 없습니다."
+        )
+    ramp_counts = convenience[["역명", ramp_column, lift_column]].copy()
     ramp_counts["station_join_key"] = ramp_counts["역명"].map(
         lambda value: _station_join_key(value, accessibility_source=False)
     )
@@ -283,8 +287,21 @@ def load_subway() -> gpd.GeoDataFrame:
         ramp_counts[ramp_column],
         errors="coerce",
     ).astype("Int64")
-    if ramp_counts["external_ramp_count"].isna().any() or (ramp_counts["external_ramp_count"] < 0).any():
-        raise ValueError("역사 외부경사로 수량이 비어 있거나 음수입니다.")
+    ramp_counts["wheelchair_lift_count"] = pd.to_numeric(
+        ramp_counts[lift_column],
+        errors="coerce",
+    ).astype("Int64")
+    if (
+        ramp_counts[["external_ramp_count", "wheelchair_lift_count"]]
+        .isna()
+        .any()
+        .any()
+        or (ramp_counts["external_ramp_count"] < 0).any()
+        or (ramp_counts["wheelchair_lift_count"] < 0).any()
+    ):
+        raise ValueError(
+            "역사 외부경사로 또는 휠체어리프트 수량이 비어 있거나 음수입니다."
+        )
     if ramp_counts["station_join_key"].duplicated().any():
         raise ValueError("역사 편의시설 원본에 중복된 결합 역명이 있습니다.")
     df["station_join_key"] = df["역명"].map(
@@ -293,18 +310,23 @@ def load_subway() -> gpd.GeoDataFrame:
     if df["station_join_key"].duplicated().any():
         raise ValueError("역 접근성 원본에 중복된 결합 역명이 있습니다.")
     df = df.merge(
-        ramp_counts[["station_join_key", "external_ramp_count"]],
+        ramp_counts[[
+            "station_join_key",
+            "external_ramp_count",
+            "wheelchair_lift_count",
+        ]],
         on="station_join_key",
         how="left",
         validate="one_to_one",
     )
-    if df["external_ramp_count"].isna().any():
+    if df[["external_ramp_count", "wheelchair_lift_count"]].isna().any().any():
         raise ValueError("역 접근성 원본과 역사 외부경사로 원본의 역명을 모두 결합하지 못했습니다.")
     return _to_gdf(df[[
         "역코드",
         "역명",
         "elevator_accessible",
         "external_ramp_count",
+        "wheelchair_lift_count",
         "위도",
         "경도",
     ]])

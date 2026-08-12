@@ -121,6 +121,14 @@ class RouteSegment(CamelModel):
     station_name: Optional[str] = None
     has_elevator: Optional[bool] = None  # None = 미확인
     needs_vertical_move: Optional[bool] = None
+    # 역 단위 시설 재고이며 출구·보행 선형과 일치한다는 뜻이 아니다.
+    station_external_ramp_count: Optional[int] = Field(default=None, ge=0)
+    station_wheelchair_lift_count: Optional[int] = Field(default=None, ge=0)
+    station_accessibility_evidence_source: Optional[str] = Field(
+        default=None,
+        max_length=200,
+    )
+    station_ramp_route_match: Optional[bool] = None
     path: Optional[list[LatLng]] = Field(default=None, min_length=2)
     geometry_quality: Optional[Literal["exact", "mixed", "estimated"]] = None
 
@@ -171,6 +179,18 @@ class RouteSegment(CamelModel):
             raise ValueError(
                 "wheelchair constraint evidence requires "
                 "wheelchair_constraints_applied=True"
+            )
+        station_inventory = (
+            self.station_external_ramp_count is not None
+            or self.station_wheelchair_lift_count is not None
+        )
+        if station_inventory and not self.station_accessibility_evidence_source:
+            raise ValueError(
+                "station accessibility inventory requires evidence source"
+            )
+        if self.station_ramp_route_match is not None:
+            raise ValueError(
+                "station ramp route match requires exit-level geometry"
             )
         return self
 

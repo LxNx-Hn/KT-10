@@ -696,12 +696,22 @@ def test_complete_route_facilities_preserve_known_false_for_ui_and_model():
     ] == [True, False]
 
 
-def test_subway_accessibility_layer_enriches_only_confirmed_station_elevator():
+def test_subway_accessibility_layer_keeps_station_inventory_separate_from_route():
     class SubwayLayer:
         def iterrows(self):
             return iter([
-                (0, {"역명": "부산역", "elevator_accessible": 1}),
-                (1, {"역명": "서면역", "elevator_accessible": 0}),
+                (0, {
+                    "역명": "부산역",
+                    "elevator_accessible": 1,
+                    "external_ramp_count": 2,
+                    "wheelchair_lift_count": 1,
+                }),
+                (1, {
+                    "역명": "서면역",
+                    "elevator_accessible": 0,
+                    "external_ramp_count": 0,
+                    "wheelchair_lift_count": 4,
+                }),
             ])
 
     segments = [{
@@ -723,6 +733,12 @@ def test_subway_accessibility_layer_enriches_only_confirmed_station_elevator():
 
     assert enriched[0]["has_elevator"] is True
     assert enriched[0]["needs_vertical_move"] is None
+    assert enriched[0]["station_external_ramp_count"] == 2
+    assert enriched[0]["station_wheelchair_lift_count"] == 1
+    assert enriched[0]["station_ramp_route_match"] is None
+    assert "부산교통공사" in enriched[0][
+        "station_accessibility_evidence_source"
+    ]
     assert enriched[1]["has_elevator"] is None
 
 

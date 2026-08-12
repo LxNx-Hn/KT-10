@@ -1,5 +1,4 @@
 import KakaoLoginButton from '@/components/KakaoLoginButton';
-import ProfilePreferences from '@/components/ProfilePreferences';
 import AccountWithdrawal from '@/components/AccountWithdrawal';
 import AdminReviewLink from '@/admin/AdminReviewLink';
 
@@ -8,7 +7,7 @@ type SettingsPanelProps = {
   onToggleLargeUi: () => void;
 };
 
-/** 로그인·큰 글씨·이동지원 안내를 담는 설정 본문 (전역 설정 drawer에서 사용). */
+/** 로그인·큰 글씨 설정 본문 (전역 설정 drawer에서 사용). */
 export default function SettingsPanel({
   largeUi,
   onToggleLargeUi,
@@ -27,7 +26,6 @@ export default function SettingsPanel({
       >
         {largeUi ? '기본 글씨로 보기' : '큰 글씨와 큰 버튼 사용'}
       </button>
-      <ProfilePreferences />
       <AccountWithdrawal />
     </section>
   );

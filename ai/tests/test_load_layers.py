@@ -70,6 +70,9 @@ def test_subway_layer_keeps_official_station_external_ramp_counts(layers):
     # 부산교통공사 2025-12-31 원본: 외부경사로 보유 역 15개, 총 25개.
     assert int((subway["external_ramp_count"] > 0).sum()) == 15
     assert int(subway["external_ramp_count"].sum()) == 25
+    # 같은 원본의 휠체어리프트는 3개 역, 총 6개다.
+    assert int((subway["wheelchair_lift_count"] > 0).sum()) == 3
+    assert int(subway["wheelchair_lift_count"].sum()) == 6
 
 
 def test_safe_cache_is_reused_and_invalidated_by_source_content(
