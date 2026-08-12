@@ -708,7 +708,11 @@ async def _rescore_cached_route_set(
             ].model_copy(deep=True)
         user_preference = user.preference if user and user.preference else None
         effective_options = effective_scoring_options(req.options, user_preference)
-        candidates = _filter_wheelchair_candidates(candidates, user)
+        candidates = _filter_wheelchair_candidates(
+            candidates,
+            user,
+            effective_options.uses_wheelchair,
+        )
         try:
             candidates = await _add_configured_shade(
                 candidates,
@@ -923,10 +927,15 @@ def _filter_viable_candidates(candidates: list[RouteCandidate]) -> list[RouteCan
 def _filter_wheelchair_candidates(
     candidates: list[RouteCandidate],
     user: User | None,
+    request_uses_wheelchair: bool = False,
 ) -> list[RouteCandidate]:
     """계단과 휠체어 통행 제약이 검증된 후보만 제시한다."""
     preference = user.preference if user and user.preference else None
-    filtered = filter_known_stair_candidates(candidates, preference)
+    filtered = filter_known_stair_candidates(
+        candidates,
+        preference,
+        request_uses_wheelchair,
+    )
     if candidates and not filtered:
         raise HTTPException(
             status_code=422,
@@ -1005,7 +1014,9 @@ async def routes_recommend(
                 candidate_limit=effective_top_n,
             )
             candidates = _filter_wheelchair_candidates(
-                _filter_viable_candidates(candidates), user
+                _filter_viable_candidates(candidates),
+                user,
+                effective_options.uses_wheelchair,
             )
             candidates = await _add_configured_shade(
                 candidates,
@@ -1064,13 +1075,17 @@ async def routes_recommend(
                 candidate_limit=effective_top_n,
             )
             candidates = _filter_wheelchair_candidates(
-                _filter_viable_candidates(candidates), user
+                _filter_viable_candidates(candidates),
+                user,
+                effective_options.uses_wheelchair,
             )
         except AIProviderError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     else:
         candidates = _filter_wheelchair_candidates(
-            get_route_candidates(req.origin, req.destination), user
+            get_route_candidates(req.origin, req.destination),
+            user,
+            effective_options.uses_wheelchair,
         )
         if not candidates:
             raise HTTPException(status_code=503, detail="고정 데모 OD 외 경로는 AI live pipeline이 필요합니다.")

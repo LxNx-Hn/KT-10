@@ -113,6 +113,21 @@ def test_non_wheelchair_preference_keeps_requested_stair_option():
     assert effective.avoid_stairs is False
 
 
+def test_request_wheelchair_mode_is_independent_of_saved_preference():
+    requested = ScoringOptions(
+        avoid_stairs=False,
+        uses_wheelchair=True,
+    )
+
+    effective = effective_scoring_options(
+        requested,
+        SimpleNamespace(uses_wheelchair=False),
+    )
+
+    assert effective.uses_wheelchair is True
+    assert effective.avoid_stairs is True
+
+
 def test_wheelchair_keeps_only_provider_verified_stair_excluded_candidates():
     candidates = [
         _candidate("stairs", stairs=True, count=3),
@@ -139,6 +154,25 @@ def test_wheelchair_keeps_only_provider_verified_stair_excluded_candidates():
     )
 
     assert [candidate.id for candidate in filtered] == ["verified-clear"]
+
+
+def test_request_wheelchair_mode_filters_without_account_preference():
+    filtered = filter_known_stair_candidates(
+        [
+            _candidate("unverified", stairs=None, count=None),
+            _candidate(
+                "verified",
+                stairs=None,
+                count=None,
+                provider_excluded=True,
+                wheelchair_constrained=True,
+            ),
+        ],
+        None,
+        request_uses_wheelchair=True,
+    )
+
+    assert [candidate.id for candidate in filtered] == ["verified"]
 
 
 def test_recommendation_boundary_rejects_unverified_wheelchair_route():
@@ -172,6 +206,20 @@ def test_pipeline_sends_wheelchair_stair_constraint():
             avoid_stairs_required=False,
             max_walk_distance_m=None,
         ),
+    )
+
+    assert payload["uses_wheelchair"] is True
+    assert payload["avoid_stairs"] is True
+
+
+def test_pipeline_sends_request_scoped_wheelchair_mode():
+    payload = _pipeline_payload(
+        SimpleNamespace(lat=35.1, lng=129.0, name="출발"),
+        SimpleNamespace(lat=35.2, lng=129.1, name="도착"),
+        "disabled",
+        "normal",
+        ScoringOptions(uses_wheelchair=True),
+        None,
     )
 
     assert payload["uses_wheelchair"] is True

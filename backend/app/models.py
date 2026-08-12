@@ -504,6 +504,9 @@ class ScoringOptions(CamelModel):
     low_floor_priority: bool = False
     weather_avoid: bool = False
     avoid_stairs: bool = False
+    # 계정 장기 설정과 별개인 이번 경로검색 세션의 휠체어 모드.
+    # True이면 단순 가중치가 아니라 ORS 검증 후보만 허용한다.
+    uses_wheelchair: bool = False
     shade_priority: bool = False
     minimize_transfers: bool = False
     departure_at: Optional[datetime] = None

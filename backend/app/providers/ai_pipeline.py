@@ -101,7 +101,7 @@ def _pipeline_payload(
         "low_floor_priority": options.low_floor_priority,
         "shade_priority": options.shade_priority,
         "minimize_transfers": options.minimize_transfers,
-        "uses_wheelchair": bool(user_preference and user_preference.uses_wheelchair),
+        "uses_wheelchair": options.uses_wheelchair,
         "uses_walking_aid": bool(user_preference and user_preference.uses_walking_aid),
         "max_walk_distance_m": (
             user_preference.max_walk_distance_m if user_preference else None
@@ -295,9 +295,7 @@ def _shade_enriched_features(
     avoid_stairs = options.avoid_stairs or bool(
         user_preference and user_preference.avoid_stairs_required
     )
-    uses_wheelchair = bool(
-        user_preference and user_preference.uses_wheelchair
-    )
+    uses_wheelchair = options.uses_wheelchair
     uses_walking_aid = bool(
         user_preference and user_preference.uses_walking_aid
     )

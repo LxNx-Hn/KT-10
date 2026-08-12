@@ -16,15 +16,21 @@ def effective_scoring_options(
     """
     uses_wheelchair = bool(
         user_preference and getattr(user_preference, "uses_wheelchair", False)
-    )
-    if uses_wheelchair and not options.avoid_stairs:
-        return options.model_copy(update={"avoid_stairs": True})
+    ) or options.uses_wheelchair
+    if uses_wheelchair and (
+        not options.avoid_stairs or not options.uses_wheelchair
+    ):
+        return options.model_copy(update={
+            "avoid_stairs": True,
+            "uses_wheelchair": True,
+        })
     return options
 
 
 def filter_known_stair_candidates(
     candidates: list[RouteCandidate],
     user_preference: object | None,
+    request_uses_wheelchair: bool = False,
 ) -> list[RouteCandidate]:
     """휠체어 사용자에게 통행 제약이 확인된 후보만 남긴다.
 
@@ -36,7 +42,7 @@ def filter_known_stair_candidates(
     """
     uses_wheelchair = bool(
         user_preference and getattr(user_preference, "uses_wheelchair", False)
-    )
+    ) or request_uses_wheelchair
     if not uses_wheelchair:
         return candidates
     filtered: list[RouteCandidate] = []
