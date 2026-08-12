@@ -1,4 +1,5 @@
 import KakaoLoginButton from '@/components/KakaoLoginButton';
+import AccountWithdrawal from '@/components/AccountWithdrawal';
 import AdminReviewLink from '@/admin/AdminReviewLink';
 
 type SettingsPanelProps = {
@@ -25,6 +26,7 @@ export default function SettingsPanel({
       >
         {largeUi ? '기본 글씨로 보기' : '큰 글씨와 큰 버튼 사용'}
       </button>
+      <AccountWithdrawal />
     </section>
   );
 }

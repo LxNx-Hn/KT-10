@@ -3536,6 +3536,150 @@
   box-shadow: inset 0 0 0 1px rgba(49, 130, 246, 0.28);
 }
 
+/* 회원 탈퇴 — 설정 하단, 위험 동작은 확인 dialog에서만 강조 */
+.account-withdrawal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--mf-line);
+}
+
+.account-withdrawal__trigger {
+  align-self: flex-start;
+  min-height: var(--mf-tap);
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: #64748b;
+  font-family: inherit;
+  font-size: var(--mf-body-size);
+  font-weight: 600;
+  line-height: var(--mf-line-height-tight);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.account-withdrawal__trigger:hover {
+  color: #475569;
+}
+
+.account-withdrawal__status {
+  margin: 0;
+  color: var(--mf-ink);
+  font-size: var(--mf-body-size);
+  line-height: var(--mf-line-height-tight);
+}
+
+.account-withdrawal__layer {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--mf-z-profile) + 2);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+.account-withdrawal__backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: rgba(25, 31, 40, 0.42);
+  cursor: pointer;
+}
+
+.account-withdrawal__dialog {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 420px);
+  max-height: min(88vh, 560px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--mf-line);
+  border-radius: 16px;
+  background: var(--mf-surface);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  overflow-wrap: anywhere;
+}
+
+.account-withdrawal__title {
+  margin: 0;
+  color: var(--mf-ink);
+  font-size: var(--mf-section-size);
+  font-weight: 800;
+  line-height: var(--mf-line-height-tight);
+}
+
+.account-withdrawal__info {
+  margin: 0;
+  padding-left: 1.1em;
+  color: var(--mf-ink);
+  font-size: var(--mf-body-size);
+  line-height: 1.45;
+}
+
+.account-withdrawal__info li + li {
+  margin-top: 6px;
+}
+
+.account-withdrawal__warning {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: var(--mf-body-size);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.account-withdrawal__error {
+  margin: 0;
+  color: #b42318;
+  font-size: var(--mf-body-size);
+  line-height: 1.4;
+}
+
+.account-withdrawal__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.account-withdrawal__actions .btn {
+  flex: 1 1 0;
+  min-height: max(44px, var(--mf-tap));
+  border-radius: var(--mf-radius-control);
+  font-family: inherit;
+  font-size: var(--mf-body-size);
+  font-weight: var(--mf-button-weight);
+}
+
+.account-withdrawal__confirm {
+  border: 1px solid #b42318;
+  background: #b42318;
+  color: #fff;
+}
+
+.account-withdrawal__confirm:disabled {
+  opacity: 0.72;
+}
+
+.map-first__frame--easy .account-withdrawal__dialog {
+  padding: 22px;
+}
+
+.map-first__frame--easy .account-withdrawal__actions .btn {
+  min-height: max(52px, var(--mf-tap));
+}
+
 .map-first__tab-panel .weather,
 .map-first__tab-panel .bus,
 .map-first__tab-panel .route-feedback,
