@@ -62,6 +62,8 @@ def filter_known_stair_candidates(
             and segment.wheelchair_restrictions is not None
             and bool(segment.wheelchair_data_limitations)
             and bool(segment.wheelchair_constraint_categories)
+            and segment.wheelchair_extra_info_full_route_coverage is True
+            and segment.wheelchair_extra_response_keys is not None
             for segment in walk_segments
         ):
             filtered.append(candidate)

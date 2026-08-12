@@ -577,6 +577,8 @@ def _score_existing_ai_candidate(
         [segment for segment in route.segments if segment.mode == "walk"]
     ) and all(
         segment.wheelchair_constraints_applied is True
+        and segment.wheelchair_extra_info_full_route_coverage is True
+        and segment.wheelchair_extra_response_keys is not None
         for segment in route.segments
         if segment.mode == "walk"
     )
@@ -791,6 +793,12 @@ def _to_segment(item: dict, rank: int, index: int) -> RouteSegment:
         ),
         wheelchair_constraint_categories=item.get(
             "wheelchair_constraint_categories"
+        ),
+        wheelchair_extra_info_full_route_coverage=item.get(
+            "wheelchair_extra_info_full_route_coverage"
+        ),
+        wheelchair_extra_response_keys=item.get(
+            "wheelchair_extra_response_keys"
         ),
         crosswalk_count=item.get("crosswalk_count"),
         bus_route_name=item.get("bus_route_name"),

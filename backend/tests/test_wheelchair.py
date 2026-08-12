@@ -72,6 +72,20 @@ def _candidate(
                     if wheelchair_constrained
                     else None
                 ),
+                wheelchair_extra_info_full_route_coverage=(
+                    True if wheelchair_constrained else None
+                ),
+                wheelchair_extra_response_keys=(
+                    {
+                        "steepness": "steepness",
+                        "suitability": "suitability",
+                        "surface": "surface",
+                        "waytype": "waytypes",
+                        "osmid": "osmId",
+                    }
+                    if wheelchair_constrained
+                    else None
+                ),
             )
         ],
     )

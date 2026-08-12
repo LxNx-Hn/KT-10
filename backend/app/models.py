@@ -57,6 +57,16 @@ class WheelchairRoutingRestrictions(CamelModel):
     minimum_width: float = Field(gt=0, le=5)
 
 
+class WheelchairExtraResponseKeys(CamelModel):
+    """ORS 응답에서 실제 검증한 extra_info 키 이름."""
+
+    steepness: str = Field(min_length=1, max_length=30)
+    suitability: str = Field(min_length=1, max_length=30)
+    surface: str = Field(min_length=1, max_length=30)
+    waytype: str = Field(min_length=1, max_length=30)
+    osmid: str = Field(min_length=1, max_length=30)
+
+
 class RouteSegment(CamelModel):
     id: str = Field(min_length=1, max_length=200)
     mode: SegmentMode
@@ -97,6 +107,10 @@ class RouteSegment(CamelModel):
         min_length=1,
         max_length=20,
     )
+    wheelchair_extra_info_full_route_coverage: Optional[bool] = None
+    wheelchair_extra_response_keys: Optional[
+        WheelchairExtraResponseKeys
+    ] = None
     crosswalk_count: Optional[int] = Field(default=None, ge=0)
 
     # 버스 구간
@@ -165,16 +179,21 @@ class RouteSegment(CamelModel):
             and self.wheelchair_data_limitations
             and self.wheelchair_constraint_categories
             and self.stairs_excluded_by_provider is True
+            and self.wheelchair_extra_info_full_route_coverage is True
+            and self.wheelchair_extra_response_keys is not None
         ):
             raise ValueError(
                 "wheelchair_constraints_applied=True requires source, "
-                "restrictions, limitations, and stair exclusion"
+                "restrictions, limitations, stair exclusion, and full "
+                "extra-info coverage"
             )
         if any((
             self.wheelchair_constraint_source,
             self.wheelchair_restrictions,
             self.wheelchair_data_limitations,
             self.wheelchair_constraint_categories,
+            self.wheelchair_extra_info_full_route_coverage is not None,
+            self.wheelchair_extra_response_keys,
         )) and self.wheelchair_constraints_applied is not True:
             raise ValueError(
                 "wheelchair constraint evidence requires "

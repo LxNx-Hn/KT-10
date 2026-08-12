@@ -1253,6 +1253,14 @@ def test_combined_ors_constraints_and_tmap_ramp_reach_public_segment():
             "wheelchair_constraint_categories": [
                 "steps", "surface", "width", "wheelchair_access"
             ],
+            "verified_extra_response_keys": {
+                "steepness": "steepness",
+                "suitability": "suitability",
+                "surface": "surface",
+                "waytype": "waytypes",
+                "osmid": "osmId",
+            },
+            "extra_info_full_route_coverage": True,
         },
     )
 
@@ -1269,6 +1277,8 @@ def test_combined_ors_constraints_and_tmap_ramp_reach_public_segment():
     assert segment["wheelchair_constraint_categories"] == [
         "steps", "surface", "width", "wheelchair_access"
     ]
+    assert segment["wheelchair_extra_info_full_route_coverage"] is True
+    assert segment["wheelchair_extra_response_keys"]["osmid"] == "osmId"
 
 
 def test_wheelchair_collection_fails_instead_of_using_tmap_without_ors(

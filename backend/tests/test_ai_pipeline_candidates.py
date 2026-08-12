@@ -206,6 +206,14 @@ def test_ai_ranked_wheelchair_route_keeps_constraint_caution_in_voice():
             "width",
             "wheelchair_access",
         ],
+        "wheelchair_extra_info_full_route_coverage": True,
+        "wheelchair_extra_response_keys": {
+            "steepness": "steepness",
+            "suitability": "suitability",
+            "surface": "surface",
+            "waytype": "waytypes",
+            "osmid": "osmId",
+        },
     })
     route = _to_route_candidate(payload, ORIGIN, DESTINATION, 1)
 

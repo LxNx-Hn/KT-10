@@ -692,6 +692,7 @@ async def _collect_static_featured_routes(
 
 def _wheelchair_evidence_constrained(value: object) -> bool:
     evidence = _mapping(value)
+    response_keys = evidence.get("verified_extra_response_keys")
     return (
         evidence.get("wheelchair_constraints_applied") is True
         and evidence.get("stairs_excluded_by_provider") is True
@@ -704,6 +705,19 @@ def _wheelchair_evidence_constrained(value: object) -> bool:
             list,
         )
         and bool(evidence["wheelchair_constraint_categories"])
+        and evidence.get("extra_info_full_route_coverage") is True
+        and isinstance(response_keys, dict)
+        and set(response_keys) == {
+            "steepness",
+            "suitability",
+            "surface",
+            "waytype",
+            "osmid",
+        }
+        and all(
+            isinstance(key, str) and bool(key)
+            for key in response_keys.values()
+        )
     )
 
 
@@ -1439,6 +1453,10 @@ def _public_wheelchair_evidence(accessibility: dict) -> dict:
         ),
         "wheelchair_constraint_categories": list(
             accessibility["wheelchair_constraint_categories"]
+        ),
+        "wheelchair_extra_info_full_route_coverage": True,
+        "wheelchair_extra_response_keys": dict(
+            accessibility["verified_extra_response_keys"]
         ),
     }
 
