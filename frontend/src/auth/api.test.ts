@@ -39,3 +39,49 @@ describe('로그인 상태 조회', () => {
     await expect(resolveCurrentAuth()).resolves.toEqual({ status: 'unavailable' });
   });
 });
+
+describe('회원 탈퇴', () => {
+  it('204면 정상 resolve한다', async () => {
+    vi.stubEnv('VITE_DATA_SOURCE', 'live');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
+    );
+    const { withdraw } = await import('./api');
+
+    await expect(withdraw()).resolves.toBeUndefined();
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/auth/withdraw'),
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+      }),
+    );
+  });
+
+  it('401·409는 ApiError status로 구분한다', async () => {
+    vi.stubEnv('VITE_DATA_SOURCE', 'live');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(new Response(null, { status: 409 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { withdraw } = await import('./api');
+
+    await expect(withdraw()).rejects.toMatchObject({ status: 401 });
+    await expect(withdraw()).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('기타 HTTP 오류와 네트워크 오류를 구분한다', async () => {
+    vi.stubEnv('VITE_DATA_SOURCE', 'live');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 500 }))
+      .mockRejectedValueOnce(new TypeError('network'));
+    vi.stubGlobal('fetch', fetchMock);
+    const { withdraw } = await import('./api');
+
+    await expect(withdraw()).rejects.toMatchObject({ status: 500 });
+    await expect(withdraw()).rejects.toBeInstanceOf(TypeError);
+  });
+});

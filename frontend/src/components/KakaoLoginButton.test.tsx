@@ -9,7 +9,15 @@ const authMocks = vi.hoisted(() => ({
   startKakaoLogin: vi.fn(),
 }));
 
-vi.mock('@/auth/api', () => authMocks);
+vi.mock('@/auth/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/auth/api')>();
+  return {
+    ...actual,
+    getCurrentUser: authMocks.getCurrentUser,
+    logout: authMocks.logout,
+    startKakaoLogin: authMocks.startKakaoLogin,
+  };
+});
 
 vi.mock('@/store/appStore', () => ({
   useAppStore: (selector: (state: { setProfile: (id: string) => void }) => unknown) =>

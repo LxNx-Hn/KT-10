@@ -1,7 +1,16 @@
 import type { ProfileId } from '@/types';
-import { API_BASE } from '@/api/http';
+import { API_BASE, ApiError } from '@/api/http';
 
 const IS_LIVE = import.meta.env.VITE_DATA_SOURCE !== 'mock';
+
+/** 탈퇴·세션 만료 등으로 클라이언트 인증 UI를 게스트로 맞출 때 사용한다. */
+export const AUTH_SESSION_ENDED_EVENT = 'dongnet:auth-session-ended';
+
+export function notifyAuthSessionEnded(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_SESSION_ENDED_EVENT));
+  }
+}
 
 export interface UserPreferences {
   profile: ProfileId;
@@ -89,4 +98,14 @@ export async function savePreferences(preference: Partial<UserPreferences>): Pro
 export async function logout(): Promise<void> {
   const response = await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
   if (!response.ok && response.status !== 204) throw new Error(`logout failed: ${response.status}`);
+}
+
+/** 회원 탈퇴. 204 성공, 401·409는 ApiError status로 구분한다. */
+export async function withdraw(): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/auth/withdraw`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (response.status === 204) return;
+  throw new ApiError('withdraw failed', response.status);
 }

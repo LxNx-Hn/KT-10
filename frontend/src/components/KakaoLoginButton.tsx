@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getCurrentUser, logout, startKakaoLogin, type CurrentUser } from '@/auth/api';
+import { getCurrentUser, logout, startKakaoLogin, AUTH_SESSION_ENDED_EVENT, type CurrentUser } from '@/auth/api';
 import { useAppStore } from '@/store/appStore';
 
 export default function KakaoLoginButton() {
@@ -15,6 +15,12 @@ export default function KakaoLoginButton() {
       if (storedProfile) setProfile(storedProfile);
     }).catch(() => setUser(null));
   }, [setProfile]);
+
+  useEffect(() => {
+    const onSessionEnded = () => setUser(null);
+    window.addEventListener(AUTH_SESSION_ENDED_EVENT, onSessionEnded);
+    return () => window.removeEventListener(AUTH_SESSION_ENDED_EVENT, onSessionEnded);
+  }, []);
 
   if (!user) {
     return (
