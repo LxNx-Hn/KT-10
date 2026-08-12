@@ -61,6 +61,17 @@ def test_accessibility_destination_layers_preserve_declared_fields(layers):
     }.issubset(tourism.columns)
 
 
+def test_subway_layer_keeps_official_station_external_ramp_counts(layers):
+    subway = layers["subway"]
+
+    assert len(subway) == 114
+    assert subway["external_ramp_count"].notna().all()
+    assert (subway["external_ramp_count"] >= 0).all()
+    # 부산교통공사 2025-12-31 원본: 외부경사로 보유 역 15개, 총 25개.
+    assert int((subway["external_ramp_count"] > 0).sum()) == 15
+    assert int(subway["external_ramp_count"].sum()) == 25
+
+
 def test_safe_cache_is_reused_and_invalidated_by_source_content(
     monkeypatch,
     tmp_path,

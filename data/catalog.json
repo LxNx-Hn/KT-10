@@ -16,7 +16,7 @@
     { "layer": "barrier_free_culture_tourism", "paths": ["raw/busan_barrier_free_culture_tourism.csv"], "status": "active", "sourceUrl": "https://data.go.kr/data/15111386/fileData.do", "license": "제한없음", "verifiedAt": "2026-08-12", "plannedUse": "배리어프리 문화·관광 목적지의 제공된 편의시설 정보" },
     { "layer": "dongbaekjeon", "paths": ["raw/동백전_가맹점_현황.csv"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null },
     { "layer": "smart_shelter", "paths": ["raw/부산광역시_스마트_버스쉘터_설치_현황.csv"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null },
-    { "layer": "subway_accessibility", "paths": ["raw/busan_subway_station_accessibility_processed.xlsx"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null },
+    { "layer": "subway_accessibility", "paths": ["raw/busan_subway_station_accessibility_processed.xlsx", "raw/busan_subway_station_convenience_20251231.csv"], "status": "active", "sourceUrl": "https://www.data.go.kr/data/15052664/fileData.do", "license": "제한없음", "verifiedAt": "2026-08-12", "plannedUse": "역별 엘리베이터와 외부경사로 수량을 시설 사실로 제공; 출입구 위치가 없어 보행 경로 경사로 사실로 변환하지 않음" },
     { "layer": "crosswalk_signal", "paths": ["raw/busan_crosswalk_signal_shp_processed.xlsx"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null },
     { "layer": "bus_stop", "paths": ["raw/bus_stop_national_csv_processed.xlsx"], "status": "active", "sourceUrl": null, "license": null, "verifiedAt": null }
   ],
@@ -39,6 +39,26 @@
     }
   ],
   "pendingExternal": [
+    {
+      "layer": "ssis_disabled_facility_evaluation",
+      "paths": ["da/raw/getDisConvFaclList.csv"],
+      "status": "received_detail_api_verified_not_route_ramp",
+      "sourceUrl": "https://www.data.go.kr/data/15092317/openapi.do",
+      "license": "제한없음",
+      "verifiedAt": "2026-08-12",
+      "plannedUse": "시설별 주출입구 접근로 등 기구표 확인. API 응답에 물리 경사로 좌표·선형·기울기가 없으므로 hasSlope 또는 보행 경로 사실로 변환하지 않음",
+      "apiTraffic": "development 100 requests/day"
+    },
+    {
+      "layer": "busan_tourism_accessibility_api",
+      "paths": ["da/raw/busan_tourism_accessibility_api.json"],
+      "status": "received_not_spatial_model_input",
+      "sourceUrl": "https://www.data.go.kr/data/15034043/openapi.do",
+      "license": "제한없음",
+      "verifiedAt": "2026-08-12",
+      "records": 1160,
+      "plannedUse": "관광지 인근 장애인 편의시설 원본 보관. API가 좌표를 제공하지 않아 지오코딩 검증 전에는 경로 공간 레이어에 사용하지 않음"
+    },
     {
       "layer": "public_transport_satisfaction_2023_2025",
       "status": "received_audited_not_redistributed",

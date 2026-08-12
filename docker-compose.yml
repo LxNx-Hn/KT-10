@@ -66,6 +66,9 @@ services:
       - ai/.env
     environment:
       - AI_INTERNAL_SERVICE_TOKEN=${AI_INTERNAL_SERVICE_TOKEN:-}
+      # .env.production을 --env-file로 사용한 로컬 검증에서도 운영과 같은
+      # Decoding 키 선택 규칙을 적용한다.
+      - DATA_GO_KR_SERVICE_KEY=${DECO:-${DATA_GO_KR_SERVICE_KEY:-}}
       - ELEVATION_CACHE_DIR=/app/ai/data/cache/elevation
       - ELEVATION_DEM_DIR=/app/ai/data/cache/elevation/dem
       - ELEVATION_REGIONAL_DEM_PATH=/app/ai/data/precomputed/busan_dem_clipped_90m.tif

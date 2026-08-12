@@ -7,6 +7,7 @@
 import hashlib
 import json
 from pathlib import Path
+import re
 from uuid import uuid4
 
 import geopandas as gpd
@@ -38,6 +39,7 @@ SOURCE_FILES = (
     "동백전_가맹점_현황.csv",
     "부산광역시_스마트_버스쉘터_설치_현황.csv",
     "busan_subway_station_accessibility_processed.xlsx",
+    "busan_subway_station_convenience_20251231.csv",
     "busan_crosswalk_signal_shp_processed.xlsx",
     "bus_stop_national_csv_processed.xlsx",
     "busan_mobility_support_centers.csv",
@@ -48,6 +50,34 @@ SOURCE_FILES = (
 # 부산 좌표 유효 범위
 BUSAN_LAT = (34.8, 35.5)
 BUSAN_LNG = (128.7, 129.4)
+
+# 기존 역 접근성 원본은 '역'·'n호선' 표기, 2025 역사 편의시설 원본은
+# 'n' 표기를 사용한다. 두 공식 원본의 같은 역을 결합하기 위한 표기 정규화다.
+# 아래 세 역은 환승역 중 이전 원본에서 노선 접미사를 생략한 경우이며, 각 역의
+# 기본 명칭이 가리키는 노선을 명시한다. 시립미술관역은 현재 벡스코역 명칭으로
+# 갱신된 원본과 결합한다.
+_STATION_UNSUFFIXED_LINES = {
+    "동래": "(1)",
+    "수영": "(2)",
+    "연산": "(1)",
+}
+_STATION_NAME_ALIASES = {"시립미술관": "벡스코"}
+
+
+def _station_join_key(value: object, *, accessibility_source: bool) -> str:
+    if not isinstance(value, str):
+        raise ValueError("역명은 문자열이어야 합니다.")
+    name = value.strip().replace(".", "")
+    name = re.sub(r"역(?=\(|$)", "", name)
+    name = re.sub(r"\((\d+)호선\)", r"(\1)", name)
+    name = _STATION_NAME_ALIASES.get(name, name)
+    if accessibility_source and "(" not in name:
+        name += _STATION_UNSUFFIXED_LINES.get(name, "")
+    # 2025 집계 원본의 동래(4호선)는 접미사 없이 표기되어 있다. 기존
+    # 접근성 원본은 동래역(4호선)으로 표기하므로 이 원본에만 적용한다.
+    if not accessibility_source and name == "동래":
+        name = "동래(4)"
+    return name
 
 
 def _filter_busan(df: pd.DataFrame, lat_col: str = "위도", lng_col: str = "경도") -> pd.DataFrame:
@@ -241,7 +271,43 @@ def load_subway() -> gpd.GeoDataFrame:
     df = pd.read_excel(RAW_DIR / "busan_subway_station_accessibility_processed.xlsx")
     df = _filter_busan(df.dropna(subset=["위도", "경도"]))
     df["elevator_accessible"] = (df["엘리베이터"] == "O").astype(int)
-    return _to_gdf(df[["역코드", "역명", "elevator_accessible", "위도", "경도"]])
+    convenience = _read_csv("busan_subway_station_convenience_20251231.csv")
+    ramp_column = "외부경사로(지상역 출구)"
+    if not {"역명", ramp_column}.issubset(convenience.columns):
+        raise ValueError("역사 편의시설 원본에 외부경사로 수량 컬럼이 없습니다.")
+    ramp_counts = convenience[["역명", ramp_column]].copy()
+    ramp_counts["station_join_key"] = ramp_counts["역명"].map(
+        lambda value: _station_join_key(value, accessibility_source=False)
+    )
+    ramp_counts["external_ramp_count"] = pd.to_numeric(
+        ramp_counts[ramp_column],
+        errors="coerce",
+    ).astype("Int64")
+    if ramp_counts["external_ramp_count"].isna().any() or (ramp_counts["external_ramp_count"] < 0).any():
+        raise ValueError("역사 외부경사로 수량이 비어 있거나 음수입니다.")
+    if ramp_counts["station_join_key"].duplicated().any():
+        raise ValueError("역사 편의시설 원본에 중복된 결합 역명이 있습니다.")
+    df["station_join_key"] = df["역명"].map(
+        lambda value: _station_join_key(value, accessibility_source=True)
+    )
+    if df["station_join_key"].duplicated().any():
+        raise ValueError("역 접근성 원본에 중복된 결합 역명이 있습니다.")
+    df = df.merge(
+        ramp_counts[["station_join_key", "external_ramp_count"]],
+        on="station_join_key",
+        how="left",
+        validate="one_to_one",
+    )
+    if df["external_ramp_count"].isna().any():
+        raise ValueError("역 접근성 원본과 역사 외부경사로 원본의 역명을 모두 결합하지 못했습니다.")
+    return _to_gdf(df[[
+        "역코드",
+        "역명",
+        "elevator_accessible",
+        "external_ramp_count",
+        "위도",
+        "경도",
+    ]])
 
 
 def load_crosswalk() -> gpd.GeoDataFrame:

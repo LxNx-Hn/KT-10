@@ -29,7 +29,10 @@ services:
       AI_INTERNAL_SERVICE_TOKEN: ${AI_INTERNAL_SERVICE_TOKEN:?AI_INTERNAL_SERVICE_TOKEN is required}
       APP_ENV: production
       ODSAY_API_KEY: ${ODSAY_API_KEY:?ODSAY_API_KEY is required}
-      DATA_GO_KR_SERVICE_KEY: ${DATA_GO_KR_SERVICE_KEY:-}
+      # 공공데이터포털의 URL Decoding 키(DECO)를 우선 사용한다. 예전
+      # DATA_GO_KR_SERVICE_KEY는 호환용 fallback이며, 키를 프론트엔드나
+      # Backend 컨테이너에 전달하지 않는다.
+      DATA_GO_KR_SERVICE_KEY: ${DECO:-${DATA_GO_KR_SERVICE_KEY:-}}
       ODSAY_CACHE_DIR: /app/ai/data/cache/odsay
       ODSAY_CACHE_TTL_SECONDS: ${ODSAY_CACHE_TTL_SECONDS:-1800}
       ODSAY_TIMEOUT_SECONDS: ${ODSAY_TIMEOUT_SECONDS:-20}
