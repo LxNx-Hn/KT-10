@@ -28,6 +28,15 @@ services:
       # backend/.env의 AI_SERVER_URL(로컬 개발용 localhost 값)을 덮어쓴다.
       - AI_SERVER_URL=http://ai:8001
       - AI_INTERNAL_SERVICE_TOKEN=${AI_INTERNAL_SERVICE_TOKEN:-}
+      # --env-file로 선택한 단일 환경파일이 backend/.env보다 우선한다.
+      # 공급자 비밀은 필요한 서버 컨테이너에만 명시적으로 전달한다.
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - NIM_BASE_URL=${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      - NIM_MODEL=${NIM_MODEL:-}
+      - NIM_REQUEST_TIMEOUT_SECONDS=${NIM_REQUEST_TIMEOUT_SECONDS:-30}
+      - NIM_MAX_OUTPUT_TOKENS=${NIM_MAX_OUTPUT_TOKENS:-800}
+      - NIM_RESPONSE_ATTEMPTS=${NIM_RESPONSE_ATTEMPTS:-2}
+      - NIM_ROUTE_EXPLANATION_MAX_ROUTES=${NIM_ROUTE_EXPLANATION_MAX_ROUTES:-3}
       - DATABASE_URL=postgresql+psycopg://kt10:kt10-local-only@postgres:5432/kt10
       - MAX_SUPPORTED_TOTAL_WALK_M=15000
       - ROUTE_DEFAULT_TOP_N=5
@@ -69,6 +78,7 @@ services:
       # .env.production을 --env-file로 사용한 로컬 검증에서도 운영과 같은
       # Decoding 키 선택 규칙을 적용한다.
       - DATA_GO_KR_SERVICE_KEY=${DECO:-${DATA_GO_KR_SERVICE_KEY:-}}
+      - ODSAY_API_KEY=${ODSAY_API_KEY:-}
       - ELEVATION_CACHE_DIR=/app/ai/data/cache/elevation
       - ELEVATION_DEM_DIR=/app/ai/data/cache/elevation/dem
       - ELEVATION_REGIONAL_DEM_PATH=/app/ai/data/precomputed/busan_dem_clipped_90m.tif
@@ -80,6 +90,7 @@ services:
       - ROUTE_FEATURE_CACHE_DIR=/app/ai/data/cache/route_features
       - ROUTE_FEATURE_CACHE_TTL_SECONDS=1800
       - TMAP_CACHE_DIR=/app/ai/data/cache/tmap
+      - TMAP_API_KEY=${TMAP_API_KEY:-}
       - TMAP_CACHE_TTL_SECONDS=1800
       - TMAP_MAX_CONCURRENT_REQUESTS=3
       - ORS_API_KEY=${ORS_API_KEY:-}
