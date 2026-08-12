@@ -236,10 +236,14 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
         return;
       }
       app.selectRoute(rec.route.id);
-      const reasons = rec.score.reasons.map((r) => r.replace(/[.]\s*$/, '')).join(', ');
       const caution = rec.score.cautions[0] ? ` 주의할 점은 ${rec.score.cautions[0]}` : '';
-      const explanation = reasons || rec.score.voiceSummary;
-      respond(`${ordWord(explainIdx)} 경로는 ${explanation}.${caution}`, 'EXPLAIN_ROUTE');
+      // Backend가 NIM 설명을 만들면 기존 voiceSummary 계약에 담는다. 생성할 수
+      // 없을 때도 같은 필드에는 규칙 기반 요약이 남아 있어 기존 경로 안내가 이어진다.
+      const explanation = rec.score.voiceSummary || rec.score.reasons
+        .map((reason) => reason.replace(/[.]\s*$/, ''))
+        .join(', ');
+      const terminal = /[.!?…]$/.test(explanation) ? '' : '.';
+      respond(`${ordWord(explainIdx)} 경로는 ${explanation}${terminal}${caution}`, 'EXPLAIN_ROUTE');
       return;
     }
 
