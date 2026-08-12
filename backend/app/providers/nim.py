@@ -25,10 +25,30 @@ def _route_facts(candidate: RouteCandidate) -> dict:
             "description": segment.description,
             "durationMin": segment.duration_min,
         }
+        if segment.distance_m is not None:
+            item["distanceM"] = segment.distance_m
         for key in ("stairs_count", "has_elevator", "is_low_floor_bus"):
             value = getattr(segment, key)
             if value is not None:
                 item[key] = value
+        if segment.ramp_points:
+            item["physicalRampPointCount"] = len(segment.ramp_points)
+            if segment.ramp_replaces_stairs is True:
+                item["physicalRampReplacesStairs"] = True
+        if segment.station_external_ramp_count is not None:
+            item["stationExternalRampInventoryCount"] = (
+                segment.station_external_ramp_count
+            )
+            # 현재 공공데이터는 역 단위 재고이므로 특정 출구·경로에 있다고
+            # 모델이 확대 해석하지 못하도록 일치 여부를 명시한다.
+            item["stationRampMatchedToThisRoute"] = (
+                segment.station_ramp_route_match is True
+            )
+        if segment.wheelchair_constraints_applied is True:
+            item["mappedWheelchairConstraintsApplied"] = True
+            item["wheelchairDataLimitations"] = list(
+                segment.wheelchair_data_limitations or []
+            )
         segments.append(item)
     facts = {
         "summary": candidate.summary,
@@ -66,8 +86,14 @@ async def explain_route(candidate: RouteCandidate) -> str:
                 "content": (
                     "/no_think\n"
                     "한국어 경로 안내를 차분하고 자연스러운 대화체의 짧은 한 문단으로 작성하세요. "
-                    "거리와 시간은 'X미터를 걷는 데 Y분 정도 걸립니다'처럼 자연스럽게 표현하세요. 제공한 JSON의 값만 사용하고 "
+                    "먼저 총 소요시간과 총 도보거리를 안내한 뒤 segments 순서대로 설명하세요. "
+                    "totalWalkM을 개별 segment의 durationMin과 결합하지 말고, 구간 거리와 시간은 같은 segment에 "
+                    "distanceM과 durationMin이 함께 있을 때만 한 문장으로 묶으세요. 조건문처럼 '~걸리면'이라고 잇지 마세요. "
+                    "제공한 JSON의 값만 사용하고 "
                     "값이 없는 시설, 계단, 경사로, 엘리베이터, 저상버스, 안전성은 언급하지 마세요. "
+                    "physicalRampPointCount만 실제 경로의 경사로 근거입니다. stationRampMatchedToThisRoute가 false이면 "
+                    "역 경사로 재고를 이 경로에서 이용한다고 말하지 마세요. mappedWheelchairConstraintsApplied는 지도에 "
+                    "기록된 제한에만 해당하며 wheelchairDataLimitations도 함께 안내하세요. "
                     "terrain90m은 90m 지형 추정값으로 표현하세요. JSON이나 목록을 출력하지 마세요."
                 ),
             },

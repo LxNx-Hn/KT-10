@@ -13,7 +13,11 @@ from app.models import (
     ScoredRoute,
     WeatherCondition,
 )
-from app.providers.nim import NimExplanationError, enrich_voice_summaries
+from app.providers.nim import (
+    NimExplanationError,
+    _route_facts,
+    enrich_voice_summaries,
+)
 from app.route_set_cache import route_set_cache
 
 
@@ -111,3 +115,38 @@ def test_voice_summary_keeps_rule_summary_when_nim_fails(monkeypatch):
     result = asyncio.run(enrich_voice_summaries([_scored()]))
 
     assert result[0].score.voice_summary == "규칙 기반 안내"
+
+
+def test_route_facts_keep_segment_distance_and_truthful_ramp_scope():
+    candidate = _candidate().model_copy(update={
+        "segments": [
+            RouteSegment(
+                id="walk-ramp",
+                mode="walk",
+                description="경사로가 확인된 보행 구간",
+                duration_min=6,
+                distance_m=180,
+                has_slope=True,
+                ramp_points=[{"lat": 35.1, "lng": 129.0}],
+                ramp_replaces_stairs=True,
+                ramp_evidence_source="TMAP pedestrian turnType 128/129",
+            ),
+            RouteSegment(
+                id="station-inventory",
+                mode="subway",
+                description="도시철도 이동",
+                duration_min=10,
+                station_external_ramp_count=2,
+                station_accessibility_evidence_source="부산교통공사",
+                station_ramp_route_match=None,
+            ),
+        ],
+    })
+
+    facts = _route_facts(candidate)
+
+    assert facts["segments"][0]["distanceM"] == 180
+    assert facts["segments"][0]["physicalRampPointCount"] == 1
+    assert facts["segments"][0]["physicalRampReplacesStairs"] is True
+    assert facts["segments"][1]["stationExternalRampInventoryCount"] == 2
+    assert facts["segments"][1]["stationRampMatchedToThisRoute"] is False
