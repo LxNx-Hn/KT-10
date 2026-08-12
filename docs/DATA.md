@@ -109,6 +109,10 @@ OpenRouteService의 `wheelchair` profile을 필수로 호출한다. ORS 요청�
 ORS wheelchair profile의 `wheelchair` 접근 제한도 함께 적용한다. 반면
 차단봉·문·게이트의 실제 개방 상태와 통과 폭은 공급자 결과만으로 확정하지
 않고 데이터 한계로 공개한다.
+ORS `extra_info`는 공식 응답 키 차이(`osmid` 요청은 `osmId` 응답,
+`waytype`은 배포 버전에 따라 `waytype` 또는 `waytypes`)를 명시적으로
+정규화한다. steepness·suitability·surface·waytype·osmid 각각의 `values`가
+반환 geometry 전체 구간을 덮지 않으면 해당 휠체어 후보를 거부한다.
 모든 실제 보행·환승 구간에 이 제약이 적용된 후보만 휠체어 추천에 남긴다.
 ORS가 미설정·실패하면 TMAP 계단 회피 결과로 대체하지 않고 503을 반환한다.
 

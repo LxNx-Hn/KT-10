@@ -75,6 +75,13 @@ def test_tmap_fails_explicitly_without_api_key(monkeypatch):
 
 
 def _ors_payload():
+    response_keys = {
+        "steepness": "steepness",
+        "suitability": "suitability",
+        "surface": "surface",
+        "waytype": "waytypes",
+        "osmid": "osmId",
+    }
     return {
         "type": "FeatureCollection",
         "features": [{
@@ -90,8 +97,13 @@ def _ors_payload():
                 "summary": {"distance": 1000, "duration": 600},
                 "segments": [{"distance": 1000, "duration": 600}],
                 "extras": {
-                    key: {"values": [], "summary": []}
-                    for key in EXTRA_INFO
+                    response_key: {
+                        "values": [[0, 1, index + 1]],
+                        "summary": [],
+                    }
+                    for index, response_key in enumerate(
+                        response_keys.values()
+                    )
                 },
             },
         }],
@@ -166,6 +178,18 @@ def test_ors_wheelchair_request_applies_all_official_restrictions(monkeypatch):
         "wheelchair_constraint_categories"
     ]
     assert "ramp_points" not in candidate.accessibility_evidence
+    assert candidate.accessibility_evidence[
+        "verified_extra_response_keys"
+    ] == {
+        "steepness": "steepness",
+        "suitability": "suitability",
+        "surface": "surface",
+        "waytype": "waytypes",
+        "osmid": "osmId",
+    }
+    assert candidate.accessibility_evidence[
+        "extra_info_full_route_coverage"
+    ] is True
 
 
 def test_ors_rejects_missing_requested_extra_info():
@@ -174,6 +198,21 @@ def test_ors_rejects_missing_requested_extra_info():
 
     with pytest.raises(CollectorError, match="extra_info"):
         OrsWheelchairRouteCollector()._candidate_from_data(payload)
+
+
+def test_ors_rejects_empty_or_partial_extra_info_coverage():
+    empty = _ors_payload()
+    empty["features"][0]["properties"]["extras"]["surface"]["values"] = []
+    with pytest.raises(CollectorError, match="구간이 비어"):
+        OrsWheelchairRouteCollector()._candidate_from_data(empty)
+
+    partial = _ors_payload()
+    partial["features"][0]["geometry"]["coordinates"].insert(
+        1,
+        [129.0560, 35.1600, 11.5],
+    )
+    with pytest.raises(CollectorError, match="경로 전체"):
+        OrsWheelchairRouteCollector()._candidate_from_data(partial)
 
 
 @pytest.mark.parametrize(

@@ -31,7 +31,7 @@ from collectors.base import (
 )
 from config import settings
 
-CACHE_SCHEMA_VERSION = 1
+CACHE_SCHEMA_VERSION = 2
 RESTRICTION_SCHEMA_VERSION = 1
 PROFILE = "wheelchair"
 AVOID_FEATURES = ("steps", "ferries")
@@ -46,6 +46,16 @@ WHEELCHAIR_RESTRICTIONS = {
     "minimum_width": 0.9,
 }
 EXTRA_INFO = ("steepness", "suitability", "surface", "waytype", "osmid")
+EXTRA_RESPONSE_KEYS = {
+    "steepness": ("steepness",),
+    "suitability": ("suitability",),
+    "surface": ("surface",),
+    # 공식 설명 표는 waytype을 쓰지만 같은 페이지의 실제 응답 예시는
+    # waytypes를 사용한다. 배포 버전 차이를 허용하되 다른 키는 받지 않는다.
+    "waytype": ("waytype", "waytypes"),
+    # ORS 공식 계약상 요청명 osmid와 응답명 osmId가 다르다.
+    "osmid": ("osmId", "osmid"),
+}
 CONSTRAINT_CATEGORIES = (
     "steps",
     "surface",
@@ -255,6 +265,70 @@ class OrsWheelchairRouteCollector(BaseRouteCollector):
             )
         return path
 
+    @staticmethod
+    def _validated_extra_info(
+        extras: dict,
+        *,
+        waypoint_count: int,
+    ) -> dict[str, str]:
+        """요청별 실제 응답 키와 전체 geometry 구간 coverage를 검증한다."""
+        resolved: dict[str, str] = {}
+        edge_count = waypoint_count - 1
+        for request_key, response_keys in EXTRA_RESPONSE_KEYS.items():
+            response_key = next(
+                (key for key in response_keys if key in extras),
+                None,
+            )
+            if response_key is None:
+                raise CollectorError(
+                    f"ORS extra_info가 누락되었습니다: {request_key}",
+                    code="invalid_response",
+                )
+            item = extras.get(response_key)
+            if not isinstance(item, dict):
+                raise CollectorError(
+                    f"ORS extra_info {response_key}가 객체가 아닙니다.",
+                    code="invalid_response",
+                )
+            values = item.get("values")
+            summary = item.get("summary")
+            if not isinstance(values, list) or not values:
+                raise CollectorError(
+                    f"ORS extra_info {response_key} 구간이 비어 있습니다.",
+                    code="invalid_response",
+                )
+            if not isinstance(summary, list):
+                raise CollectorError(
+                    f"ORS extra_info {response_key} summary가 배열이 아닙니다.",
+                    code="invalid_response",
+                )
+            covered = [False] * edge_count
+            for value in values:
+                if (
+                    not isinstance(value, list)
+                    or len(value) != 3
+                    or isinstance(value[0], bool)
+                    or isinstance(value[1], bool)
+                    or not isinstance(value[0], int)
+                    or not isinstance(value[1], int)
+                    or not 0 <= value[0] < value[1] < waypoint_count
+                ):
+                    raise CollectorError(
+                        f"ORS extra_info {response_key} 구간 형식이 "
+                        "올바르지 않습니다.",
+                        code="invalid_response",
+                    )
+                for index in range(value[0], value[1]):
+                    covered[index] = True
+            if not all(covered):
+                raise CollectorError(
+                    f"ORS extra_info {response_key}가 경로 전체를 "
+                    "포함하지 않습니다.",
+                    code="invalid_response",
+                )
+            resolved[request_key] = response_key
+        return resolved
+
     def _candidate_from_data(self, data: dict) -> RouteCandidate:
         if data.get("type") != "FeatureCollection":
             raise CollectorError(
@@ -293,14 +367,13 @@ class OrsWheelchairRouteCollector(BaseRouteCollector):
                 "ORS 보행 안내 구간이 누락되었습니다.",
                 code="invalid_response",
             )
-        missing_extras = [key for key in EXTRA_INFO if key not in extras]
-        if missing_extras:
-            raise CollectorError(
-                "ORS extra_info가 누락되었습니다: "
-                + ", ".join(missing_extras),
-                code="invalid_response",
-            )
         path = self._coordinates(geometry)
+        response_extra_keys = self._validated_extra_info(
+            extras,
+            # extra_info 인덱스는 중복 정점을 정리한 내부 path가 아니라 ORS
+            # 원본 geometry 좌표 배열을 기준으로 한다.
+            waypoint_count=len(geometry["coordinates"]),
+        )
         distance = self._positive_number(summary.get("distance"), "distance")
         duration = self._positive_number(summary.get("duration"), "duration")
         evidence = {
@@ -311,6 +384,8 @@ class OrsWheelchairRouteCollector(BaseRouteCollector):
             "wheelchair_constraint_categories": list(CONSTRAINT_CATEGORIES),
             "avoided_features": list(AVOID_FEATURES),
             "verified_extra_info": list(EXTRA_INFO),
+            "verified_extra_response_keys": response_extra_keys,
+            "extra_info_full_route_coverage": True,
             # ORS wheelchair profile이 지도에 기록된 steps를 탐색에서 제외한
             # 결과다. OSM 누락까지 현장 확인한 값은 아니므로 계단 수를 0으로
             # 만들지 않는다.
