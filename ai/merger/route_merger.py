@@ -12,6 +12,11 @@ from collectors.base import Coordinate
 MERGE_THRESHOLD_M = 30.0
 MERGE_MAX_DEVIATION_M = 60.0
 PATH_SAMPLE_POINTS = 16
+# 접근성 근거는 평행 보도·다른 출입구에 잘못 붙으면 위험하므로 일반 중복
+# 제거보다 촘촘하고 엄격하게 같은 선형을 확인한다.
+ACCESSIBILITY_MERGE_THRESHOLD_M = 12.0
+ACCESSIBILITY_MERGE_MAX_DEVIATION_M = 25.0
+ACCESSIBILITY_PATH_SAMPLE_POINTS = 64
 
 
 @dataclass
@@ -86,11 +91,15 @@ def sample_path_by_distance(
     return sampled
 
 
-def _path_deviations(a: list, b: list) -> list[float]:
+def _path_deviations(
+    a: list,
+    b: list,
+    n: int = PATH_SAMPLE_POINTS,
+) -> list[float]:
     """두 경로의 거리 균등 표본별 이격거리(m)를 반환한다."""
-    sa = sample_path_by_distance(a)
-    sb = sample_path_by_distance(b)
-    if len(sa) != PATH_SAMPLE_POINTS or len(sb) != PATH_SAMPLE_POINTS:
+    sa = sample_path_by_distance(a, n)
+    sb = sample_path_by_distance(b, n)
+    if len(sa) != n or len(sb) != n:
         return []
     return [_haversine(p1, p2) for p1, p2 in zip(sa, sb)]
 
@@ -108,6 +117,25 @@ def _paths_similar(a: list, b: list) -> bool:
 def paths_similar(a: list, b: list) -> bool:
     """공급자 근거를 결합해도 되는 같은 보행 경로인지 확인한다."""
     return _paths_similar(a, b)
+
+
+def accessibility_paths_similar(a: list, b: list) -> bool:
+    """물리 경사로·휠체어 제약을 서로 결합해도 되는 동일 선형인지 확인."""
+    deviations = _path_deviations(
+        a,
+        b,
+        ACCESSIBILITY_PATH_SAMPLE_POINTS,
+    )
+    return bool(
+        deviations
+        and sum(deviations) / len(deviations)
+        <= ACCESSIBILITY_MERGE_THRESHOLD_M
+        and max(deviations) <= ACCESSIBILITY_MERGE_MAX_DEVIATION_M
+    )
+
+
+def _has_accessibility_evidence(candidate: Any) -> bool:
+    return bool(getattr(candidate, "accessibility_evidence", None))
 
 
 def _mode_signature(candidate: Any) -> tuple[str, ...]:
@@ -262,6 +290,13 @@ def merge_route_candidates(candidates: list) -> list:
             if (
                 _merge_compatible(cand, m)
                 and _paths_similar(cand.path, m.path)
+                and (
+                    not (
+                        _has_accessibility_evidence(cand)
+                        or _has_accessibility_evidence(m)
+                    )
+                    or accessibility_paths_similar(cand.path, m.path)
+                )
             ):
                 if cand.source not in m.sources:
                     m.sources.append(cand.source)

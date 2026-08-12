@@ -215,6 +215,19 @@ def test_ors_rejects_empty_or_partial_extra_info_coverage():
         OrsWheelchairRouteCollector()._candidate_from_data(partial)
 
 
+def test_ors_rejects_explicitly_unsuitable_wheelchair_segment():
+    payload = _ors_payload()
+    payload["features"][0]["properties"]["extras"]["suitability"][
+        "values"
+    ] = [[0, 1, 1]]
+
+    with pytest.raises(CollectorError, match="부적합한 구간") as captured:
+        OrsWheelchairRouteCollector()._candidate_from_data(payload)
+
+    assert captured.value.code == "wheelchair_unsuitable"
+    assert captured.value.retryable is False
+
+
 @pytest.mark.parametrize(
     ("status", "code"),
     [(401, "auth_failed"), (403, "auth_failed"), (429, "quota_exceeded")],
@@ -362,7 +375,7 @@ def test_tmap_wheelchair_request_uses_official_stair_excluded_option_and_ramp_co
             {
                 "geometry": {
                     "type": "Point",
-                    "coordinates": [129.05, 35.16],
+                    "coordinates": [129.0562, 35.1602],
                 },
                 "properties": {
                     "turnType": 129,
@@ -421,8 +434,8 @@ def test_tmap_wheelchair_request_uses_official_stair_excluded_option_and_ramp_co
         "stairs_excluded_by_provider": True,
         "stair_feature_count": 0,
         "ramp_points": [{
-            "lat": 35.16,
-            "lng": 129.05,
+            "lat": 35.1602,
+            "lng": 129.0562,
             "turn_type": 129,
             "replaces_stairs": True,
         }],
@@ -458,6 +471,38 @@ def test_tmap_stair_excluded_response_rejects_contradictory_stair_feature():
     }
 
     with pytest.raises(CollectorError, match="계단 제외 경로"):
+        collector._candidate_from_data(payload)
+
+
+def test_tmap_rejects_ramp_point_outside_returned_walk_geometry():
+    collector = TmapRouteCollector(avoid_stairs=True)
+    payload = {
+        "features": [
+            {
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [129.08, 35.18],
+                },
+                "properties": {
+                    "turnType": 129,
+                    "totalTime": 600,
+                    "totalDistance": 1000,
+                },
+            },
+            {
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [
+                        [ORIGIN.lng, ORIGIN.lat],
+                        [DEST.lng, DEST.lat],
+                    ],
+                },
+                "properties": {},
+            },
+        ],
+    }
+
+    with pytest.raises(CollectorError, match="보행 선형과 일치하지"):
         collector._candidate_from_data(payload)
 
 

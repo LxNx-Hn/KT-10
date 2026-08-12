@@ -195,7 +195,7 @@ def test_ai_ranked_wheelchair_route_keeps_constraint_caution_in_voice():
             "surface_type": "cobblestone:flattened",
             "track_type": "grade1",
             "smoothness_type": "good",
-            "maximum_sloped_kerb": 0.03,
+            "maximum_sloped_kerb": 0.06,
             "maximum_incline": 6,
             "minimum_width": 0.9,
         },

@@ -220,3 +220,27 @@ def test_dissimilar_tmap_and_ors_routes_do_not_share_accessibility_evidence():
     assert len(merged) == 2
     assert "wheelchair_constraints_applied" not in merged[0].accessibility_evidence
     assert "ramp_points" not in merged[1].accessibility_evidence
+
+
+def test_parallel_nearby_paths_do_not_share_accessibility_evidence():
+    tmap = [
+        Coordinate(lat=35.0, lng=129.0),
+        Coordinate(lat=35.01, lng=129.0),
+    ]
+    # 약 18m 떨어진 평행 보도는 일반 중복 임계값 안이지만 물리 경사로를
+    # 공유할 수 있는 같은 선형은 아니다.
+    ors = [
+        Coordinate(lat=35.0, lng=129.0002),
+        Coordinate(lat=35.01, lng=129.0002),
+    ]
+
+    merged = merge_route_candidates([
+        _candidate("tmap", tmap, evidence={"ramp_points": [{"lat": 35.0}]}),
+        _candidate(
+            "ors",
+            ors,
+            evidence={"wheelchair_constraints_applied": True},
+        ),
+    ])
+
+    assert len(merged) == 2

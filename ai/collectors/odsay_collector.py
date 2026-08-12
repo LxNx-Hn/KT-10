@@ -40,7 +40,10 @@ from collectors.odsay_instrumentation import (
 from collectors.odsay_instrumentation import (
     log_call as log_odsay_call,
 )
-from merger.route_merger import merge_accessibility_evidence, paths_similar
+from merger.route_merger import (
+    accessibility_paths_similar,
+    merge_accessibility_evidence,
+)
 
 def _provider_error_code(data: dict) -> str:
     """ODsay 오류 응답 코드를 재시도 정책 분류로 옮긴다."""
@@ -539,7 +542,7 @@ class OdsayRouteCollector(BaseRouteCollector):
                 else:
                     if (
                         tmap_candidates
-                        and paths_similar(
+                        and accessibility_paths_similar(
                             primary.path,
                             tmap_candidates[0].path,
                         )

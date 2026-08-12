@@ -105,7 +105,8 @@ geometry 결측, 야간 상태를 임의의 그늘 0%로 바꾸지 않습니다.
 `searchOption=30`(최단거리+계단제외)을 보낸다. 휠체어 요청은 여기에 더해
 OpenRouteService의 `wheelchair` profile을 필수로 호출한다. ORS 요청에는
 `steps`, `ferries` 회피와 노면(`cobblestone:flattened`), track grade 1,
-평탄도 `good`, 최대 낮춘 턱 3cm, 최대 경사 6%, 최소 폭 0.9m 제한을 보낸다.
+평탄도 `good`, 최대 낮춘 턱 6cm, 최대 경사 6%, 최소 폭 0.9m 제한을 보낸다.
+6cm는 ORS 공식 wheelchair 기본값이며 일반 연석·계단 허용을 뜻하지 않는다.
 ORS wheelchair profile의 `wheelchair` 접근 제한도 함께 적용한다. 반면
 차단봉·문·게이트의 실제 개방 상태와 통과 폭은 공급자 결과만으로 확정하지
 않고 데이터 한계로 공개한다.

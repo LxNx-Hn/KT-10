@@ -10,7 +10,7 @@ import json
 import logging
 import time
 from hashlib import sha256
-from math import isfinite
+from math import cos, isfinite, radians, sqrt
 from pathlib import Path
 from threading import Lock
 from uuid import uuid4
@@ -27,6 +27,7 @@ DEFAULT_SEARCH_OPTION = "0"
 STAIR_FACILITY_TYPE = 17
 STAIR_TURN_TYPE = 127
 RAMP_TURN_TYPES = frozenset({128, 129})
+RAMP_PATH_MATCH_MAX_M = 20.0
 QUOTA_BACKOFF_SECONDS = 60.0
 log = logging.getLogger("collectors.tmap")
 _cache_write_locks: dict[str, Lock] = {}
@@ -36,6 +37,34 @@ _request_semaphores: WeakKeyDictionary = WeakKeyDictionary()
 _request_state_guard = Lock()
 _quota_backoff_until = 0.0
 _quota_backoff_guard = Lock()
+
+
+def _point_to_path_distance_m(point: Coordinate, path: list[Coordinate]) -> float:
+    """부산 범위의 짧은 구간을 국소 평면으로 투영해 선형까지 거리를 구한다."""
+    latitude_scale = 111_320.0
+    longitude_scale = latitude_scale * cos(radians(point.lat))
+
+    def xy(value: Coordinate) -> tuple[float, float]:
+        return (
+            (value.lng - point.lng) * longitude_scale,
+            (value.lat - point.lat) * latitude_scale,
+        )
+
+    best = float("inf")
+    for start, end in zip(path, path[1:]):
+        ax, ay = xy(start)
+        bx, by = xy(end)
+        dx, dy = bx - ax, by - ay
+        denominator = dx * dx + dy * dy
+        ratio = (
+            max(0.0, min(1.0, -(ax * dx + ay * dy) / denominator))
+            if denominator > 0
+            else 0.0
+        )
+        nearest_x = ax + ratio * dx
+        nearest_y = ay + ratio * dy
+        best = min(best, sqrt(nearest_x * nearest_x + nearest_y * nearest_y))
+    return best
 
 
 def _cache_identity(
@@ -303,6 +332,14 @@ class TmapRouteCollector(BaseRouteCollector):
             "totalDistance",
         )
         accessibility_evidence = self._accessibility_evidence(features)
+        for ramp in accessibility_evidence["ramp_points"]:
+            ramp_point = Coordinate(lat=ramp["lat"], lng=ramp["lng"])
+            if _point_to_path_distance_m(ramp_point, coords) > RAMP_PATH_MATCH_MAX_M:
+                raise CollectorError(
+                    "TMAP 경사로 안내점이 반환된 보행 선형과 일치하지 않습니다.",
+                    code="invalid_response",
+                    retryable=False,
+                )
         return RouteCandidate(
             source=self.source_name,
             path=coords,

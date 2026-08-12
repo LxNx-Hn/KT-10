@@ -32,16 +32,16 @@ from collectors.base import (
 from config import settings
 
 CACHE_SCHEMA_VERSION = 2
-RESTRICTION_SCHEMA_VERSION = 1
+RESTRICTION_SCHEMA_VERSION = 2
 PROFILE = "wheelchair"
 AVOID_FEATURES = ("steps", "ferries")
 WHEELCHAIR_RESTRICTIONS = {
-    # ORS 공식 wheelchair routing option 값. 사용자가 작은 턱은 허용한다고
-    # 했으므로 낮은 턱 기준인 3cm를 선택한다.
+    # ORS 공식 wheelchair 기본값. 낮춘 턱은 6cm까지 허용하되 일반 연석이나
+    # 계단을 허용하는 값은 아니다(공식 허용값: 3/6/10cm/any).
     "surface_type": "cobblestone:flattened",
     "track_type": "grade1",
     "smoothness_type": "good",
-    "maximum_sloped_kerb": 0.03,
+    "maximum_sloped_kerb": 0.06,
     "maximum_incline": 6,
     "minimum_width": 0.9,
 }
@@ -320,6 +320,24 @@ class OrsWheelchairRouteCollector(BaseRouteCollector):
                     )
                 for index in range(value[0], value[1]):
                     covered[index] = True
+                if request_key == "suitability":
+                    suitability = value[2]
+                    if (
+                        isinstance(suitability, bool)
+                        or not isinstance(suitability, (int, float))
+                        or not isfinite(float(suitability))
+                        or not 1 <= float(suitability) <= 10
+                    ):
+                        raise CollectorError(
+                            "ORS suitability 값이 1~10 범위가 아닙니다.",
+                            code="invalid_response",
+                        )
+                    if float(suitability) == 1:
+                        raise CollectorError(
+                            "ORS가 휠체어에 부적합한 구간을 반환했습니다.",
+                            code="wheelchair_unsuitable",
+                            retryable=False,
+                        )
             if not all(covered):
                 raise CollectorError(
                     f"ORS extra_info {response_key}가 경로 전체를 "
