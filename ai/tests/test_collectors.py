@@ -160,6 +160,7 @@ def test_ors_wheelchair_request_applies_all_official_restrictions(monkeypatch):
     assert candidate.accessibility_evidence[
         "stairs_excluded_by_provider"
     ] is True
+    assert "stair_feature_count" not in candidate.accessibility_evidence
     assert candidate.accessibility_evidence["wheelchair_data_limitations"]
     assert "wheelchair_access" in candidate.accessibility_evidence[
         "wheelchair_constraint_categories"

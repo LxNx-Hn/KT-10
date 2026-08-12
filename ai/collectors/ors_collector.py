@@ -311,9 +311,10 @@ class OrsWheelchairRouteCollector(BaseRouteCollector):
             "wheelchair_constraint_categories": list(CONSTRAINT_CATEGORIES),
             "avoided_features": list(AVOID_FEATURES),
             "verified_extra_info": list(EXTRA_INFO),
-            # ORS wheelchair profile이 steps를 탐색에서 제외한 결과다.
+            # ORS wheelchair profile이 지도에 기록된 steps를 탐색에서 제외한
+            # 결과다. OSM 누락까지 현장 확인한 값은 아니므로 계단 수를 0으로
+            # 만들지 않는다.
             "stairs_excluded_by_provider": True,
-            "stair_feature_count": 0,
             "wheelchair_data_limitations": list(DATA_LIMITATIONS),
         }
         return RouteCandidate(

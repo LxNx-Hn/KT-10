@@ -112,8 +112,8 @@ def test_wheelchair_keeps_only_provider_verified_stair_excluded_candidates():
         ),
         _candidate(
             "verified-clear",
-            stairs=False,
-            count=0,
+            stairs=None,
+            count=None,
             provider_excluded=True,
             wheelchair_constrained=True,
         ),
@@ -167,8 +167,8 @@ def test_pipeline_sends_wheelchair_stair_constraint():
 def test_wheelchair_explanation_states_constraints_and_real_world_limit():
     route = _candidate(
         "wheelchair-ready",
-        stairs=False,
-        count=0,
+        stairs=None,
+        count=None,
         provider_excluded=True,
         wheelchair_constrained=True,
     )
@@ -187,5 +187,5 @@ def test_wheelchair_explanation_states_constraints_and_real_world_limit():
     reasons = build_reasons(route, components, "none")
     cautions = build_cautions(route, components, "none", weather)
 
-    assert any("계단·노면·폭·턱·경사 제한" in item for item in reasons)
+    assert any("지도에 기록된 계단·노면·폭·턱·경사 제한" in item for item in reasons)
     assert any("임시 장애물" in item for item in cautions)

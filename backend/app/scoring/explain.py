@@ -30,7 +30,7 @@ def build_reasons(r: RouteCandidate, c: ScoreComponents, low_floor: LowFloorStat
         segment.wheelchair_constraints_applied is True
         for segment in constrained_walk
     ):
-        out.append("기록된 계단·노면·폭·턱·경사 제한을 적용한 경로예요.")
+        out.append("지도에 기록된 계단·노면·폭·턱·경사 제한을 적용한 경로예요.")
     if low_floor == "confirmed":
         out.append("경로의 버스가 저상버스로 확인됐어요.")
     if c.safety is not None and c.safety >= 85:

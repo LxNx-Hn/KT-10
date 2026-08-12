@@ -28,10 +28,11 @@ def filter_known_stair_candidates(
 ) -> list[RouteCandidate]:
     """휠체어 사용자에게 통행 제약이 확인된 후보만 남긴다.
 
-    계단 정보가 누락된 후보를 통과 가능하다고 추정하지 않는다. 모든 실제
-    보행·환승 구간이 계단 제외 옵션으로 탐색됐고, ORS wheelchair profile의
-    노면·평탄도·폭·턱·경사 제한도 적용돼야 한다. 경사로는 TMAP 공급자
-    안내점이 있을 때만 별도로 노출하며, 지형 경사를 경사로로 대체하지 않는다.
+    모든 실제 보행·환승 구간이 계단 제외 옵션으로 탐색됐고, ORS wheelchair
+    profile의 노면·평탄도·폭·턱·경사 제한도 적용돼야 한다. 다만 공급자의
+    계단 회피는 미매핑 계단까지 현장 확인했다는 뜻이 아니므로 계단 수를
+    0으로 요구하거나 만들지 않는다. 경사로는 TMAP 공급자 안내점이 있을 때만
+    별도로 노출하며, 지형 경사를 경사로로 대체하지 않는다.
     """
     uses_wheelchair = bool(
         user_preference and getattr(user_preference, "uses_wheelchair", False)
@@ -50,8 +51,11 @@ def filter_known_stair_candidates(
             continue
         if all(
             segment.stairs_excluded_by_provider is True
-            and segment.has_stairs is False
-            and segment.stairs_count == 0
+            and segment.has_stairs is not True
+            and not (
+                segment.stairs_count is not None
+                and segment.stairs_count > 0
+            )
             and segment.wheelchair_constraints_applied is True
             and segment.wheelchair_constraint_source
             == "openrouteservice wheelchair profile"

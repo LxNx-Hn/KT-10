@@ -140,12 +140,16 @@ class RouteSegment(CamelModel):
             )
         if self.ramp_replaces_stairs is True and not self.ramp_points:
             raise ValueError("ramp_replaces_stairs=True requires ramp_points")
-        if self.stairs_excluded_by_provider is True and not (
-            self.has_stairs is False and self.stairs_count == 0
+        if self.stairs_excluded_by_provider is True and (
+            self.has_stairs is True
+            or (
+                self.stairs_count is not None
+                and self.stairs_count > 0
+            )
         ):
             raise ValueError(
-                "stairs_excluded_by_provider=True requires "
-                "has_stairs=False and stairs_count=0"
+                "stairs_excluded_by_provider=True conflicts with "
+                "known stairs"
             )
         if self.wheelchair_constraints_applied is True and not (
             self.wheelchair_constraint_source
