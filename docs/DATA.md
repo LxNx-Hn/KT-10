@@ -30,6 +30,10 @@
 부산교통공사 역사 편의시설 원본의 `외부경사로(지상역 출구)`는 역별 수량 집계다.
 따라서 역에 외부경사로가 있다는 시설 사실에는 사용하지만, 출입구 좌표·선형이
 없어 특정 보행 경로가 그 경사로를 지난다는 사실로 변환하지 않는다.
+API에는 `stationExternalRampCount`, `stationWheelchairLiftCount`와 원본 출처를
+역 단위 재고로만 제공한다. 출구별 geometry가 확보되기 전까지
+`stationRampRouteMatch`는 `null`이며 `rampPoints` 또는 `rampReplacesStairs`로
+승격하지 않는다.
 
 한국사회보장정보원 장애인편의시설 상세 API의 기구표는 `주출입구 접근로`처럼
 시설 접근성 항목을 반환한다. 물리 경사로의 좌표·선형·기울기를 반환하지 않으므로

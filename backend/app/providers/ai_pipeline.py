@@ -809,6 +809,16 @@ def _to_segment(item: dict, rank: int, index: int) -> RouteSegment:
         station_name=item.get("station_name"),
         has_elevator=item.get("has_elevator"),
         needs_vertical_move=item.get("needs_vertical_move"),
+        station_external_ramp_count=item.get(
+            "station_external_ramp_count"
+        ),
+        station_wheelchair_lift_count=item.get(
+            "station_wheelchair_lift_count"
+        ),
+        station_accessibility_evidence_source=item.get(
+            "station_accessibility_evidence_source"
+        ),
+        station_ramp_route_match=item.get("station_ramp_route_match"),
         path=item.get("path"),
         geometry_quality=item.get("geometry_quality"),
     )

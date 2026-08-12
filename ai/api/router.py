@@ -1311,22 +1311,38 @@ def _station_name_key(value: object) -> str | None:
     return normalized.casefold() or None
 
 
-def _subway_elevator_lookup(layers: dict) -> dict[str, bool]:
-    """역명별 엘리베이터 접근성. 중복 역명의 충돌 값은 제외한다."""
+def _subway_accessibility_lookup(layers: dict) -> dict[str, dict]:
+    """역명별 시설 재고. 중복 역명의 충돌 값은 보수적으로 제외한다."""
     subway = layers.get("subway")
     if subway is None:
         return {}
-    seen: dict[str, set[bool]] = {}
+    seen: dict[str, set[tuple[bool, int, int]]] = {}
     for _, row in subway.iterrows():
         name = _station_name_key(row.get("역명"))
-        value = row.get("elevator_accessible")
-        if name is None or value not in (0, 1, False, True):
+        elevator = row.get("elevator_accessible")
+        ramp_count = _nonnegative_int(row.get("external_ramp_count"))
+        lift_count = _nonnegative_int(row.get("wheelchair_lift_count"))
+        if (
+            name is None
+            or elevator not in (0, 1, False, True)
+            or ramp_count is None
+            or lift_count is None
+        ):
             continue
-        seen.setdefault(name, set()).add(bool(value))
+        seen.setdefault(name, set()).add((
+            bool(elevator),
+            ramp_count,
+            lift_count,
+        ))
     return {
-        name: next(iter(values))
+        name: {
+            "has_elevator": value[0],
+            "station_external_ramp_count": value[1],
+            "station_wheelchair_lift_count": value[2],
+        }
         for name, values in seen.items()
         if len(values) == 1
+        for value in values
     }
 
 
@@ -1334,20 +1350,33 @@ def _enrich_subway_elevator_accessibility(
     segments: list[dict],
     layers: dict,
 ) -> list[dict]:
-    """확인된 역사 접근성만 도시철도 구간에 추가한다.
+    """확인된 역사 시설 재고만 도시철도 구간에 추가한다.
 
     역에 엘리베이터가 있다는 사실은 해당 환승 동선이 반드시 수직이동을
     한다는 뜻이 아니므로 ``needs_vertical_move``은 여기서 추정하지 않는다.
+    외부경사로·휠체어리프트도 출구별 위치가 없는 역 단위 수량이므로 특정
+    보행 경로가 통과하거나 계단을 대체한다고 추정하지 않는다.
     """
-    lookup = _subway_elevator_lookup(layers)
+    lookup = _subway_accessibility_lookup(layers)
     if not lookup:
         return segments
     for segment in segments:
-        if segment.get("mode") != "subway" or segment.get("has_elevator") is not None:
+        if segment.get("mode") != "subway":
             continue
         value = lookup.get(_station_name_key(segment.get("station_name")) or "")
         if value is not None:
-            segment["has_elevator"] = value
+            if segment.get("has_elevator") is None:
+                segment["has_elevator"] = value["has_elevator"]
+            segment["station_external_ramp_count"] = value[
+                "station_external_ramp_count"
+            ]
+            segment["station_wheelchair_lift_count"] = value[
+                "station_wheelchair_lift_count"
+            ]
+            segment["station_accessibility_evidence_source"] = (
+                "부산교통공사 도시철도 편의시설 현황 2025-12-31"
+            )
+            segment["station_ramp_route_match"] = None
     return segments
 
 
