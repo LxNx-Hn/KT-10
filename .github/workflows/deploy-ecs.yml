@@ -332,6 +332,7 @@ jobs:
         shell: bash
         env:
           AI_INTERNAL_SERVICE_TOKEN: ${{ secrets.AI_INTERNAL_SERVICE_TOKEN }}
+          ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
           DEPLOY_FRONTEND: ${{ steps.plan.outputs.deploy_frontend }}
           DEPLOY_BACKEND: ${{ steps.plan.outputs.deploy_backend }}
           DEPLOY_AI: ${{ steps.plan.outputs.deploy_ai }}
@@ -342,6 +343,10 @@ jobs:
           if { [ "$DEPLOY_BACKEND" = "true" ] || [ "$DEPLOY_AI" = "true" ]; } \
             && [ "${#AI_INTERNAL_SERVICE_TOKEN}" -lt 32 ]; then
             echo "AI_INTERNAL_SERVICE_TOKEN secret must be at least 32 characters." >&2
+            exit 1
+          fi
+          if [ "$DEPLOY_AI" = "true" ] && [ -z "$ORS_API_KEY" ]; then
+            echo "ORS_API_KEY secret is required for wheelchair routing." >&2
             exit 1
           fi
 
@@ -366,6 +371,7 @@ jobs:
             local image="$3"
             local output_key="$4"
             local inject_internal_token="$5"
+            local inject_ors_key="$6"
 
             aws ecs describe-task-definition \
               --task-definition "$family" \
@@ -376,7 +382,9 @@ jobs:
               --arg container "$container" \
               --arg image "$image" \
               --arg internal_token "$AI_INTERNAL_SERVICE_TOKEN" \
+              --arg ors_api_key "$ORS_API_KEY" \
               --argjson inject_internal_token "$inject_internal_token" \
+              --argjson inject_ors_key "$inject_ors_key" \
               'del(
                 .taskDefinitionArn,
                 .revision,
@@ -396,6 +404,17 @@ jobs:
                         + [{
                             name: "AI_INTERNAL_SERVICE_TOKEN",
                             value: $internal_token
+                          }]
+                      )
+                    else .
+                    end
+                  | if $inject_ors_key then
+                      .environment = (
+                        (.environment // [])
+                        | map(select(.name != "ORS_API_KEY"))
+                        + [{
+                            name: "ORS_API_KEY",
+                            value: $ors_api_key
                           }]
                       )
                     else .
@@ -424,6 +443,7 @@ jobs:
               ai \
               "$registry/kt10-ai:$tag" \
               ai_task_definition \
+              true \
               true
           fi
           if [ "$DEPLOY_BACKEND" = "true" ]; then
@@ -432,7 +452,8 @@ jobs:
               backend \
               "$registry/kt10-backend:$tag" \
               backend_task_definition \
-              true
+              true \
+              false
           fi
           if [ "$DEPLOY_FRONTEND" = "true" ]; then
             register_task_definition \
@@ -440,6 +461,7 @@ jobs:
               frontend \
               "$registry/kt10-frontend:$tag" \
               frontend_task_definition \
+              false \
               false
           fi
 

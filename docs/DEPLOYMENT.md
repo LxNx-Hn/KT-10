@@ -46,6 +46,9 @@ python scripts\prepare_deployment_env.py --import-existing
   적용하는 OpenRouteService 키입니다. TMAP/ODsay/공공데이터포털 키와
   호환되지 않습니다. 없으면 AI readiness와 운영 Compose 검증이 실패합니다.
   값은 루트 `.env.production`에서만 관리하고 Git에 커밋하지 않습니다.
+  ECS 자동 배포에서는 같은 이름의 GitHub Actions repository secret을
+  AI 태스크 정의에만 주입합니다. Secret이 비어 있으면 배포는 서비스 변경
+  전에 중단됩니다.
 - 선택: `OSMNX_WALK_GEOMETRY_ENABLED`: 느린 OSM 보행망 복구를 허용할
   때만 `true`; 운영 기본값은 `false`
 - `RANKER_TIER`: 기본 `bootstrap_baseline`. 초기 AI 기반 경로 추천
