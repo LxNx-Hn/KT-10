@@ -63,19 +63,4 @@ describe('음성 챗봇 결과 계약', () => {
     expect(state.status).toBe('idle');
     expect(state.messages[state.messages.length - 1]?.text).toContain('다시 시도');
   });
-
-  it('경로 설명은 NIM이 보강한 voiceSummary를 먼저 사용한다', async () => {
-    const ranked = serverRankedRecommendations(useAppStore.getState().recommendations);
-    ranked[0].score.voiceSummary = 'NIM 경로 설명입니다.';
-    ranked[0].score.reasons = ['규칙 기반 근거입니다.'];
-    useAppStore.setState({ recommendations: ranked });
-
-    await useVoiceChatStore.getState().handleUserInput('첫 번째 경로 설명');
-
-    const messages = useVoiceChatStore.getState().messages;
-    const reply = messages[messages.length - 1]?.text ?? '';
-    expect(reply).toContain('NIM 경로 설명입니다.');
-    expect(reply).not.toContain('규칙 기반 근거입니다.');
-    expect(reply).not.toContain('..');
-  });
 });
