@@ -208,6 +208,7 @@ interface AppState {
   enableLowFloorBusPriority: () => void;
   enableWeatherAvoidance: (mode: WeatherAvoidanceMode) => Promise<void>;
   enableStairAvoidance: () => void;
+  enableWheelchairRouting: () => void;
   recalculateRoutes: () => Promise<void>;
 }
 
@@ -701,6 +702,26 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   enableStairAvoidance: () => {
     get().setScoringOption('avoidStairs', true);
+  },
+
+  /** 경로 공급자 재수집이 필요한 세션 휠체어 모드. 기존 route-set은 버린다. */
+  enableWheelchairRouting: () => {
+    beginRecommendationRequest();
+    beginNewCandidateGeneration();
+    set((state) => ({
+      profile: 'disabled',
+      largeUi: PROFILES.disabled.prefersLargeUi || state.largeUiPreference,
+      options: {
+        ...state.options,
+        usesWheelchair: true,
+        avoidStairs: true,
+      },
+      candidates: [],
+      recommendations: [],
+      selectedRouteId: null,
+      loading: false,
+      error: null,
+    }));
   },
 
   recalculateRoutes: async () => {

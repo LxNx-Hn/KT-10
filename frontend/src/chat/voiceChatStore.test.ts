@@ -78,4 +78,17 @@ describe('음성 챗봇 결과 계약', () => {
     expect(reply).not.toContain('규칙 기반 근거입니다.');
     expect(reply).not.toContain('..');
   });
+
+  it('휠체어 발화는 기존 route-set을 버리고 세션 휠체어 검색을 수행한다', async () => {
+    const search = vi.spyOn(useAppStore.getState(), 'search');
+
+    await useVoiceChatStore.getState().handleUserInput('휠체어로 갈 수 있는 길');
+
+    const state = useAppStore.getState();
+    expect(state.profile).toBe('disabled');
+    expect(state.options.usesWheelchair).toBe(true);
+    expect(state.options.avoidStairs).toBe(true);
+    expect(state.recommendations).toEqual([]);
+    expect(search).toHaveBeenCalled();
+  });
 });

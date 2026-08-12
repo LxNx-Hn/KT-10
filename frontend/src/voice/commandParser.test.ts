@@ -33,7 +33,18 @@ describe('음성 챗봇 파서 — 요구사항 §12 명령', () => {
       profile: 'disabled',
     });
     expect(p.avoidStairs).toBe(true);
+    expect(p.wheelchairMode).toBe(false);
     expect(p.commands.some((c) => c.intent === 'SEARCH_DESTINATION')).toBe(false);
+  });
+
+  it('휠체어 발화만 장애인 프로필과 별도 휠체어 모드로 구분한다', () => {
+    const wheelchair = parseVoiceCommand('휠체어로 갈 수 있는 길');
+    expect(wheelchair.wheelchairMode).toBe(true);
+    expect(wheelchair.commands).toContainEqual({
+      intent: 'SET_PROFILE',
+      profile: 'disabled',
+    });
+    expect(parseVoiceCommand('장애인 기준으로 알려줘').wheelchairMode).toBe(false);
   });
 
   it('청소년·임산부 발화를 각각의 프로필로 구분한다', () => {

@@ -299,6 +299,8 @@ export interface ScoringOptions {
   weatherAvoid?: boolean;
   /** 계단 회피·승강기 우선 모드(접근성/승강기 가중 강화) */
   avoidStairs?: boolean;
+  /** 이번 경로검색에 ORS 휠체어 통행 제약을 강제 */
+  usesWheelchair?: boolean;
   /** 확인된 건물 그늘 비율을 우선 반영 */
   shadePriority?: boolean;
   /** 환승 횟수가 적은 경로를 우선 반영 */

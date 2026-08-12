@@ -150,10 +150,11 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
 
     try {
       const parse = parseVoiceCommand(text);
-      const app = useAppStore.getState();
+    const app = useAppStore.getState();
 
     // 계단 회피 / 승강기 우선 수식어
     if (parse.avoidStairs || parse.elevatorPriority) app.enableStairAvoidance();
+    if (parse.wheelchairMode) app.enableWheelchairRouting();
 
     let didProfile = false;
     let didDestination = false;
@@ -165,6 +166,7 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
     let profileApplied: ProfileId | null = null;
     let lowFloorApplied = false;
     let weatherApplied: WeatherAvoidanceMode | null = null;
+    const wheelchairApplied = parse.wheelchairMode;
     const tripConditionsApplied: TripCondition[] = [];
 
     for (const cmd of parse.commands) {
@@ -292,6 +294,9 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
       const top = serverRankedRecommendations(routeState.recommendations)[0];
       const parts: string[] = [];
       if (profileApplied) parts.push(profilePhrase(profileApplied));
+      if (wheelchairApplied) {
+        parts.push('휠체어 통행 제약과 계단 회피를 적용했습니다.');
+      }
       if (lowFloorApplied) {
         parts.push('경로 후보에 포함된 저상버스 확인 정보를 우선 반영했습니다.');
       }

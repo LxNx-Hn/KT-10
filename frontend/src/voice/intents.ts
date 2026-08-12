@@ -50,4 +50,6 @@ export interface VoiceParse {
   avoidStairs: boolean;
   /** "승강기 우선/엘리베이터" → 승강기 우선(계단 회피와 동일 가중 적용) */
   elevatorPriority: boolean;
+  /** 명시적으로 '휠체어'라고 말한 경우만 활성화한다. 장애인 프로필과 별개다. */
+  wheelchairMode: boolean;
 }

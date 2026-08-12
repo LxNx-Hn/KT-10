@@ -42,9 +42,15 @@ export function parseVoiceCommand(raw: string): VoiceParse {
   const commands: ParsedCommand[] = [];
   const avoidStairs = /계단\s*(없는|없이|피|회피|안)/.test(text);
   const elevatorPriority = /승강기|엘리베이터|엘베/.test(text);
+  const wheelchairMode = /휠\s*체어/.test(text);
 
   if (!text) {
-    return { commands: [{ intent: 'UNKNOWN', text: raw }], avoidStairs, elevatorPriority };
+    return {
+      commands: [{ intent: 'UNKNOWN', text: raw }],
+      avoidStairs,
+      elevatorPriority,
+      wheelchairMode,
+    };
   }
 
   // 1) 프로필 변경
@@ -108,7 +114,7 @@ export function parseVoiceCommand(raw: string): VoiceParse {
   }
 
   if (commands.length === 0) commands.push({ intent: 'UNKNOWN', text: raw });
-  return { commands, avoidStairs, elevatorPriority };
+  return { commands, avoidStairs, elevatorPriority, wheelchairMode };
 }
 
 /** "○○까지 / ○○로 가는 / ○○ 가는 길" 에서 목적지 추출 */
