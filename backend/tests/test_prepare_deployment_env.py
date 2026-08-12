@@ -75,6 +75,7 @@ def _valid_production_env() -> str:
         "KAKAO_OAUTH_CLIENT_SECRET=oauth-secret",
         "ODSAY_API_KEY=odsay-key",
         "TMAP_API_KEY=tmap-key",
+        "ORS_API_KEY=ors-key",
         "VWORLD_API_KEY=vworld-key",
         "VWORLD_CACHE_TTL_HOURS=168",
         "OPENWEATHER_API_KEY=weather-key",
@@ -157,6 +158,21 @@ def test_check_accepts_explicit_osmnx_when_tmap_is_absent(
     monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
 
     prepare_deployment_env.check()
+
+
+def test_check_rejects_missing_wheelchair_routing_key(
+    tmp_path: Path,
+    monkeypatch,
+):
+    target = tmp_path / ".env.production"
+    target.write_text(
+        _valid_production_env().replace("ORS_API_KEY=ors-key", "ORS_API_KEY="),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
+
+    with pytest.raises(SystemExit):
+        prepare_deployment_env.check()
 
 
 def test_check_accepts_local_ai_mode_with_complete_bootstrap_artifact(

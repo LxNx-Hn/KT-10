@@ -9,6 +9,7 @@ def _candidate(
     *,
     quality: str = "exact",
     modes: tuple[str, ...] = (),
+    evidence: dict | None = None,
 ) -> RouteCandidate:
     return RouteCandidate(
         source=source,
@@ -17,6 +18,7 @@ def _candidate(
         distance_m=1000.0,
         segments=[{"mode": mode} for mode in modes],
         geometry_quality=quality,
+        accessibility_evidence=evidence or {},
     )
 
 
@@ -145,3 +147,76 @@ def test_unknown_transit_identity_is_not_treated_as_equal():
     ])
 
     assert len(merged) == 2
+
+
+def test_similar_tmap_and_ors_walk_routes_combine_distinct_evidence():
+    path = [
+        Coordinate(lat=35.0, lng=129.0),
+        Coordinate(lat=35.01, lng=129.01),
+    ]
+
+    merged = merge_route_candidates([
+        _candidate(
+            "tmap",
+            path,
+            evidence={
+                "provider": "TMAP pedestrian",
+                "stairs_excluded_by_provider": True,
+                "ramp_points": [{
+                    "lat": 35.005,
+                    "lng": 129.005,
+                    "turn_type": 129,
+                    "replaces_stairs": True,
+                }],
+            },
+        ),
+        _candidate(
+            "ors",
+            path,
+            evidence={
+                "providers": ["openrouteservice wheelchair"],
+                "wheelchair_constraints_applied": True,
+                "wheelchair_restrictions": {"minimum_width": 0.9},
+                "wheelchair_data_limitations": ["OSM 태그가 누락될 수 있음"],
+                "wheelchair_constraint_categories": [
+                    "steps", "surface", "width", "wheelchair_access"
+                ],
+                "stairs_excluded_by_provider": True,
+            },
+        ),
+    ])
+
+    assert len(merged) == 1
+    assert merged[0].sources == ["tmap", "ors"]
+    evidence = merged[0].accessibility_evidence
+    assert evidence["providers"] == [
+        "TMAP pedestrian",
+        "openrouteservice wheelchair",
+    ]
+    assert evidence["ramp_points"][0]["turn_type"] == 129
+    assert evidence["wheelchair_constraints_applied"] is True
+    assert evidence["wheelchair_restrictions"] == {"minimum_width": 0.9}
+
+
+def test_dissimilar_tmap_and_ors_routes_do_not_share_accessibility_evidence():
+    tmap = [
+        Coordinate(lat=35.0, lng=129.0),
+        Coordinate(lat=35.01, lng=129.0),
+    ]
+    ors = [
+        Coordinate(lat=35.0, lng=129.002),
+        Coordinate(lat=35.01, lng=129.002),
+    ]
+
+    merged = merge_route_candidates([
+        _candidate("tmap", tmap, evidence={"ramp_points": [{"lat": 35.0}]}),
+        _candidate(
+            "ors",
+            ors,
+            evidence={"wheelchair_constraints_applied": True},
+        ),
+    ])
+
+    assert len(merged) == 2
+    assert "wheelchair_constraints_applied" not in merged[0].accessibility_evidence
+    assert "ramp_points" not in merged[1].accessibility_evidence

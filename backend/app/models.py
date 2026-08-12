@@ -46,6 +46,17 @@ class Place(CamelModel):
     address: Optional[str] = Field(default=None, max_length=500)
 
 
+class WheelchairRoutingRestrictions(CamelModel):
+    """공급자에 실제 전달된 휠체어 통행 제한값."""
+
+    surface_type: str = Field(min_length=1, max_length=100)
+    track_type: str = Field(min_length=1, max_length=100)
+    smoothness_type: str = Field(min_length=1, max_length=100)
+    maximum_sloped_kerb: float = Field(ge=0, le=0.15)
+    maximum_incline: float = Field(ge=0, le=30)
+    minimum_width: float = Field(gt=0, le=5)
+
+
 class RouteSegment(CamelModel):
     id: str = Field(min_length=1, max_length=200)
     mode: SegmentMode
@@ -68,6 +79,24 @@ class RouteSegment(CamelModel):
     ramp_replaces_stairs: Optional[bool] = None
     ramp_evidence_source: Optional[str] = Field(default=None, max_length=200)
     stairs_excluded_by_provider: Optional[bool] = None
+    # ORS wheelchair profile의 노면·폭·턱·경사·계단 제한이 실제 탐색에
+    # 적용된 경우에만 True다. OSM 누락/임시 장애물 한계도 반드시 함께 보낸다.
+    wheelchair_constraints_applied: Optional[bool] = None
+    wheelchair_constraint_source: Optional[str] = Field(
+        default=None,
+        max_length=200,
+    )
+    wheelchair_restrictions: Optional[WheelchairRoutingRestrictions] = None
+    wheelchair_data_limitations: Optional[list[str]] = Field(
+        default=None,
+        min_length=1,
+        max_length=20,
+    )
+    wheelchair_constraint_categories: Optional[list[str]] = Field(
+        default=None,
+        min_length=1,
+        max_length=20,
+    )
     crosswalk_count: Optional[int] = Field(default=None, ge=0)
 
     # 버스 구간
@@ -117,6 +146,27 @@ class RouteSegment(CamelModel):
             raise ValueError(
                 "stairs_excluded_by_provider=True requires "
                 "has_stairs=False and stairs_count=0"
+            )
+        if self.wheelchair_constraints_applied is True and not (
+            self.wheelchair_constraint_source
+            and self.wheelchair_restrictions is not None
+            and self.wheelchair_data_limitations
+            and self.wheelchair_constraint_categories
+            and self.stairs_excluded_by_provider is True
+        ):
+            raise ValueError(
+                "wheelchair_constraints_applied=True requires source, "
+                "restrictions, limitations, and stair exclusion"
+            )
+        if any((
+            self.wheelchair_constraint_source,
+            self.wheelchair_restrictions,
+            self.wheelchair_data_limitations,
+            self.wheelchair_constraint_categories,
+        )) and self.wheelchair_constraints_applied is not True:
+            raise ValueError(
+                "wheelchair constraint evidence requires "
+                "wheelchair_constraints_applied=True"
             )
         return self
 

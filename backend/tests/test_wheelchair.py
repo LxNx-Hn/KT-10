@@ -4,8 +4,15 @@ import pytest
 from fastapi import HTTPException
 
 from app.main import _filter_wheelchair_candidates
-from app.models import RouteCandidate, RouteSegment, ScoringOptions
+from app.models import (
+    RouteCandidate,
+    RouteSegment,
+    ScoreComponents,
+    ScoringOptions,
+    WeatherCondition,
+)
 from app.providers.ai_pipeline import _pipeline_payload
+from app.scoring.explain import build_cautions, build_reasons
 from app.wheelchair import effective_scoring_options, filter_known_stair_candidates
 
 
@@ -15,6 +22,7 @@ def _candidate(
     stairs: bool | None,
     count: int | None,
     provider_excluded: bool | None = None,
+    wheelchair_constrained: bool = False,
 ) -> RouteCandidate:
     return RouteCandidate(
         id=route_id,
@@ -34,6 +42,36 @@ def _candidate(
                 has_stairs=stairs,
                 stairs_count=count,
                 stairs_excluded_by_provider=provider_excluded,
+                wheelchair_constraints_applied=(
+                    True if wheelchair_constrained else None
+                ),
+                wheelchair_constraint_source=(
+                    "openrouteservice wheelchair profile"
+                    if wheelchair_constrained
+                    else None
+                ),
+                wheelchair_restrictions=(
+                    {
+                        "surface_type": "cobblestone:flattened",
+                        "track_type": "grade1",
+                        "smoothness_type": "good",
+                        "maximum_sloped_kerb": 0.03,
+                        "maximum_incline": 6,
+                        "minimum_width": 0.9,
+                    }
+                    if wheelchair_constrained
+                    else None
+                ),
+                wheelchair_data_limitations=(
+                    ["OSM 태그 누락 가능"]
+                    if wheelchair_constrained
+                    else None
+                ),
+                wheelchair_constraint_categories=(
+                    ["steps", "surface", "width", "wheelchair_access"]
+                    if wheelchair_constrained
+                    else None
+                ),
             )
         ],
     )
@@ -67,10 +105,17 @@ def test_wheelchair_keeps_only_provider_verified_stair_excluded_candidates():
         _candidate("unknown", stairs=None, count=None),
         _candidate("unverified-clear", stairs=False, count=0),
         _candidate(
+            "stairs-only",
+            stairs=False,
+            count=0,
+            provider_excluded=True,
+        ),
+        _candidate(
             "verified-clear",
             stairs=False,
             count=0,
             provider_excluded=True,
+            wheelchair_constrained=True,
         ),
     ]
 
@@ -94,7 +139,7 @@ def test_recommendation_boundary_rejects_unverified_wheelchair_route():
         )
 
     assert error.value.status_code == 422
-    assert "계단 제외로 확인" in error.value.detail
+    assert "휠체어 통행 제약" in error.value.detail
 
 
 def test_pipeline_sends_wheelchair_stair_constraint():
@@ -117,3 +162,30 @@ def test_pipeline_sends_wheelchair_stair_constraint():
 
     assert payload["uses_wheelchair"] is True
     assert payload["avoid_stairs"] is True
+
+
+def test_wheelchair_explanation_states_constraints_and_real_world_limit():
+    route = _candidate(
+        "wheelchair-ready",
+        stairs=False,
+        count=0,
+        provider_excluded=True,
+        wheelchair_constrained=True,
+    )
+    components = ScoreComponents()
+    weather = WeatherCondition(
+        label="테스트",
+        temp_c=20,
+        feels_like_c=20,
+        precipitation_mm=0,
+        wind_ms=1,
+        pm10=20,
+        sky="clear",
+        air="good",
+    )
+
+    reasons = build_reasons(route, components, "none")
+    cautions = build_cautions(route, components, "none", weather)
+
+    assert any("계단·노면·폭·턱·경사 제한" in item for item in reasons)
+    assert any("임시 장애물" in item for item in cautions)

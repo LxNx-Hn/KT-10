@@ -40,6 +40,7 @@ from collectors.odsay_instrumentation import (
 from collectors.odsay_instrumentation import (
     log_call as log_odsay_call,
 )
+from merger.route_merger import merge_accessibility_evidence, paths_similar
 
 def _provider_error_code(data: dict) -> str:
     """ODsay 오류 응답 코드를 재시도 정책 분류로 옮긴다."""
@@ -153,8 +154,14 @@ class OdsayRouteCollector(BaseRouteCollector):
     BASE_URL = "https://api.odsay.com/v1/api/searchPubTransPathT"
     LANE_URL = "https://api.odsay.com/v1/api/loadLane"
 
-    def __init__(self, *, avoid_stairs: bool = False):
+    def __init__(
+        self,
+        *,
+        avoid_stairs: bool = False,
+        uses_wheelchair: bool = False,
+    ):
         self.avoid_stairs = avoid_stairs
+        self.uses_wheelchair = uses_wheelchair
 
     @staticmethod
     def _api_error(data: dict) -> str | None:
@@ -498,8 +505,53 @@ class OdsayRouteCollector(BaseRouteCollector):
         start: Coordinate,
         end: Coordinate,
     ) -> tuple[list[Coordinate], str, dict]:
-        # TMAP 공식 보행 경로를 우선하고, OSMnx는 명시적으로 활성화한
-        # 환경의 보조 공급자다.
+        # 휠체어는 ORS wheelchair profile이 확인한 선형을 기준으로 삼는다.
+        # TMAP은 같은 선형일 때만 물리 경사로 안내점 근거를 보탠다.
+        if self.uses_wheelchair:
+            from collectors.ors_collector import OrsWheelchairRouteCollector
+
+            ors_candidates = await OrsWheelchairRouteCollector().collect(
+                start,
+                end,
+            )
+            if not ors_candidates or len(ors_candidates[0].path) < 2:
+                raise CollectorError(
+                    "ORS wheelchair 보행 경로가 비어 있습니다.",
+                    code="empty_geometry",
+                )
+            primary = ors_candidates[0]
+            evidence = dict(primary.accessibility_evidence)
+            if (
+                settings.TMAP_API_KEY
+                and not settings.TMAP_API_KEY.startswith("YOUR_")
+            ):
+                from collectors.tmap_collector import TmapRouteCollector
+
+                try:
+                    tmap_candidates = await TmapRouteCollector(
+                        avoid_stairs=True
+                    ).collect(start, end)
+                except (CollectorError, TimeoutError) as exc:
+                    log.warning(
+                        "휠체어 보행 경사로 근거 보완 실패 source=tmap detail=%s",
+                        str(exc),
+                    )
+                else:
+                    if (
+                        tmap_candidates
+                        and paths_similar(
+                            primary.path,
+                            tmap_candidates[0].path,
+                        )
+                    ):
+                        evidence = merge_accessibility_evidence(
+                            evidence,
+                            tmap_candidates[0].accessibility_evidence,
+                        )
+            return primary.path, "exact", evidence
+
+        # 일반 보행은 TMAP 공식 보행 경로를 우선하고, OSMnx는 명시적으로
+        # 활성화한 환경의 보조 공급자다.
         from collectors.tmap_collector import TmapRouteCollector
 
         collectors = []

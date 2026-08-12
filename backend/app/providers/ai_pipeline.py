@@ -573,10 +573,31 @@ def _score_existing_ai_candidate(
         else None
     )
     reasons = _factual_route_reasons(route)
+    wheelchair_constrained = bool(
+        [segment for segment in route.segments if segment.mode == "walk"]
+    ) and all(
+        segment.wheelchair_constraints_applied is True
+        for segment in route.segments
+        if segment.mode == "walk"
+    )
+    if wheelchair_constrained:
+        reasons = [
+            "기록된 계단·노면·폭·턱·경사 제한을 적용한 경로입니다.",
+            *reasons,
+        ][:4]
+    cautions = (
+        [
+            "지도에 없는 공사·적치물·고장 등 임시 장애물은 "
+            "출발 전에 확인해 주세요."
+        ]
+        if wheelchair_constrained
+        else []
+    )
     voice_summary = (
         f"{rank}번째 경로입니다. 총 {round(route.total_duration_min)}분, "
         f"도보 {round(route.total_walk_m)}미터, 환승 {route.transfer_count}회입니다."
         + (f" {reasons[0]}" if reasons else "")
+        + (f" 주의: {cautions[0]}" if cautions else "")
     )
     score = RouteScore(
         route_id=route.id,
@@ -585,7 +606,7 @@ def _score_existing_ai_candidate(
         final_score=round1(clamp(displayed_score * 100)),
         low_floor_status=_derive_low_floor_status(bus_used, low_floor),
         reasons=reasons,
-        cautions=[],
+        cautions=cautions,
         voice_summary=voice_summary,
         score_kind=(
             "bootstrap_baseline"
@@ -758,6 +779,19 @@ def _to_segment(item: dict, rank: int, index: int) -> RouteSegment:
         ramp_replaces_stairs=item.get("ramp_replaces_stairs"),
         ramp_evidence_source=item.get("ramp_evidence_source"),
         stairs_excluded_by_provider=item.get("stairs_excluded_by_provider"),
+        wheelchair_constraints_applied=item.get(
+            "wheelchair_constraints_applied"
+        ),
+        wheelchair_constraint_source=item.get(
+            "wheelchair_constraint_source"
+        ),
+        wheelchair_restrictions=item.get("wheelchair_restrictions"),
+        wheelchair_data_limitations=item.get(
+            "wheelchair_data_limitations"
+        ),
+        wheelchair_constraint_categories=item.get(
+            "wheelchair_constraint_categories"
+        ),
         crosswalk_count=item.get("crosswalk_count"),
         bus_route_name=item.get("bus_route_name"),
         is_low_floor_bus=item.get("is_low_floor_bus"),

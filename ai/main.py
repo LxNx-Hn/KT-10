@@ -118,11 +118,16 @@ def readiness():
     exact_walk_geometry_ready = bool(
         tmap_ready or settings.OSMNX_WALK_GEOMETRY_ENABLED
     )
+    ors_key = settings.ORS_API_KEY.strip()
+    wheelchair_routing_ready = bool(
+        ors_key and not ors_key.startswith("YOUR_")
+    )
     ready = (
         odsay_ready
         and layers_ready
         and dem_ready
         and exact_walk_geometry_ready
+        and wheelchair_routing_ready
         and internal_auth_ready
     )
     body = {
@@ -134,9 +139,11 @@ def readiness():
             "regional_dem_precomputed": dem_ready,
             "internal_service_auth": internal_auth_ready,
             "exact_walking_geometry_ready": exact_walk_geometry_ready,
+            "wheelchair_routing_configured": wheelchair_routing_ready,
         },
         "capabilities": {
             "exact_walking_geometry_configured": exact_walk_geometry_ready,
+            "wheelchair_routing_configured": wheelchair_routing_ready,
         },
         "spatial_layer_count": layer_count,
         "model_artifact_required": False,

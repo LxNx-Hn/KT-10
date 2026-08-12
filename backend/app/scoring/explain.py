@@ -25,6 +25,12 @@ def build_reasons(r: RouteCandidate, c: ScoreComponents, low_floor: LowFloorStat
         out.append(f"도보가 {int(r.total_walk_m)}m로 보행 부담이 적어요.")
     if has_vertical and c.elevator is not None and c.elevator >= 90:
         out.append("승강기로 이동할 수 있어 계단을 피할 수 있어요.")
+    constrained_walk = [s for s in r.segments if s.mode == "walk"]
+    if constrained_walk and all(
+        segment.wheelchair_constraints_applied is True
+        for segment in constrained_walk
+    ):
+        out.append("기록된 계단·노면·폭·턱·경사 제한을 적용한 경로예요.")
     if low_floor == "confirmed":
         out.append("경로의 버스가 저상버스로 확인됐어요.")
     if c.safety is not None and c.safety >= 85:
@@ -80,6 +86,15 @@ def build_cautions(
 
     if c.data_reliability is not None and c.data_reliability < 70:
         out.append("실시간 교통 환경에 따라 차이가 있을 수 있어요.")
+
+    if any(
+        segment.wheelchair_constraints_applied is True
+        for segment in r.segments
+        if segment.mode == "walk"
+    ):
+        out.append(
+            "지도에 없는 공사·적치물·고장 등 임시 장애물은 출발 전에 확인해 주세요."
+        )
 
     return out[:4]
 

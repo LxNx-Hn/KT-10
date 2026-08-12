@@ -24,6 +24,7 @@ from collectors.base import (
     Coordinate,
 )
 from collectors.odsay_collector import OdsayRouteCollector
+from collectors.ors_collector import OrsWheelchairRouteCollector
 from collectors.odsay_instrumentation import (
     adopt_correlation_id,
     log_rank,
@@ -554,17 +555,25 @@ async def _collect_static_featured_routes(
     # no authoritative travel-time value and therefore must not become a
     # scored standalone route candidate.
     avoid_stairs = req.uses_wheelchair or req.avoid_stairs
-    odsay_collector = OdsayRouteCollector(avoid_stairs=avoid_stairs)
+    odsay_collector = OdsayRouteCollector(
+        avoid_stairs=avoid_stairs,
+        uses_wheelchair=req.uses_wheelchair,
+    )
     tmap_collector = TmapRouteCollector(avoid_stairs=avoid_stairs)
     collectors = [odsay_collector, tmap_collector]
+    if req.uses_wheelchair:
+        collectors.append(OrsWheelchairRouteCollector())
     source_names = [collector.source_name for collector in collectors]
-    results = await asyncio.gather(
+    tasks = [
         odsay_collector.collect(
-            origin,
-            destination,
-            max_candidates=req.candidate_limit,
+            origin, destination, max_candidates=req.candidate_limit
         ),
         tmap_collector.collect(origin, destination),
+    ]
+    if req.uses_wheelchair:
+        tasks.append(collectors[-1].collect(origin, destination))
+    results = await asyncio.gather(
+        *tasks,
         return_exceptions=True,
     )
 
@@ -588,8 +597,38 @@ async def _collect_static_featured_routes(
             detail={"message": "유효한 실제 경로 후보를 수집하지 못했습니다.", "sources": source_errors},
         )
 
+    if req.uses_wheelchair and "ors" not in succeeded:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": (
+                    "휠체어 경로의 노면·폭·턱·경사·계단 제약을 "
+                    "검증할 수 없습니다."
+                ),
+                "required_source": "openrouteservice wheelchair",
+                "sources": source_errors,
+            },
+        )
+
     layers = _get_layers()
     merged_candidates = merge_route_candidates(candidates)
+    if req.uses_wheelchair:
+        merged_candidates = [
+            candidate
+            for candidate in merged_candidates
+            if _wheelchair_candidate_constrained(candidate)
+        ]
+        if not merged_candidates:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "message": (
+                        "모든 실제 보행 구간에 휠체어 통행 제약이 적용된 "
+                        "경로가 없습니다."
+                    ),
+                    "required_source": "openrouteservice wheelchair",
+                },
+            )
     analysis_parts = [
         _analysis_route_parts(candidate)
         for candidate in merged_candidates
@@ -649,6 +688,47 @@ async def _collect_static_featured_routes(
         "sources_failed": failed,
         "source_errors": source_errors,
     }
+
+
+def _wheelchair_evidence_constrained(value: object) -> bool:
+    evidence = _mapping(value)
+    return (
+        evidence.get("wheelchair_constraints_applied") is True
+        and evidence.get("stairs_excluded_by_provider") is True
+        and isinstance(evidence.get("wheelchair_restrictions"), dict)
+        and bool(evidence["wheelchair_restrictions"])
+        and isinstance(evidence.get("wheelchair_data_limitations"), list)
+        and bool(evidence["wheelchair_data_limitations"])
+        and isinstance(
+            evidence.get("wheelchair_constraint_categories"),
+            list,
+        )
+        and bool(evidence["wheelchair_constraint_categories"])
+    )
+
+
+def _wheelchair_candidate_constrained(candidate: object) -> bool:
+    """모든 실제 보행 구간에 ORS wheelchair 제약이 적용됐는지 확인한다."""
+    segments = getattr(candidate, "segments", None) or []
+    walk_segments = [
+        segment
+        for segment in segments
+        if segment.get("mode") in {"walk", "transfer"}
+        and (
+            segment.get("distance_m") is None
+            or segment.get("distance_m") > 0
+        )
+    ]
+    if walk_segments:
+        return all(
+            _wheelchair_evidence_constrained(
+                segment.get("accessibility_evidence")
+            )
+            for segment in walk_segments
+        )
+    return _wheelchair_evidence_constrained(
+        getattr(candidate, "accessibility_evidence", {})
+    )
 
 
 def _limit_cached_route_features(
@@ -728,6 +808,7 @@ async def _collect_featured_routes(
         req.dest_lat,
         req.dest_lng,
         avoid_stairs=req.uses_wheelchair or req.avoid_stairs,
+        uses_wheelchair=req.uses_wheelchair,
     )
     cached = await asyncio.to_thread(
         read_route_feature_cache,
@@ -808,8 +889,8 @@ def _analysis_route_parts(candidate) -> list[list[tuple[float, float]]]:
         return parts
 
     if (
-        candidate.source == "tmap"
-        and set(candidate.sources) == {"tmap"}
+        candidate.source in {"tmap", "ors"}
+        and set(candidate.sources).issubset({"tmap", "ors"})
         and candidate.geometry_quality == "exact"
         and len(candidate.path) >= 2
     ):
@@ -1331,6 +1412,27 @@ def _smart_shelter_for_boarding_stop(raw: dict, layers: dict | None) -> str | No
     return _provider_text(nearest.get("정류소명"))
 
 
+def _public_wheelchair_evidence(accessibility: dict) -> dict:
+    """검증 제약과 OSM 한계를 함께 공개한다. 한쪽만 노출하지 않는다."""
+    if not _wheelchair_evidence_constrained(accessibility):
+        return {}
+    return {
+        "wheelchair_constraints_applied": True,
+        "wheelchair_constraint_source": (
+            "openrouteservice wheelchair profile"
+        ),
+        "wheelchair_restrictions": dict(
+            accessibility["wheelchair_restrictions"]
+        ),
+        "wheelchair_data_limitations": list(
+            accessibility["wheelchair_data_limitations"]
+        ),
+        "wheelchair_constraint_categories": list(
+            accessibility["wheelchair_constraint_categories"]
+        ),
+    }
+
+
 def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
     route_facilities = _parse_api_features(candidate)
     observations = []
@@ -1491,6 +1593,9 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
                 ) is True
                 else None
             ),
+            **_public_wheelchair_evidence(
+                observation["accessibility"]
+            ),
             "bus_route_name": str(name) if mode == "bus" and name else None,
             "is_low_floor_bus": low_floor if mode == "bus" else None,
             "transit_start_id": (
@@ -1554,7 +1659,7 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
     if segments:
         return segments
     # OSMnx/TMAP 단일 보행 후보는 실제 geometry와 공급자 거리를 보유한다.
-    if candidate.source in {"osmnx", "tmap"}:
+    if candidate.source in {"osmnx", "tmap", "ors"}:
         accessibility = _mapping(
             getattr(candidate, "accessibility_evidence", {})
         )
@@ -1613,6 +1718,7 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
                 if accessibility.get("stairs_excluded_by_provider") is True
                 else None
             ),
+            **_public_wheelchair_evidence(accessibility),
             "needs_vertical_move": (
                 True
                 if (

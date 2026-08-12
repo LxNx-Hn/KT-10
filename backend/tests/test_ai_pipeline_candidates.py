@@ -10,6 +10,7 @@ import app.providers.ai_pipeline as ai_pipeline
 from app.providers.ai_pipeline import (
     _pipeline_payload,
     _response_detail,
+    _score_existing_ai_candidate,
     _to_route_candidate,
     rank_ai_pipeline_candidates,
 )
@@ -161,6 +162,49 @@ def test_labeling_candidate_maps_geometry_and_terrain_without_invention():
     assert route.segments[0].path is not None
     assert route.trait_labels[0].label_id == "gentle_slope"
     assert route.trait_labels[0].evidence[0].value == 4.2
+
+
+def test_ai_ranked_wheelchair_route_keeps_constraint_caution_in_voice():
+    payload = _candidate_payload()
+    payload["segments"][0].update({
+        "has_stairs": False,
+        "stairs_count": 0,
+        "stairs_excluded_by_provider": True,
+        "wheelchair_constraints_applied": True,
+        "wheelchair_constraint_source": (
+            "openrouteservice wheelchair profile"
+        ),
+        "wheelchair_restrictions": {
+            "surface_type": "cobblestone:flattened",
+            "track_type": "grade1",
+            "smoothness_type": "good",
+            "maximum_sloped_kerb": 0.03,
+            "maximum_incline": 6,
+            "minimum_width": 0.9,
+        },
+        "wheelchair_data_limitations": ["OSM 태그 누락 가능"],
+        "wheelchair_constraint_categories": [
+            "steps",
+            "surface",
+            "width",
+            "wheelchair_access",
+        ],
+    })
+    route = _to_route_candidate(payload, ORIGIN, DESTINATION, 1)
+
+    scored = _score_existing_ai_candidate(
+        route,
+        rank=1,
+        displayed_score=0.9,
+        profile="disabled",
+        model_tier="bootstrap_baseline",
+        model_version="test-model",
+        features={},
+    )
+
+    assert "계단·노면·폭·턱·경사 제한" in scored.score.reasons[0]
+    assert "임시 장애물" in scored.score.cautions[0]
+    assert "주의:" in scored.score.voice_summary
 
 
 def test_labeling_candidate_rejects_missing_geometry():

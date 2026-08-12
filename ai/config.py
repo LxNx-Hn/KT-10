@@ -70,6 +70,19 @@ class Settings(BaseSettings):
         le=31_536_000,
     )
     TMAP_MAX_CONCURRENT_REQUESTS: int = Field(default=3, ge=1, le=10)
+    # OpenRouteService의 wheelchair profile은 계단 회피뿐 아니라 OSM에
+    # 기록된 노면·평탄도·폭·턱·경사·wheelchair 접근 제한을 함께 적용한다.
+    # TMAP의 물리 경사로 안내점과 역할이 다르므로 별도 키로 관리한다.
+    ORS_API_KEY: str = ""
+    ORS_BASE_URL: AnyHttpUrl = "https://api.openrouteservice.org"
+    ORS_CACHE_DIR: str = ""
+    ORS_CACHE_TTL_SECONDS: int = Field(
+        default=1800,
+        ge=60,
+        le=31_536_000,
+    )
+    ORS_TIMEOUT_SECONDS: int = Field(default=20, ge=5, le=120)
+    ORS_MAX_CONCURRENT_REQUESTS: int = Field(default=3, ge=1, le=10)
     ROUTE_FEATURE_CACHE_DIR: str = ""
     ROUTE_FEATURE_CACHE_TTL_SECONDS: int = Field(
         default=1800,

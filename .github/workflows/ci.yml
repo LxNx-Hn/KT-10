@@ -143,6 +143,7 @@ jobs:
       KAKAO_OAUTH_CLIENT_SECRET: ci-kakao-oauth-secret
       ODSAY_API_KEY: ci-odsay-key
       TMAP_API_KEY: ci-tmap-key
+      ORS_API_KEY: ci-ors-key
       VWORLD_API_KEY: ci-vworld-key
       OPENWEATHER_API_KEY: ci-openweather-key
       BUS_SERVICE_KEY: ci-bus-service-key

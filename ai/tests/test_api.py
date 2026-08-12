@@ -6,6 +6,8 @@ import time
 from fastapi.testclient import TestClient
 import geopandas as gpd
 import numpy as np
+import pytest
+from fastapi import HTTPException
 
 import api.router as api_router
 import main as ai_main
@@ -13,13 +15,21 @@ from main import app
 from api.router import (
     RecommendRequest,
     _analysis_route_parts,
+    _collect_static_featured_routes,
     _context_features,
     _enrich_subway_elevator_accessibility,
     _parse_api_features,
     _public_segments,
     _static_features_cacheable,
+    _wheelchair_candidate_constrained,
 )
-from collectors.base import Coordinate, RouteCandidate
+from collectors.base import CollectorNotConfigured, Coordinate, RouteCandidate
+from collectors.odsay_collector import OdsayRouteCollector
+from collectors.ors_collector import (
+    WHEELCHAIR_RESTRICTIONS,
+    OrsWheelchairRouteCollector,
+)
+from collectors.tmap_collector import TmapRouteCollector
 from merger.route_merger import MergedRoute
 from scoring.train import FEATURE_COLS, ModelNotReady
 from shapely.geometry import Point
@@ -121,6 +131,7 @@ def test_lifespan_preloads_regional_walk_graph_when_enabled(monkeypatch):
 def test_readiness_requires_odsay_but_not_model_artifact(monkeypatch):
     monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "")
     monkeypatch.setattr(ai_main.settings, "TMAP_API_KEY", "")
+    monkeypatch.setattr(ai_main.settings, "ORS_API_KEY", "")
     monkeypatch.setattr(
         ai_main.settings,
         "OSMNX_WALK_GEOMETRY_ENABLED",
@@ -138,6 +149,7 @@ def test_readiness_requires_odsay_but_not_model_artifact(monkeypatch):
         "spatial_layers_loaded": True,
         "regional_dem_precomputed": True,
         "exact_walking_geometry_ready": False,
+        "wheelchair_routing_configured": False,
         "internal_service_auth": True,
     }
     assert body["model_artifact_required"] is False
@@ -149,6 +161,7 @@ def test_readiness_fails_without_raw_spatial_layers(monkeypatch):
 
     monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "configured-key")
     monkeypatch.setattr(ai_main.settings, "TMAP_API_KEY", "tmap-key")
+    monkeypatch.setattr(ai_main.settings, "ORS_API_KEY", "ors-key")
     monkeypatch.setattr(ai_main, "_get_layers", missing_layers)
     monkeypatch.setattr(ai_main, "regional_dem_ready", lambda: True)
 
@@ -164,6 +177,7 @@ def test_readiness_rejects_candidate_pipeline_without_exact_walk_geometry(
 ):
     monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "configured-key")
     monkeypatch.setattr(ai_main.settings, "TMAP_API_KEY", "")
+    monkeypatch.setattr(ai_main.settings, "ORS_API_KEY", "ors-key")
     monkeypatch.setattr(
         ai_main.settings,
         "OSMNX_WALK_GEOMETRY_ENABLED",
@@ -179,12 +193,14 @@ def test_readiness_rejects_candidate_pipeline_without_exact_walk_geometry(
     assert response.json()["spatial_layer_count"] == 12
     assert response.json()["capabilities"] == {
         "exact_walking_geometry_configured": False,
+        "wheelchair_routing_configured": True,
     }
 
 
 def test_readiness_reports_exact_walk_geometry_capability(monkeypatch):
     monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "configured-key")
     monkeypatch.setattr(ai_main.settings, "TMAP_API_KEY", "tmap-key")
+    monkeypatch.setattr(ai_main.settings, "ORS_API_KEY", "ors-key")
     monkeypatch.setattr(
         ai_main.settings,
         "OSMNX_WALK_GEOMETRY_ENABLED",
@@ -204,7 +220,24 @@ def test_readiness_reports_exact_walk_geometry_capability(monkeypatch):
     assert response.json()["spatial_layer_count"] == 13
     assert response.json()["capabilities"] == {
         "exact_walking_geometry_configured": True,
+        "wheelchair_routing_configured": True,
     }
+
+
+def test_readiness_rejects_missing_wheelchair_routing_provider(monkeypatch):
+    monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "configured-key")
+    monkeypatch.setattr(ai_main.settings, "TMAP_API_KEY", "tmap-key")
+    monkeypatch.setattr(ai_main.settings, "ORS_API_KEY", "")
+    monkeypatch.setattr(ai_main, "_get_layers", lambda: REQUIRED_LAYERS)
+    monkeypatch.setattr(ai_main, "regional_dem_ready", lambda: True)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json()["checks"]["wheelchair_routing_configured"] is False
+    assert response.json()["capabilities"][
+        "wheelchair_routing_configured"
+    ] is False
 
 
 def test_production_readiness_rejects_short_internal_token(monkeypatch):
@@ -213,6 +246,7 @@ def test_production_readiness_rejects_short_internal_token(monkeypatch):
     monkeypatch.setattr(ai_main.settings, "AI_INTERNAL_SERVICE_TOKEN", "short")
     monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "configured-key")
     monkeypatch.setattr(ai_main.settings, "TMAP_API_KEY", "tmap-key")
+    monkeypatch.setattr(ai_main.settings, "ORS_API_KEY", "ors-key")
     monkeypatch.setattr(ai_main, "_get_layers", lambda: REQUIRED_LAYERS)
     monkeypatch.setattr(ai_main, "regional_dem_ready", lambda: True)
 
@@ -1112,6 +1146,28 @@ def test_tmap_standalone_analysis_uses_full_walking_path():
     ]]
 
 
+def test_ors_and_tmap_verified_walk_analysis_uses_shared_full_path():
+    path = [
+        Coordinate(35.1000, 129.0000),
+        Coordinate(35.1100, 129.0000),
+    ]
+    candidate = MergedRoute(
+        sources=["tmap", "ors"],
+        source="tmap",
+        path=path,
+        duration_min=10,
+        distance_m=900,
+        accessibility_evidence={
+            "wheelchair_constraints_applied": True,
+        },
+    )
+
+    assert _analysis_route_parts(candidate) == [[
+        (35.1000, 129.0000),
+        (35.1100, 129.0000),
+    ]]
+
+
 def test_tmap_ramp_and_stair_exclusion_evidence_reaches_public_segment():
     candidate = MergedRoute(
         sources=["tmap"],
@@ -1149,6 +1205,100 @@ def test_tmap_ramp_and_stair_exclusion_evidence_reaches_public_segment():
     assert segment["ramp_replaces_stairs"] is True
     assert segment["ramp_evidence_source"] == "TMAP pedestrian turnType 128/129"
     assert segment["needs_vertical_move"] is True
+
+
+def test_combined_ors_constraints_and_tmap_ramp_reach_public_segment():
+    candidate = MergedRoute(
+        sources=["tmap", "ors"],
+        source="tmap",
+        path=[
+            Coordinate(35.1000, 129.0000),
+            Coordinate(35.1100, 129.0100),
+        ],
+        duration_min=10,
+        distance_m=900,
+        raw_response={"features": []},
+        accessibility_evidence={
+            "providers": [
+                "TMAP pedestrian",
+                "openrouteservice wheelchair",
+            ],
+            "stairs_excluded_by_provider": True,
+            "stair_feature_count": 0,
+            "ramp_points": [{
+                "lat": 35.105,
+                "lng": 129.005,
+                "turn_type": 129,
+                "replaces_stairs": True,
+            }],
+            "wheelchair_constraints_applied": True,
+            "wheelchair_restrictions": WHEELCHAIR_RESTRICTIONS,
+            "wheelchair_data_limitations": ["OSM 태그 누락 가능"],
+            "wheelchair_constraint_categories": [
+                "steps", "surface", "width", "wheelchair_access"
+            ],
+        },
+    )
+
+    segment = _public_segments(candidate)[0]
+
+    assert _wheelchair_candidate_constrained(candidate) is True
+    assert segment["ramp_points"] == [{"lat": 35.105, "lng": 129.005}]
+    assert segment["wheelchair_constraints_applied"] is True
+    assert segment["wheelchair_constraint_source"] == (
+        "openrouteservice wheelchair profile"
+    )
+    assert segment["wheelchair_restrictions"] == WHEELCHAIR_RESTRICTIONS
+    assert segment["wheelchair_data_limitations"] == ["OSM 태그 누락 가능"]
+    assert segment["wheelchair_constraint_categories"] == [
+        "steps", "surface", "width", "wheelchair_access"
+    ]
+
+
+def test_wheelchair_collection_fails_instead_of_using_tmap_without_ors(
+    monkeypatch,
+):
+    route = RouteCandidate(
+        source="tmap",
+        path=[Coordinate(35.10, 129.00), Coordinate(35.11, 129.01)],
+        duration_min=10,
+        distance_m=900,
+        accessibility_evidence={
+            "stairs_excluded_by_provider": True,
+            "stair_feature_count": 0,
+        },
+    )
+
+    async def odsay_collect(_self, *_args, **_kwargs):
+        return []
+
+    async def tmap_collect(_self, *_args, **_kwargs):
+        return [route]
+
+    async def ors_collect(_self, *_args, **_kwargs):
+        raise CollectorNotConfigured("ORS_API_KEY가 설정되지 않았습니다.")
+
+    monkeypatch.setattr(OdsayRouteCollector, "collect", odsay_collect)
+    monkeypatch.setattr(TmapRouteCollector, "collect", tmap_collect)
+    monkeypatch.setattr(OrsWheelchairRouteCollector, "collect", ors_collect)
+    request = RecommendRequest(
+        origin_lat=35.10,
+        origin_lng=129.00,
+        origin_name="출발",
+        dest_lat=35.11,
+        dest_lng=129.01,
+        dest_name="도착",
+        profile="disabled",
+        uses_wheelchair=True,
+    )
+
+    with pytest.raises(HTTPException) as captured:
+        asyncio.run(_collect_static_featured_routes(request))
+
+    assert captured.value.status_code == 503
+    assert captured.value.detail["required_source"] == (
+        "openrouteservice wheelchair"
+    )
 
 
 def test_estimated_walk_geometry_is_not_used_as_observed_feature_path():

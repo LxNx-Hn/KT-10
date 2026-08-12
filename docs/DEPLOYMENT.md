@@ -42,6 +42,10 @@ python scripts\prepare_deployment_env.py --import-existing
   geometry 기반 경사·주변 시설 분석. 둘 다 없으면 직선 추정 보행선을
   분석에 쓰지 않으므로 해당 값은 미확인으로 남고 배포 환경 검사를
   통과하지 않습니다. 운영에서는 응답시간이 안정적인 TMAP을 권장합니다.
+- `ORS_API_KEY`: 휠체어 경로의 계단·노면·평탄도·폭·턱·경사 제한을
+  적용하는 OpenRouteService 키입니다. TMAP/ODsay/공공데이터포털 키와
+  호환되지 않습니다. 없으면 AI readiness와 운영 Compose 검증이 실패합니다.
+  값은 루트 `.env.production`에서만 관리하고 Git에 커밋하지 않습니다.
 - 선택: `OSMNX_WALK_GEOMETRY_ENABLED`: 느린 OSM 보행망 복구를 허용할
   때만 `true`; 운영 기본값은 `false`
 - `RANKER_TIER`: 기본 `bootstrap_baseline`. 초기 AI 기반 경로 추천
@@ -112,7 +116,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml build
 
 `--check`는 비밀값을 출력하지 않으며 필수 키·내부 비밀값, HTTPS origin과
 loopback bind, PostgreSQL URL, 공급자·모델 tier, 개인화 범위,
-TMAP/OSMnx 실제 보행 geometry 조건을 검사합니다. 실제 외부 키 유효성은
+TMAP/OSMnx 실제 보행 geometry와 ORS 휠체어 경로 조건을 검사합니다. 실제 외부 키 유효성은
 마지막 스모크 검증에서 확인합니다.
 
 ### 5.1 NIM 경로 설명 설정

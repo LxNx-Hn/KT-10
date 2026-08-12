@@ -46,6 +46,17 @@ def test_route_segment_rejects_unsubstantiated_accessibility_claims():
             stairs_count=1,
             stairs_excluded_by_provider=True,
         )
+    with pytest.raises(ValidationError, match="wheelchair_constraints"):
+        RouteSegment(
+            id="walk-wheelchair-without-contract",
+            mode="walk",
+            description="도보",
+            duration_min=1,
+            has_stairs=False,
+            stairs_count=0,
+            stairs_excluded_by_provider=True,
+            wheelchair_constraints_applied=True,
+        )
 
 
 def test_route_candidate_rejects_negative_counts_and_distances():

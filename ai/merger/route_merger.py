@@ -105,6 +105,11 @@ def _paths_similar(a: list, b: list) -> bool:
     )
 
 
+def paths_similar(a: list, b: list) -> bool:
+    """공급자 근거를 결합해도 되는 같은 보행 경로인지 확인한다."""
+    return _paths_similar(a, b)
+
+
 def _mode_signature(candidate: Any) -> tuple[str, ...]:
     modes = tuple(
         str(segment.get("mode"))
@@ -113,9 +118,70 @@ def _mode_signature(candidate: Any) -> tuple[str, ...]:
     )
     if modes:
         return modes
-    if candidate.source in {"tmap", "osmnx"}:
+    if candidate.source in {"tmap", "osmnx", "ors"}:
         return ("walk",)
     return ()
+
+
+def _list_values(value: object) -> list:
+    return list(value) if isinstance(value, list) else []
+
+
+def _unique_list(left: object, right: object) -> list:
+    values: list = []
+    for item in [*_list_values(left), *_list_values(right)]:
+        if item not in values:
+            values.append(item)
+    return values
+
+
+def merge_accessibility_evidence(left: object, right: object) -> dict:
+    """같은 geometry에서 공급자별 접근성 근거를 손실 없이 합친다.
+
+    물리 경사로(TMAP)와 휠체어 통행 제약(ORS)은 서로 대체 관계가 아니다.
+    경로 유사성 검사를 통과한 후보에 한해서만 이 함수를 호출한다. 알 수 없는
+    충돌 값을 임의로 True/False로 만들지 않고 ``evidence_conflicts``에 남긴다.
+    """
+    left_map = dict(left) if isinstance(left, dict) else {}
+    right_map = dict(right) if isinstance(right, dict) else {}
+    result = dict(left_map)
+
+    providers: list[str] = []
+    for mapping in (left_map, right_map):
+        provider = mapping.get("provider")
+        if isinstance(provider, str) and provider and provider not in providers:
+            providers.append(provider)
+        for item in _list_values(mapping.get("providers")):
+            if isinstance(item, str) and item and item not in providers:
+                providers.append(item)
+    if providers:
+        result["providers"] = providers
+
+    list_keys = {
+        "ramp_points",
+        "avoided_features",
+        "verified_extra_info",
+        "wheelchair_data_limitations",
+        "wheelchair_constraint_categories",
+    }
+    conflicts: dict[str, list] = {}
+    for key, value in right_map.items():
+        if key == "providers":
+            continue
+        if key in list_keys:
+            combined = _unique_list(result.get(key), value)
+            if combined:
+                result[key] = combined
+            continue
+        if key not in result or result[key] is None:
+            result[key] = value
+        elif value is None or result[key] == value:
+            continue
+        else:
+            conflicts[key] = [result[key], value]
+    if conflicts:
+        result["evidence_conflicts"] = conflicts
+    return result
 
 
 def _first_known(mapping: dict, *keys: str) -> str | None:
@@ -211,8 +277,9 @@ def merge_route_candidates(candidates: list) -> list:
                     m.transit_refinement = getattr(
                         cand, "transit_refinement", None
                     )
-                    m.accessibility_evidence = dict(
-                        getattr(cand, "accessibility_evidence", {})
+                    m.accessibility_evidence = merge_accessibility_evidence(
+                        m.accessibility_evidence,
+                        getattr(cand, "accessibility_evidence", {}),
                     )
                 elif cand.raw_response and not m.raw_response:
                     m.raw_response = cand.raw_response
@@ -220,10 +287,10 @@ def merge_route_candidates(candidates: list) -> list:
                     m.transit_refinement = getattr(
                         cand, "transit_refinement", None
                     )
-                if not m.accessibility_evidence:
-                    m.accessibility_evidence = dict(
-                        getattr(cand, "accessibility_evidence", {})
-                    )
+                m.accessibility_evidence = merge_accessibility_evidence(
+                    m.accessibility_evidence,
+                    getattr(cand, "accessibility_evidence", {}),
+                )
                 matched = True
                 break
 

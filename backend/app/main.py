@@ -924,15 +924,15 @@ def _filter_wheelchair_candidates(
     candidates: list[RouteCandidate],
     user: User | None,
 ) -> list[RouteCandidate]:
-    """공급자가 계단 제외로 검증한 후보만 휠체어 사용자에게 제시한다."""
+    """계단과 휠체어 통행 제약이 검증된 후보만 제시한다."""
     preference = user.preference if user and user.preference else None
     filtered = filter_known_stair_candidates(candidates, preference)
     if candidates and not filtered:
         raise HTTPException(
             status_code=422,
             detail=(
-                "휠체어 설정에서 공급자가 계단 제외로 확인한 "
-                "보행 경로를 수집하지 못했습니다."
+                "휠체어 설정에서 계단·노면·폭·턱·경사 등 휠체어 통행 제약을 "
+                "확인한 보행 경로를 수집하지 못했습니다."
             ),
         )
     return filtered

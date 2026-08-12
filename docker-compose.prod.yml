@@ -50,6 +50,12 @@ services:
       TMAP_CACHE_DIR: /app/ai/data/cache/tmap
       TMAP_CACHE_TTL_SECONDS: ${TMAP_CACHE_TTL_SECONDS:-1800}
       TMAP_MAX_CONCURRENT_REQUESTS: ${TMAP_MAX_CONCURRENT_REQUESTS:-3}
+      ORS_API_KEY: ${ORS_API_KEY:?ORS_API_KEY is required}
+      ORS_BASE_URL: ${ORS_BASE_URL:-https://api.openrouteservice.org}
+      ORS_CACHE_DIR: /app/ai/data/cache/ors
+      ORS_CACHE_TTL_SECONDS: ${ORS_CACHE_TTL_SECONDS:-1800}
+      ORS_TIMEOUT_SECONDS: ${ORS_TIMEOUT_SECONDS:-20}
+      ORS_MAX_CONCURRENT_REQUESTS: ${ORS_MAX_CONCURRENT_REQUESTS:-3}
       OSMNX_WALK_GEOMETRY_ENABLED: ${OSMNX_WALK_GEOMETRY_ENABLED:-false}
       OSMNX_WALK_GEOMETRY_BLOCKING: ${OSMNX_WALK_GEOMETRY_BLOCKING:-false}
       OSMNX_OVERPASS_URL: ${OSMNX_OVERPASS_URL:-https://lambert.openstreetmap.de/api}
@@ -68,6 +74,7 @@ services:
       - elevation-cache:/app/ai/data/cache/elevation
       - route-feature-cache:/app/ai/data/cache/route_features
       - tmap-cache:/app/ai/data/cache/tmap
+      - ors-cache:/app/ai/data/cache/ors
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/ready', timeout=3)"]
       interval: 10s
@@ -194,5 +201,6 @@ volumes:
   elevation-cache:
   route-feature-cache:
   tmap-cache:
+  ors-cache:
   vworld-cache:
   shade-cache:

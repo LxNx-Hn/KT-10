@@ -13,6 +13,12 @@ import pytest
 
 from collectors.base import CollectorError, CollectorNotConfigured, Coordinate
 from collectors.odsay_collector import OdsayRouteCollector
+from collectors.ors_collector import (
+    AVOID_FEATURES,
+    EXTRA_INFO,
+    WHEELCHAIR_RESTRICTIONS,
+    OrsWheelchairRouteCollector,
+)
 from collectors.osmnx_collector import OsmnxRouteCollector
 from collectors.tmap_collector import TmapRouteCollector
 from config import settings
@@ -66,6 +72,177 @@ def test_tmap_fails_explicitly_without_api_key(monkeypatch):
     monkeypatch.setattr(settings, "TMAP_API_KEY", "")
     with pytest.raises(CollectorNotConfigured):
         asyncio.run(TmapRouteCollector().collect(ORIGIN, DEST))
+
+
+def _ors_payload():
+    return {
+        "type": "FeatureCollection",
+        "features": [{
+            "type": "Feature",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [ORIGIN.lng, ORIGIN.lat, 12.0],
+                    [DEST.lng, DEST.lat, 11.0],
+                ],
+            },
+            "properties": {
+                "summary": {"distance": 1000, "duration": 600},
+                "segments": [{"distance": 1000, "duration": 600}],
+                "extras": {
+                    key: {"values": [], "summary": []}
+                    for key in EXTRA_INFO
+                },
+            },
+        }],
+    }
+
+
+def test_ors_fails_explicitly_without_api_key(monkeypatch):
+    monkeypatch.setattr(settings, "ORS_API_KEY", "")
+
+    with pytest.raises(CollectorNotConfigured):
+        asyncio.run(OrsWheelchairRouteCollector().collect(ORIGIN, DEST))
+
+
+def test_ors_wheelchair_request_applies_all_official_restrictions(monkeypatch):
+    import collectors.ors_collector as module
+
+    captured = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return _ors_payload()
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            captured["client"] = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, **kwargs):
+            captured["url"] = url
+            captured.update(kwargs)
+            return Response()
+
+    monkeypatch.setattr(settings, "ORS_API_KEY", "test-secret")
+    monkeypatch.setattr(settings, "ORS_CACHE_DIR", "")
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+
+    candidate = asyncio.run(
+        OrsWheelchairRouteCollector().collect(ORIGIN, DEST)
+    )[0]
+
+    assert captured["url"].endswith("/v2/directions/wheelchair/geojson")
+    assert captured["headers"]["Authorization"] == "test-secret"
+    assert captured["json"]["options"] == {
+        "avoid_features": list(AVOID_FEATURES),
+        "profile_params": {
+            "restrictions": WHEELCHAIR_RESTRICTIONS,
+        },
+    }
+    assert captured["json"]["extra_info"] == list(EXTRA_INFO)
+    assert candidate.duration_min == 10
+    assert candidate.distance_m == 1000
+    assert candidate.accessibility_evidence[
+        "wheelchair_constraints_applied"
+    ] is True
+    assert candidate.accessibility_evidence[
+        "wheelchair_restrictions"
+    ] == WHEELCHAIR_RESTRICTIONS
+    assert candidate.accessibility_evidence[
+        "stairs_excluded_by_provider"
+    ] is True
+    assert candidate.accessibility_evidence["wheelchair_data_limitations"]
+    assert "wheelchair_access" in candidate.accessibility_evidence[
+        "wheelchair_constraint_categories"
+    ]
+    assert "ramp_points" not in candidate.accessibility_evidence
+
+
+def test_ors_rejects_missing_requested_extra_info():
+    payload = _ors_payload()
+    del payload["features"][0]["properties"]["extras"]["surface"]
+
+    with pytest.raises(CollectorError, match="extra_info"):
+        OrsWheelchairRouteCollector()._candidate_from_data(payload)
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [(401, "auth_failed"), (403, "auth_failed"), (429, "quota_exceeded")],
+)
+def test_ors_classifies_auth_and_quota_failures(monkeypatch, status, code):
+    import collectors.ors_collector as module
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, **_kwargs):
+            return httpx.Response(status, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(settings, "ORS_API_KEY", "test-secret")
+    monkeypatch.setattr(settings, "ORS_CACHE_DIR", "")
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+
+    with pytest.raises(CollectorError) as captured:
+        asyncio.run(OrsWheelchairRouteCollector().collect(ORIGIN, DEST))
+
+    assert captured.value.code == code
+    assert captured.value.retryable is False
+
+
+def test_ors_persistent_cache_does_not_store_api_key(monkeypatch, tmp_path):
+    import collectors.ors_collector as module
+
+    requests = 0
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return _ors_payload()
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            nonlocal requests
+            requests += 1
+            return Response()
+
+    monkeypatch.setattr(settings, "ORS_API_KEY", "test-secret")
+    monkeypatch.setattr(settings, "ORS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+
+    asyncio.run(OrsWheelchairRouteCollector().collect(ORIGIN, DEST))
+    asyncio.run(OrsWheelchairRouteCollector().collect(ORIGIN, DEST))
+
+    assert requests == 1
+    cache_text = next(tmp_path.glob("*.json")).read_text(encoding="utf-8")
+    assert "test-secret" not in cache_text
 
 
 def test_tmap_persistent_cache_avoids_repeated_provider_call(
@@ -321,6 +498,84 @@ def test_odsay_walk_geometry_prefers_tmap(monkeypatch):
     assert path == [ORIGIN, DEST]
     assert quality == "exact"
     assert evidence == {}
+
+
+def test_odsay_wheelchair_walk_uses_ors_and_merges_similar_tmap_ramp(
+    monkeypatch,
+):
+    async def ors_collect(_self, _start, _end):
+        return [SimpleNamespace(
+            path=[ORIGIN, DEST],
+            accessibility_evidence={
+                "providers": ["openrouteservice wheelchair"],
+                "wheelchair_constraints_applied": True,
+                "wheelchair_restrictions": WHEELCHAIR_RESTRICTIONS,
+                "stairs_excluded_by_provider": True,
+                "wheelchair_data_limitations": ["OSM 태그 누락 가능"],
+                "wheelchair_constraint_categories": [
+                    "steps", "surface", "width", "wheelchair_access"
+                ],
+            },
+        )]
+
+    async def tmap_collect(_self, _start, _end):
+        return [SimpleNamespace(
+            path=[ORIGIN, DEST],
+            accessibility_evidence={
+                "provider": "TMAP pedestrian",
+                "stairs_excluded_by_provider": True,
+                "ramp_points": [{
+                    "lat": 35.16,
+                    "lng": 129.05,
+                    "turn_type": 129,
+                    "replaces_stairs": True,
+                }],
+            },
+        )]
+
+    monkeypatch.setattr(settings, "ORS_API_KEY", "ors-key")
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "tmap-key")
+    monkeypatch.setattr(OrsWheelchairRouteCollector, "collect", ors_collect)
+    monkeypatch.setattr(TmapRouteCollector, "collect", tmap_collect)
+
+    path, quality, evidence = asyncio.run(
+        OdsayRouteCollector(
+            avoid_stairs=True,
+            uses_wheelchair=True,
+        )._walk_geometry(ORIGIN, DEST)
+    )
+
+    assert path == [ORIGIN, DEST]
+    assert quality == "exact"
+    assert evidence["wheelchair_constraints_applied"] is True
+    assert evidence["ramp_points"][0]["replaces_stairs"] is True
+    assert evidence["providers"] == [
+        "openrouteservice wheelchair",
+        "TMAP pedestrian",
+    ]
+
+
+def test_odsay_wheelchair_walk_never_falls_back_when_ors_is_unavailable(
+    monkeypatch,
+):
+    async def ors_collect(_self, _start, _end):
+        raise CollectorNotConfigured("ORS_API_KEY가 설정되지 않았습니다.")
+
+    async def tmap_collect(_self, _start, _end):
+        raise AssertionError("ORS 실패 후 TMAP 경로를 통행 가능으로 쓰면 안 됩니다.")
+
+    monkeypatch.setattr(settings, "ORS_API_KEY", "")
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "tmap-key")
+    monkeypatch.setattr(OrsWheelchairRouteCollector, "collect", ors_collect)
+    monkeypatch.setattr(TmapRouteCollector, "collect", tmap_collect)
+
+    with pytest.raises(CollectorNotConfigured):
+        asyncio.run(
+            OdsayRouteCollector(
+                avoid_stairs=True,
+                uses_wheelchair=True,
+            )._walk_geometry(ORIGIN, DEST)
+        )
 
 
 def test_odsay_walk_geometry_uses_osmnx_only_when_enabled(monkeypatch):

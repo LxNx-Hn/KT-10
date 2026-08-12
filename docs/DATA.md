@@ -97,11 +97,16 @@ geometry 결측, 야간 상태를 임의의 그늘 0%로 바꾸지 않습니다.
 
 ### 휠체어 보행 경로와 물리 경사로 계약
 
-휠체어 설정 또는 계단 회피 요청에서는 TMAP 보행자 경로 API에 공식
-`searchOption=30`(최단거리+계단제외)을 보낸다. 이 요청을 사용한 공급자
-응답만 `stairsExcludedByProvider=true`, `hasStairs=false`,
-`stairsCount=0`으로 공개하며, 이 근거가 없는 보행 후보는 휠체어 추천에서
-제외한다.
+계단 회피 요청에서는 TMAP 보행자 경로 API에 공식
+`searchOption=30`(최단거리+계단제외)을 보낸다. 휠체어 요청은 여기에 더해
+OpenRouteService의 `wheelchair` profile을 필수로 호출한다. ORS 요청에는
+`steps`, `ferries` 회피와 노면(`cobblestone:flattened`), track grade 1,
+평탄도 `good`, 최대 낮춘 턱 3cm, 최대 경사 6%, 최소 폭 0.9m 제한을 보낸다.
+ORS wheelchair profile의 `wheelchair` 접근 제한도 함께 적용한다. 반면
+차단봉·문·게이트의 실제 개방 상태와 통과 폭은 공급자 결과만으로 확정하지
+않고 데이터 한계로 공개한다.
+모든 실제 보행·환승 구간에 이 제약이 적용된 후보만 휠체어 추천에 남긴다.
+ORS가 미설정·실패하면 TMAP 계단 회피 결과로 대체하지 않고 503을 반환한다.
 
 TMAP 보행자 응답의 안내점 `turnType=128`(경사로 진입),
 `turnType=129`(계단+경사로 진입)만 물리 경사로 근거로 사용한다. 해당 좌표가
@@ -109,10 +114,22 @@ TMAP 보행자 응답의 안내점 `turnType=128`(경사로 진입),
 129일 때만 `rampReplacesStairs=true`로 표시한다. DEM 경사도는 지형 높이
 변화 추정이며 물리 경사로의 존재나 계단 대체 가능성을 뜻하지 않는다.
 
+TMAP 경사로 안내점과 ORS wheelchair 제약은 평균 30m·최대 60m 이내로
+유사한 선형에서만 결합한다. 서로 다른 길의 경사로를 휠체어 경로 근거로
+옮기지 않는다. ORS는 OpenStreetMap 태그를 사용하므로
+`wheelchairConstraintsApplied=true`는 공급자 제약이 적용됐다는 뜻이지 현장
+전수 확인이나 통행 보장을 뜻하지 않는다. OSM 태그 누락과 공사·적치물·고장
+같은 임시 장애물 한계를 API의 `wheelchairDataLimitations`와 추천 주의문에
+항상 함께 제공한다.
+
 공식 계약:
 
 - 보행자 경로 요청: https://tmap-skopenapi.readme.io/reference/%EB%B3%B4%ED%96%89%EC%9E%90-%EA%B2%BD%EB%A1%9C%EC%95%88%EB%82%B4
 - 보행자 응답 코드: https://tmap-skopenapi.readme.io/reference/%EA%B2%BD%EB%A1%9C%EC%95%88%EB%82%B4-%EC%83%98%ED%94%8C%EC%98%88%EC%A0%9C
+- ORS wheelchair routing options: https://giscience.github.io/openrouteservice/api-reference/endpoints/directions/routing-options
+- ORS extra info: https://giscience.github.io/openrouteservice/api-reference/endpoints/directions/extra-info/
+- ORS OSM tag filtering: https://giscience.github.io/openrouteservice/technical-details/tag-filtering
+- OSM 물리 경사로 태그: https://wiki.openstreetmap.org/wiki/Key:ramp
 
 ### 2단계: 적합도
 

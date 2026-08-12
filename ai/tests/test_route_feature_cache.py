@@ -58,8 +58,11 @@ def test_wheelchair_cache_identity_is_separate_from_general_route():
         35.2,
         129.1,
         avoid_stairs=True,
+        uses_wheelchair=True,
     )
 
     assert general != wheelchair
     assert general["geometryProfile"]["stairsExcluded"] is False
     assert wheelchair["geometryProfile"]["stairsExcluded"] is True
+    assert wheelchair["geometryProfile"]["wheelchairConstraints"] is True
+    assert wheelchair["geometryProfile"]["orsRestrictionSchemaVersion"] == 1

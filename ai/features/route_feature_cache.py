@@ -12,9 +12,9 @@ from weakref import WeakKeyDictionary
 
 from config import settings
 
-# v4: 계단 제외 탐색 여부를 캐시 identity에 포함한다. 일반 보행 선형이
-# 휠체어/계단 회피 요청에 재사용되지 않게 이전 schema는 miss로 처리한다.
-CACHE_SCHEMA_VERSION = 4
+# v5: 휠체어 profile과 ORS 제약 schema를 캐시 identity에 포함한다. 기존
+# TMAP 계단 제외 캐시를 휠체어 통행 검증 결과로 재사용하지 않는다.
+CACHE_SCHEMA_VERSION = 5
 _write_locks: dict[str, Lock] = {}
 _write_locks_guard = Lock()
 _request_locks: WeakKeyDictionary = WeakKeyDictionary()
@@ -28,6 +28,7 @@ def cache_identity(
     dest_lng: float,
     *,
     avoid_stairs: bool = False,
+    uses_wheelchair: bool = False,
 ) -> dict:
     return {
         "schemaVersion": CACHE_SCHEMA_VERSION,
@@ -35,6 +36,12 @@ def cache_identity(
         "destination": [round(dest_lat, 5), round(dest_lng, 5)],
         "geometryProfile": {
             "stairsExcluded": avoid_stairs,
+            "wheelchairConstraints": uses_wheelchair,
+            "orsRestrictionSchemaVersion": 1 if uses_wheelchair else None,
+            "orsConfigured": bool(
+                settings.ORS_API_KEY
+                and not settings.ORS_API_KEY.startswith("YOUR_")
+            ),
             "odsayLoadLane": settings.ODSAY_LOAD_LANE_ENABLED,
             "tmapConfigured": bool(
                 settings.TMAP_API_KEY
