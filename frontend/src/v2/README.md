@@ -19,27 +19,36 @@
 | `MapFirstApp.tsx` | 장소 검색, 프로필·이동 조건, 추천 카드, 상세 drawer, 음성 진입점 |
 | `KakaoMap.tsx` | Kakao 지도, 출·도착 마커, 선택·대안 경로, 편의시설·건물 그늘 오버레이 |
 | `routeViewModel.ts` | 서버 응답을 사실 배지와 점수 설명으로 변환 |
+| `components/SettingsPanel.tsx` | 이동지원 설정, 법적 문서 링크, 회원 탈퇴 진입점 |
+| `../chat/voiceChatStore.ts` | 음성 목적지·조건·경로 설명과 선택 상태 |
+| `../auth/SignupConsentPage.tsx` | Kakao OAuth 이후 이용약관 수락과 가입 완료 |
+| `../legal/LegalDocumentPage.tsx` | 이용약관·개인정보처리방침 공개 화면 |
 | `map-first.css` | 모바일 우선 지도·바텀시트·drawer 디자인 |
 | `MapFirstPrototype.tsx` | `MapFirstApp` 호환 re-export |
 | `mapDemoData.ts` | 인계본 시각 참고 데이터; 프로덕션 v2에서는 import하지 않음 |
 
 ## 사용자 흐름
 
-1. 출발지·도착지를 Kakao Places에서 검색하고 결과 항목을 선택합니다.
-2. `appStore.search`가 백엔드 추천 API를 호출합니다.
-3. 서버가 정렬한 `ScoredRoute[]` 순서를 하단 결과 시트의 세로 경로
+1. 시작 화면에서 비로그인 이용 또는 Kakao 로그인을 선택합니다. OAuth 이후
+   현재 이용약관 수락 기록이 없으면 가입 동의 화면을 먼저 완료합니다.
+2. 출발지·도착지를 Kakao Places에서 검색하고 결과 항목을 선택합니다.
+3. `appStore.search`가 백엔드 추천 API를 호출합니다.
+4. 서버가 정렬한 `ScoredRoute[]` 순서를 하단 결과 시트의 세로 경로
    목록에 그대로 표시합니다. 시트는 collapsed / medium / expanded
    3단계 snap을 지원하고, 목록 내부 세로 스크롤을 시트 드래그보다
    우선하며 시트 제스처는 배경 지도로 전파되지 않습니다.
-4. 목록 항목 클릭·키보드·스크린리더 또는 지도 경로를 선택하면
+5. 목록 항목 클릭·키보드·스크린리더 또는 지도 경로를 선택하면
    카드와 지도가 같은 `selectedRouteId`를 사용합니다.
-5. 상세 drawer에서 경로 사실, 날씨·버스, 후기·신고, 내 설정을 확인합니다.
-6. 그늘 계산 시각 변경은 서버가 보관한 같은 후보군의 그늘과 순위만
+6. 상세 drawer에서 경로 사실, 날씨·버스, 후기·신고, 내 설정을 확인합니다.
+   음성 UI에서도 목적지·조건·휠체어 설정과 경로 설명·선택을 조작할 수 있습니다.
+7. 그늘 계산 시각 변경은 서버가 보관한 같은 후보군의 그늘과 순위만
    갱신하며 장소검색·경로 공급자를 다시 호출하지 않습니다.
 
 로그인과 큰 글씨 설정은 검색 카드에 별도 상태 줄로 노출하지 않고
 `내 설정`에 둡니다. 그늘·편의시설은 원본 지도 조작부를 대체하지 않으며,
 해당 경로에 확인된 데이터가 있을 때만 추가 레이어로 표시합니다.
+설정에서는 `/terms`, `/privacy` 공개 문서로 이동할 수 있고, 로그인
+사용자는 복구할 수 없는 회원 탈퇴의 삭제·보존 범위를 확인한 뒤 요청합니다.
 
 장소 이름을 입력만 하고 검색 결과를 선택하지 않은 상태에서는 경로를
 요청하지 않습니다. 출발지나 도착지를 수정하면 이전 OD의 경로·선택을
@@ -65,6 +74,8 @@
 기본 프로필은 `general`, `elderly`, `child`, `youth`, `disabled`,
 `pregnant` 6개입니다. 이번 이동 조건은 짐 많음, 유아차, 계단 회피,
 그늘 우선, 저상버스 우선, 환승 최소이며 서버 재채점 옵션으로 전달합니다.
+휠체어, 보행보조기, 계단 회피 필수, 최대 도보거리와 시각·청각 안내 필요는
+로그인 사용자의 장기 이동지원 설정으로 저장합니다.
 
 ## 데이터와 환경 변수
 
@@ -101,6 +112,7 @@ npm test
 npm run build
 npm run test:e2e:a11y
 npm run test:e2e:places
+npx playwright test -c playwright.legal.config.ts
 npm audit --audit-level=moderate
 ```
 

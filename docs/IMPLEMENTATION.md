@@ -11,12 +11,13 @@
 1. 프론트가 Kakao Local 검색으로 부산 내 출발지·도착지를 선택한다.
 2. 백엔드가 현재 날씨와 6개 기본 프로필 중 하나, 이번 이동 조건, 로그인
    사용자의 장기 설정을 모은다.
-3. 백엔드는 AI 서버의 `POST /labeling/candidates`를 호출한다. AI 서버는
-   ODsay와 TMAP 후보를 수집한다. OSMnx는
-   `OSMNX_WALK_GEOMETRY_ENABLED=true`일 때만 ODsay 보행 geometry
-   복구에 사용한다. 실패 공급자는 메타데이터에 남긴다.
-4. AI 서버가 ODsay search 메타데이터와 TMAP exact 보행 geometry를
-   결합해 EPSG:5179 공간 피처, 부산 QGIS 90m DEM 지형 피처, 실제
+3. 백엔드는 AI 서버의 `POST /labeling/candidates`를 호출한다. 일반 요청은
+   ODsay 대중교통과 TMAP 보행 후보를 수집하고, 휠체어 요청은 ODsay
+   대중교통과 ORS wheelchair 보행 후보를 수집한다. OSMnx는
+   `OSMNX_WALK_GEOMETRY_ENABLED=true`인 일반 요청에서만 ODsay 보행
+   geometry 복구에 사용한다. 실패 공급자는 메타데이터에 남긴다.
+4. AI 서버가 공급자 메타데이터와 exact 보행 geometry를 결합해
+   EPSG:5179 공간 피처, 부산 QGIS 90m DEM 지형 피처, 실제
    수집시각 `captured_at`이 담긴 기본 스냅샷을 반환한다. 대중교통
    표시 선형은 이 단계에서 정류장 관측 좌표 기반 estimated이며,
    `loadLane` 정밀 선형은 최종 순위 확정 후 1위 후보에 1회, 그
@@ -29,7 +30,8 @@
    유효기간 이내), 체감온도 25°C 이상, 태양 고도 양수, exact 실외 보행
    geometry, 회랑 건물 높이 100% 확인 조건을 모두 만족할 때만 계산하며,
    하나라도 불충족이면 VWorld 조회 없이 shade를 생략(None)한다.
-   그늘 결과가 있으면 지도에 자동 표시되고 별도 토글은 없다.
+   확인된 그늘 결과는 지도 조작부에서 표시할 수 있으며 경사 구간
+   오버레이와 동시에 사용할 수 있다.
 6. 백엔드는 `captured_at`과 별도 `shade_evaluated_at`을 포함해 AI 서버의
    `POST /labeling/enriched-snapshots`를 호출한다. AI 서버는 checksum이
    포함된 동결 스냅샷과 `most_shade` 등의 사실 특성 라벨을 만든다.
@@ -49,7 +51,7 @@
 
 최초 추천 응답에는 서버가 30분 동안 보관하는 후보군을 가리키는
 `routeSetToken`이 포함됩니다. 사용자가 그늘 계산 시각을 바꾸면 프론트는
-`POST /api/routes/refresh-shade`만 호출하며 Kakao 장소검색, ODsay·TMAP
+`POST /api/routes/refresh-shade`만 호출하며 Kakao 장소검색, ODsay·TMAP·ORS
 후보 수집, OpenWeather 조회를 다시 실행하지 않습니다.
 
 - 모든 후보는 건물 조회 전에 경로 위치의 태양 고도를 먼저 계산합니다.
@@ -70,6 +72,12 @@
 - ODsay 구간 끝점을 이은 추정 직선은 지도 연결선으로만 사용하고
   지형·공간 피처·그늘 분석 geometry에서는 제외
 - 계단·승강기·저상버스·혼잡의 미확인 상태는 `null`로 유지
+- 휠체어 보행·환승 구간은 ORS wheelchair 제약과 extra-info 전 구간
+  coverage를 모두 확인하고, ORS 실패를 TMAP이나 직선 경로로 대체하지 않음
+- 휠체어 버스는 모든 탑승 구간의 저상버스 여부, 도시철도는 첫·마지막 역의
+  공식 접근 가능 출구와 승강장 동선을 확인한 후보만 유지
+- 물리 경사로는 사전 수집한 TMAP 근거가 같은 ORS 선형과 일치할 때만
+  표시하고, 명시적 `highway=steps + ramp=no` 선형을 통과한 후보는 제외
 - 혼잡은 교통카드 데이터 연결 상태에서 계산
 - 부산 QGIS DEM 경사는 90m 표본 사이 방향별 경사 구간으로 표시하며,
   보도 실측 구배와 구분
@@ -124,12 +132,12 @@ pickle을 역직렬화하지 않습니다. 현재 저장소의 초기 평가 모
 
 ## 데이터베이스
 
-PostgreSQL만 지원하며 SQLite 자동 대체는 없습니다. Alembic
-`20260720_0001`이 사용자, 프로필, impression, 리뷰, 시설 신고 스키마를
-생성하고 `20260724_0002`가 동일 사용자·동일 impression의 중복 후기를
-차단합니다. `20260724_0003`은 혼잡·환승 안내·교통약자 시설의 nullable
-1~5 직접 관측값과 범위 제약을 추가합니다. 시설 신고는 관리자 검토
-상태만 바꾸고 원본 공간 데이터를 자동 수정하지 않습니다.
+PostgreSQL만 지원하며 SQLite 자동 대체는 없습니다. Alembic은 사용자,
+프로필, impression, 리뷰, 시설 신고, 탈퇴 분리 보관 기록과 이용약관 수락
+기록을 관리합니다. 동일 사용자·동일 impression의 중복 후기를 차단하고
+혼잡·환승 안내·교통약자 시설의 nullable 1~5 직접 관측값에 범위 제약을
+적용합니다. 시설 신고는 관리자 검토 상태만 바꾸고 원본 공간 데이터를
+자동 수정하지 않습니다.
 
 ## UI
 
@@ -149,7 +157,12 @@ PostgreSQL만 지원하며 SQLite 자동 대체는 없습니다. Alembic
   오버레이가 바뀌고, 지도에서 경로를 선택하면 해당 카드로 이동
 - 접근성: 카드 클릭·키보드·스크린리더 대체 조작, 큰 글씨와 축약
   정보/상세 펼치기
-- 로그인: 카카오 OAuth authorization-code + state + HttpOnly 서비스 세션
+- 음성: 목적지 검색, 프로필·조건·휠체어 설정, 경로 설명·선택과 다시 듣기
+- 로그인: 카카오 OAuth authorization-code + state + HttpOnly 서비스 세션,
+  가입 완료 전 현재 이용약관 버전의 필수 동의 확인
+- 계정: 설정 화면에서 이용약관·개인정보처리방침 확인과 회원 탈퇴 제공.
+  탈퇴 시 계정·설정·후기·추천 표시 기록은 즉시 삭제하고, 시설 신고는
+  작성자·자유입력·신고 위치를 제거한 시설 관리 정보만 보존
 - 게스트: 경로 검색 가능, 프로필·후기 개인화 저장 불가
 
 ## 검증 명령

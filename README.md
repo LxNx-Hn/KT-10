@@ -1,17 +1,18 @@
 <div align="center">
 
-<img src="./frontend/public/favicon.svg" alt="TEMP logo" width="96" />
+<img src="./frontend/public/favicon.svg" alt="동넷 로고" width="96" />
 
-# TEMP
+# 동넷
 
 ### 🧭 부산 교통약자·이동취약자 맞춤형 경로 추천 PWA
 
 사용자 프로필과 이동 조건을 바탕으로 부산의 보행·대중교통 경로를 비교합니다.  
-경사, 건물 그늘, 환승, 계단, 승강기, 저상버스 정보를 지도와 경로 카드에서 함께 확인할 수 있습니다.
+경사, 건물 그늘, 환승, 계단, 승강기, 저상버스와 휠체어 이동 조건을 지도와 경로 카드에서 함께 확인할 수 있습니다.
 
 <br />
 
-🌐 **Live Demo** · [임시: 배포 주소]  
+🌐 **Live Demo** · [dongnet.kr](https://dongnet.kr)
+
 📖 [Product Decisions](./docs/PRODUCT_DECISIONS.md) ·
 🏗️ [Implementation](./docs/IMPLEMENTATION.md) ·
 🗺️ [Map-first UI](./frontend/src/v2/README.md) ·
@@ -45,8 +46,8 @@
       <br/>
       <ul>
         <li><b>👤 사용자 프로필</b> : 6종 지원</li>
-        <li><b>⚙️ 이동 보조 조건</b> : 6종 맞춤 설정</li>
-        <li><b>🗺️ 공간 데이터 레이어</b> : 9종 분석 인프라</li>
+        <li><b>⚙️ 이동 보조 조건</b> : 검색 조건과 장기 이동지원 설정</li>
+        <li><b>🗺️ 공간 데이터 레이어</b> : 12종 분석 인프라</li>
       </ul>
     </td>
   </tr>
@@ -54,9 +55,9 @@
 
 <div align="center">
 
-| 380 | 1,137 | 6,822 | 460 |
-| :---: | :---: | :---: | :---: |
-| 부산 OD | 실제 경로 후보 | 프로필 평가 | 전체 테스트 |
+| 380 | 1,137 | 6,822 |
+| :---: | :---: | :---: |
+| 부산 OD | 실제 경로 후보 | 프로필 평가 |
 
 </div>
 
@@ -153,7 +154,7 @@
       <ul>
         <li>출발시각 맞춤 선택</li>
         <li>VWorld 정밀 건물 정보 연동</li>
-        <li>태양 고도·방위각 실시간 실시간 계산</li>
+        <li>태양 고도·방위각 실시간 계산</li>
         <li>보행로 쾌적 그늘 구간 오버레이</li>
       </ul>
     </td>
@@ -205,10 +206,11 @@
     <td width="58%" valign="middle">
       <h4>🔐 User Profile</h4>
       <ul>
-        <li>Kakao 간편 로그인 제공</li>
-        <li>이동 지원 맞춤 프로필 저장</li>
+        <li>비로그인 시작과 선택적 Kakao 간편 로그인</li>
+        <li>가입 시 이용약관 확인과 동의</li>
+        <li>휠체어·보행보조기·최대 도보거리 등 이동지원 설정 저장</li>
         <li>사용자 선호 데이터 기반 개인화</li>
-        <li>이용 후기 및 내역 동기화</li>
+        <li>이용약관·개인정보처리방침·회원 탈퇴 제공</li>
       </ul>
     </td>
     <td width="42%" align="center" valign="middle">
@@ -229,7 +231,7 @@
       <ul>
         <li>경로 만족도 및 재이용 의향 피드백</li>
         <li>시설물 위치 및 운영 상태 오차 신고</li>
-        <li>관리자 실시간 검토 프로세스</li>
+        <li>관리자 수동 검토와 처리 상태·근거 기록</li>
       </ul>
     </td>
   </tr>
@@ -272,7 +274,7 @@
   <tr>
     <td width="50%" valign="top">
       <h3>📍 Real Route Providers</h3>
-      <p>ODsay 대중교통 경로와 TMAP 보행 경로를 수집하고, 경로별 geometry와 구간 정보를 사용합니다.</p>
+      <p>일반 경로는 ODsay·TMAP, 휠체어 경로는 ODsay·OpenRouteService를 사용해 실제 geometry와 구간 정보를 수집합니다.</p>
     </td>
     <td width="50%" valign="top">
       <h3>⛰️ Terrain Analysis</h3>
@@ -286,7 +288,7 @@
     </td>
     <td width="50%" valign="top">
       <h3>📊 Spatial Features</h3>
-      <p>경로 주변의 쉼터, CCTV, AED, 휠체어 충전기, 횡단보도, 정류장 정보를 경로 피처로 연결합니다.</p>
+      <p>쉼터, CCTV, AED, 휠체어 충전기, 이동지원센터, 복지시설, 배리어프리 관광지 등 12개 공간 레이어를 경로 피처로 연결합니다.</p>
     </td>
   </tr>
   <tr>
@@ -296,7 +298,7 @@
     </td>
     <td width="50%" valign="top">
       <h3>♿ Accessible Interaction</h3>
-      <p>큰 글씨, 키보드 조작, 포커스 이동, 스크린리더용 레이블, 클릭·키보드·스크린리더 기반 경로 선택을 제공합니다.</p>
+      <p>큰 글씨, 키보드·스크린리더 조작과 함께 음성 목적지 검색, 조건 변경, 경로 설명·선택을 제공합니다.</p>
     </td>
   </tr>
 </table>
@@ -306,8 +308,8 @@
 ## 🧠 How It Works
 
 ```mermaid
-flowchart LR
-    A["사용자 입력<br/>출발지 · 도착지 · 프로필 · 이동 조건"] --> B["경로 수집<br/>ODsay · TMAP"]
+flowchart TB
+    A["사용자 입력<br/>출발지 · 도착지 · 프로필 · 이동 조건"] --> B["경로 수집<br/>ODsay · TMAP · ORS"]
     B --> C["경로 병합<br/>geometry · 구간 · 교통수단"]
     C --> D["공간 분석<br/>시설 · 횡단보도 · 정류장"]
     D --> E["지형 분석<br/>부산 QGIS 90m DEM · 구간 경사"]
@@ -324,8 +326,8 @@ flowchart LR
 ### 추천 흐름
 
 1. Kakao Places에서 출발지와 도착지를 선택합니다.
-2. ODsay와 TMAP에서 경로 후보를 수집합니다.
-3. 경로 geometry와 교통수단별 구간을 하나의 후보 구조로 정리합니다.
+2. 일반 경로는 ODsay·TMAP, 휠체어 경로는 ODsay·ORS에서 후보를 수집합니다.
+3. 휠체어 후보는 계단·노면·폭·턱·경사와 대중교통 접근 조건을 확인하고, 경로 geometry와 교통수단별 구간을 하나의 후보 구조로 정리합니다.
 4. 경로 주변 공간 데이터와 부산 QGIS 90m DEM 지형 정보를 계산합니다.
 5. 출발시각에 맞춰 건물 그늘을 계산합니다.
 6. 프로필과 이동 조건을 기준으로 경로 순위를 정합니다.
@@ -344,11 +346,14 @@ flowchart LR
 | CCTV | 경로 1km당 카메라 밀도 |
 | AED | 경로 주변 AED 확인 |
 | 전동휠체어 충전기 | 경로 주변 충전기 확인 |
+| 교통약자 이동지원센터 | 센터 위치와 지원 차량 정보 |
+| 장애인복지시설 | 시설 위치와 목적지 정보 |
+| 배리어프리 문화·관광지 | 제공된 편의시설 정보 |
+| 동백전 생활 인프라 | 경로 주변 생활 인프라 |
 | 스마트 버스쉘터 | 쉘터와 냉방 정보 |
 | 도시철도 접근성 | 역 승강기 접근 정보 |
 | 횡단보도·신호 | 횡단보도 수와 신호 비율 |
 | 버스 정류장 | 경로 주변 정류장 수 |
-| VWorld 건물 | 건물 도형·높이와 그늘 계산 |
 
 정적 공간 레이어는 `EPSG:5179`로 준비하고 Shapely STRtree 공간 인덱스를 사용합니다. 경로 주변 50m·200m 범위에서 필요한 시설과 환경 정보를 조회합니다.
 
@@ -358,13 +363,15 @@ flowchart LR
 |---|---|
 | Kakao Maps / Local | 지도와 장소 검색 |
 | ODsay | 대중교통 경로와 노선 geometry |
-| TMAP | 보행 경로 |
+| TMAP | 일반 보행 경로와 사전 수집한 물리 경사로 근거 |
+| OpenRouteService | 휠체어 보행 경로와 통행 제약 적용 |
 | OSMnx | 보행 geometry 캐시 |
 | 부산 QGIS 90m DEM | 운영 경로의 고도와 구간별 경사 |
 | Open-Meteo Copernicus GLO-90 | 지역 DEM 범위 밖 fallback 고도 |
 | VWorld | 건물 도형과 높이 |
 | OpenWeather | 현재 날씨 |
 | 부산 버스 API | 정류장과 버스 도착 정보 |
+| NVIDIA NIM | 확인된 경로 사실의 음성 설명 보강 |
 
 자세한 데이터 목록은 [`data/catalog.json`](./data/catalog.json)에서 확인할 수 있습니다.
 
@@ -383,7 +390,7 @@ flowchart LR
 - 건물 그늘 비율과 그늘 도보거리
 - CCTV·횡단보도·쉼터·AED·충전기·정류장
 - 기온·체감온도·강수·바람·미세먼지
-- 짐, 유아차, 계단 회피, 그늘 우선, 환승 최소 조건
+- 짐, 유아차, 계단 회피, 그늘 우선, 저상버스 우선, 환승 최소와 장기 이동지원 설정
 
 ### 모델 구성
 
@@ -399,6 +406,16 @@ flowchart LR
 | 후보쌍 정확도 | 0.6806–0.8315 |
 
 모델 artifact는 manifest와 프로필별 XGBoost JSON을 담은 ZIP 형식입니다.
+현재 배포 기준선은 초기 평가 데이터로 학습한 `bootstrap_baseline`이며,
+사람 평가와 관리자 수동 승격을 마친 `human_validated` 운영 모델은 아직
+없습니다. 표시 점수는 후보 간 상대 적합도이며 안전도나 통행 성공확률이 아닙니다.
+
+### 접근성 데이터 한계
+
+- ORS는 OpenStreetMap에 기록된 정보로 제약을 적용하므로 미등록 계단·턱을 놓칠 수 있습니다.
+- 명시적으로 경사로가 없다고 확인된 계단 선형은 휠체어 후보에서 제외하지만, 태그 누락을 통행 가능으로 추정하지 않습니다.
+- 공사·적치물·고장·문이나 게이트의 실제 개방 상태 같은 임시 장애물은 확인하지 못할 수 있습니다.
+- 90m DEM 경사는 보도 실측 구배가 아니며, 건물 그늘에는 나무·지형 그림자가 포함되지 않습니다.
 
 ---
 
@@ -422,7 +439,7 @@ flowchart TB
     end
 
     subgraph AI["AI Service"]
-        COLLECT["ODsay · TMAP Collectors"]
+        COLLECT["ODsay · TMAP · ORS Collectors"]
         GEO["GeoPandas · Shapely"]
         DEM["Busan QGIS 90m Terrain"]
         SNAPSHOT["Feature Snapshot"]
@@ -433,6 +450,7 @@ flowchart TB
         KAKAO["Kakao"]
         ODSAY["ODsay"]
         TMAP["TMAP"]
+        ORS["OpenRouteService"]
         VWORLD["VWorld"]
         WEATHER["OpenWeather"]
         BUS["Busan Bus API"]
@@ -450,6 +468,7 @@ flowchart TB
     API --> AI
     COLLECT --> ODSAY
     COLLECT --> TMAP
+    COLLECT --> ORS
     GEO --> LAYERS
     DEM --> SNAPSHOT
     GEO --> SNAPSHOT
@@ -472,7 +491,9 @@ FastAPI Backend
 Nginx + React PWA
 ```
 
-Docker Compose에서 PostgreSQL, AI, Backend, Frontend를 함께 실행합니다.
+로컬·단일 서버에서는 Docker Compose로 전체 서비스를 실행합니다. 운영 배포는
+GitHub Actions가 이미지를 ECR에 올리고 ECS의 AI·Backend·Frontend 서비스를
+갱신하며, ALB가 `dongnet.kr`의 HTTPS 요청을 전달합니다.
 
 ---
 
@@ -480,15 +501,9 @@ Docker Compose에서 PostgreSQL, AI, Backend, Frontend를 함께 실행합니다
 
 ### 테스트
 
-<div align="center">
-
-| 174 | 188 | 98 | 5 | 0 |
-|:---:|:---:|:---:|:---:|:---:|
-| AI tests | Backend tests | Frontend tests | Playwright a11y | npm audit issues |
-
-</div>
-
-총 **460개 테스트**와 접근성 Playwright 테스트를 운영 CI에 연결했습니다.
+AI·Backend·Frontend 단위 테스트와 PostgreSQL 마이그레이션, Playwright
+접근성·실제 장소검색·법적 문서 흐름, 프로덕션 빌드와 보안 검사를 운영 CI에
+연결했습니다.
 
 ### GitHub Actions
 
@@ -518,15 +533,12 @@ Docker Compose에서 PostgreSQL, AI, Backend, Frontend를 함께 실행합니다
 - 외부 HTTPS reverse proxy 구성
 - 공급자별 영구 캐시
 
-### 응답 성능
+### 요청 최적화
 
-우선 경로 3개를 사전 준비한 뒤 캐시 응답을 측정했습니다.
-
-| 경로 | 응답시간 |
-|---|---:|
-| 북구청 → 부산역 | 2.07초 |
-| 부산진구청 → 서면역 | 1.72초 |
-| 부산역 → 서면역 | 1.88초 |
+- 동일 좌표·조건 요청은 공급자 캐시와 single-flight를 함께 사용
+- ODsay 정밀 노선 geometry는 1위 후보만 먼저 준비하고 나머지는 선택 시 조회
+- 그늘 시각 변경은 후보를 다시 수집하지 않고 같은 후보군의 그늘과 순위만 갱신
+- 휠체어 요청은 ORS 보행 구간을 중복 호출하지 않고, TMAP 경사로 근거는 사전 수집 캐시만 사용
 
 ---
 
@@ -542,7 +554,7 @@ Docker Compose에서 PostgreSQL, AI, Backend, Frontend를 함께 실행합니다
 | Geospatial | GeoPandas · Shapely · Rasterio · OSMnx · NetworkX |
 | Data | Pandas · NumPy · OpenPyXL |
 | Testing | Pytest · Vitest · Testing Library · Playwright · axe-core |
-| Infrastructure | Docker Compose · Nginx · GitHub Actions |
+| Infrastructure | Docker Compose · Nginx · AWS ECR/ECS/ALB · GitHub Actions |
 
 ---
 
@@ -556,89 +568,8 @@ Docker Compose에서 PostgreSQL, AI, Backend, Frontend를 함께 실행합니다
 
 </div>
 
-### 🧭 Product Management
-
-<table>
-  <tr>
-    <td align="center">
-      <b>[임시: PM 이름]</b><br/>
-      <sub>Product Manager</sub><br/><br/>
-      <sub>[임시: 프로필 사진]</sub><br/><br/>
-      <sub>[임시: 담당 업무]</sub><br/>
-      <sub>[임시: GitHub ID]</sub>
-    </td>
-  </tr>
-</table>
-
-### 🤖 AI Team
-
-<table>
-  <tr>
-    <td align="center" width="25%">
-      <b>[임시: AI 1 이름]</b><br/>
-      <sub>AI Engineer</sub><br/><br/>
-      <sub>[임시: 프로필 사진]</sub><br/><br/>
-      <sub>[임시: 담당 기능]</sub><br/>
-      <sub>[임시: GitHub ID]</sub>
-    </td>
-    <td align="center" width="25%">
-      <b>[임시: AI 2 이름]</b><br/>
-      <sub>AI Engineer</sub><br/><br/>
-      <sub>[임시: 프로필 사진]</sub><br/><br/>
-      <sub>[임시: 담당 기능]</sub><br/>
-      <sub>[임시: GitHub ID]</sub>
-    </td>
-    <td align="center" width="25%">
-      <b>[임시: AI 3 이름]</b><br/>
-      <sub>AI Engineer</sub><br/><br/>
-      <sub>[임시: 프로필 사진]</sub><br/><br/>
-      <sub>[임시: 담당 기능]</sub><br/>
-      <sub>[임시: GitHub ID]</sub>
-    </td>
-    <td align="center" width="25%">
-      <b>[임시: AI 4 이름]</b><br/>
-      <sub>AI Engineer</sub><br/><br/>
-      <sub>[임시: 프로필 사진]</sub><br/><br/>
-      <sub>[임시: 담당 기능]</sub><br/>
-      <sub>[임시: GitHub ID]</sub>
-    </td>
-  </tr>
-</table>
-
-### 📊 Data Analysis Team
-
-<table>
-  <tr>
-    <td align="center" width="25%">
-      <b>[임시: DA 1 이름]</b><br/>
-      <sub>Data Analyst</sub><br/><br/>
-      <sub>[임시: 프로필 사진]</sub><br/><br/>
-      <sub>[임시: 담당 데이터]</sub><br/>
-      <sub>[임시: GitHub ID]</sub>
-    </td>
-    <td align="center" width="25%">
-      <b>[임시: DA 2 이름]</b><br/>
-      <sub>Data Analyst</sub><br/><br/>
-      <sub>[임시: 프로필 사진]</sub><br/><br/>
-      <sub>[임시: 담당 데이터]</sub><br/>
-      <sub>[임시: GitHub ID]</sub>
-    </td>
-    <td align="center" width="25%">
-      <b>[임시: DA 3 이름]</b><br/>
-      <sub>Data Analyst</sub><br/><br/>
-      <sub>[임시: 프로필 사진]</sub><br/><br/>
-      <sub>[임시: 담당 데이터]</sub><br/>
-      <sub>[임시: GitHub ID]</sub>
-    </td>
-    <td align="center" width="25%">
-      <b>[임시: DA 4 이름]</b><br/>
-      <sub>Data Analyst</sub><br/><br/>
-      <sub>[임시: 프로필 사진]</sub><br/><br/>
-      <sub>[임시: 담당 데이터]</sub><br/>
-      <sub>[임시: GitHub ID]</sub>
-    </td>
-  </tr>
-</table>
+PM은 제품 범위와 검증 기준을 관리하고, AI 트랙은 실제 경로 수집·피처·순위화,
+DA 트랙은 부산 공간 데이터의 수집·정규화·출처 검증을 담당합니다.
 
 ---
 
@@ -653,6 +584,7 @@ Docker Compose에서 PostgreSQL, AI, Backend, Frontend를 함께 실행합니다
 | Engineering | [Implementation](./docs/IMPLEMENTATION.md) | 전체 런타임과 기능 구현 |
 | AI | [AI Pipeline](./ai/README.md) | 경로 수집, 피처, 모델과 순위화 |
 | AI | [Baseline Evaluation](./ai/docs/BASELINE_EVALUATION.md) | 초기 평가 데이터와 모델 지표 |
+| Data | [Data Contract](./docs/DATA.md) | 공간 레이어와 휠체어 경로 사실성 계약 |
 | Data | [Data Catalog](./data/catalog.json) | 공간 데이터 목록과 상태 |
 | Testing | [Local Testing](./docs/LOCAL_TESTING.md) | 로컬 실행과 종단 테스트 |
 | Operations | [Deployment](./docs/DEPLOYMENT.md) | 운영 Compose와 배포 절차 |
@@ -666,6 +598,8 @@ KT-10/
 ├─ frontend/
 │  ├─ src/v2/              Map-first UI
 │  ├─ src/components/      로그인, 후기, 조건, 날씨, 버스
+│  ├─ src/chat/            음성 명령과 경로 설명
+│  ├─ src/legal/           이용약관·개인정보처리방침
 │  ├─ src/store/           검색·추천 상태
 │  ├─ src/adapters/        Live·Mock API adapter
 │  └─ e2e/                 Playwright tests
@@ -673,13 +607,14 @@ KT-10/
 ├─ backend/
 │  ├─ app/api/             인증·후기 API
 │  ├─ app/providers/       AI·지도·날씨·버스 provider
-│  ├─ app/scoring.py       규칙 기반 추천
+│  ├─ app/scoring/         규칙 기반 추천과 설명
 │  ├─ app/shade.py         건물 그늘
 │  ├─ alembic/versions/    Alembic migrations
 │  └─ tests/
 │
 ├─ ai/
-│  ├─ collectors/          ODsay·TMAP route collectors
+│  ├─ collectors/          ODsay·TMAP·ORS route collectors
+│  ├─ data_tools/          접근성 데이터 사전 수집·검증
 │  ├─ features/            공간·지형 피처
 │  ├─ labeling/            평가 데이터와 스냅샷
 │  ├─ scoring/             XGBRanker 학습·추론
@@ -692,6 +627,7 @@ KT-10/
 │  └─ catalog.json         데이터 카탈로그
 │
 ├─ docs/                   제품·구현·테스트·배포 문서
+├─ presentation/           발표 영상·장면 구성
 ├─ scripts/                환경 준비·캐시·배포 검증
 ├─ docker-compose.yml
 └─ docker-compose.prod.yml
@@ -701,13 +637,11 @@ KT-10/
 
 <div align="center">
 
-<img src="./frontend/public/favicon.svg" alt="TEMP logo" width="56" />
+<img src="./frontend/public/favicon.svg" alt="동넷 로고" width="56" />
 
-### TEMP
+### 동넷
 
 **부산의 이동 조건을 한 화면에서 비교하는 맞춤형 경로 추천 서비스**
-
-[임시: 프로젝트 기간] · [임시: 소속/과정명]
 
 <br />
 

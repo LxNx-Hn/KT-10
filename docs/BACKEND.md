@@ -13,7 +13,8 @@
 - `GET /api/bus/stops`, `/api/bus/arrivals/{stopId}`
 - `POST /api/routes/recommend`
 - 내부 라벨링: `POST /api/routes/labeling-candidates`
-- `GET /api/auth/kakao/login`, callback, `/api/auth/me`, logout
+- `GET /api/auth/kakao/login`, callback, `/api/auth/signup/status`, `/api/auth/me`
+- `POST /api/auth/signup/complete`, `/api/auth/signup/cancel`, logout, withdraw
 - `PUT /api/me/preferences`
 - `POST /api/route-impressions`, `/api/route-reviews`
 - `POST /api/facility-reports`
@@ -73,7 +74,7 @@ Docker Compose는 PostgreSQL 16과 healthcheck를 포함합니다.
 교통약자 시설 이용 불편의 선택형 1~5 직접 관측 컬럼을 nullable로
 추가하고 DB 범위 제약을 적용합니다.
 
-## 카카오 로그인
+## 카카오 로그인과 가입 동의
 
 로컬 개발 기본 Redirect URI는
 `http://localhost:8002/api/auth/kakao/callback`입니다. 운영에서는
@@ -82,6 +83,23 @@ Docker Compose는 PostgreSQL 16과 healthcheck를 포함합니다.
 `SESSION_SECRET`, PostgreSQL이 모두 있어야 로그인 API가 활성화됩니다.
 OAuth `state`는 10분 HttpOnly 쿠키로 검증하며 서비스 세션은 14일
 HttpOnly SameSite=Lax 쿠키입니다.
+
+카카오 OAuth가 끝나도 현재 이용약관 버전의 수락 기록이 없으면 서비스
+세션을 발급하지 않고 `/signup/consent`로 이동합니다. 프론트는 서버의
+`GET /api/auth/signup/status`로 현재 문서 버전과 대기 상태를 확인하고,
+사용자가 이용약관을 선택한 뒤 `POST /api/auth/signup/complete`를 호출합니다.
+문서 버전과 카카오 회원번호는 클라이언트 입력을 신뢰하지 않고 서버가
+대기 쿠키와 현재 계약에서 결정합니다. 개인정보처리방침 고지는 이용약관
+수락 기록, 후기의 `training_consent`와 별도로 관리합니다.
+
+## 회원 탈퇴
+
+`POST /api/auth/withdraw`는 계정·프로필·후기·추천 표시 기록과 이용약관
+수락 기록을 즉시 삭제합니다. 시설 신고는 작성자 연결, 자유입력 내용과
+신고 당시 위치를 제거하고 시설 관리에 필요한 항목만 보존합니다.
+부정 이용 방지와 카카오 연결 끊기 재시도에 필요한 최소 기록만 최대 30일
+분리 보관하며 `scripts/purge_withdrawn_users.py`가 기한 후 파기합니다.
+카카오 연결 끊기 실패는 탈퇴 자체를 막지 않습니다.
 
 ## 후기 보안
 

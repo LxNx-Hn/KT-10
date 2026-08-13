@@ -6,6 +6,10 @@
 Caddy/Nginx 또는 관리형 Load Balancer가 HTTPS를 종료한 뒤
 `127.0.0.1:8080`으로 전달해야 합니다.
 
+현재 저장소의 공개 운영 배포는 `.github/workflows/deploy-ecs.yml`이 ECR
+이미지를 빌드하고 ECS의 AI·Backend·Frontend 서비스를 갱신하는 방식입니다.
+Compose 절차는 로컬 검증과 단일 서버 배포에 동일한 환경 계약을 제공합니다.
+
 ## 1. 서버 준비
 
 - Docker Engine과 Docker Compose v2
@@ -34,14 +38,14 @@ python scripts\prepare_deployment_env.py --import-existing
 - `VITE_KAKAO_MAP_KEY`: 지도와 브라우저 Places SDK용 카카오 JavaScript 키
 - `KAKAO_REST_API_KEY`: 백엔드 Local API 장소검색과 로그인용 REST 키
 - `KAKAO_OAUTH_CLIENT_SECRET`: 카카오 로그인용 Client secret
-- `ODSAY_API_KEY`: 실제 경로 후보와 geometry
+- `ODSAY_API_KEY`: 실제 대중교통 경로 후보와 노선 geometry
 - `VWORLD_API_KEY`: 건물 도형·높이와 그늘
 - `OPENWEATHER_API_KEY`: 실시간 날씨·대기
 - `BUS_SERVICE_KEY`: 부산 버스 도착 정보
-- `TMAP_API_KEY` 또는 `OSMNX_WALK_GEOMETRY_ENABLED=true`: 실제 보행
-  geometry 기반 경사·주변 시설 분석. 둘 다 없으면 직선 추정 보행선을
-  분석에 쓰지 않으므로 해당 값은 미확인으로 남고 배포 환경 검사를
-  통과하지 않습니다. 운영에서는 응답시간이 안정적인 TMAP을 권장합니다.
+- `TMAP_API_KEY` 또는 `OSMNX_WALK_GEOMETRY_ENABLED=true`: 일반 요청의
+  실제 보행 geometry 기반 경사·주변 시설 분석. TMAP 키는 물리 경사로
+  근거를 배포·데이터 갱신 단계에서 사전 수집할 때도 사용합니다. 운영
+  휠체어 사용자 요청에서는 TMAP 네트워크를 호출하지 않습니다.
 - `ORS_API_KEY`: 휠체어 경로의 계단·노면·평탄도·폭·턱·경사 제한을
   적용하는 OpenRouteService 키입니다. TMAP/ODsay/공공데이터포털 키와
   호환되지 않습니다. 없으면 AI readiness와 운영 Compose 검증이 실패합니다.
@@ -140,9 +144,23 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 
 마이그레이션은 백엔드 시작 시 Alembic head까지 자동 적용됩니다. 최초 실행 후 모든 컨테이너가 `healthy`인지 확인합니다.
 
-### 6.1 공간 인덱스와 우선 OD 사전 준비
+### 6.1 GitHub Actions ECS 배포
 
-AI 서버는 시작 시 정적 GeoPackage 레이어 9개를 EPSG:5179로 한 번
+`ECS Deploy` workflow는 CI 성공 뒤 변경된 서비스만 선택하거나
+`workflow_dispatch` 입력으로 지정한 서비스를 배포합니다. GitHub OIDC로
+AWS 역할을 인수하고 ECR에 커밋 기반 태그의 이미지를 올린 뒤
+`kt10-ai`, `kt10-backend`, `kt10-frontend` ECS 서비스를 갱신합니다.
+전체 스택이 실행 중이면 기본 `https://dongnet.kr`에 readiness·장소검색·
+추천 경로 스모크를 수행합니다.
+
+`ORS_API_KEY`는 AI 태스크 정의에만 secret으로 주입하며, ODsay Server
+Key는 실제 ECS egress 네트워크에서 배포 전에 검증합니다. 배포 workflow가
+서비스 안정화를 확인하지 못하거나 공개 스모크가 실패하면 완료로 처리하지
+않습니다.
+
+### 6.2 공간 인덱스와 우선 OD 사전 준비
+
+AI 서버는 시작 시 정적 공간 레이어 12개를 EPSG:5179로 한 번
 투영하고 각 GeoDataFrame의 Shapely STRtree를 즉시 생성합니다. 이후
 요청은 경로 buffer와 교차할 가능성이 있는 인덱스 후보만 검사하므로
 레이어 전체 재투영이나 전수 `intersects`를 수행하지 않습니다.
@@ -152,11 +170,18 @@ AI 서버는 시작 시 정적 GeoPackage 레이어 9개를 EPSG:5179로 한 번
 | 볼륨 | 보존 입력 | 기본 만료 |
 | --- | --- | --- |
 | `odsay-cache` | 경로 검색·`loadLane` 원시 응답 | 30분 |
+| `tmap-cache` | 일반 보행 경로의 검증된 공급자 응답 | 30분 |
+| `ors-cache` | wheelchair profile 경로와 extra-info 응답 | 30분 |
 | `osmnx-cache` | OD 보행 그래프와 OSM HTTP cache | 그래프 파일 보존 |
 | `elevation-cache` | 지역 DEM 범위 밖 GLO-90 fallback 타일과 경로 표본별 계산 결과 | 계산 결과 30일, 타일 파일 보존 |
 | `route-feature-cache` | OD 후보의 geometry·공간 피처·90m 경사 구간 | 30분 |
 | `shade-cache` | 경로·30분 시각 버킷별 건물 그늘 결과 | 24시간 |
 | `vworld-cache` | 500m 건물 corridor box 응답 | 7일 |
+
+물리 경사로 근거는 named volume의 시간 기반 캐시와 별도로
+`ai/data/precomputed/tmap`에 사전 수집해 이미지에 포함합니다. 성공 응답은
+공급자 계약·정규화 데이터 버전이 바뀔 때 다시 생성하며, 시간 경과만으로
+만료하지 않습니다.
 
 컨테이너가 healthy가 된 뒤 우선 OD를 준비합니다.
 
@@ -231,9 +256,9 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec backen
 
 PostgreSQL `postgres-data` 볼륨은 별도 주기로 백업합니다. 전역 학습은 자동 갱신하지 않으며, 관리자가 동의 후기 데이터를 검토·가공한 뒤 승인된 절차로만 모델을 교체합니다.
 
-운영 기본 `ROUTE_MODE=live`는 학습 모델 없이도 실제 후보를 규칙으로
-비교합니다. `ROUTE_MODE=ai`로 배포하려면 선택한 tier의 모델을 이미지
-빌드 전에 `ai/data/`에 준비해야 합니다.
+`ROUTE_MODE=live`는 학습 모델 없이 실제 후보를 규칙으로 비교합니다.
+현재 운영 예시는 `ROUTE_MODE=ai`, `RANKER_TIER=bootstrap_baseline`이며
+선택한 tier의 모델을 이미지 빌드 전에 `ai/data/`에 준비해야 합니다.
 
 | `RANKER_TIER` | 필요한 파일 | 운영 의미 |
 | --- | --- | --- |

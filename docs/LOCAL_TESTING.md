@@ -1,7 +1,8 @@
 # 로컬 테스트 가이드
 
 이 문서는 Windows PowerShell에서 현재 `main`을 실제 Kakao 지도·장소검색,
-ODsay 경로, 부산 QGIS 90m DEM 경사, VWorld 건물 그늘까지 종단 테스트하는 절차다.
+ODsay·TMAP·OpenRouteService 경로, 부산 QGIS 90m DEM 경사, VWorld 건물
+그늘까지 종단 테스트하는 절차다.
 로컬 검증은 운영과 같은 `docker-compose.prod.yml`, 동일한 이미지, 동일한
 `.env.production` 계약으로 실행한다. 기본 추천 tier는 `ROUTE_MODE=ai`,
 `RANKER_TIER=bootstrap_baseline`의 초기 AI 기반 경로 추천 기준선이다.
@@ -91,8 +92,8 @@ mock 데이터는 `VITE_DATA_SOURCE=mock`을 명시한 테스트에서만 사용
 4. `경로 찾기`를 눌러 `추천 경로 3개`가 나타나는지 확인한다.
 5. 카드에 `프로필 적합 점수`, 소요시간·도보·환승, 90m 지형
    경사, 건물 그늘 상태가 구분돼 표시되는지 확인한다.
-6. 카드를 좌우로 스와이프하거나 `이전 경로 보기`·`다음 경로 보기`
-   버튼을 눌렀을 때 카드와 지도 경로가 함께 바뀌는지 확인한다.
+6. 하단 결과 시트의 세로 목록에서 카드를 클릭하거나 키보드·스크린리더로
+   선택했을 때 카드와 지도 경로가 함께 바뀌는지 확인한다.
 7. `그늘` 버튼을 켰을 때 선택 경로의 건물 그림자 폴리곤과
    녹색·주황 도보 구간이 나타나는지 확인한다.
 8. 프로필과 `짐 많음`, `유아차`, `그늘 우선`, `계단 회피`,
@@ -100,12 +101,18 @@ mock 데이터는 `VITE_DATA_SOURCE=mock`을 명시한 테스트에서만 사용
    확인한다.
 9. `조건`의 그늘 계산 시각을 바꿨을 때 기존 경로 카드가 유지되고
    `POST /api/routes/refresh-shade`만 호출되는지 확인한다. 야간 시각은
-   `not_daylight`가 되어야 하며 ODsay·TMAP·VWorld 외부 호출이 새로
+   `not_daylight`가 되어야 하며 ODsay·TMAP·ORS·VWorld 외부 호출이 새로
    발생하면 안 된다.
 10. 음성 챗봇에서 `첫 번째 경로 설명`을 입력했을 때 추천 카드와 같은
     `voiceSummary`를 읽는지 확인한다. `NVIDIA_API_KEY`와 `NIM_MODEL`을
-    설정한 환경에서는 NIM 경로 설명이 이 필드에 반영되고, NIM이 본문을
-    반환하지 않는 경우에는 규칙 기반 요약이 이어진다.
+     설정한 환경에서는 NIM 경로 설명이 이 필드에 반영되고, NIM이 본문을
+     반환하지 않는 경우에는 규칙 기반 요약이 이어진다.
+11. 휠체어 설정을 켠 요청은 모든 보행·환승 구간에 ORS wheelchair 제약이
+    적용된 후보만 표시하는지 확인한다. 버스의 저상 여부나 도시철도 공식
+    접근 가능 출구가 미확인인 후보는 일반 경로처럼 남으면 안 된다.
+12. `/terms`와 `/privacy`가 직접 열리고 설정·시작 화면에서 접근 가능한지
+    확인한다. Kakao OAuth 뒤 현재 이용약관 수락 기록이 없는 테스트 계정은
+    `/signup/consent`를 완료하기 전 서비스 세션이 발급되면 안 된다.
 
 현재 그늘은 VWorld 건물 도형·높이와 태양 위치로 계산한 건물 그늘이며
 나무·지형 그늘은 제외 범위다. 경사는 부산 QGIS DEM의 90m 격자 지형
@@ -187,7 +194,9 @@ docker compose --env-file .env.production -f docker-compose.prod.yml `
 ODsay 403이면 로컬 PC가 외부로 나갈 때 사용하는 공인 IPv4가 ODsay
 Server Key 허용 IP와 같은지 확인한다. Kakao 검색 결과가 없으면 REST 키,
 지도 자체가 비면 JavaScript 키와 `http://localhost:8080` 도메인 등록을
-각각 확인한다.
+각각 확인한다. 휠체어 요청이 503이면 `ORS_API_KEY`, ORS 응답의
+extra-info 전 구간 coverage와 공식 저상버스·도시철도 출구 조건을 먼저
+확인한다. 검증되지 않은 후보를 일반 경로로 대체하지 않는다.
 
 컨테이너만 종료하고 캐시는 보존하려면 다음을 실행한다.
 
@@ -195,5 +204,5 @@ Server Key 허용 IP와 같은지 확인한다. Kakao 검색 결과가 없으면
 docker compose --env-file .env.production -f docker-compose.prod.yml down
 ```
 
-`down -v`는 PostgreSQL·ODsay·OSMnx·고도·VWorld 캐시까지 삭제하므로 일반
+`down -v`는 PostgreSQL·ODsay·TMAP·ORS·OSMnx·고도·VWorld 캐시까지 삭제하므로 일반
 테스트 종료에는 사용하지 않는다.
