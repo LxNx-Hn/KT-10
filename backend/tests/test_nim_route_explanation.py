@@ -129,7 +129,9 @@ def test_route_facts_keep_segment_distance_and_truthful_ramp_scope():
                 has_slope=True,
                 ramp_points=[{"lat": 35.1, "lng": 129.0}],
                 ramp_replaces_stairs=True,
-                ramp_evidence_source="TMAP pedestrian turnType 128/129",
+                ramp_evidence_source=(
+                    "TMAP pedestrian turnType 128/129 or facilityType 19/20"
+                ),
             ),
             RouteSegment(
                 id="station-inventory",

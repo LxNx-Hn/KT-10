@@ -117,10 +117,11 @@ ORS `extra_info`는 공식 응답 키 차이(`osmid` 요청은 `osmId` 응답,
 모든 실제 보행·환승 구간에 이 제약이 적용된 후보만 휠체어 추천에 남긴다.
 ORS가 미설정·실패하면 TMAP 계단 회피 결과로 대체하지 않고 503을 반환한다.
 
-TMAP 보행자 응답의 안내점 `turnType=128`(경사로 진입),
-`turnType=129`(계단+경사로 진입)만 물리 경사로 근거로 사용한다. 해당 좌표가
+TMAP 보행자 공식 응답의 안내점 `turnType=128`(경사로 진입),
+`turnType=129`(계단+경사로 진입)과 시설 구간 `facilityType=19`(경사로),
+`facilityType=20`(계단+경사로)을 물리 경사로 근거로 사용한다. 해당 좌표가
 있을 때만 `hasSlope=true`, `rampPoints`, `rampEvidenceSource`를 제공하고,
-129일 때만 `rampReplacesStairs=true`로 표시한다. DEM 경사도는 지형 높이
+129 또는 20일 때만 `rampReplacesStairs=true`로 표시한다. DEM 경사도는 지형 높이
 변화 추정이며 물리 경사로의 존재나 계단 대체 가능성을 뜻하지 않는다.
 
 TMAP 경사로 안내점과 ORS wheelchair 제약은 평균 12m·최대 25m 이내로

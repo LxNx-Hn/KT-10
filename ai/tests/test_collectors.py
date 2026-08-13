@@ -592,9 +592,57 @@ def test_tmap_wheelchair_request_uses_official_stair_excluded_option_and_ramp_co
             "lat": 35.1602,
             "lng": 129.0562,
             "turn_type": 129,
+            "facility_type": None,
             "replaces_stairs": True,
         }],
     }
+
+
+def test_tmap_official_ramp_facility_lines_are_physical_ramp_evidence():
+    collector = TmapRouteCollector(avoid_stairs=True)
+    payload = {
+        "features": [
+            {
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [ORIGIN.lng, ORIGIN.lat],
+                },
+                "properties": {
+                    "totalTime": 600,
+                    "totalDistance": 1000,
+                },
+            },
+            {
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [
+                        [ORIGIN.lng, ORIGIN.lat],
+                        [DEST.lng, DEST.lat],
+                    ],
+                },
+                "properties": {"facilityType": 20},
+            },
+        ],
+    }
+
+    candidate = collector._candidate_from_data(payload)
+
+    assert candidate.accessibility_evidence["ramp_points"] == [
+        {
+            "lat": ORIGIN.lat,
+            "lng": ORIGIN.lng,
+            "turn_type": None,
+            "facility_type": 20,
+            "replaces_stairs": True,
+        },
+        {
+            "lat": DEST.lat,
+            "lng": DEST.lng,
+            "turn_type": None,
+            "facility_type": 20,
+            "replaces_stairs": True,
+        },
+    ]
 
 
 def test_tmap_stair_excluded_response_rejects_contradictory_stair_feature():

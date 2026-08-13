@@ -1761,7 +1761,7 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
             "ramp_points": public_ramp_points,
             "ramp_replaces_stairs": ramp_replaces_stairs,
             "ramp_evidence_source": (
-                "TMAP pedestrian turnType 128/129"
+                "TMAP pedestrian turnType 128/129 or facilityType 19/20"
                 if public_ramp_points
                 else None
             ),
@@ -1887,7 +1887,7 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
                 else None
             ),
             "ramp_evidence_source": (
-                "TMAP pedestrian turnType 128/129"
+                "TMAP pedestrian turnType 128/129 or facilityType 19/20"
                 if public_ramp_points
                 else None
             ),

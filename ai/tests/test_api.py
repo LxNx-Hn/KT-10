@@ -1375,7 +1375,9 @@ def test_tmap_ramp_and_stair_exclusion_evidence_reaches_public_segment():
     assert segment["has_slope"] is True
     assert segment["ramp_points"] == [{"lat": 35.105, "lng": 129.005}]
     assert segment["ramp_replaces_stairs"] is True
-    assert segment["ramp_evidence_source"] == "TMAP pedestrian turnType 128/129"
+    assert segment["ramp_evidence_source"] == (
+        "TMAP pedestrian turnType 128/129 or facilityType 19/20"
+    )
     assert segment["needs_vertical_move"] is True
 
 

@@ -27,6 +27,10 @@ DEFAULT_SEARCH_OPTION = "0"
 STAIR_FACILITY_TYPE = 17
 STAIR_TURN_TYPE = 127
 RAMP_TURN_TYPES = frozenset({128, 129})
+RAMP_FACILITY_TYPES = frozenset({19, 20})
+STAIR_ALTERNATIVE_RAMP_TURN_TYPE = 129
+STAIR_ALTERNATIVE_RAMP_FACILITY_TYPE = 20
+MAX_RAMP_EVIDENCE_POINTS = 100
 RAMP_PATH_MATCH_MAX_M = 20.0
 QUOTA_BACKOFF_SECONDS = 60.0
 log = logging.getLogger("collectors.tmap")
@@ -211,6 +215,7 @@ class TmapRouteCollector(BaseRouteCollector):
     def _accessibility_evidence(self, features: list[dict]) -> dict:
         """TMAP 공식 안내 코드에서 물리 경사로와 계단을 추출한다."""
         ramp_points: list[dict] = []
+        seen_ramp_points: set[tuple[float, float, bool]] = set()
         stair_feature_count = 0
         for feature in features:
             properties = feature.get("properties")
@@ -221,27 +226,64 @@ class TmapRouteCollector(BaseRouteCollector):
             turn_type = self._integer_code(properties.get("turnType"))
             if facility_type == STAIR_FACILITY_TYPE or turn_type == STAIR_TURN_TYPE:
                 stair_feature_count += 1
-            if turn_type not in RAMP_TURN_TYPES:
+            if (
+                turn_type not in RAMP_TURN_TYPES
+                and facility_type not in RAMP_FACILITY_TYPES
+            ):
                 continue
             coordinates = geometry.get("coordinates")
-            if (
-                geometry.get("type") != "Point"
-                or not isinstance(coordinates, list)
-                or len(coordinates) < 2
-            ):
-                raise CollectorError("TMAP 경사로 안내점에 유효한 좌표가 없습니다.")
-            try:
-                lng, lat = float(coordinates[0]), float(coordinates[1])
-            except (TypeError, ValueError) as exc:
-                raise CollectorError("TMAP 경사로 안내점 좌표가 숫자가 아닙니다.") from exc
-            if not (isfinite(lat) and isfinite(lng) and 33 <= lat <= 39 and 124 <= lng <= 132):
-                raise CollectorError("TMAP 경사로 안내점이 대한민국 범위를 벗어났습니다.")
-            ramp_points.append({
-                "lat": lat,
-                "lng": lng,
-                "turn_type": turn_type,
-                "replaces_stairs": turn_type == 129,
-            })
+            geometry_type = geometry.get("type")
+            if geometry_type == "Point":
+                raw_points = [coordinates]
+            elif geometry_type == "LineString":
+                raw_points = coordinates
+            else:
+                raise CollectorError(
+                    "TMAP 경사로 근거 geometry는 Point 또는 LineString이어야 합니다."
+                )
+            if not isinstance(raw_points, list) or not raw_points:
+                raise CollectorError("TMAP 경사로 근거에 유효한 좌표가 없습니다.")
+            replaces_stairs = (
+                turn_type == STAIR_ALTERNATIVE_RAMP_TURN_TYPE
+                or facility_type == STAIR_ALTERNATIVE_RAMP_FACILITY_TYPE
+            )
+            for raw_point in raw_points:
+                if not isinstance(raw_point, list) or len(raw_point) < 2:
+                    raise CollectorError(
+                        "TMAP 경사로 근거에 유효한 좌표가 없습니다."
+                    )
+                try:
+                    lng, lat = float(raw_point[0]), float(raw_point[1])
+                except (TypeError, ValueError) as exc:
+                    raise CollectorError(
+                        "TMAP 경사로 근거 좌표가 숫자가 아닙니다."
+                    ) from exc
+                if not (
+                    isfinite(lat)
+                    and isfinite(lng)
+                    and 33 <= lat <= 39
+                    and 124 <= lng <= 132
+                ):
+                    raise CollectorError(
+                        "TMAP 경사로 근거가 대한민국 범위를 벗어났습니다."
+                    )
+                point_key = (lat, lng, replaces_stairs)
+                if point_key in seen_ramp_points:
+                    continue
+                seen_ramp_points.add(point_key)
+                ramp_points.append({
+                    "lat": lat,
+                    "lng": lng,
+                    "turn_type": turn_type,
+                    "facility_type": facility_type,
+                    "replaces_stairs": replaces_stairs,
+                })
+                if len(ramp_points) > MAX_RAMP_EVIDENCE_POINTS:
+                    raise CollectorError(
+                        "TMAP 경사로 근거가 응답 상한을 초과했습니다.",
+                        code="invalid_response",
+                        retryable=False,
+                    )
         if self.avoid_stairs and stair_feature_count:
             raise CollectorError(
                 "TMAP 계단 제외 경로에 계단 안내점이 포함되었습니다.",
