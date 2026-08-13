@@ -135,6 +135,17 @@ TMAP 경사로 안내점과 ORS wheelchair 제약은 평균 12m·최대 25m 이�
 같은 임시 장애물 한계를 API의 `wheelchairDataLimitations`와 추천 주의문에
 항상 함께 제공한다.
 
+운영 사용자 요청은 TMAP 네트워크를 호출하지 않는다. 배포·데이터 갱신
+단계에서 `python -m data_tools.precollect_tmap_ramps`를 실행해 ODsay 후보의
+실제 ORS wheelchair 보행구간과 직접 ORS 보행 후보를 정규화하고, 고유 구간만
+TMAP `searchOption=30`으로 사전 수집한다. 모든 구간이 유사 선형 검증을
+통과해야 보고서 상태가 `complete`가 되며, 기본 실행은 부분 실패 시 종료코드
+1을 반환한다. 인증·쿼터·일시 오류 응답은 collector 계약상 캐시에 저장하지
+않는다. 검증 성공 응답은 기본적으로 `ai/data/precomputed/tmap`에 내보내 AI
+이미지에 포함한다. 운영의 쓰기 캐시가 없거나 ECS task가 교체되어도 이 읽기
+전용 fallback을 사용한다. 성공 캐시는 시간 경과로 만료하지 않으며 공급자
+계약·정규화 변경 시 코드의 데이터 버전을 올려 갱신한다.
+
 ### 도시철도·버스 휠체어 탑승 계약
 
 `busan_subway_elevator_routes_20251231.csv`는 부산교통공사

@@ -45,7 +45,12 @@ from features.route_feature_cache import (
     write as write_route_feature_cache,
 )
 from labeling.route_traits import generate_route_traits
-from merger.route_merger import merge_route_candidates, sample_path_by_distance
+from merger.route_merger import (
+    accessibility_paths_similar,
+    merge_accessibility_evidence,
+    merge_route_candidates,
+    sample_path_by_distance,
+)
 from preprocessing.load_layers import load_all_layers
 from scoring.bootstrap_baseline import (
     load_bootstrap_baseline_metadata,
@@ -599,6 +604,9 @@ async def _collect_static_featured_routes(
         else:
             succeeded.append(source)
             candidates.extend(result)
+
+    if req.uses_wheelchair:
+        await _merge_cached_tmap_ramps_into_direct_ors(candidates)
     if req.uses_wheelchair and "ors" not in succeeded:
         raise HTTPException(
             status_code=503,
@@ -722,6 +730,36 @@ async def _collect_static_featured_routes(
         "sources_failed": failed,
         "source_errors": source_errors,
     }
+
+
+async def _merge_cached_tmap_ramps_into_direct_ors(
+    candidates: list,
+) -> None:
+    """직접 ORS 보행 후보에도 사전 수집된 동일 선형 경사로만 결합한다."""
+    direct_ors = [
+        candidate
+        for candidate in candidates
+        if candidate.source == "ors" and len(candidate.path) >= 2
+    ]
+    if not direct_ors:
+        return
+    collector = TmapRouteCollector(avoid_stairs=True)
+    cached_results = await asyncio.gather(*(
+        collector.collect_cached(candidate.path[0], candidate.path[-1])
+        for candidate in direct_ors
+    ))
+    for candidate, cached in zip(direct_ors, cached_results, strict=True):
+        if (
+            cached
+            and accessibility_paths_similar(
+                candidate.path,
+                cached[0].path,
+            )
+        ):
+            candidate.accessibility_evidence = merge_accessibility_evidence(
+                candidate.accessibility_evidence,
+                cached[0].accessibility_evidence,
+            )
 
 
 def _wheelchair_evidence_constrained(value: object) -> bool:

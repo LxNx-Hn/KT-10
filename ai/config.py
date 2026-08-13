@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     ELEVATION_REGIONAL_DEM_PATH: str = ""
     TMAP_API_KEY: str = ""
     TMAP_CACHE_DIR: str = ""
+    # 배포 이미지에 포함한 검증 완료 TMAP 경사로 캐시. 사용자 요청은 이
+    # 읽기 전용 fallback과 쓰기 캐시만 조회하며 TMAP 네트워크를 호출하지 않는다.
+    TMAP_PRECOMPUTED_CACHE_DIR: str = str(
+        Path(__file__).resolve().parent / "data" / "precomputed" / "tmap"
+    )
     TMAP_CACHE_TTL_SECONDS: int = Field(
         default=1800,
         ge=60,

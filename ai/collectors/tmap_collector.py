@@ -18,10 +18,19 @@ from weakref import WeakKeyDictionary
 
 import httpx
 
-from collectors.base import BaseRouteCollector, CollectorError, CollectorNotConfigured, RouteCandidate, Coordinate
 from config import settings
+from collectors.base import (
+    BaseRouteCollector,
+    CollectorError,
+    CollectorNotConfigured,
+    Coordinate,
+    RouteCandidate,
+)
 
-CACHE_SCHEMA_VERSION = 2
+CACHE_SCHEMA_VERSION = 3
+# 성공한 사전수집 응답은 운영 요청에서 다시 검증하지 않는다. 공급자 계약이나
+# 정규화 규칙이 바뀌면 이 값을 올려 명시적으로 무효화한다.
+ROUTE_DATA_VERSION = 1
 STAIR_EXCLUDED_SEARCH_OPTION = "30"
 DEFAULT_SEARCH_OPTION = "0"
 STAIR_FACILITY_TYPE = 17
@@ -84,11 +93,11 @@ def _cache_identity(
             round(destination.lng, 7),
         ],
         "searchOption": search_option,
+        "routeDataVersion": ROUTE_DATA_VERSION,
     }
 
 
-def _cache_path(identity: dict) -> Path | None:
-    cache_dir = settings.TMAP_CACHE_DIR.strip()
+def _cache_path(identity: dict, cache_dir: str) -> Path | None:
     if not cache_dir:
         return None
     digest = sha256(
@@ -101,23 +110,32 @@ def _cache_path(identity: dict) -> Path | None:
     return Path(cache_dir) / f"route-{digest}.json"
 
 
-def _read_cache(identity: dict) -> dict | None:
-    path = _cache_path(identity)
-    if path is None or not path.is_file():
-        return None
-    try:
-        wrapper = json.loads(path.read_text(encoding="utf-8"))
-        cached_at = float(wrapper["cachedAtEpoch"])
-        payload = wrapper["payload"]
-    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
-        return None
-    if (
-        wrapper.get("schemaVersion") != CACHE_SCHEMA_VERSION
-        or not isinstance(payload, dict)
-        or time.time() - cached_at > settings.TMAP_CACHE_TTL_SECONDS
-    ):
-        return None
-    return payload
+def _read_cache(identity: dict, validator=None) -> dict | None:
+    cache_dirs = (
+        settings.TMAP_CACHE_DIR.strip(),
+        settings.TMAP_PRECOMPUTED_CACHE_DIR.strip(),
+    )
+    for cache_dir in dict.fromkeys(cache_dirs):
+        path = _cache_path(identity, cache_dir)
+        if path is None or not path.is_file():
+            continue
+        try:
+            wrapper = json.loads(path.read_text(encoding="utf-8"))
+            float(wrapper["cachedAtEpoch"])
+            payload = wrapper["payload"]
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+            continue
+        if (
+            wrapper.get("schemaVersion") == CACHE_SCHEMA_VERSION
+            and isinstance(payload, dict)
+        ):
+            if validator is not None:
+                try:
+                    validator(payload)
+                except CollectorError:
+                    continue
+            return payload
+    return None
 
 
 def _cache_write_lock(path: Path) -> Lock:
@@ -163,8 +181,8 @@ def _clear_quota_backoff() -> None:
         _quota_backoff_until = 0.0
 
 
-def _write_cache(identity: dict, payload: dict) -> None:
-    path = _cache_path(identity)
+def _write_cache_to_dir(identity: dict, payload: dict, cache_dir: str) -> None:
+    path = _cache_path(identity, cache_dir)
     if path is None:
         return
     with _cache_write_lock(path):
@@ -186,6 +204,33 @@ def _write_cache(identity: dict, payload: dict) -> None:
             temporary.replace(path)
         finally:
             temporary.unlink(missing_ok=True)
+
+
+def _write_cache(identity: dict, payload: dict) -> None:
+    _write_cache_to_dir(identity, payload, settings.TMAP_CACHE_DIR.strip())
+
+
+def write_precomputed_cache(
+    origin: Coordinate,
+    destination: Coordinate,
+    *,
+    search_option: str,
+    payload: dict,
+    cache_dir: Path,
+) -> None:
+    """검증된 공급자 응답을 배포 이미지용 읽기 전용 캐시로 내보낸다."""
+    collector = TmapRouteCollector(
+        avoid_stairs=search_option == STAIR_EXCLUDED_SEARCH_OPTION
+    )
+    if collector.search_option != search_option:
+        raise ValueError("지원하지 않는 TMAP searchOption입니다.")
+    collector._candidate_from_data(payload)
+    identity = _cache_identity(
+        origin,
+        destination,
+        search_option=search_option,
+    )
+    _write_cache_to_dir(identity, payload, str(cache_dir))
 
 
 class TmapRouteCollector(BaseRouteCollector):
@@ -400,7 +445,11 @@ class TmapRouteCollector(BaseRouteCollector):
             destination,
             search_option=self.search_option,
         )
-        cached = await asyncio.to_thread(_read_cache, identity)
+        cached = await asyncio.to_thread(
+            _read_cache,
+            identity,
+            self._candidate_from_data,
+        )
         if cached is not None:
             try:
                 return [self._candidate_from_data(cached)]
@@ -411,7 +460,11 @@ class TmapRouteCollector(BaseRouteCollector):
         async with _request_lock(identity):
             # 동일 OD 요청은 잠금 안에서 캐시를 재확인해 공급자 호출을
             # 한 번으로 제한한다.
-            cached = await asyncio.to_thread(_read_cache, identity)
+            cached = await asyncio.to_thread(
+                _read_cache,
+                identity,
+                self._candidate_from_data,
+            )
             if cached is not None:
                 try:
                     return [self._candidate_from_data(cached)]
@@ -475,14 +528,18 @@ class TmapRouteCollector(BaseRouteCollector):
         """검증된 기존 TMAP 응답만 읽고 네트워크는 절대 호출하지 않는다.
 
         사용자 휠체어 요청의 물리 경사로 정보는 사전 수집 결과가 있을 때만
-        보조 근거로 결합한다. 캐시 미스·만료·계약 불일치는 미확인으로 남긴다.
+        보조 근거로 결합한다. 캐시 미스·계약 불일치는 미확인으로 남긴다.
         """
         identity = _cache_identity(
             origin,
             destination,
             search_option=self.search_option,
         )
-        cached = await asyncio.to_thread(_read_cache, identity)
+        cached = await asyncio.to_thread(
+            _read_cache,
+            identity,
+            self._candidate_from_data,
+        )
         if cached is None:
             return []
         try:

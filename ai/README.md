@@ -59,6 +59,25 @@ opt-in된 OSMnx를 시도합니다. 둘 다 사용할 수 없으면 화면 연�
 QGIS 90m DEM의 지형 경사도는 별도
 피처이며 경사로 또는 계단 대체 경사로로 해석하지 않습니다.
 
+물리 경사로 TMAP 캐시는 사용자 요청이 아니라 배포·데이터 갱신 단계에서
+AI 컨테이너의 `/app/ai`를 작업 디렉터리로 두고 다음처럼 준비합니다.
+
+```bash
+python -m data_tools.precollect_tmap_ramps \
+  --od-catalog data/training/od_catalog.csv \
+  --report /app/data/audits/tmap_ramp_precollection.audit.json \
+  --artifact-dir data/precomputed/tmap
+```
+
+성공 응답은 키를 포함하지 않는 스키마 검증 캐시로 내보내며 AI 이미지에
+포함됩니다. 운영 요청은 쓰기 캐시와 이 읽기 전용 fallback만 확인합니다.
+시간 경과만으로 만료시키지 않고, TMAP 계약·정규화 규칙이 바뀌면 코드의
+데이터 버전을 올린 뒤 갱신 작업을 다시 수행합니다. 인증·쿼터·일시 오류는
+artifact에 기록하지 않습니다.
+
+보고서가 `complete`가 아니면 기본 종료코드는 1입니다. 부분 실패를 운영
+완료로 간주하지 않으며, 키·쿼터·일시 오류 응답은 캐시에 저장하지 않습니다.
+
 ## 스냅샷과 학습 자료
 
 - `ai/data/training/route_features.jsonl`: 후보 생성 당시의 고정 피처 스냅샷

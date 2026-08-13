@@ -18,6 +18,7 @@ from api.router import (
     _collect_static_featured_routes,
     _context_features,
     _enrich_subway_elevator_accessibility,
+    _merge_cached_tmap_ramps_into_direct_ors,
     _parse_api_features,
     _provider_text,
     _public_segments,
@@ -1316,6 +1317,57 @@ def test_tmap_standalone_analysis_uses_full_walking_path():
         (35.1000, 129.0000),
         (35.1100, 129.0000),
     ]]
+
+
+def test_direct_ors_route_merges_only_similar_cached_tmap_ramps(monkeypatch):
+    ors = RouteCandidate(
+        source="ors",
+        path=[
+            Coordinate(35.1000, 129.0000),
+            Coordinate(35.1010, 129.0010),
+        ],
+        duration_min=10,
+        distance_m=900,
+        accessibility_evidence={
+            "wheelchair_constraints_applied": True,
+        },
+    )
+    tmap = RouteCandidate(
+        source="tmap",
+        path=list(ors.path),
+        duration_min=11,
+        distance_m=910,
+        accessibility_evidence={
+            "provider": "TMAP pedestrian",
+            "ramp_points": [{
+                "lat": 35.1005,
+                "lng": 129.0005,
+                "replaces_stairs": True,
+            }],
+        },
+    )
+    calls = 0
+
+    async def collect_cached(_self, origin, destination):
+        nonlocal calls
+        calls += 1
+        assert origin == ors.path[0]
+        assert destination == ors.path[-1]
+        return [tmap]
+
+    monkeypatch.setattr(TmapRouteCollector, "collect_cached", collect_cached)
+
+    asyncio.run(_merge_cached_tmap_ramps_into_direct_ors([ors]))
+
+    assert calls == 1
+    assert ors.accessibility_evidence["wheelchair_constraints_applied"] is True
+    assert ors.accessibility_evidence["ramp_points"] == [
+        {
+            "lat": 35.1005,
+            "lng": 129.0005,
+            "replaces_stairs": True,
+        }
+    ]
 
 
 def test_ors_and_tmap_verified_walk_analysis_uses_shared_full_path():

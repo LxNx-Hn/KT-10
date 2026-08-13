@@ -90,6 +90,7 @@ services:
       - ROUTE_FEATURE_CACHE_DIR=/app/ai/data/cache/route_features
       - ROUTE_FEATURE_CACHE_TTL_SECONDS=1800
       - TMAP_CACHE_DIR=/app/ai/data/cache/tmap
+      - TMAP_PRECOMPUTED_CACHE_DIR=/app/ai/data/precomputed/tmap
       - TMAP_API_KEY=${TMAP_API_KEY:-}
       - TMAP_CACHE_TTL_SECONDS=1800
       - TMAP_MAX_CONCURRENT_REQUESTS=3
