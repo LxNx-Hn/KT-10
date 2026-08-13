@@ -377,6 +377,65 @@ class OdsayRouteCollector(BaseRouteCollector):
         return copied
 
     @staticmethod
+    def _low_floor_bus_segment_confirmed(sub_path: dict) -> bool:
+        lanes = sub_path.get("lane")
+        if not isinstance(lanes, list) or not lanes:
+            return False
+        markers: list[bool] = []
+        for lane in lanes:
+            if not isinstance(lane, dict):
+                return False
+            raw = lane.get("lowFloorYn", lane.get("isLowFloor"))
+            if isinstance(raw, bool):
+                marker = raw
+            elif isinstance(raw, int) and raw in {0, 1}:
+                marker = bool(raw)
+            elif isinstance(raw, str) and raw.strip().casefold() in {
+                "y", "yes", "true", "1",
+            }:
+                marker = True
+            elif isinstance(raw, str) and raw.strip().casefold() in {
+                "n", "no", "false", "0",
+            }:
+                marker = False
+            else:
+                return False
+            markers.append(marker)
+        return all(markers)
+
+    def _wheelchair_transit_prerequisites_known(
+        self,
+        path: dict,
+        origin: Coordinate,
+        destination: Coordinate,
+    ) -> bool:
+        """후단에서 확실히 탈락할 후보는 ORS 호출 전에 닫힌 방식으로 거른다."""
+        sub_paths = path.get("subPath")
+        if not isinstance(sub_paths, list) or not sub_paths:
+            return True
+        copied = self._apply_accessible_subway_exits(
+            [item for item in sub_paths if isinstance(item, dict)],
+            origin,
+            destination,
+        )
+        if len(copied) != len(sub_paths):
+            return True
+        transit = [item for item in copied if item.get("trafficType") != 3]
+        if any(
+            item.get("trafficType") == 2
+            and not self._low_floor_bus_segment_confirmed(item)
+            for item in transit
+        ):
+            return False
+        if transit and transit[0].get("trafficType") == 1:
+            if transit[0].get("startExitCoordinateSource") != "OpenStreetMap ODbL 1.0":
+                return False
+        if transit and transit[-1].get("trafficType") == 1:
+            if transit[-1].get("endExitCoordinateSource") != "OpenStreetMap ODbL 1.0":
+                return False
+        return True
+
+    @staticmethod
     def _api_error(data: dict) -> str | None:
         error = data.get("error")
         if isinstance(error, dict):
@@ -1175,6 +1234,18 @@ class OdsayRouteCollector(BaseRouteCollector):
                     cursor += 1
                     if not isinstance(path, dict):
                         rejected.append(f"{index + 1}번 후보: 객체 아님")
+                        continue
+                    if (
+                        self.uses_wheelchair
+                        and not self._wheelchair_transit_prerequisites_known(
+                            path,
+                            origin,
+                            destination,
+                        )
+                    ):
+                        rejected.append(
+                            f"{index + 1}번 후보: 저상버스 또는 공식 접근 가능 출구 미확인"
+                        )
                         continue
                     batch.append((index, path))
                 if not batch:

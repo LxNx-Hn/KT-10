@@ -504,6 +504,111 @@ def test_tmap_persistent_cache_avoids_repeated_provider_call(
     assert "test-secret" not in cache_text
 
 
+def test_tmap_precomputed_cache_survives_age_and_never_calls_provider(
+    monkeypatch,
+    tmp_path,
+):
+    import collectors.tmap_collector as module
+
+    writable = tmp_path / "writable"
+    precomputed = tmp_path / "precomputed"
+    payload = {
+        "features": [{
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [ORIGIN.lng, ORIGIN.lat],
+                    [DEST.lng, DEST.lat],
+                ],
+            },
+            "properties": {
+                "totalTime": 600,
+                "totalDistance": 1000,
+            },
+        }],
+    }
+    module.write_precomputed_cache(
+        ORIGIN,
+        DEST,
+        search_option=module.STAIR_EXCLUDED_SEARCH_OPTION,
+        payload=payload,
+        cache_dir=precomputed,
+    )
+    wrapper_path = next(precomputed.glob("*.json"))
+    wrapper = json.loads(wrapper_path.read_text(encoding="utf-8"))
+    wrapper["cachedAtEpoch"] = 0
+    wrapper_path.write_text(json.dumps(wrapper), encoding="utf-8")
+
+    class ForbiddenClient:
+        def __init__(self, *_args, **_kwargs):
+            raise AssertionError("사전가공 캐시 적중 시 TMAP을 호출하면 안 됩니다.")
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "test-secret")
+    monkeypatch.setattr(settings, "TMAP_CACHE_DIR", str(writable))
+    monkeypatch.setattr(settings, "TMAP_PRECOMPUTED_CACHE_DIR", str(precomputed))
+    monkeypatch.setattr(module.httpx, "AsyncClient", ForbiddenClient)
+
+    result = asyncio.run(
+        TmapRouteCollector(avoid_stairs=True).collect_cached(ORIGIN, DEST)
+    )
+
+    assert result[0].path == [ORIGIN, DEST]
+    assert not writable.exists()
+
+
+def test_tmap_invalid_writable_cache_does_not_hide_valid_precomputed(
+    monkeypatch,
+    tmp_path,
+):
+    import collectors.tmap_collector as module
+
+    writable = tmp_path / "writable"
+    precomputed = tmp_path / "precomputed"
+    payload = {
+        "features": [{
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [ORIGIN.lng, ORIGIN.lat],
+                    [DEST.lng, DEST.lat],
+                ],
+            },
+            "properties": {
+                "totalTime": 600,
+                "totalDistance": 1000,
+            },
+        }],
+    }
+    module.write_precomputed_cache(
+        ORIGIN,
+        DEST,
+        search_option=module.STAIR_EXCLUDED_SEARCH_OPTION,
+        payload=payload,
+        cache_dir=precomputed,
+    )
+    identity = module._cache_identity(
+        ORIGIN,
+        DEST,
+        search_option=module.STAIR_EXCLUDED_SEARCH_OPTION,
+    )
+    invalid_path = module._cache_path(identity, str(writable))
+    assert invalid_path is not None
+    invalid_path.parent.mkdir(parents=True)
+    invalid_path.write_text(json.dumps({
+        "schemaVersion": module.CACHE_SCHEMA_VERSION,
+        "cachedAtEpoch": 1,
+        "payload": {"features": []},
+    }), encoding="utf-8")
+    monkeypatch.setattr(settings, "TMAP_CACHE_DIR", str(writable))
+    monkeypatch.setattr(settings, "TMAP_PRECOMPUTED_CACHE_DIR", str(precomputed))
+
+    result = asyncio.run(
+        TmapRouteCollector(avoid_stairs=True).collect_cached(ORIGIN, DEST)
+    )
+
+    assert result[0].path == [ORIGIN, DEST]
+
+
 def test_tmap_cached_only_miss_never_calls_provider(monkeypatch, tmp_path):
     import collectors.tmap_collector as module
 
@@ -765,6 +870,72 @@ def test_odsay_walk_geometry_defaults_to_estimated_without_provider(monkeypatch)
     assert path == [ORIGIN, DEST]
     assert quality == "estimated"
     assert evidence == {}
+
+
+def test_wheelchair_prefilter_rejects_unconfirmed_bus_before_ors():
+    collector = OdsayRouteCollector(uses_wheelchair=True)
+    confirmed = {
+        "subPath": [{
+            "trafficType": 2,
+            "lane": [{"busNo": "100", "lowFloorYn": "Y"}],
+        }],
+    }
+    unknown = {
+        "subPath": [{
+            "trafficType": 2,
+            "lane": [{"busNo": "100"}],
+        }],
+    }
+
+    assert collector._wheelchair_transit_prerequisites_known(
+        confirmed,
+        ORIGIN,
+        DEST,
+    ) is True
+    assert collector._wheelchair_transit_prerequisites_known(
+        unknown,
+        ORIGIN,
+        DEST,
+    ) is False
+
+
+def test_wheelchair_prefilter_requires_official_subway_endpoint_exits():
+    line = 1
+    start_name = "테스트시작역"
+    end_name = "테스트도착역"
+    exits = {
+        (line, "테스트시작"): (
+            AccessibleSubwayExit("1", ORIGIN, 11),
+        ),
+        (line, "테스트도착"): (
+            AccessibleSubwayExit("2", DEST, 22),
+        ),
+    }
+    path = {
+        "subPath": [{
+            "trafficType": 1,
+            "startName": start_name,
+            "endName": end_name,
+            "lane": [{"subwayCode": 71}],
+        }],
+    }
+
+    assert OdsayRouteCollector(
+        uses_wheelchair=True,
+        accessible_subway_exits=exits,
+    )._wheelchair_transit_prerequisites_known(
+        path,
+        ORIGIN,
+        DEST,
+    ) is True
+    assert OdsayRouteCollector(
+        uses_wheelchair=True,
+        accessible_subway_exits={},
+    )._wheelchair_transit_prerequisites_known(
+        path,
+        ORIGIN,
+        DEST,
+    ) is False
 
 
 def test_odsay_walk_geometry_prefers_tmap(monkeypatch):

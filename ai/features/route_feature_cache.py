@@ -12,9 +12,9 @@ from weakref import WeakKeyDictionary
 
 from config import settings
 
-# v9: 휠체어 사용자 요청에서 독립 TMAP 후보 network 수집을 제거하고,
-# ODsay + ORS wheelchair만 실제 후보 공급자로 사용한다.
-CACHE_SCHEMA_VERSION = 9
+# v11: 후단에서 탈락할 저상버스·공식 출구 미확인 후보를 ORS 호출 전에
+# 보수적으로 제외하고, 이전에 조립된 후보 캐시를 재사용하지 않는다.
+CACHE_SCHEMA_VERSION = 11
 _write_locks: dict[str, Lock] = {}
 _write_locks_guard = Lock()
 _request_locks: WeakKeyDictionary = WeakKeyDictionary()
@@ -63,6 +63,7 @@ def cache_identity(
             "tmapRampEvidenceMode": (
                 "cached_only" if uses_wheelchair else None
             ),
+            "tmapRampDataVersion": 1 if uses_wheelchair else None,
             "osmnxFallback": settings.OSMNX_WALK_GEOMETRY_ENABLED,
             "regionalDemPath": settings.ELEVATION_REGIONAL_DEM_PATH,
         },
