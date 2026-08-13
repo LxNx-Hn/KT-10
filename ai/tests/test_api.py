@@ -55,11 +55,12 @@ def test_static_route_cache_accepts_only_exact_90m_features():
         "_slope_segments": [{"distance_m": 90}],
     }
 
-    assert _static_features_cacheable([complete]) is True
+    complete_collection = {"sources_failed": []}
+    assert _static_features_cacheable([complete], complete_collection) is True
     # 보행 geometry가 확인되지 않은 mixed 후보는 캐시하지 않는다.
     assert _static_features_cacheable([
         {**complete, "_geometry_quality": "mixed"},
-    ]) is False
+    ], complete_collection) is False
     # 대중교통 표시 선형만 estimated인 지연 정밀화 후보는
     # 보행 exact + 90m 경사가 완성되면 캐시할 수 있다.
     assert _static_features_cacheable([
@@ -71,7 +72,7 @@ def test_static_route_cache_accepts_only_exact_90m_features():
                 {"mode": "bus", "geometry_quality": "estimated"},
             ],
         },
-    ]) is True
+    ], complete_collection) is True
     assert _static_features_cacheable([
         {
             **complete,
@@ -81,13 +82,17 @@ def test_static_route_cache_accepts_only_exact_90m_features():
                 {"mode": "bus", "geometry_quality": "estimated"},
             ],
         },
-    ]) is False
+    ], complete_collection) is False
     assert _static_features_cacheable([
         {**complete, "elevation_status": "unavailable"},
-    ]) is False
+    ], complete_collection) is False
     assert _static_features_cacheable([
         {**complete, "_slope_segments": []},
-    ]) is False
+    ], complete_collection) is False
+    assert _static_features_cacheable(
+        [complete],
+        {"sources_failed": ["odsay"]},
+    ) is False
 
 
 def test_model_status_reports_not_ready_without_fabricated_model(monkeypatch):

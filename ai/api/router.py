@@ -795,12 +795,18 @@ def _walk_geometry_exact(feature: dict) -> bool:
     )
 
 
-def _static_features_cacheable(route_features: list[dict]) -> bool:
+def _static_features_cacheable(
+    route_features: list[dict],
+    collection_metadata: dict,
+) -> bool:
     """정확 보행 geometry와 90m 경사가 완성된 후보군을 캐시한다.
 
     대중교통 표시 선형은 선택 시점에 지연 정밀화되므로 estimated여도
     scoring 피처 캐시 저장을 막지 않는다.
     """
+    failed_sources = collection_metadata.get("sources_failed")
+    if not isinstance(failed_sources, list) or failed_sources:
+        return False
     return bool(route_features) and all(
         (
             feature.get("_geometry_quality") == "exact"
@@ -840,7 +846,7 @@ async def _collect_featured_routes(
                 route_features, metadata = (
                     await _collect_static_featured_routes(req)
                 )
-                if _static_features_cacheable(route_features):
+                if _static_features_cacheable(route_features, metadata):
                     try:
                         await asyncio.to_thread(
                             write_route_feature_cache,
