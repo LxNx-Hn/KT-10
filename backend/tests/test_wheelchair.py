@@ -13,6 +13,7 @@ from app.models import (
 )
 from app.providers.ai_pipeline import _pipeline_payload
 from app.scoring.explain import build_cautions, build_reasons
+from app.settings import settings
 from app.wheelchair import effective_scoring_options, filter_known_stair_candidates
 
 
@@ -271,6 +272,7 @@ def test_pipeline_sends_wheelchair_stair_constraint():
 
     assert payload["uses_wheelchair"] is True
     assert payload["avoid_stairs"] is True
+    assert payload["max_walk_distance_m"] == settings.max_supported_total_walk_m
 
 
 def test_pipeline_sends_request_scoped_wheelchair_mode():
@@ -285,6 +287,7 @@ def test_pipeline_sends_request_scoped_wheelchair_mode():
 
     assert payload["uses_wheelchair"] is True
     assert payload["avoid_stairs"] is True
+    assert payload["max_walk_distance_m"] == settings.max_supported_total_walk_m
 
 
 def test_wheelchair_explanation_states_constraints_and_real_world_limit():

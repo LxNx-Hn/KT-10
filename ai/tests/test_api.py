@@ -24,7 +24,12 @@ from api.router import (
     _static_features_cacheable,
     _wheelchair_candidate_constrained,
 )
-from collectors.base import CollectorNotConfigured, Coordinate, RouteCandidate
+from collectors.base import (
+    CollectorError,
+    CollectorNotConfigured,
+    Coordinate,
+    RouteCandidate,
+)
 from collectors.odsay_collector import OdsayRouteCollector
 from collectors.ors_collector import (
     WHEELCHAIR_RESTRICTIONS,
@@ -1470,6 +1475,57 @@ def test_wheelchair_collection_fails_instead_of_using_tmap_without_ors(
     assert captured.value.detail["required_source"] == (
         "openrouteservice wheelchair"
     )
+
+
+def test_wheelchair_collection_reports_odsay_failure_when_only_over_limit_walks_remain(
+    monkeypatch,
+):
+    tmap_route = RouteCandidate(
+        source="tmap",
+        path=[Coordinate(35.10, 129.00), Coordinate(35.20, 129.10)],
+        duration_min=210,
+        distance_m=16_100,
+    )
+    ors_route = RouteCandidate(
+        source="ors",
+        path=[Coordinate(35.10, 129.00), Coordinate(35.20, 129.10)],
+        duration_min=220,
+        distance_m=16_200,
+    )
+
+    async def odsay_collect(_self, *_args, **_kwargs):
+        raise CollectorError("ODsay 응답 시간이 초과되었습니다.")
+
+    async def tmap_collect(_self, *_args, **_kwargs):
+        return [tmap_route]
+
+    async def ors_collect(_self, *_args, **_kwargs):
+        return [ors_route]
+
+    monkeypatch.setattr(OdsayRouteCollector, "collect", odsay_collect)
+    monkeypatch.setattr(TmapRouteCollector, "collect", tmap_collect)
+    monkeypatch.setattr(OrsWheelchairRouteCollector, "collect", ors_collect)
+    request = RecommendRequest(
+        origin_lat=35.10,
+        origin_lng=129.00,
+        origin_name="출발",
+        dest_lat=35.20,
+        dest_lng=129.10,
+        dest_name="도착",
+        profile="disabled",
+        uses_wheelchair=True,
+        max_walk_distance_m=15_000,
+    )
+
+    with pytest.raises(HTTPException) as captured:
+        asyncio.run(_collect_static_featured_routes(request))
+
+    assert captured.value.status_code == 503
+    assert captured.value.detail["required_source"] == "odsay transit"
+    assert captured.value.detail["max_walk_distance_m"] == 15_000
+    assert captured.value.detail["sources"] == {
+        "odsay": "CollectorError: ODsay 응답 시간이 초과되었습니다."
+    }
 
 
 def test_estimated_walk_geometry_is_not_used_as_observed_feature_path():

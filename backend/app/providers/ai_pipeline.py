@@ -87,6 +87,11 @@ def _pipeline_payload(
     candidate_limit: int = 5,
 ) -> dict:
     options = effective_scoring_options(options, user_preference)
+    requested_max_walk_distance_m = (
+        user_preference.max_walk_distance_m
+        if user_preference and user_preference.max_walk_distance_m is not None
+        else settings.max_supported_total_walk_m
+    )
     return {
         "origin_lat": origin.lat, "origin_lng": origin.lng, "origin_name": origin.name,
         "dest_lat": destination.lat, "dest_lng": destination.lng, "dest_name": destination.name,
@@ -103,9 +108,7 @@ def _pipeline_payload(
         "minimize_transfers": options.minimize_transfers,
         "uses_wheelchair": options.uses_wheelchair,
         "uses_walking_aid": bool(user_preference and user_preference.uses_walking_aid),
-        "max_walk_distance_m": (
-            user_preference.max_walk_distance_m if user_preference else None
-        ),
+        "max_walk_distance_m": requested_max_walk_distance_m,
         "candidate_limit": candidate_limit,
         "temp_c": weather_condition.temp_c if weather_condition else None,
         "feels_like_c": weather_condition.feels_like_c if weather_condition else None,

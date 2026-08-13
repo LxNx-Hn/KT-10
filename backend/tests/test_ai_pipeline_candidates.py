@@ -298,6 +298,7 @@ def test_pipeline_payload_keeps_profile_and_trip_conditions_separate():
     assert payload["low_floor_priority"] is True
     assert payload["minimize_transfers"] is True
     assert payload["candidate_limit"] == 5
+    assert payload["max_walk_distance_m"] == settings.max_supported_total_walk_m
 
 
 def test_response_detail_includes_source_failures():

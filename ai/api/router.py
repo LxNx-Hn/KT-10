@@ -610,6 +610,32 @@ async def _collect_static_featured_routes(
             },
         )
 
+    non_transit_candidates = [
+        candidate for candidate in candidates if candidate.source != "odsay"
+    ]
+    if (
+        req.uses_wheelchair
+        and "odsay" not in succeeded
+        and req.max_walk_distance_m is not None
+        and non_transit_candidates
+        and all(
+            candidate.distance_m > req.max_walk_distance_m
+            for candidate in non_transit_candidates
+        )
+    ):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": (
+                    "대중교통 공급자 실패로 지원 도보거리 이내의 "
+                    "휠체어 경로를 확인할 수 없습니다."
+                ),
+                "required_source": "odsay transit",
+                "max_walk_distance_m": req.max_walk_distance_m,
+                "sources": source_errors,
+            },
+        )
+
     layers = _get_layers()
     merged_candidates = merge_route_candidates(candidates)
     if req.uses_wheelchair:
