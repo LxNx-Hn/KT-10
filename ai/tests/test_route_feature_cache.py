@@ -66,3 +66,22 @@ def test_wheelchair_cache_identity_is_separate_from_general_route():
     assert wheelchair["geometryProfile"]["stairsExcluded"] is True
     assert wheelchair["geometryProfile"]["wheelchairConstraints"] is True
     assert wheelchair["geometryProfile"]["orsRestrictionSchemaVersion"] == 1
+
+
+def test_route_feature_cache_identity_changes_after_provider_key_rotation(
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "odsay-key-before")
+    monkeypatch.setattr(settings, "ORS_API_KEY", "ors-key-before")
+    before = cache_identity(35.1, 129.0, 35.2, 129.1)
+
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "odsay-key-after")
+    after_odsay = cache_identity(35.1, 129.0, 35.2, 129.1)
+    monkeypatch.setattr(settings, "ORS_API_KEY", "ors-key-after")
+    after_ors = cache_identity(35.1, 129.0, 35.2, 129.1)
+
+    assert before != after_odsay
+    assert after_odsay != after_ors
+    serialized = str(after_ors)
+    assert "odsay-key-after" not in serialized
+    assert "ors-key-after" not in serialized

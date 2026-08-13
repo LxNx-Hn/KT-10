@@ -12,13 +12,20 @@ from weakref import WeakKeyDictionary
 
 from config import settings
 
-# v5: 휠체어 profile과 ORS 제약 schema를 캐시 identity에 포함한다. 기존
-# TMAP 계단 제외 캐시를 휠체어 통행 검증 결과로 재사용하지 않는다.
-CACHE_SCHEMA_VERSION = 5
+# v6: 외부 경로 공급자 키의 비가역 지문을 identity에 포함한다. 키 회전 뒤
+# 이전 인증 실패 때 생성된 축소 후보를 새 자격 증명으로 재사용하지 않는다.
+CACHE_SCHEMA_VERSION = 6
 _write_locks: dict[str, Lock] = {}
 _write_locks_guard = Lock()
 _request_locks: WeakKeyDictionary = WeakKeyDictionary()
 _request_locks_guard = Lock()
+
+
+def _credential_fingerprint(value: str) -> str | None:
+    normalized = value.strip()
+    if not normalized or normalized.startswith("YOUR_"):
+        return None
+    return sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def cache_identity(
@@ -41,6 +48,12 @@ def cache_identity(
             "orsConfigured": bool(
                 settings.ORS_API_KEY
                 and not settings.ORS_API_KEY.startswith("YOUR_")
+            ),
+            "orsCredentialFingerprint": _credential_fingerprint(
+                settings.ORS_API_KEY
+            ),
+            "odsayCredentialFingerprint": _credential_fingerprint(
+                settings.ODSAY_API_KEY
             ),
             "odsayLoadLane": settings.ODSAY_LOAD_LANE_ENABLED,
             "tmapConfigured": bool(
