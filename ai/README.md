@@ -75,6 +75,14 @@ python -m data_tools.precollect_tmap_ramps \
 데이터 버전을 올린 뒤 갱신 작업을 다시 수행합니다. 인증·쿼터·일시 오류는
 artifact에 기록하지 않습니다.
 
+로컬 Geofabrik PBF에 명시된 `highway=steps + ramp=no` 계단은 별도 배치로
+가공합니다. 휠체어 경로가 이 선형을 통과하면 ORS 결과라도 거부하며, ramp 태그
+누락을 `ramp=no`로 추정하지 않습니다.
+
+```bash
+PYTHONPATH=ai python -m data_tools.extract_osm_wheelchair_blockers
+```
+
 보고서가 `complete`가 아니면 기본 종료코드는 1입니다. 부분 실패를 운영
 완료로 간주하지 않으며, 키·쿼터·일시 오류 응답은 캐시에 저장하지 않습니다.
 

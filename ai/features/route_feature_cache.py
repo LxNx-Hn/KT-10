@@ -12,9 +12,8 @@ from weakref import WeakKeyDictionary
 
 from config import settings
 
-# v11: 후단에서 탈락할 저상버스·공식 출구 미확인 후보를 ORS 호출 전에
-# 보수적으로 제외하고, 이전에 조립된 후보 캐시를 재사용하지 않는다.
-CACHE_SCHEMA_VERSION = 11
+# v12: 명시적 OSM steps+ramp=no 차단 검증 전 후보 캐시를 재사용하지 않는다.
+CACHE_SCHEMA_VERSION = 12
 _write_locks: dict[str, Lock] = {}
 _write_locks_guard = Lock()
 _request_locks: WeakKeyDictionary = WeakKeyDictionary()

@@ -117,6 +117,18 @@ ORS `extra_info`는 공식 응답 키 차이(`osmid` 요청은 `osmId` 응답,
 모든 실제 보행·환승 구간에 이 제약이 적용된 후보만 휠체어 추천에 남긴다.
 ORS가 미설정·실패하면 TMAP 계단 회피 결과로 대체하지 않고 503을 반환한다.
 
+Geofabrik의 2026-07-24 대한민국 OSM PBF를 부산 행정경계로 잘라 재검증한
+`busan_osm_steps_ramp_no_20260724.geojson`은 `highway=steps`와 `ramp=no`가
+동시에 명시된 41개 계단 선형만 담는다. 휠체어 후보의 실제 ORS 보행 geometry가
+이 선형 1m 이내를 통과하면 후보를 거부한다. `ramp`가 없거나 `wheelchair=yes`,
+일반 경사만 있는 경우에는 경사로 유무를 추정하지 않는다. 같은 PBF의 부산
+범위에는 휠체어 경사로를 확정할 `ramp:wheelchair=yes`가 0건이므로 이를
+경사로 표시 근거로 사용하지 않는다. 갱신 명령은 다음과 같다.
+
+```bash
+PYTHONPATH=ai python -m data_tools.extract_osm_wheelchair_blockers
+```
+
 TMAP 보행자 공식 응답의 안내점 `turnType=128`(경사로 진입),
 `turnType=129`(계단+경사로 진입)과 시설 구간 `facilityType=19`(경사로),
 `facilityType=20`(계단+경사로)을 물리 경사로 근거로 사용한다. 해당 좌표가

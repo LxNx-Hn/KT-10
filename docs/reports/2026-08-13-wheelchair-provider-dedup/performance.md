@@ -43,6 +43,10 @@ ODsay 1회와 직접 ORS wheelchair 1회만 필요했고, 저상버스 또는 �
 network counter, ORS/TMAP 캐시 파일 수와 최종 수정시각이 모두 같았다. 따라서
 warm 외부 경로 API 호출은 0회다.
 
+실제 OSM way `76287927`(118계단, `ramp=no`) 양끝을 OD로 요청한 결과 ORS
+후보가 해당 선형을 통과해 차단 ID가 검출됐고, 1.2572초에 후보 0개/HTTP 503으로
+거부됐다. 계단 경로를 정상 휠체어 경로로 반환하지 않았다.
+
 동일한 로컬 Backend 공개 API `/api/routes/recommend`의 warm 20회는 모두 200,
 경로 1개를 반환했고 p50 0.0505초, p95 0.0853초였다.
 
@@ -58,6 +62,9 @@ warm 외부 경로 API 호출은 0회다.
 - 공식 접근 가능 지하철 출구는 로컬 정규화 CSV만 적용한다.
 - 계단 회피, ORS wheelchair 제약, extra-info 전구간 coverage가 모두 확인된
   보행구간만 남긴다.
+- 2026-07-24 OSM PBF에서 부산 행정경계 안의 명시적 `steps+ramp=no` 41개를
+  로컬 차단 선형으로 가공했고, 실제 보행 geometry가 1m 이내로 통과하면
+  후보를 거부한다.
 - 알 수 없는 계단 수·경사로·저상버스·출구 접근성은 0/false/true로 만들지
   않는다. 공개 응답은 `exclude_none`으로 생략한다.
 

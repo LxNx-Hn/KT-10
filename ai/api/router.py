@@ -44,6 +44,7 @@ from features.route_feature_cache import (
     request_lock as route_feature_request_lock,
     write as write_route_feature_cache,
 )
+from features.wheelchair_blockers import explicit_unramped_step_ids
 from labeling.route_traits import generate_route_traits
 from merger.route_merger import (
     accessibility_paths_similar,
@@ -655,6 +656,9 @@ async def _collect_static_featured_routes(
     layers = _get_layers()
     merged_candidates = merge_route_candidates(candidates)
     if req.uses_wheelchair:
+        merged_candidates = _exclude_explicit_unramped_steps(
+            merged_candidates
+        )
         merged_candidates = [
             candidate
             for candidate in merged_candidates
@@ -730,6 +734,24 @@ async def _collect_static_featured_routes(
         "sources_failed": failed,
         "source_errors": source_errors,
     }
+
+
+def _exclude_explicit_unramped_steps(candidates: list) -> list:
+    """OSM이 경사로 없음으로 명시한 계단을 통과하는 휠체어 후보를 거부한다."""
+    safe_candidates = []
+    for candidate in candidates:
+        blocker_ids = explicit_unramped_step_ids(
+            _analysis_route_parts(candidate)
+        )
+        if blocker_ids:
+            log.warning(
+                "명시적 OSM steps+ramp=no 통과 휠체어 후보 제외 source=%s blockers=%s",
+                candidate.source,
+                blocker_ids[:5],
+            )
+            continue
+        safe_candidates.append(candidate)
+    return safe_candidates
 
 
 async def _merge_cached_tmap_ramps_into_direct_ors(
