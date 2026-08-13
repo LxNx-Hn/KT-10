@@ -370,6 +370,58 @@ jobs:
             echo "$output_key=$desired_count" >> "$GITHUB_OUTPUT"
           }
 
+          sync_task_secret_value() {
+            local family="$1"
+            local container="$2"
+            local secret_name="$3"
+            local secret_value="$4"
+            local value_from
+            value_from="$(aws ecs describe-task-definition \
+              --task-definition "$family" \
+              --query "taskDefinition.containerDefinitions[?name=='$container'].secrets[?name=='$secret_name'].valueFrom | [0][0]" \
+              --output text)"
+            if [ -z "$value_from" ] || [ "$value_from" = "None" ]; then
+              echo "$family/$container must reference managed secret $secret_name." >&2
+              exit 1
+            fi
+            case "$value_from" in
+              arn:*:secretsmanager:*)
+                local secret_id json_key next_value current_value
+                secret_id="$(cut -d: -f1-7 <<< "$value_from")"
+                json_key="$(cut -d: -f8 <<< "$value_from")"
+                next_value="$secret_value"
+                if [ -n "$json_key" ]; then
+                  current_value="$(aws secretsmanager get-secret-value \
+                    --secret-id "$secret_id" \
+                    --query SecretString \
+                    --output text)"
+                  next_value="$(jq -c \
+                    --arg key "$json_key" \
+                    --arg value "$secret_value" \
+                    '.[$key] = $value' <<< "$current_value")"
+                fi
+                aws secretsmanager put-secret-value \
+                  --secret-id "$secret_id" \
+                  --secret-string "$next_value" \
+                  >/dev/null
+                ;;
+              arn:*:ssm:*)
+                local parameter_name
+                parameter_name="/${value_from#*:parameter/}"
+                aws ssm put-parameter \
+                  --name "$parameter_name" \
+                  --value "$secret_value" \
+                  --type SecureString \
+                  --overwrite \
+                  >/dev/null
+                ;;
+              *)
+                echo "$family/$container has unsupported secret provider for $secret_name." >&2
+                exit 1
+                ;;
+            esac
+          }
+
           register_task_definition() {
             local family="$1"
             local container="$2"
@@ -377,7 +429,6 @@ jobs:
             local output_key="$4"
             local inject_internal_token="$5"
             local inject_ors_key="$6"
-            local inject_odsay_key="$7"
 
             aws ecs describe-task-definition \
               --task-definition "$family" \
@@ -389,10 +440,8 @@ jobs:
               --arg image "$image" \
               --arg internal_token "$AI_INTERNAL_SERVICE_TOKEN" \
               --arg ors_api_key "$ORS_API_KEY" \
-              --arg odsay_api_key "$ODSAY_API_KEY" \
               --argjson inject_internal_token "$inject_internal_token" \
               --argjson inject_ors_key "$inject_ors_key" \
-              --argjson inject_odsay_key "$inject_odsay_key" \
               'del(
                 .taskDefinitionArn,
                 .revision,
@@ -427,17 +476,6 @@ jobs:
                       )
                     else .
                     end
-                  | if $inject_odsay_key then
-                      .environment = (
-                        (.environment // [])
-                        | map(select(.name != "ODSAY_API_KEY"))
-                        + [{
-                            name: "ODSAY_API_KEY",
-                            value: $odsay_api_key
-                          }]
-                      )
-                    else .
-                    end
                 else .
                 end
               )' \
@@ -457,12 +495,16 @@ jobs:
           snapshot_desired_count kt10-frontend frontend_previous_desired_count
 
           if [ "$DEPLOY_AI" = "true" ]; then
+            sync_task_secret_value \
+              kt10-ai-task \
+              ai \
+              ODSAY_API_KEY \
+              "$ODSAY_API_KEY"
             register_task_definition \
               kt10-ai-task \
               ai \
               "$registry/kt10-ai:$tag" \
               ai_task_definition \
-              true \
               true \
               true
           fi
@@ -473,7 +515,6 @@ jobs:
               "$registry/kt10-backend:$tag" \
               backend_task_definition \
               true \
-              false \
               false
           fi
           if [ "$DEPLOY_FRONTEND" = "true" ]; then
@@ -482,7 +523,6 @@ jobs:
               frontend \
               "$registry/kt10-frontend:$tag" \
               frontend_task_definition \
-              false \
               false \
               false
           fi
