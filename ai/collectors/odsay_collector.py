@@ -659,6 +659,46 @@ class OdsayRouteCollector(BaseRouteCollector):
             if sub.get("trafficType") != 3
         ]
 
+        # 한 후보의 첫·마지막 도보 구간은 서로 독립적이다. 휠체어 요청은
+        # 각 구간마다 ORS wheelchair 검증이 필요하므로 순차 대기하면 외부
+        # 응답시간이 그대로 합산된다. 기존 ORS semaphore 범위 안에서 같은
+        # 후보의 실제 보행 구간만 병렬 검증한다.
+        walk_geometry_requests: list[
+            tuple[int, tuple[Coordinate, Coordinate]]
+        ] = []
+        for index, sub in enumerate(sub_paths):
+            if sub.get("trafficType") != 3:
+                continue
+            section_distance = self._number(
+                sub.get("distance"),
+                "distance",
+                positive=False,
+            )
+            if section_distance == 0:
+                continue
+            endpoints = self._walk_endpoints(
+                sub_paths,
+                index,
+                origin,
+                destination,
+            )
+            if endpoints is None:
+                raise CollectorError(
+                    "ODsay 보행 구간의 시작·끝 좌표를 확인할 수 없습니다."
+                )
+            walk_geometry_requests.append((index, endpoints))
+        walk_geometry_results = await asyncio.gather(*(
+            self._walk_geometry(*endpoints)
+            for _, endpoints in walk_geometry_requests
+        ))
+        walk_geometries = {
+            index: result
+            for (index, _), result in zip(
+                walk_geometry_requests,
+                walk_geometry_results,
+            )
+        }
+
         lane_index = 0
         segments = []
         coords: list[Coordinate] = []
@@ -707,7 +747,7 @@ class OdsayRouteCollector(BaseRouteCollector):
                         segment_path,
                         quality,
                         accessibility_evidence,
-                    ) = await self._walk_geometry(*endpoints)
+                    ) = walk_geometries[index]
             else:
                 segment_path = (
                     lane_paths[lane_index]

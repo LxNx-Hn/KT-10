@@ -1260,6 +1260,48 @@ def test_odsay_zero_distance_transfer_does_not_create_detour(monkeypatch):
     assert len(walk_calls) == 2
 
 
+def test_odsay_builds_independent_walk_sections_concurrently(monkeypatch):
+    collector = OdsayRouteCollector()
+    path = {
+        "info": {"totalTime": 20, "totalDistance": 2000},
+        "subPath": [
+            {"trafficType": 3, "sectionTime": 3, "distance": 100},
+            {
+                "trafficType": 1,
+                "sectionTime": 14,
+                "distance": 1800,
+                "startX": 129.04,
+                "startY": 35.11,
+                "endX": 129.06,
+                "endY": 35.12,
+            },
+            {"trafficType": 3, "sectionTime": 3, "distance": 100},
+        ],
+    }
+    both_started = asyncio.Event()
+    started = 0
+
+    async def fake_walk(start, end):
+        nonlocal started
+        started += 1
+        if started == 2:
+            both_started.set()
+        await asyncio.wait_for(both_started.wait(), timeout=0.2)
+        return [start, end], "exact", {}
+
+    monkeypatch.setattr(settings, "ODSAY_LOAD_LANE_ENABLED", False)
+    monkeypatch.setattr(collector, "_walk_geometry", fake_walk)
+
+    route = asyncio.run(collector._build_candidate(path, ORIGIN, DEST))
+
+    assert started == 2
+    assert [segment["mode"] for segment in route.segments] == [
+        "walk",
+        "subway",
+        "walk",
+    ]
+
+
 @pytest.mark.parametrize("invalid_info", [None, [], "malformed"])
 def test_odsay_skips_invalid_candidate_and_keeps_next_valid_one(
     monkeypatch,
