@@ -40,6 +40,12 @@ _SIGNUP_COOKIE = "dongnet_signup_state"
 _SIGNUP_COOKIE_PATH = "/api/auth/signup"
 _SIGNUP_MAX_AGE = 600
 _SIGNUP_SALT = "dongnet-signup-pending-v1"
+_DELETION_COOKIE = "dongnet_deletion_state"
+_DELETION_COOKIE_PATH = "/api/auth/deletion"
+_DELETION_MAX_AGE = 600
+_DELETION_OAUTH_SALT = "dongnet-deletion-oauth-v1"
+_DELETION_CREDENTIAL_SALT = "dongnet-deletion-credential-v1"
+_DELETION_STATE_PREFIX = "delete."
 _KAKAO_UNLINK_URL = "https://kapi.kakao.com/v1/user/unlink"
 
 
@@ -71,6 +77,19 @@ def _serializer() -> URLSafeTimedSerializer:
 def _signup_serializer() -> URLSafeTimedSerializer:
     _configured()
     return URLSafeTimedSerializer(settings.session_secret, salt=_SIGNUP_SALT)
+
+
+def _deletion_oauth_serializer() -> URLSafeTimedSerializer:
+    _configured()
+    return URLSafeTimedSerializer(settings.session_secret, salt=_DELETION_OAUTH_SALT)
+
+
+def _deletion_credential_serializer() -> URLSafeTimedSerializer:
+    _configured()
+    return URLSafeTimedSerializer(
+        settings.session_secret,
+        salt=_DELETION_CREDENTIAL_SALT,
+    )
 
 
 def _frontend_path(path: str) -> str:
@@ -175,6 +194,7 @@ def _pending_consent_redirect(payload: dict) -> Response:
     response = RedirectResponse(_frontend_path("/signup/consent"))
     _clear_cookie(response, _STATE_COOKIE)
     _clear_cookie(response, _SESSION_COOKIE)
+    _clear_deletion_cookie(response)
     _set_signup_cookie(response, payload)
     return response
 
@@ -183,7 +203,126 @@ def _issue_session_redirect(user_id: str) -> Response:
     response = RedirectResponse(_frontend_path("/"))
     _clear_cookie(response, _STATE_COOKIE)
     _clear_signup_cookie(response)
+    _clear_deletion_cookie(response)
     _set_session_cookie(response, user_id)
+    return response
+
+
+def _clear_deletion_cookie(response: Response) -> None:
+    response.delete_cookie(
+        _DELETION_COOKIE,
+        path=_DELETION_COOKIE_PATH,
+        secure=_secure_cookie(),
+        samesite="lax",
+    )
+
+
+def _set_deletion_cookie(response: Response, user_id: str) -> None:
+    # URLSafeTimedSerializer는 서명이지 암호화가 아니다. user_id만 넣고
+    # kakao_id는 넣지 않으며, HttpOnly·짧은 만료·deletion API path로만
+    # 노출을 제한한다. frontend에는 이 값을 반환하지 않는다.
+    response.set_cookie(
+        _DELETION_COOKIE,
+        _deletion_credential_serializer().dumps({
+            "kind": "existing",
+            "user_id": user_id,
+        }),
+        httponly=True,
+        secure=_secure_cookie(),
+        samesite="lax",
+        max_age=_DELETION_MAX_AGE,
+        path=_DELETION_COOKIE_PATH,
+    )
+
+
+def _validated_deletion_payload(payload: object) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("Deletion payload is not an object.")
+    if payload.get("kind") != "existing":
+        raise ValueError("Deletion payload kind is invalid.")
+    user_id = payload.get("user_id")
+    if not isinstance(user_id, str) or not user_id.strip() or len(user_id) > 36:
+        raise ValueError("Deletion payload user identity is invalid.")
+    return {"kind": "existing", "user_id": user_id}
+
+
+def _read_deletion_payload(cookie: str | None) -> dict:
+    if not cookie:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Deletion session required.",
+        )
+    try:
+        payload = _deletion_credential_serializer().loads(
+            cookie,
+            max_age=_DELETION_MAX_AGE,
+        )
+    except SignatureExpired as exc:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Deletion session expired.",
+        ) from exc
+    except BadSignature as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid deletion session.",
+        ) from exc
+    try:
+        return _validated_deletion_payload(payload)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid deletion session.",
+        ) from exc
+
+
+def _is_deletion_oauth_state(state: str) -> bool:
+    return state.startswith(_DELETION_STATE_PREFIX)
+
+
+def _validate_deletion_oauth_state(state: str) -> None:
+    token = state[len(_DELETION_STATE_PREFIX):]
+    try:
+        payload = _deletion_oauth_serializer().loads(
+            token,
+            max_age=_DELETION_MAX_AGE,
+        )
+    except (BadSignature, SignatureExpired) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Kakao authorization was rejected or state validation failed.",
+        ) from exc
+    if (
+        not isinstance(payload, dict)
+        or payload.get("intent") != "deletion"
+        or not isinstance(payload.get("nonce"), str)
+        or not payload["nonce"]
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Kakao authorization was rejected or state validation failed.",
+        )
+
+
+def _clear_identity_cookies(response: Response) -> None:
+    """브라우저에 남은 서비스·가입·삭제 identity를 모두 지운다."""
+    _clear_cookie(response, _STATE_COOKIE)
+    _clear_cookie(response, _SESSION_COOKIE)
+    _clear_signup_cookie(response)
+    _clear_deletion_cookie(response)
+
+
+def _deletion_callback_redirect(db: Session, kakao_id: str) -> Response:
+    user = db.scalar(select(User).where(User.kakao_id == kakao_id))
+    if user is None:
+        response = RedirectResponse(
+            _frontend_path("/account-deletion?result=not-found"),
+        )
+        _clear_identity_cookies(response)
+        return response
+    response = RedirectResponse(_frontend_path("/account-deletion"))
+    _clear_identity_cookies(response)
+    _set_deletion_cookie(response, user.id)
     return response
 
 
@@ -297,6 +436,29 @@ def kakao_login() -> Response:
     return response
 
 
+@router.get("/deletion/kakao/login")
+def deletion_kakao_login() -> Response:
+    """계정 삭제 본인 확인용 Kakao OAuth. 가입·세션 발급 경로와 분리한다."""
+    _configured()
+    signed = _deletion_oauth_serializer().dumps({
+        "intent": "deletion",
+        "nonce": secrets.token_urlsafe(32),
+    })
+    state = f"{_DELETION_STATE_PREFIX}{signed}"
+    query = urlencode({
+        "client_id": settings.kakao_rest_api_key,
+        "redirect_uri": settings.kakao_oauth_redirect_uri,
+        "response_type": "code",
+        "state": state,
+    })
+    response = RedirectResponse(f"https://kauth.kakao.com/oauth/authorize?{query}")
+    response.set_cookie(
+        _STATE_COOKIE, state, httponly=True, secure=_secure_cookie(),
+        samesite="lax", max_age=_DELETION_MAX_AGE,
+    )
+    return response
+
+
 @router.get("/kakao/callback")
 async def kakao_callback(
     request: Request,
@@ -314,6 +476,10 @@ async def kakao_callback(
     )
     if error or not code or not state_valid:
         raise HTTPException(status_code=400, detail="Kakao authorization was rejected or state validation failed.")
+    deletion_oauth = bool(state and _is_deletion_oauth_state(state))
+    if deletion_oauth:
+        assert state is not None
+        _validate_deletion_oauth_state(state)
     try:
         async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
             token_response = await client.post("https://kauth.kakao.com/oauth/token", data={
@@ -335,6 +501,8 @@ async def kakao_callback(
     except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
         log.warning("Kakao OAuth provider response failed (%s)", type(exc).__name__)
         raise HTTPException(status_code=502, detail="Kakao login provider request failed.") from exc
+    if deletion_oauth:
+        return _deletion_callback_redirect(db, kakao_id)
     user = db.scalar(select(User).where(User.kakao_id == kakao_id))
     if user is None:
         return _pending_consent_redirect({
@@ -398,6 +566,7 @@ def signup_complete(
         status_code=status.HTTP_204_NO_CONTENT if consumed else status.HTTP_409_CONFLICT,
     )
     _clear_signup_cookie(response)
+    _clear_deletion_cookie(response)
     if consumed:
         _set_session_cookie(response, user.id)
     return response
@@ -460,23 +629,11 @@ async def unlink_kakao_account(kakao_id: str) -> bool:
     return True
 
 
-@router.post("/withdraw", status_code=204)
-async def withdraw(
-    user: User = Depends(current_user),
-    db: Session = Depends(database_session),
-) -> Response:
-    """회원 탈퇴를 처리한다. 되돌릴 수 없다.
+async def _perform_account_withdrawal(db: Session, user: User) -> None:
+    """인앱 탈퇴와 외부 계정 삭제가 공유하는 데이터 삭제 정책.
 
-    계정·프로필·서비스 데이터는 이 요청에서 즉시 삭제한다. 사용자 행을 지우면
-    설정·후기·추천 표시 기록이 외래키 정책으로 함께 사라진다.
-
-    시설 신고만 남긴다. 시설 식별과 유지보수에 쓰이는 공익적 기록이기
-    때문이다. 대신 작성자 연결을 끊고 자유입력 설명을 비워, 시설 자체를
-    식별·관리하는 데 필요한 정보(시설명·유형·위치·오류 유형·처리 상태)만
-    남긴다.
-
-    그 밖에 남는 것은 부정 가입·탈퇴 반복 방지와 처리 오류 대응에 필요한 최소
-    정보뿐이며 ``scripts/purge_withdrawn_users.py``가 보관기간 후 지운다.
+    정책을 바꾸지 않는다. admin 가드, Kakao unlink, 최소 분리 보관,
+    시설 신고 익명화, 사용자 행 삭제와 commit까지 이 함수가 담당한다.
     """
     if user.is_admin:
         # reviewed_by가 SET NULL이라 관리자를 지우면 후기 검수 이력의 담당자가
@@ -513,8 +670,85 @@ async def withdraw(
     db.delete(user)
     db.commit()
 
+
+@router.post("/withdraw", status_code=204)
+async def withdraw(
+    user: User = Depends(current_user),
+    db: Session = Depends(database_session),
+) -> Response:
+    """회원 탈퇴를 처리한다. 되돌릴 수 없다.
+
+    계정·프로필·서비스 데이터는 이 요청에서 즉시 삭제한다. 사용자 행을 지우면
+    설정·후기·추천 표시 기록이 외래키 정책으로 함께 사라진다.
+
+    시설 신고만 남긴다. 시설 식별과 유지보수에 쓰이는 공익적 기록이기
+    때문이다. 대신 작성자 연결을 끊고 자유입력 설명을 비워, 시설 자체를
+    식별·관리하는 데 필요한 정보(시설명·유형·위치·오류 유형·처리 상태)만
+    남긴다.
+
+    그 밖에 남는 것은 부정 가입·탈퇴 반복 방지와 처리 오류 대응에 필요한 최소
+    정보뿐이며 ``scripts/purge_withdrawn_users.py``가 보관기간 후 지운다.
+    """
+    await _perform_account_withdrawal(db, user)
     response = Response(status_code=204)
     response.delete_cookie(_SESSION_COOKIE, secure=_secure_cookie(), samesite="lax")
+    _clear_deletion_cookie(response)
+    return response
+
+
+@router.get("/deletion/status", response_model=None)
+def deletion_status(
+    deletion_cookie: str | None = Cookie(default=None, alias=_DELETION_COOKIE),
+) -> dict | Response:
+    """삭제 본인 확인이 유효한지만 알린다. 신원은 반환하지 않는다."""
+    if not deletion_cookie:
+        return Response(status_code=204)
+    try:
+        _read_deletion_payload(deletion_cookie)
+    except HTTPException:
+        return Response(status_code=204)
+    return {"verified": True}
+
+
+@router.post("/deletion/confirm", response_model=None)
+async def deletion_confirm(
+    deletion_cookie: str | None = Cookie(default=None, alias=_DELETION_COOKIE),
+    db: Session = Depends(database_session),
+) -> Response:
+    try:
+        pending = _read_deletion_payload(deletion_cookie)
+    except HTTPException as exc:
+        if exc.status_code in (
+            status.HTTP_401_UNAUTHORIZED,
+            status.HTTP_410_GONE,
+        ):
+            response = Response(status_code=exc.status_code)
+            _clear_deletion_cookie(response)
+            return response
+        raise
+    user = db.scalar(
+        select(User).where(User.id == pending["user_id"]).with_for_update()
+    )
+    if user is None:
+        response = Response(status_code=status.HTTP_410_GONE)
+        _clear_deletion_cookie(response)
+        response.delete_cookie(
+            _SESSION_COOKIE,
+            secure=_secure_cookie(),
+            samesite="lax",
+        )
+        return response
+    await _perform_account_withdrawal(db, user)
+    response = Response(status_code=204)
+    _clear_deletion_cookie(response)
+    response.delete_cookie(_SESSION_COOKIE, secure=_secure_cookie(), samesite="lax")
+    return response
+
+
+@router.post("/deletion/cancel", status_code=204)
+def deletion_cancel() -> Response:
+    response = Response(status_code=204)
+    _clear_deletion_cookie(response)
     return response
 
 

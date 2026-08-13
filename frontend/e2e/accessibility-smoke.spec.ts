@@ -373,3 +373,18 @@ test('가입 수락 화면에 자동 탐지 가능한 접근성 위반이 없다
   );
   await expectNoAutomaticViolations(page);
 });
+
+test('계정 삭제 화면에 자동 탐지 가능한 접근성 위반이 없다', async ({ page }) => {
+  await page.goto('/account-deletion');
+  await expect(page.getByRole('heading', { name: '동넷 계정 삭제' })).toBeVisible();
+  await expect(page.getByRole('main')).toBeVisible();
+  const verify = page.getByRole('button', { name: '카카오로 본인 확인' });
+  await expect(verify).toBeVisible();
+  await expectTapHeight('카카오로 본인 확인', verify);
+  await expectTapHeight(
+    '동넷으로 돌아가기',
+    page.getByRole('button', { name: '동넷으로 돌아가기' }),
+  );
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+  await expectNoAutomaticViolations(page);
+});

@@ -108,3 +108,62 @@ describe('회원 탈퇴', () => {
     await expect(withdraw()).rejects.toBeInstanceOf(TypeError);
   });
 });
+
+describe('외부 계정 삭제', () => {
+  it('status는 200 verified, 204 absent, 5xx·네트워크를 구분한다', async () => {
+    vi.stubEnv('VITE_DATA_SOURCE', 'live');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ verified: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockRejectedValueOnce(new TypeError('network'));
+    vi.stubGlobal('fetch', fetchMock);
+    const { resolveAccountDeletionStatus } = await import('./api');
+
+    await expect(resolveAccountDeletionStatus()).resolves.toEqual({ status: 'verified' });
+    await expect(resolveAccountDeletionStatus()).resolves.toEqual({ status: 'absent' });
+    await expect(resolveAccountDeletionStatus()).resolves.toEqual({ status: 'unavailable' });
+    await expect(resolveAccountDeletionStatus()).resolves.toEqual({ status: 'unavailable' });
+  });
+
+  it('confirm과 cancel은 credentials include이고 body에 신원을 보내지 않는다', async () => {
+    vi.stubEnv('VITE_DATA_SOURCE', 'live');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
+    );
+    const { confirmExternalAccountDeletion, cancelExternalAccountDeletion } = await import('./api');
+
+    await confirmExternalAccountDeletion();
+    await cancelExternalAccountDeletion();
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('/api/auth/deletion/confirm'),
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+      }),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('/api/auth/deletion/cancel'),
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+      }),
+    );
+    const confirmInit = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    expect(confirmInit.body).toBeUndefined();
+  });
+
+  it('공개 삭제 페이지 인증은 mock에서 guest이다', async () => {
+    vi.stubEnv('VITE_DATA_SOURCE', 'mock');
+    const { resolveDeletionPageAuth } = await import('./api');
+    await expect(resolveDeletionPageAuth()).resolves.toEqual({ status: 'guest' });
+  });
+});

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { startKakaoLogin } from '@/auth/api';
 import SignupConsentPage from '@/auth/SignupConsentPage';
+import AccountDeletionPage from '@/auth/AccountDeletionPage';
 import MobileStartupScreen, {
   hasCompletedMobileStartup,
   rememberMobileStartup,
@@ -26,6 +27,9 @@ export default function App() {
   }
   if (pathname === '/privacy') {
     return <LegalDocumentPage documentId="privacy" />;
+  }
+  if (pathname === '/account-deletion') {
+    return <AccountDeletionPage />;
   }
   if (pathname === '/signup/consent') {
     return <SignupConsentPage />;
