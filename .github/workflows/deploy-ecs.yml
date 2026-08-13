@@ -376,10 +376,21 @@ jobs:
             local secret_name="$3"
             local secret_value="$4"
             local value_from
-            value_from="$(aws ecs describe-task-definition \
+            aws ecs describe-task-definition \
               --task-definition "$family" \
-              --query "taskDefinition.containerDefinitions[?name=='$container'].secrets[?name=='$secret_name'].valueFrom | [0][0]" \
-              --output text)"
+              --query taskDefinition \
+              > "$family.secret-source.json"
+            value_from="$(jq -r \
+              --arg container "$container" \
+              --arg secret_name "$secret_name" \
+              '[
+                .containerDefinitions[]
+                | select(.name == $container)
+                | .secrets[]?
+                | select(.name == $secret_name)
+                | .valueFrom
+              ][0] // empty' \
+              "$family.secret-source.json")"
             if [ -z "$value_from" ] || [ "$value_from" = "None" ]; then
               echo "$family/$container must reference managed secret $secret_name." >&2
               exit 1

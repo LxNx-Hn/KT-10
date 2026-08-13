@@ -13,6 +13,8 @@ def test_ai_task_definition_injects_current_odsay_and_ors_secrets():
     assert "ODSAY_API_KEY: ${{ secrets.ODSAY_API_KEY }}" in workflow
     assert "ORS_API_KEY: ${{ secrets.ORS_API_KEY }}" in workflow
     assert "sync_task_secret_value" in workflow
+    assert ".secrets[]?" in workflow
+    assert "select(.name == $secret_name)" in workflow
     assert "aws secretsmanager put-secret-value" in workflow
     assert "aws ssm put-parameter" in workflow
     assert 'parameter_name="/${value_from#*:parameter/}"' in workflow
