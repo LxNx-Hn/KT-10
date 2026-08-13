@@ -66,6 +66,8 @@ def test_wheelchair_cache_identity_is_separate_from_general_route():
     assert wheelchair["geometryProfile"]["stairsExcluded"] is True
     assert wheelchair["geometryProfile"]["wheelchairConstraints"] is True
     assert wheelchair["geometryProfile"]["orsRestrictionSchemaVersion"] == 1
+    assert wheelchair["geometryProfile"]["tmapConfigured"] is False
+    assert wheelchair["geometryProfile"]["tmapRampEvidenceMode"] == "cached_only"
 
 
 def test_route_feature_cache_identity_changes_after_provider_key_rotation(

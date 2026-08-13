@@ -1523,7 +1523,11 @@ def test_wheelchair_collection_fails_instead_of_using_tmap_without_ors(
     async def odsay_collect(_self, *_args, **_kwargs):
         return []
 
+    tmap_calls = 0
+
     async def tmap_collect(_self, *_args, **_kwargs):
+        nonlocal tmap_calls
+        tmap_calls += 1
         return [route]
 
     async def ors_collect(_self, *_args, **_kwargs):
@@ -1550,6 +1554,7 @@ def test_wheelchair_collection_fails_instead_of_using_tmap_without_ors(
     assert captured.value.detail["required_source"] == (
         "openrouteservice wheelchair"
     )
+    assert tmap_calls == 0
 
 
 def test_wheelchair_collection_reports_odsay_failure_when_only_over_limit_walks_remain(
@@ -1571,7 +1576,11 @@ def test_wheelchair_collection_reports_odsay_failure_when_only_over_limit_walks_
     async def odsay_collect(_self, *_args, **_kwargs):
         raise CollectorError("ODsay 응답 시간이 초과되었습니다.")
 
+    tmap_calls = 0
+
     async def tmap_collect(_self, *_args, **_kwargs):
+        nonlocal tmap_calls
+        tmap_calls += 1
         return [tmap_route]
 
     async def ors_collect(_self, *_args, **_kwargs):
@@ -1601,6 +1610,7 @@ def test_wheelchair_collection_reports_odsay_failure_when_only_over_limit_walks_
     assert captured.value.detail["sources"] == {
         "odsay": "CollectorError: ODsay 응답 시간이 초과되었습니다."
     }
+    assert tmap_calls == 0
 
 
 def test_estimated_walk_geometry_is_not_used_as_observed_feature_path():

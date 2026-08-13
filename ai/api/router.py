@@ -559,19 +559,27 @@ async def _collect_static_featured_routes(
         avoid_stairs=avoid_stairs,
         uses_wheelchair=req.uses_wheelchair,
     )
-    tmap_collector = TmapRouteCollector(avoid_stairs=avoid_stairs)
-    collectors = [odsay_collector, tmap_collector]
     if req.uses_wheelchair:
-        collectors.append(OrsWheelchairRouteCollector())
+        # 휠체어 후보의 단일 보행 기준은 ORS wheelchair다. TMAP은
+        # ODsay 내부에서 사전 수집된 동일 선형 경사로 근거만 결합하므로
+        # 사용자 요청의 독립 후보 수집·network 경로에는 넣지 않는다.
+        collectors = [odsay_collector, OrsWheelchairRouteCollector()]
+        tasks = [
+            odsay_collector.collect(
+                origin, destination, max_candidates=req.candidate_limit
+            ),
+            collectors[1].collect(origin, destination),
+        ]
+    else:
+        tmap_collector = TmapRouteCollector(avoid_stairs=avoid_stairs)
+        collectors = [odsay_collector, tmap_collector]
+        tasks = [
+            odsay_collector.collect(
+                origin, destination, max_candidates=req.candidate_limit
+            ),
+            tmap_collector.collect(origin, destination),
+        ]
     source_names = [collector.source_name for collector in collectors]
-    tasks = [
-        odsay_collector.collect(
-            origin, destination, max_candidates=req.candidate_limit
-        ),
-        tmap_collector.collect(origin, destination),
-    ]
-    if req.uses_wheelchair:
-        tasks.append(collectors[-1].collect(origin, destination))
     results = await asyncio.gather(
         *tasks,
         return_exceptions=True,
@@ -591,12 +599,6 @@ async def _collect_static_featured_routes(
         else:
             succeeded.append(source)
             candidates.extend(result)
-    if not candidates:
-        raise HTTPException(
-            status_code=503,
-            detail={"message": "유효한 실제 경로 후보를 수집하지 못했습니다.", "sources": source_errors},
-        )
-
     if req.uses_wheelchair and "ors" not in succeeded:
         raise HTTPException(
             status_code=503,
@@ -608,6 +610,12 @@ async def _collect_static_featured_routes(
                 "required_source": "openrouteservice wheelchair",
                 "sources": source_errors,
             },
+        )
+
+    if not candidates:
+        raise HTTPException(
+            status_code=503,
+            detail={"message": "유효한 실제 경로 후보를 수집하지 못했습니다.", "sources": source_errors},
         )
 
     non_transit_candidates = [

@@ -12,10 +12,9 @@ from weakref import WeakKeyDictionary
 
 from config import settings
 
-# v8: 휠체어 도시철도 후보가 공식 엘리베이터 동선 출구 좌표를 사용하고,
-# 재탐색한 ORS 도보 거리·시간으로 합계를 계산한다. 이전 ODsay 출구·수치
-# 기반 후보가 새 계약에 섞이지 않게 분리한다.
-CACHE_SCHEMA_VERSION = 8
+# v9: 휠체어 사용자 요청에서 독립 TMAP 후보 network 수집을 제거하고,
+# ODsay + ORS wheelchair만 실제 후보 공급자로 사용한다.
+CACHE_SCHEMA_VERSION = 9
 _write_locks: dict[str, Lock] = {}
 _write_locks_guard = Lock()
 _request_locks: WeakKeyDictionary = WeakKeyDictionary()
@@ -57,9 +56,12 @@ def cache_identity(
                 settings.ODSAY_API_KEY
             ),
             "odsayLoadLane": settings.ODSAY_LOAD_LANE_ENABLED,
-            "tmapConfigured": bool(
+            "tmapConfigured": not uses_wheelchair and bool(
                 settings.TMAP_API_KEY
                 and not settings.TMAP_API_KEY.startswith("YOUR_")
+            ),
+            "tmapRampEvidenceMode": (
+                "cached_only" if uses_wheelchair else None
             ),
             "osmnxFallback": settings.OSMNX_WALK_GEOMETRY_ENABLED,
             "regionalDemPath": settings.ELEVATION_REGIONAL_DEM_PATH,
