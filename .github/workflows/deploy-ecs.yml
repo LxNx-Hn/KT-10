@@ -403,6 +403,7 @@ jobs:
                   f"{type(last_error).__name__}"
               ) from last_error
           PY
+          fi
           snapshot_desired_count() {
             local service="$1"
             local output_key="$2"
