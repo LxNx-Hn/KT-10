@@ -332,7 +332,6 @@ jobs:
         shell: bash
         env:
           AI_INTERNAL_SERVICE_TOKEN: ${{ secrets.AI_INTERNAL_SERVICE_TOKEN }}
-          ODSAY_API_KEY: ${{ secrets.ODSAY_API_KEY }}
           ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
           DEPLOY_FRONTEND: ${{ steps.plan.outputs.deploy_frontend }}
           DEPLOY_BACKEND: ${{ steps.plan.outputs.deploy_backend }}
@@ -350,11 +349,6 @@ jobs:
             echo "ORS_API_KEY secret is required for wheelchair routing." >&2
             exit 1
           fi
-          if [ "$DEPLOY_AI" = "true" ] && [ -z "$ODSAY_API_KEY" ]; then
-            echo "ODSAY_API_KEY secret is required for transit routing." >&2
-            exit 1
-          fi
-
           snapshot_desired_count() {
             local service="$1"
             local output_key="$2"
@@ -370,11 +364,10 @@ jobs:
             echo "$output_key=$desired_count" >> "$GITHUB_OUTPUT"
           }
 
-          sync_task_secret_value() {
+          require_task_secret_reference() {
             local family="$1"
             local container="$2"
             local secret_name="$3"
-            local secret_value="$4"
             local value_from
             aws ecs describe-task-definition \
               --task-definition "$family" \
@@ -395,42 +388,6 @@ jobs:
               echo "$family/$container must reference managed secret $secret_name." >&2
               exit 1
             fi
-            case "$value_from" in
-              arn:*:secretsmanager:*)
-                local secret_id json_key next_value current_value
-                secret_id="$(cut -d: -f1-7 <<< "$value_from")"
-                json_key="$(cut -d: -f8 <<< "$value_from")"
-                next_value="$secret_value"
-                if [ -n "$json_key" ]; then
-                  current_value="$(aws secretsmanager get-secret-value \
-                    --secret-id "$secret_id" \
-                    --query SecretString \
-                    --output text)"
-                  next_value="$(jq -c \
-                    --arg key "$json_key" \
-                    --arg value "$secret_value" \
-                    '.[$key] = $value' <<< "$current_value")"
-                fi
-                aws secretsmanager put-secret-value \
-                  --secret-id "$secret_id" \
-                  --secret-string "$next_value" \
-                  >/dev/null
-                ;;
-              arn:*:ssm:*)
-                local parameter_name
-                parameter_name="/${value_from#*:parameter/}"
-                aws ssm put-parameter \
-                  --name "$parameter_name" \
-                  --value "$secret_value" \
-                  --type SecureString \
-                  --overwrite \
-                  >/dev/null
-                ;;
-              *)
-                echo "$family/$container has unsupported secret provider for $secret_name." >&2
-                exit 1
-                ;;
-            esac
           }
 
           register_task_definition() {
@@ -506,11 +463,10 @@ jobs:
           snapshot_desired_count kt10-frontend frontend_previous_desired_count
 
           if [ "$DEPLOY_AI" = "true" ]; then
-            sync_task_secret_value \
+            require_task_secret_reference \
               kt10-ai-task \
               ai \
-              ODSAY_API_KEY \
-              "$ODSAY_API_KEY"
+              ODSAY_API_KEY
             register_task_definition \
               kt10-ai-task \
               ai \
