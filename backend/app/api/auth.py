@@ -10,10 +10,17 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
-from itsdangerous import BadSignature, URLSafeTimedSerializer
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..agreements import (
+    consume_current_terms_agreement,
+    has_current_terms_agreement,
+)
 from ..database import (
     FacilityReport,
     User,
@@ -29,7 +36,17 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 log = logging.getLogger("api.auth")
 _STATE_COOKIE = "kakao_oauth_state"
 _SESSION_COOKIE = "mobility_session"
+_SIGNUP_COOKIE = "dongnet_signup_state"
+_SIGNUP_COOKIE_PATH = "/api/auth/signup"
+_SIGNUP_MAX_AGE = 600
+_SIGNUP_SALT = "dongnet-signup-pending-v1"
 _KAKAO_UNLINK_URL = "https://kapi.kakao.com/v1/user/unlink"
+
+
+class SignupCompleteInput(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    accept_terms: bool = False
 
 
 def _secure_cookie() -> bool:
@@ -49,6 +66,153 @@ def _configured() -> None:
 def _serializer() -> URLSafeTimedSerializer:
     _configured()
     return URLSafeTimedSerializer(settings.session_secret, salt="mobility-session-v1")
+
+
+def _signup_serializer() -> URLSafeTimedSerializer:
+    _configured()
+    return URLSafeTimedSerializer(settings.session_secret, salt=_SIGNUP_SALT)
+
+
+def _frontend_path(path: str) -> str:
+    return f"{settings.frontend_url.rstrip('/')}{path}"
+
+
+def _clear_cookie(response: Response, name: str) -> None:
+    response.delete_cookie(name, secure=_secure_cookie(), samesite="lax")
+
+
+def _clear_signup_cookie(response: Response) -> None:
+    response.delete_cookie(
+        _SIGNUP_COOKIE,
+        path=_SIGNUP_COOKIE_PATH,
+        secure=_secure_cookie(),
+        samesite="lax",
+    )
+
+
+def _set_session_cookie(response: Response, user_id: str) -> None:
+    response.set_cookie(
+        _SESSION_COOKIE,
+        _serializer().dumps(user_id),
+        httponly=True,
+        secure=_secure_cookie(),
+        samesite="lax",
+        max_age=60 * 60 * 24 * 14,
+    )
+
+
+def _set_signup_cookie(response: Response, payload: dict) -> None:
+    # URLSafeTimedSerializer는 서명이지 암호화가 아니다. kakao_id는
+    # HttpOnly·짧은 만료·signup API path로만 노출을 제한한다.
+    response.set_cookie(
+        _SIGNUP_COOKIE,
+        _signup_serializer().dumps(payload),
+        httponly=True,
+        secure=_secure_cookie(),
+        samesite="lax",
+        max_age=_SIGNUP_MAX_AGE,
+        path=_SIGNUP_COOKIE_PATH,
+    )
+
+
+def _validated_signup_payload(payload: object) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("Signup payload is not an object.")
+    kind = payload.get("kind")
+    if kind == "new":
+        kakao_id = payload.get("kakao_id")
+        nickname = payload.get("nickname")
+        if (
+            not isinstance(kakao_id, str)
+            or not kakao_id.isdigit()
+            or int(kakao_id) <= 0
+            or len(kakao_id) > 64
+        ):
+            raise ValueError("Signup payload kakao identity is invalid.")
+        if nickname is not None and (
+            not isinstance(nickname, str)
+            or not nickname.strip()
+            or len(nickname) > 100
+        ):
+            raise ValueError("Signup payload nickname is invalid.")
+        return {"kind": "new", "kakao_id": kakao_id, "nickname": nickname}
+    if kind == "existing":
+        user_id = payload.get("user_id")
+        if not isinstance(user_id, str) or not user_id.strip() or len(user_id) > 36:
+            raise ValueError("Signup payload user identity is invalid.")
+        return {"kind": "existing", "user_id": user_id}
+    raise ValueError("Signup payload kind is invalid.")
+
+
+def _read_signup_payload(cookie: str | None) -> dict:
+    if not cookie:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Signup session required.",
+        )
+    try:
+        payload = _signup_serializer().loads(cookie, max_age=_SIGNUP_MAX_AGE)
+    except SignatureExpired as exc:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Signup session expired.",
+        ) from exc
+    except BadSignature as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid signup session.",
+        ) from exc
+    try:
+        return _validated_signup_payload(payload)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid signup session.",
+        ) from exc
+
+
+def _pending_consent_redirect(payload: dict) -> Response:
+    response = RedirectResponse(_frontend_path("/signup/consent"))
+    _clear_cookie(response, _STATE_COOKIE)
+    _clear_cookie(response, _SESSION_COOKIE)
+    _set_signup_cookie(response, payload)
+    return response
+
+
+def _issue_session_redirect(user_id: str) -> Response:
+    response = RedirectResponse(_frontend_path("/"))
+    _clear_cookie(response, _STATE_COOKIE)
+    _clear_signup_cookie(response)
+    _set_session_cookie(response, user_id)
+    return response
+
+
+def _create_user_with_preference(
+    db: Session,
+    *,
+    kakao_id: str,
+    nickname: str | None,
+) -> User:
+    """kakao_id unique race를 흡수해 한 계정만 남긴다."""
+    user = db.scalar(select(User).where(User.kakao_id == kakao_id))
+    if user is not None:
+        return user
+    created = User(kakao_id=kakao_id, nickname=nickname)
+    try:
+        with db.begin_nested():
+            db.add(created)
+            db.flush()
+            db.add(UserPreference(user_id=created.id))
+            db.flush()
+        return created
+    except IntegrityError:
+        user = db.scalar(select(User).where(User.kakao_id == kakao_id))
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Signup could not be completed. Try Kakao login again.",
+            )
+        return user
 
 
 def _provider_identity(profile: object) -> tuple[str, str | None]:
@@ -173,27 +337,83 @@ async def kakao_callback(
         raise HTTPException(status_code=502, detail="Kakao login provider request failed.") from exc
     user = db.scalar(select(User).where(User.kakao_id == kakao_id))
     if user is None:
-        user = User(kakao_id=kakao_id, nickname=nickname)
-        db.add(user)
-        db.flush()
-        db.add(UserPreference(user_id=user.id))
-    else:
-        user.nickname = nickname
+        return _pending_consent_redirect({
+            "kind": "new",
+            "kakao_id": kakao_id,
+            "nickname": nickname,
+        })
+    user.nickname = nickname
+    if has_current_terms_agreement(db, user):
+        db.commit()
+        return _issue_session_redirect(user.id)
     db.commit()
-    service_session = _serializer().dumps(user.id)
-    response = RedirectResponse(f"{settings.frontend_url.rstrip('/')}/")
-    response.delete_cookie(_STATE_COOKIE, secure=_secure_cookie(), samesite="lax")
-    response.set_cookie(
-        _SESSION_COOKIE, service_session, httponly=True, secure=_secure_cookie(),
-        samesite="lax", max_age=60 * 60 * 24 * 14,
+    return _pending_consent_redirect({
+        "kind": "existing",
+        "user_id": user.id,
+    })
+
+
+@router.get("/signup/status", response_model=None)
+def signup_status(
+    signup_cookie: str | None = Cookie(default=None, alias=_SIGNUP_COOKIE),
+) -> dict | Response:
+    """가입을 이어서 완료할 수 있는지만 알린다. 신원은 반환하지 않는다."""
+    if not signup_cookie:
+        return Response(status_code=204)
+    try:
+        _read_signup_payload(signup_cookie)
+    except HTTPException:
+        return Response(status_code=204)
+    return {"pending": True}
+
+
+@router.post("/signup/complete", response_model=None)
+def signup_complete(
+    payload: SignupCompleteInput,
+    signup_cookie: str | None = Cookie(default=None, alias=_SIGNUP_COOKIE),
+    db: Session = Depends(database_session),
+) -> Response:
+    pending = _read_signup_payload(signup_cookie)
+    if payload.accept_terms is not True:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Terms acceptance is required.",
+        )
+    if pending["kind"] == "existing":
+        user = db.get(User, pending["user_id"])
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Signup session is no longer valid.",
+            )
+    else:
+        user = _create_user_with_preference(
+            db,
+            kakao_id=pending["kakao_id"],
+            nickname=pending["nickname"],
+        )
+    consumed = consume_current_terms_agreement(db, user)
+    db.commit()
+    response = Response(
+        status_code=status.HTTP_204_NO_CONTENT if consumed else status.HTTP_409_CONFLICT,
     )
+    _clear_signup_cookie(response)
+    if consumed:
+        _set_session_cookie(response, user.id)
+    return response
+
+
+@router.post("/signup/cancel", status_code=204)
+def signup_cancel() -> Response:
+    response = Response(status_code=204)
+    _clear_signup_cookie(response)
     return response
 
 
 @router.post("/logout", status_code=204)
 def logout() -> Response:
     response = Response(status_code=204)
-    response.delete_cookie(_SESSION_COOKIE, secure=_secure_cookie(), samesite="lax")
+    _clear_cookie(response, _SESSION_COOKIE)
     return response
 
 

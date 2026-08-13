@@ -33,6 +33,12 @@ describe('SettingsPanel 법적 고지', () => {
     expect(screen.getByRole('button', { name: '회원 탈퇴' })).toBeTruthy();
   });
 
+  it('설정 패널의 카카오 로그인은 별도 가입 UI 없이 기존 버튼을 유지한다', () => {
+    render(<SettingsPanel largeUi={false} onToggleLargeUi={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '카카오 로그인' })).toBeTruthy();
+    expect(screen.queryByRole('checkbox', { name: /이용약관/ })).toBeNull();
+  });
+
   it('큰 글씨 토글과 탈퇴 진입점을 유지한다', () => {
     const onToggleLargeUi = vi.fn();
     render(<SettingsPanel largeUi={false} onToggleLargeUi={onToggleLargeUi} />);

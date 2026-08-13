@@ -352,3 +352,24 @@ test('mobile mapInfo panel은 frame 안 floating card로 한 줄 라벨을 유�
     await expect(panel.getByText('도보 경사', { exact: true })).toBeVisible();
   }
 });
+
+test('가입 수락 화면에 자동 탐지 가능한 접근성 위반이 없다', async ({ page }) => {
+  await page.goto('/signup/consent');
+  await expect(page.getByRole('heading', { name: '동넷 시작하기' })).toBeVisible();
+  const terms = page.getByRole('checkbox', { name: /이용약관에 동의합니다/ });
+  await expect(terms).toBeVisible();
+  await expectTapHeight('이용약관 동의', page.getByText(/이용약관에 동의합니다/));
+  await expect(page.getByRole('link', { name: '보기' }).first()).toHaveAttribute(
+    'href',
+    '/terms',
+  );
+  await expect(page.getByRole('link', { name: '보기' }).nth(1)).toHaveAttribute(
+    'href',
+    '/privacy',
+  );
+  await expectTapHeight(
+    '동의하고 시작하기',
+    page.getByRole('button', { name: '동의하고 시작하기' }),
+  );
+  await expectNoAutomaticViolations(page);
+});
