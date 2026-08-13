@@ -53,6 +53,26 @@ def test_provider_null_markers_remain_unknown(value):
     assert _provider_text(value) is None
 
 
+def test_api_features_prefer_rerouted_walk_segment_distances_over_odsay_total():
+    candidate = MergedRoute(
+        sources=["odsay"],
+        source="odsay",
+        path=[Coordinate(35.1, 129.0), Coordinate(35.2, 129.1)],
+        duration_min=40,
+        distance_m=18_700,
+        raw_response={"info": {"totalWalk": 30}},
+        segments=[
+            {"mode": "walk", "distance_m": 90.7},
+            {"mode": "subway", "distance_m": 18_400},
+            {"mode": "walk", "distance_m": 30.7},
+        ],
+    )
+
+    assert _parse_api_features(candidate)["walk_distance_m"] == pytest.approx(
+        121.4
+    )
+
+
 def test_static_route_cache_accepts_only_exact_90m_features():
     complete = {
         "_geometry_quality": "exact",

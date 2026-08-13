@@ -12,9 +12,10 @@ from weakref import WeakKeyDictionary
 
 from config import settings
 
-# v6: 외부 경로 공급자 키의 비가역 지문을 identity에 포함한다. 키 회전 뒤
-# 이전 인증 실패 때 생성된 축소 후보를 새 자격 증명으로 재사용하지 않는다.
-CACHE_SCHEMA_VERSION = 6
+# v8: 휠체어 도시철도 후보가 공식 엘리베이터 동선 출구 좌표를 사용하고,
+# 재탐색한 ORS 도보 거리·시간으로 합계를 계산한다. 이전 ODsay 출구·수치
+# 기반 후보가 새 계약에 섞이지 않게 분리한다.
+CACHE_SCHEMA_VERSION = 8
 _write_locks: dict[str, Lock] = {}
 _write_locks_guard = Lock()
 _request_locks: WeakKeyDictionary = WeakKeyDictionary()

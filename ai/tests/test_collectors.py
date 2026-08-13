@@ -12,7 +12,11 @@ import httpx
 import pytest
 
 from collectors.base import CollectorError, CollectorNotConfigured, Coordinate
-from collectors.odsay_collector import OdsayRouteCollector
+from collectors.odsay_collector import (
+    AccessibleSubwayExit,
+    OdsayRouteCollector,
+    WalkGeometryResult,
+)
 from collectors.ors_collector import (
     AVOID_FEATURES,
     EXTRA_INFO,
@@ -25,6 +29,129 @@ from config import settings
 
 ORIGIN = Coordinate(lat=35.1626, lng=129.0530)
 DEST = Coordinate(lat=35.1578, lng=129.0594)
+
+
+def test_wheelchair_odsay_uses_nearest_official_accessible_subway_exits():
+    origin = Coordinate(lat=35.2479, lng=129.0912)
+    destination = Coordinate(lat=35.0977, lng=129.0349)
+    exits = {
+        (1, "구서"): (
+            AccessibleSubwayExit("3", Coordinate(35.24795, 129.09120), 101),
+            AccessibleSubwayExit("4", Coordinate(35.24795, 129.09142), 102),
+        ),
+        (1, "남포"): (
+            AccessibleSubwayExit("4", Coordinate(35.09768, 129.03487), 201),
+            AccessibleSubwayExit("5", Coordinate(35.09815, 129.03521), 202),
+        ),
+    }
+    original = [
+        {"trafficType": 3},
+        {
+            "trafficType": 1,
+            "startName": "구서",
+            "endName": "남포",
+            "startExitNo": "2",
+            "endExitNo": "3",
+            "lane": [{"name": "부산 1호선", "subwayCode": 71}],
+        },
+        {"trafficType": 3},
+    ]
+
+    adjusted = OdsayRouteCollector(
+        uses_wheelchair=True,
+        accessible_subway_exits=exits,
+    )._apply_accessible_subway_exits(original, origin, destination)
+
+    assert original[1]["startExitNo"] == "2"
+    assert original[1]["endExitNo"] == "3"
+    assert adjusted[1]["startExitNo"] == "3"
+    assert adjusted[1]["startExitOsmNodeId"] == 101
+    assert adjusted[1]["endExitNo"] == "4"
+    assert adjusted[1]["endExitOsmNodeId"] == 201
+    assert adjusted[1]["startExitCoordinateSource"] == (
+        "OpenStreetMap ODbL 1.0"
+    )
+
+
+def test_general_odsay_does_not_replace_provider_subway_exits():
+    original = [{
+        "trafficType": 1,
+        "startName": "구서",
+        "endName": "남포",
+        "startExitNo": "2",
+        "endExitNo": "3",
+        "lane": [{"subwayCode": 71}],
+    }]
+    exits = {
+        (1, "구서"): (
+            AccessibleSubwayExit("3", Coordinate(35.24795, 129.09120), 101),
+        ),
+    }
+
+    adjusted = OdsayRouteCollector(
+        uses_wheelchair=False,
+        accessible_subway_exits=exits,
+    )._apply_accessible_subway_exits(original, ORIGIN, DEST)
+
+    assert adjusted == original
+    assert adjusted is not original
+
+
+def test_odsay_candidate_recalculates_walk_metrics_after_exact_reroute(
+    monkeypatch,
+):
+    path = {
+        "info": {"totalTime": 37, "totalDistance": 18_430},
+        "subPath": [
+            {"trafficType": 3, "sectionTime": 1, "distance": 19},
+            {
+                "trafficType": 1,
+                "sectionTime": 35,
+                "distance": 18_400,
+                "startX": 129.0912,
+                "startY": 35.2479,
+                "endX": 129.0349,
+                "endY": 35.0977,
+                "lane": [{"subwayCode": 71}],
+            },
+            {"trafficType": 3, "sectionTime": 1, "distance": 11},
+        ],
+    }
+    results = iter((
+        WalkGeometryResult(
+            [ORIGIN, Coordinate(35.2479, 129.0912)],
+            "exact",
+            {},
+            duration_min=2.0,
+            distance_m=100.0,
+        ),
+        WalkGeometryResult(
+            [Coordinate(35.0977, 129.0349), DEST],
+            "exact",
+            {},
+            duration_min=3.0,
+            distance_m=200.0,
+        ),
+    ))
+
+    async def exact_walk(_self, _start, _end):
+        return next(results)
+
+    monkeypatch.setattr(settings, "ODSAY_LOAD_LANE_ENABLED", False)
+    monkeypatch.setattr(OdsayRouteCollector, "_walk_geometry", exact_walk)
+    candidate = asyncio.run(
+        OdsayRouteCollector(
+            uses_wheelchair=True,
+            accessible_subway_exits={},
+        )._build_candidate(path, ORIGIN, DEST)
+    )
+
+    assert candidate.duration_min == 40.0
+    assert candidate.distance_m == 18_700.0
+    assert candidate.segments[0]["duration_min"] == 2.0
+    assert candidate.segments[0]["distance_m"] == 100.0
+    assert candidate.segments[2]["duration_min"] == 3.0
+    assert candidate.segments[2]["distance_m"] == 200.0
 
 
 def test_odsay_fails_explicitly_without_api_key(monkeypatch):

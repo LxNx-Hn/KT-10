@@ -8,9 +8,13 @@ ODsay Lab API로 대중교통 경로 후보를 수집한다.
 API 문서: https://lab.odsay.com/guide/service
 """
 import asyncio
+import csv
 import json
 import logging
+import math
+import re
 import time
+from dataclasses import dataclass
 from hashlib import sha256
 from math import isfinite
 from pathlib import Path
@@ -76,12 +80,103 @@ def _transport_error_code(exc: BaseException) -> str:
     return "invalid_response"
 
 
-CACHE_SCHEMA_VERSION = 1
+CACHE_SCHEMA_VERSION = 2
 # 후보 조립 병렬 상한. 아직 필요한 후보 수가 이보다 적으면 그 수만큼만 묶는다.
 BUILD_BATCH_SIZE = 3
 log = logging.getLogger("collectors.odsay")
 _walk_geometry_failure_signatures: set[tuple[str, str]] = set()
 _walk_geometry_failure_signatures_guard = Lock()
+
+ACCESSIBLE_EXIT_COORDINATES_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "data"
+    / "raw"
+    / "busan_subway_accessible_exit_coordinates_20260813.csv"
+)
+
+
+@dataclass(frozen=True)
+class AccessibleSubwayExit:
+    exit_no: str
+    coordinate: Coordinate
+    osm_node_id: int
+
+
+@dataclass(frozen=True)
+class WalkGeometryResult:
+    path: list[Coordinate]
+    quality: str
+    accessibility_evidence: dict
+    duration_min: float | None = None
+    distance_m: float | None = None
+
+    def __iter__(self):
+        # 기존 호출부의 세 값 unpacking 계약을 유지한다.
+        yield self.path
+        yield self.quality
+        yield self.accessibility_evidence
+
+
+def _station_key(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = re.sub(r"[\s()\[\]·.-]", "", value).removesuffix("역")
+    return normalized.casefold() or None
+
+
+def _subway_line(sub_path: dict) -> int | None:
+    lanes = sub_path.get("lane")
+    for lane in lanes if isinstance(lanes, list) else []:
+        if not isinstance(lane, dict):
+            continue
+        code = lane.get("subwayCode")
+        if isinstance(code, int) and 71 <= code <= 74:
+            return code - 70
+        name = lane.get("name")
+        matched = re.search(r"([1-4])\s*호선", str(name or ""))
+        if matched:
+            return int(matched.group(1))
+    return None
+
+
+def _load_accessible_subway_exits() -> dict[
+    tuple[int, str], tuple[AccessibleSubwayExit, ...]
+]:
+    if not ACCESSIBLE_EXIT_COORDINATES_PATH.is_file():
+        return {}
+    grouped: dict[tuple[int, str], list[AccessibleSubwayExit]] = {}
+    with ACCESSIBLE_EXIT_COORDINATES_PATH.open(
+        encoding="utf-8",
+        newline="",
+    ) as handle:
+        for row in csv.DictReader(handle):
+            station = _station_key(row.get("station_name"))
+            try:
+                line = int(row["station_line"])
+                exit_no = str(int(row["exit_no"]))
+                coordinate = Coordinate(
+                    lat=float(row["lat"]),
+                    lng=float(row["lng"]),
+                )
+                node_id = int(row["osm_node_id"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    "접근 가능 도시철도 출구 좌표 파일이 올바르지 않습니다."
+                ) from exc
+            if station is None or not 1 <= line <= 4:
+                raise RuntimeError(
+                    "접근 가능 도시철도 출구의 역명·호선이 올바르지 않습니다."
+                )
+            grouped.setdefault((line, station), []).append(
+                AccessibleSubwayExit(exit_no, coordinate, node_id)
+            )
+    return {
+        key: tuple(sorted(values, key=lambda value: (int(value.exit_no), value.osm_node_id)))
+        for key, values in grouped.items()
+    }
+
+
+ACCESSIBLE_SUBWAY_EXITS = _load_accessible_subway_exits()
 
 
 def _cache_path(kind: str, identity: dict) -> Path | None:
@@ -162,9 +257,92 @@ class OdsayRouteCollector(BaseRouteCollector):
         *,
         avoid_stairs: bool = False,
         uses_wheelchair: bool = False,
+        accessible_subway_exits: dict[
+            tuple[int, str], tuple[AccessibleSubwayExit, ...]
+        ] | None = None,
     ):
         self.avoid_stairs = avoid_stairs
         self.uses_wheelchair = uses_wheelchair
+        self.accessible_subway_exits = (
+            ACCESSIBLE_SUBWAY_EXITS
+            if accessible_subway_exits is None
+            else accessible_subway_exits
+        )
+
+    def _accessible_exit(
+        self,
+        sub_path: dict,
+        side: str,
+        anchor: Coordinate,
+    ) -> AccessibleSubwayExit | None:
+        line = _subway_line(sub_path)
+        station = _station_key(sub_path.get(f"{side}Name"))
+        candidates = (
+            self.accessible_subway_exits.get((line, station), ())
+            if line is not None and station is not None
+            else ()
+        )
+        if not candidates:
+            return None
+        longitude_scale = math.cos(math.radians(anchor.lat))
+        return min(
+            candidates,
+            key=lambda candidate: (
+                (candidate.coordinate.lat - anchor.lat) ** 2
+                + (
+                    (candidate.coordinate.lng - anchor.lng)
+                    * longitude_scale
+                ) ** 2,
+                int(candidate.exit_no),
+                candidate.osm_node_id,
+            ),
+        )
+
+    def _apply_accessible_subway_exits(
+        self,
+        sub_paths: list[dict],
+        origin: Coordinate,
+        destination: Coordinate,
+    ) -> list[dict]:
+        """첫·마지막 도시철도 지상 접점을 공식 접근 가능 출구로 바꾼다.
+
+        공식 동선에 포함된 출구만 사용하고, 좌표가 없는 역은 ODsay 값을
+        그대로 둬 후단의 닫힌 검증에서 제외되게 한다. 캐시 원문을 변경하지
+        않도록 후보의 subPath를 복사한다.
+        """
+        copied = [dict(sub_path) for sub_path in sub_paths]
+        if not self.uses_wheelchair:
+            return copied
+        transit_indices = [
+            index
+            for index, sub_path in enumerate(copied)
+            if sub_path.get("trafficType") != 3
+        ]
+        if not transit_indices:
+            return copied
+        first = copied[transit_indices[0]]
+        if first.get("trafficType") == 1:
+            selected = self._accessible_exit(first, "start", origin)
+            if selected is not None:
+                first.update({
+                    "startExitNo": selected.exit_no,
+                    "startExitX": selected.coordinate.lng,
+                    "startExitY": selected.coordinate.lat,
+                    "startExitCoordinateSource": "OpenStreetMap ODbL 1.0",
+                    "startExitOsmNodeId": selected.osm_node_id,
+                })
+        last = copied[transit_indices[-1]]
+        if last.get("trafficType") == 1:
+            selected = self._accessible_exit(last, "end", destination)
+            if selected is not None:
+                last.update({
+                    "endExitNo": selected.exit_no,
+                    "endExitX": selected.coordinate.lng,
+                    "endExitY": selected.coordinate.lat,
+                    "endExitCoordinateSource": "OpenStreetMap ODbL 1.0",
+                    "endExitOsmNodeId": selected.osm_node_id,
+                })
+        return copied
 
     @staticmethod
     def _api_error(data: dict) -> str | None:
@@ -507,7 +685,7 @@ class OdsayRouteCollector(BaseRouteCollector):
         self,
         start: Coordinate,
         end: Coordinate,
-    ) -> tuple[list[Coordinate], str, dict]:
+    ) -> WalkGeometryResult:
         # 휠체어는 ORS wheelchair profile이 확인한 선형을 기준으로 삼는다.
         # TMAP은 같은 선형일 때만 물리 경사로 안내점 근거를 보탠다.
         if self.uses_wheelchair:
@@ -551,7 +729,13 @@ class OdsayRouteCollector(BaseRouteCollector):
                             evidence,
                             tmap_candidates[0].accessibility_evidence,
                         )
-            return primary.path, "exact", evidence
+            return WalkGeometryResult(
+                primary.path,
+                "exact",
+                evidence,
+                duration_min=getattr(primary, "duration_min", None),
+                distance_m=getattr(primary, "distance_m", None),
+            )
 
         # 일반 보행은 TMAP 공식 보행 경로를 우선하고, OSMnx는 명시적으로
         # 활성화한 환경의 보조 공급자다.
@@ -594,13 +778,15 @@ class OdsayRouteCollector(BaseRouteCollector):
                     )
                 continue
             if candidates and len(candidates[0].path) >= 2:
-                return (
+                return WalkGeometryResult(
                     candidates[0].path,
                     "exact",
                     dict(getattr(candidates[0], "accessibility_evidence", {})),
+                    duration_min=getattr(candidates[0], "duration_min", None),
+                    distance_m=getattr(candidates[0], "distance_m", None),
                 )
         # 경로 시간이 아니라 화면 연결 geometry만 추정하며 상태를 반드시 estimated로 남긴다.
-        return [start, end], "estimated", {}
+        return WalkGeometryResult([start, end], "estimated", {})
 
     async def _build_candidate(
         self,
@@ -637,6 +823,11 @@ class OdsayRouteCollector(BaseRouteCollector):
             or any(not isinstance(sub, dict) for sub in sub_paths)
         ):
             raise CollectorError("ODsay 후보에 subPath가 없습니다.")
+        sub_paths = self._apply_accessible_subway_exits(
+            sub_paths,
+            origin,
+            destination,
+        )
         refinement: dict | None = None
         if settings.ODSAY_LOAD_LANE_ENABLED:
             map_object = info.get("mapObj")
@@ -703,6 +894,7 @@ class OdsayRouteCollector(BaseRouteCollector):
         segments = []
         coords: list[Coordinate] = []
         qualities: list[str] = []
+        walk_metrics_adjusted = False
         for index, sub in enumerate(sub_paths):
             section_time = self._number(
                 sub.get("sectionTime"),
@@ -743,11 +935,19 @@ class OdsayRouteCollector(BaseRouteCollector):
                     quality = "exact"
                     accessibility_evidence = {}
                 else:
+                    result = walk_geometries[index]
                     (
                         segment_path,
                         quality,
                         accessibility_evidence,
-                    ) = walk_geometries[index]
+                    ) = result
+                    if isinstance(result, WalkGeometryResult):
+                        if result.duration_min is not None:
+                            section_time = result.duration_min
+                            walk_metrics_adjusted = True
+                        if result.distance_m is not None:
+                            section_distance = result.distance_m
+                            walk_metrics_adjusted = True
             else:
                 segment_path = (
                     lane_paths[lane_index]
@@ -777,6 +977,9 @@ class OdsayRouteCollector(BaseRouteCollector):
                 "raw": sub,
                 "accessibility_evidence": accessibility_evidence,
             })
+        if walk_metrics_adjusted:
+            duration = sum(float(segment["duration_min"]) for segment in segments)
+            distance = sum(float(segment["distance_m"]) for segment in segments)
         if len(coords) < 2:
             raise CollectorError("ODsay 후보의 조립된 geometry가 비어 있습니다.")
         geometry_quality = (

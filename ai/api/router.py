@@ -1285,9 +1285,25 @@ def _parse_api_features(candidate) -> dict:
         transfer_count = max(0, bus_rides + subway_rides - 1)
     if transfer_count is None and candidate.source == "tmap":
         transfer_count = 0
-    walk_distance = _nonnegative_float(info.get("totalWalk"))
-    if walk_distance is None and candidate.source == "tmap":
-        walk_distance = candidate.distance_m
+    walk_segments = [
+        segment
+        for segment in (candidate.segments or [])
+        if isinstance(segment, dict)
+        and segment.get("mode") in {"walk", "transfer"}
+    ]
+    adjusted_walk_distances = [
+        _nonnegative_float(segment.get("distance_m"))
+        for segment in walk_segments
+    ]
+    if (
+        walk_segments
+        and all(value is not None for value in adjusted_walk_distances)
+    ):
+        walk_distance = sum(adjusted_walk_distances)
+    else:
+        walk_distance = _nonnegative_float(info.get("totalWalk"))
+        if walk_distance is None and candidate.source == "tmap":
+            walk_distance = candidate.distance_m
 
     low_floor = None
     stairs = None

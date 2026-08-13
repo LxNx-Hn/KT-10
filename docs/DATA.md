@@ -151,6 +151,22 @@ TMAP 경사로 안내점과 ORS wheelchair 제약은 평균 12m·최대 25m 이�
 통과한다. 역 단위 외부경사로 수량은 출구 위치가 없어 이 판정에 사용하지
 않는다.
 
+`busan_subway_accessible_exit_coordinates_20260813.csv`는 위 공식 동선에서
+확인된 출구번호에만 OpenStreetMap `railway=subway_entrance` 노드 좌표를
+결합한 스냅샷이다. 공식 접근 가능 출구 56개 중 좌표가 일치한 53개를
+55개 노드로 보존한다. 경성대부경대 3번과 국제금융센터부산은행 2·4번은
+좌표가 없어 추정하지 않는다. 생성 스크립트는
+`scripts/fetch_subway_accessible_exit_coordinates.py`이며 각 행에 OSM node
+ID, 조회일, ODbL 1.0을 기록한다.
+
+휠체어 도시철도 요청은 첫·마지막 역의 공식 접근 가능 출구 중 사용자
+위치에 가장 가까운 좌표를 선택하고, 해당 지상 도보 구간을 ORS wheelchair
+profile로 다시 탐색한다. 출구를 바꾼 뒤에는 ODsay의 기존 보행 수치를
+재사용하지 않고 ORS가 반환한 실제 거리·시간으로 구간 및 전체 합계를
+다시 계산한다. 좌표가 없거나 ORS 검증이 실패한 출구는 통행 가능하다고
+표시하지 않는다. OpenStreetMap 좌표는 ODbL 1.0에 따른다:
+https://www.openstreetmap.org/copyright
+
 공식 계약:
 
 - 보행자 경로 요청: https://tmap-skopenapi.readme.io/reference/%EB%B3%B4%ED%96%89%EC%9E%90-%EA%B2%BD%EB%A1%9C%EC%95%88%EB%82%B4
