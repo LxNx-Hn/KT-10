@@ -44,6 +44,10 @@ import RouteResultsSheet from './components/RouteResultsSheet';
 import type { RouteSheetSnap } from './routeSheetSnap';
 import { sheetSnapLayoutFitToken } from './routeSheetSnap';
 import { useSettledSheetSnap } from './useSettledSheetSnap';
+import {
+  INITIAL_MAP_LAYER_VISIBILITY,
+  toggleMapDataLayer,
+} from './utils/mapLayerVisibility';
 import SearchHeader from './components/SearchHeader';
 import SettingsPanel from './components/SettingsPanel';
 import ProfileOptionCard from './components/ProfileOptionCard';
@@ -378,8 +382,9 @@ export default function MapFirstApp({
   const searchViewport = useVisualViewportRect(searchPanelExpanded);
   const [showFacilities, setShowFacilities] = useState(false);
   // 기본은 이동수단 색. 경사·그늘은 상호 배타 분석 레이어.
-  const [showShade, setShowShade] = useState(false);
-  const [showSlope, setShowSlope] = useState(false);
+  const [{ showShade, showSlope }, setMapLayerVisibility] = useState(
+    INITIAL_MAP_LAYER_VISIBILITY,
+  );
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [departureIsNow, setDepartureIsNow] = useState(true);
@@ -822,19 +827,11 @@ export default function MapFirstApp({
           }}
           onToggleShade={() => {
             if (!hasShadeOverlay) return;
-            setShowShade((visible) => {
-              const next = !visible;
-              if (next) setShowSlope(false);
-              return next;
-            });
+            setMapLayerVisibility((current) => toggleMapDataLayer(current, 'shade'));
           }}
           onToggleSlope={() => {
             if (!hasSlopeOverlay) return;
-            setShowSlope((visible) => {
-              const next = !visible;
-              if (next) setShowShade(false);
-              return next;
-            });
+            setMapLayerVisibility((current) => toggleMapDataLayer(current, 'slope'));
           }}
           onMapInfoOpenChange={setMapInfoOpen}
         />

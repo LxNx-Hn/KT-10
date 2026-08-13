@@ -1672,7 +1672,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(legend?.textContent).toContain('매우 급경사 >8%');
   });
 
-  it('경사와 건물 그늘은 동시에 켤 수 없고 편의시설은 독립이다', () => {
+  it('경사와 건물 그늘을 동시에 켜고 편의시설도 독립적으로 유지한다', () => {
     const { getByRole, queryByRole } = render(<App />);
     act(() => {
       seedShadedResults();
@@ -1720,7 +1720,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
     fireEvent.click(slope);
     expect(slope.getAttribute('aria-checked')).toBe('true');
-    expect(shade.getAttribute('aria-checked')).toBe('false');
+    expect(shade.getAttribute('aria-checked')).toBe('true');
     expect(getByRole('note', { name: '경로 선 경사도 안내' }).textContent)
       .toMatch(/경사도:.*완만.*보통.*급경사.*매우 급경사/);
     expect(
@@ -1737,6 +1737,12 @@ describe('프로덕션 v2 지도 중심 UI', () => {
 
     fireEvent.click(slope);
     expect(slope.getAttribute('aria-checked')).toBe('false');
+    expect(shade.getAttribute('aria-checked')).toBe('true');
+    expect(getByRole('note', { name: '경로 선 건물 그늘 안내' }).textContent)
+      .toMatch(/건물 그늘:.*그늘.*햇빛/);
+
+    fireEvent.click(shade);
+    expect(shade.getAttribute('aria-checked')).toBe('false');
     expect(getByRole('note', { name: '경로 선 이동수단 안내' }).textContent)
       .toMatch(/경로 선:.*도보 회색.*버스.*지하철 노선색/);
   });
