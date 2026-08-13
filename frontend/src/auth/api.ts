@@ -157,3 +157,68 @@ export async function resolveSignupStatus(): Promise<ResolvedSignupStatus> {
     return { status: 'unavailable' };
   }
 }
+
+/** 계정 삭제 본인 확인용 Kakao OAuth. 일반 로그인과 분리한다. */
+export function startAccountDeletionVerification(): void {
+  window.location.assign(`${API_BASE}/api/auth/deletion/kakao/login`);
+}
+
+export type ResolvedDeletionStatus =
+  | { status: 'verified' }
+  | { status: 'absent' }
+  | { status: 'unavailable' };
+
+export async function resolveAccountDeletionStatus(): Promise<ResolvedDeletionStatus> {
+  if (!IS_LIVE) return { status: 'absent' };
+  try {
+    const response = await fetch(`${API_BASE}/api/auth/deletion/status`, {
+      credentials: 'include',
+    });
+    if (response.status === 200) {
+      const body = await response.json() as { verified?: boolean };
+      return body.verified === true ? { status: 'verified' } : { status: 'absent' };
+    }
+    if (response.status === 204) {
+      return { status: 'absent' };
+    }
+    return { status: 'unavailable' };
+  } catch {
+    return { status: 'unavailable' };
+  }
+}
+
+/** 공개 삭제 페이지용. mock/e2e는 게스트로 두고 인앱 mock 인증과 섞지 않는다. */
+export async function resolveDeletionPageAuth(): Promise<ResolvedAuth> {
+  if (!IS_LIVE) return { status: 'guest' };
+  try {
+    const response = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' });
+    if (response.status === 200) {
+      return { status: 'authenticated', user: await response.json() as CurrentUser };
+    }
+    if (response.status === 204 || response.status === 401) {
+      return { status: 'guest' };
+    }
+    return { status: 'unavailable' };
+  } catch {
+    return { status: 'unavailable' };
+  }
+}
+
+export async function confirmExternalAccountDeletion(): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/auth/deletion/confirm`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (response.status === 204) return;
+  throw new ApiError('account deletion failed', response.status);
+}
+
+export async function cancelExternalAccountDeletion(): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/auth/deletion/cancel`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok && response.status !== 204) {
+    throw new ApiError('account deletion cancel failed', response.status);
+  }
+}

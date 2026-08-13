@@ -1,0 +1,134 @@
+/* 문서 흐름 스크롤. height 고정·overflow:hidden·map-first lock을 쓰지 않는다. */
+.account-deletion {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #ffffff;
+  color: #1f2937;
+}
+
+.account-deletion--compact {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-bottom: 12vh;
+}
+
+.account-deletion--compact .account-deletion__main {
+  flex: 0 1 auto;
+  width: 100%;
+}
+
+.account-deletion__main {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding:
+    max(20px, env(safe-area-inset-top, 0px))
+    max(20px, env(safe-area-inset-right, 0px))
+    max(32px, env(safe-area-inset-bottom, 0px))
+    max(20px, env(safe-area-inset-left, 0px));
+}
+
+.account-deletion__main h1 {
+  margin: 0 0 12px;
+  color: #0f172a;
+  font-size: clamp(1.45rem, 5vw, 1.8rem);
+  font-weight: 800;
+  line-height: 1.3;
+  word-break: keep-all;
+}
+
+.account-deletion__lead {
+  margin: 0 0 20px;
+  color: #334155;
+  font-size: 15px;
+  line-height: 1.7;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.account-deletion__info {
+  margin: 0 0 16px;
+  padding: 0 0 0 1.15em;
+  color: #334155;
+  font-size: 15px;
+  line-height: 1.7;
+  word-break: keep-all;
+}
+
+.account-deletion__info li + li {
+  margin-top: 8px;
+}
+
+.account-deletion__warning {
+  margin: 0 0 20px;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+
+.account-deletion__error {
+  margin: 0 0 16px;
+  color: #b42318;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.account-deletion__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.account-deletion__submit:focus-visible,
+.account-deletion__cancel:focus-visible {
+  outline: 3px solid rgba(49, 130, 246, 0.45);
+  outline-offset: 2px;
+}
+
+.account-deletion__submit {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 12px;
+  background: #3182f6;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.account-deletion__submit:disabled {
+  background: #cbd5e1;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+.account-deletion__cancel {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #334155;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.account-deletion__cancel:hover {
+  background: #f5f8fb;
+}
+
+.account-deletion__cancel:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+}

@@ -7,6 +7,12 @@ const authMocks = vi.hoisted(() => ({
   resolveSignupStatus: vi.fn().mockResolvedValue({ status: 'pending' }),
   completeSignup: vi.fn(),
   cancelSignup: vi.fn(),
+  resolveDeletionPageAuth: vi.fn().mockResolvedValue({ status: 'guest' }),
+  resolveAccountDeletionStatus: vi.fn().mockResolvedValue({ status: 'absent' }),
+  startAccountDeletionVerification: vi.fn(),
+  confirmExternalAccountDeletion: vi.fn(),
+  cancelExternalAccountDeletion: vi.fn(),
+  withdraw: vi.fn(),
 }));
 
 vi.mock('@/auth/api', () => authMocks);
@@ -111,6 +117,17 @@ describe('MOB-18 앱 진입 계약', () => {
     render(<App />);
     expect(
       await screen.findByRole('heading', { level: 1, name: '동넷 시작하기' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '로그인 없이 시작하기' })).toBeNull();
+    expect(screen.queryByText('지도 홈')).toBeNull();
+  });
+
+  it('startup 미완료 상태에서도 /account-deletion은 시작 화면보다 우선한다', async () => {
+    stubMobileViewport(true);
+    window.history.pushState({}, '', '/account-deletion');
+    render(<App />);
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '동넷 계정 삭제' }),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: '로그인 없이 시작하기' })).toBeNull();
     expect(screen.queryByText('지도 홈')).toBeNull();

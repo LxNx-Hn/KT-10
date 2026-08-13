@@ -7,14 +7,14 @@ import {
 } from '@/auth/api';
 import { ApiError } from '@/api/http';
 
-const WITHDRAW_INFO = [
+export const WITHDRAW_INFO = [
   '탈퇴하면 계정·프로필·이동 기록과 작성한 후기가 즉시 삭제됩니다.',
   '시설 신고는 작성자 정보·자유입력 내용·신고 당시 위치정보를 삭제하고 시설 관리에 필요한 정보만 보존합니다.',
   '탈퇴 처리 및 부정 이용 방지에 필요한 최소 정보는 최대 30일간 분리 보관 후 삭제됩니다.',
   '카카오 연결 끊기 실패 시 재시도를 위해 카카오 회원번호가 최대 30일간 보관될 수 있으며, 연결 끊기 성공 시 즉시 삭제됩니다.',
 ] as const;
 
-const WITHDRAW_WARNING =
+export const WITHDRAW_WARNING =
   '탈퇴 후에는 복구할 수 없으며, 다시 이용하려면 새 계정으로 가입해야 합니다.';
 
 export default function AccountWithdrawal() {
