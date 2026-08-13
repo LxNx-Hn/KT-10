@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const authMocks = vi.hoisted(() => ({
   startKakaoLogin: vi.fn(),
+  resolveSignupStatus: vi.fn().mockResolvedValue({ status: 'pending' }),
+  completeSignup: vi.fn(),
+  cancelSignup: vi.fn(),
 }));
 
 vi.mock('@/auth/api', () => authMocks);
@@ -99,6 +102,17 @@ describe('MOB-18 앱 진입 계약', () => {
     window.history.pushState({}, '', '/privacy');
     render(<App />);
     expect(screen.getByRole('heading', { level: 1, name: '개인정보처리방침' })).toBeTruthy();
+    expect(screen.queryByText('지도 홈')).toBeNull();
+  });
+
+  it('startup 미완료 상태에서도 /signup/consent는 시작 화면보다 우선한다', async () => {
+    stubMobileViewport(true);
+    window.history.pushState({}, '', '/signup/consent');
+    render(<App />);
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '동넷 시작하기' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '로그인 없이 시작하기' })).toBeNull();
     expect(screen.queryByText('지도 홈')).toBeNull();
   });
 

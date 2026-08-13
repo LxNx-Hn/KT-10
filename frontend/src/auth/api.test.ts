@@ -40,6 +40,29 @@ describe('로그인 상태 조회', () => {
   });
 });
 
+describe('가입 대기 상태 조회', () => {
+  it('200 pending은 pending, 204는 absent, 5xx·네트워크는 unavailable로 구분한다', async () => {
+    vi.stubEnv('VITE_DATA_SOURCE', 'live');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ pending: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockRejectedValueOnce(new TypeError('network'));
+    vi.stubGlobal('fetch', fetchMock);
+    const { resolveSignupStatus } = await import('./api');
+
+    await expect(resolveSignupStatus()).resolves.toEqual({ status: 'pending' });
+    await expect(resolveSignupStatus()).resolves.toEqual({ status: 'absent' });
+    await expect(resolveSignupStatus()).resolves.toEqual({ status: 'unavailable' });
+    await expect(resolveSignupStatus()).resolves.toEqual({ status: 'unavailable' });
+  });
+});
+
 describe('회원 탈퇴', () => {
   it('204면 정상 resolve한다', async () => {
     vi.stubEnv('VITE_DATA_SOURCE', 'live');

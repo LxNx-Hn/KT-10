@@ -21,6 +21,7 @@ from app.database import (
     RouteImpression,
     RouteReview,
     User,
+    UserAgreement,
     UserPreference,
     UserWithdrawal,
     database_session,
@@ -84,6 +85,13 @@ def _seed(engine, *, is_admin=False):
             description="승강기가 고장났습니다.",
             resolution_note="현장 확인 예정",
         ))
+        db.add(UserAgreement(
+            id="agreement-1",
+            user_id=user.id,
+            document_type="terms",
+            document_version="v1",
+            action="accepted",
+        ))
         db.commit()
     return "member"
 
@@ -134,6 +142,8 @@ def test_withdraw_deletes_account_and_service_data_immediately(withdraw_api):
         assert db.get(UserPreference, "member") is None
         # 후기는 개인이 작성한 글이라 함께 삭제한다.
         assert db.get(RouteReview, "review-1") is None
+        # 이용약관 수락 기록도 계정 CASCADE로 함께 삭제한다.
+        assert db.get(UserAgreement, "agreement-1") is None
 
 
 def test_route_impressions_are_deleted_not_just_detached(withdraw_api):

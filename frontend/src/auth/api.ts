@@ -109,3 +109,51 @@ export async function withdraw(): Promise<void> {
   if (response.status === 204) return;
   throw new ApiError('withdraw failed', response.status);
 }
+
+/** 이용약관 수락으로 가입을 완료한다. documentVersion·kakaoId는 보내지 않는다. */
+export async function completeSignup(): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/auth/signup/complete`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ acceptTerms: true }),
+  });
+  if (response.status === 204) return;
+  throw new ApiError('signup complete failed', response.status);
+}
+
+/** 가입 대기 쿠키만 지운다. 계정은 만들지 않는다. */
+export async function cancelSignup(): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/auth/signup/cancel`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok && response.status !== 204) {
+    throw new ApiError('signup cancel failed', response.status);
+  }
+}
+
+/** 가입 대기 쿠키 확인. 만료(204)와 네트워크·서버 오류를 구분한다. */
+export type ResolvedSignupStatus =
+  | { status: 'pending' }
+  | { status: 'absent' }
+  | { status: 'unavailable' };
+
+export async function resolveSignupStatus(): Promise<ResolvedSignupStatus> {
+  if (!IS_LIVE) return { status: 'pending' };
+  try {
+    const response = await fetch(`${API_BASE}/api/auth/signup/status`, {
+      credentials: 'include',
+    });
+    if (response.status === 200) {
+      const body = await response.json() as { pending?: boolean };
+      return body.pending === true ? { status: 'pending' } : { status: 'absent' };
+    }
+    if (response.status === 204) {
+      return { status: 'absent' };
+    }
+    return { status: 'unavailable' };
+  } catch {
+    return { status: 'unavailable' };
+  }
+}

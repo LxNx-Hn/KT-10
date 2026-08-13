@@ -52,6 +52,10 @@ class User(Base):
         uselist=False,
         passive_deletes=True,
     )
+    agreements: Mapped[list["UserAgreement"]] = relationship(
+        back_populates="user",
+        passive_deletes=True,
+    )
 
 
 class UserWithdrawal(Base):
@@ -110,6 +114,46 @@ class UserPreference(Base):
         DateTime, default=utc_now_naive, onupdate=utc_now_naive
     )
     user: Mapped[User] = relationship(back_populates="preference")
+
+
+class UserAgreement(Base):
+    """현재 공개 이용약관 수락 기록.
+
+    개인정보처리방침 고지나 학습 동의(training_consent)와 섞지 않는다.
+    탈퇴 시 users CASCADE로 함께 삭제한다. 별도 분리 보관 대상이 아니다.
+    """
+
+    __tablename__ = "user_agreements"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "document_type",
+            "document_version",
+            "action",
+            name="uq_user_agreements_user_doc_version_action",
+        ),
+        CheckConstraint(
+            "document_type IN ('terms')",
+            name="ck_user_agreements_document_type",
+        ),
+        CheckConstraint(
+            "action IN ('accepted')",
+            name="ck_user_agreements_action",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+    )
+    document_type: Mapped[str] = mapped_column(String(32))
+    document_version: Mapped[str] = mapped_column(String(32))
+    action: Mapped[str] = mapped_column(String(32))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
+    user: Mapped[User] = relationship(back_populates="agreements")
 
 
 class RouteImpression(Base):
