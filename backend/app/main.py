@@ -67,7 +67,7 @@ from .providers import (
     search_places,
 )
 from .providers.ai_pipeline import AIProviderError
-from .providers.nim import NimExplanationError, enrich_voice_summaries, explain_route
+from .providers.nim import NimExplanationError, explain_route
 from .providers.transit_arrivals import get_route_transit_arrivals
 from .providers.vworld_buildings import get_vworld_buildings
 from .rule_demo import personalize_and_sign, select_representative_routes
@@ -1036,9 +1036,9 @@ async def routes_recommend(
                 ),
                 user_preference=user_preference,
             )
-            # 순위·score·snapshot 확정 후 최종 1위 표시 선형만 정밀화한다.
-            await _refine_top_ranked_transit(scored)
-            await enrich_voice_summaries(scored)
+            # 초기 추천은 ODsay 후보 조회 한 번으로 끝낸다. 선택 후보의 표시
+            # 선형(loadLane)과 NIM 자연어 설명은 각각 기존 지연 endpoint에서
+            # 요청하며, 여기서는 사실 기반 규칙 요약을 즉시 반환한다.
             return _create_cached_route_set(
                 scored,
                 candidates,
@@ -1125,9 +1125,8 @@ async def routes_recommend(
             user_preference.personalization_state if user_preference else None,
             effective_options,
         )
-        if settings.route_mode == "live":
-            await _refine_top_ranked_transit(personalized)
-        await enrich_voice_summaries(personalized)
+        # 초기 추천의 외부 경로 호출을 ODsay search 한 번으로 제한한다.
+        # 선택 후보 정밀화와 NIM 설명은 지연 endpoint가 담당한다.
         return _create_cached_route_set(
             personalized,
             candidates,

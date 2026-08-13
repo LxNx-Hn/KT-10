@@ -319,6 +319,61 @@ def test_spatial_layer_initialization_is_single_flight(monkeypatch):
     assert all(result is results[0] for result in results)
 
 
+def test_concurrent_feature_collection_runs_provider_pipeline_once(monkeypatch):
+    """동일 좌표·휠체어 옵션의 동시 캐시 미스를 한 작업으로 합친다."""
+    cached = None
+    provider_calls = 0
+
+    def fake_read(_identity, *, minimum_candidate_limit):
+        assert minimum_candidate_limit == 5
+        return cached
+
+    def fake_write(
+        _identity,
+        *,
+        candidate_limit,
+        route_features,
+        metadata,
+    ):
+        nonlocal cached
+        assert candidate_limit == 5
+        cached = (route_features, metadata)
+
+    async def fake_collect(_request):
+        nonlocal provider_calls
+        provider_calls += 1
+        await asyncio.sleep(0.02)
+        return ([{"route_id": "wheelchair-route"}], {"sources_failed": []})
+
+    monkeypatch.setattr(api_router, "read_route_feature_cache", fake_read)
+    monkeypatch.setattr(api_router, "write_route_feature_cache", fake_write)
+    monkeypatch.setattr(api_router, "_collect_static_featured_routes", fake_collect)
+    monkeypatch.setattr(api_router, "_static_features_cacheable", lambda *_args: True)
+    monkeypatch.setattr(api_router, "_apply_request_features", lambda rows, _req: rows)
+    request = RecommendRequest(
+        origin_lat=35.10,
+        origin_lng=129.00,
+        origin_name="출발",
+        dest_lat=35.20,
+        dest_lng=129.10,
+        dest_name="도착",
+        profile="disabled",
+        avoid_stairs=True,
+        uses_wheelchair=True,
+    )
+
+    async def run():
+        return await asyncio.gather(
+            api_router._collect_featured_routes(request),
+            api_router._collect_featured_routes(request),
+        )
+
+    results = asyncio.run(run())
+
+    assert provider_calls == 1
+    assert results[0] == results[1]
+
+
 def test_model_status_loads_bootstrap_only_when_explicitly_configured(
     monkeypatch,
 ):

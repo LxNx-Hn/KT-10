@@ -599,6 +599,59 @@ def test_ai_recommend_always_calculates_shade_for_complete_route_data(
     assert shade_calls == 1
 
 
+def test_ai_recommend_defers_transit_refinement_and_nim_explanation(
+    monkeypatch,
+):
+    """초기 추천의 ODsay 추가 조회와 NIM 호출은 선택 시점까지 미룬다."""
+    monkeypatch.setattr(settings, "route_mode", "ai")
+    monkeypatch.setattr(settings, "ai_server_url", "http://ai.test")
+
+    async def fake_weather(_scenario):
+        return WEATHER_SCENARIOS["normal"]
+
+    async def fake_candidates(*_args, **_kwargs):
+        return demo_candidates()
+
+    async def fake_shade(candidates, *_args, **_kwargs):
+        return candidates
+
+    async def fake_rank(candidates, profile, options, *, top_n, **_kwargs):
+        return app_main.recommend_routes(
+            candidates,
+            WEATHER_SCENARIOS["normal"],
+            profile,
+            options,
+            top_n=top_n,
+        )
+
+    async def unexpected_lazy_call(*_args, **_kwargs):
+        raise AssertionError("초기 추천에서 지연 공급자를 호출하면 안 됩니다.")
+
+    monkeypatch.setattr(app_main, "get_current_weather", fake_weather)
+    monkeypatch.setattr(app_main, "get_ai_pipeline_candidates", fake_candidates)
+    monkeypatch.setattr(app_main, "_add_configured_shade", fake_shade)
+    monkeypatch.setattr(app_main, "rank_ai_pipeline_candidates", fake_rank)
+    monkeypatch.setattr(
+        app_main,
+        "_refine_top_ranked_transit",
+        unexpected_lazy_call,
+    )
+    monkeypatch.setattr(app_main, "explain_route", unexpected_lazy_call)
+
+    response = client.post("/api/routes/recommend", json={
+        "origin": _place_payload("gu-office"),
+        "destination": _place_payload("seomyeon-stn"),
+        "profile": "general",
+        "weatherScenario": "normal",
+        "options": {},
+        "topN": 3,
+    })
+
+    assert response.status_code == 200
+    assert len(response.json()) == 3
+    assert all(item["score"]["voiceSummary"] for item in response.json())
+
+
 def test_labeling_candidates_requires_explicit_ai_mode():
     settings.labeling_api_token = "test-labeling-token-" + "x" * 32
     body = {
