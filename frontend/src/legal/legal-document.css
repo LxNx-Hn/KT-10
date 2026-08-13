@@ -1,0 +1,197 @@
+/* 문서 전체가 자연스럽게 길어지고 viewport가 스크롤된다.
+   height/max-height 고정·내부 독립 scroll box를 두지 않는다. */
+.legal-document {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #ffffff;
+  color: #1f2937;
+}
+
+.legal-document__main {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding:
+    max(12px, env(safe-area-inset-top, 0px))
+    max(20px, env(safe-area-inset-right, 0px))
+    max(32px, env(safe-area-inset-bottom, 0px))
+    max(20px, env(safe-area-inset-left, 0px));
+}
+
+.legal-document__header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e8eef4;
+}
+
+.legal-document__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  min-height: 44px;
+  margin: 0 0 0 -8px;
+  padding: 8px;
+  border-radius: 10px;
+  color: #334155;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-decoration: none;
+}
+
+.legal-document__back:hover {
+  background: #f5f8fb;
+  color: #1e293b;
+}
+
+.legal-document__back:focus-visible {
+  outline: 3px solid rgba(49, 130, 246, 0.45);
+  outline-offset: 2px;
+}
+
+.legal-document__back-icon {
+  flex: none;
+  color: #64748b;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.legal-document__back-label {
+  color: inherit;
+}
+
+.legal-document__header h1 {
+  margin: 0;
+  color: #0f172a;
+  font-size: clamp(1.45rem, 5vw, 1.8rem);
+  font-weight: 800;
+  line-height: 1.3;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.legal-document__updated {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.legal-document__intro {
+  margin: 0 0 22px;
+  color: #334155;
+  font-size: 15px;
+  line-height: 1.7;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.legal-document__meta {
+  margin: 0 0 22px;
+  padding: 14px 16px;
+  border: 1px solid #e8eef4;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.legal-document__meta dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.legal-document__meta div {
+  display: grid;
+  gap: 2px;
+}
+
+.legal-document__meta dt {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.legal-document__meta dd {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.legal-document__section {
+  margin: 0 0 26px;
+}
+
+.legal-document__section h2 {
+  margin: 0 0 10px;
+  color: #0f172a;
+  font-size: clamp(1.02rem, 3.4vw, 1.15rem);
+  font-weight: 800;
+  line-height: 1.4;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.legal-document__section p {
+  margin: 0 0 10px;
+  color: #334155;
+  font-size: 15px;
+  line-height: 1.7;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.legal-document__section ul {
+  margin: 0 0 10px;
+  padding-left: 1.15em;
+  color: #334155;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.legal-document__section li + li {
+  margin-top: 8px;
+}
+
+.legal-document__section li {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.legal-document__footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.legal-document__back--footer {
+  margin-left: -8px;
+}
+
+@media (max-width: 353px) {
+  .legal-document__main {
+    padding-inline: max(16px, env(safe-area-inset-left, 0px))
+      max(16px, env(safe-area-inset-right, 0px));
+  }
+}
+
+@media (min-width: 768px) {
+  .legal-document {
+    background: #f5f8fb;
+  }
+
+  .legal-document__main {
+    margin-block: 0;
+    padding-block: 28px 40px;
+  }
+}

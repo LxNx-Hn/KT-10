@@ -35,11 +35,13 @@ function stubMobileViewport(matches: boolean) {
 
 beforeEach(() => {
   window.localStorage.clear();
+  window.history.pushState({}, '', '/');
   authMocks.startKakaoLogin.mockClear();
 });
 
 afterEach(() => {
   cleanup();
+  window.history.pushState({}, '', '/');
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -86,8 +88,23 @@ describe('MOB-18 앱 진입 계약', () => {
     expect(authMocks.startKakaoLogin).toHaveBeenCalledOnce();
   });
 
+  it('startup 미완료 상태에서도 /terms·/privacy는 시작 화면보다 우선한다', () => {
+    stubMobileViewport(true);
+    window.history.pushState({}, '', '/terms');
+    const { unmount } = render(<App />);
+    expect(screen.getByRole('heading', { level: 1, name: '이용약관' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '로그인 없이 시작하기' })).toBeNull();
+    unmount();
+
+    window.history.pushState({}, '', '/privacy');
+    render(<App />);
+    expect(screen.getByRole('heading', { level: 1, name: '개인정보처리방침' })).toBeTruthy();
+    expect(screen.queryByText('지도 홈')).toBeNull();
+  });
+
   it('저장소가 차단돼도 현재 세션에서는 지도 홈으로 진입한다', () => {
     stubMobileViewport(true);
+    window.history.pushState({}, '', '/');
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('blocked');
     });

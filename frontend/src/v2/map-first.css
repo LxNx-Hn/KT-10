@@ -3536,12 +3536,82 @@
   box-shadow: inset 0 0 0 1px rgba(49, 130, 246, 0.28);
 }
 
+.map-first__legal-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 4px 0 0;
+}
+
+.map-first__legal-notice-title {
+  margin: 0;
+  color: var(--mf-ink);
+  font-size: var(--mf-body-size);
+  font-weight: 800;
+  line-height: var(--mf-line-height-tight);
+}
+
+.map-first__legal-notice-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--mf-line);
+  border-radius: 13px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.map-first__legal-notice-list li + li {
+  border-top: 1px solid var(--mf-line);
+}
+
+.map-first__legal-notice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  color: var(--mf-ink);
+  font-size: var(--mf-body-size);
+  font-weight: 700;
+  line-height: 1.35;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.map-first__legal-notice-row:hover {
+  background: #f8fafc;
+}
+
+.map-first__legal-notice-row:focus-visible {
+  outline: 3px solid rgba(49, 130, 246, 0.45);
+  outline-offset: -3px;
+}
+
+.map-first__legal-notice-chevron {
+  flex: none;
+  color: #94a3b8;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.map-first__frame--easy .map-first__legal-notice-row {
+  min-height: max(52px, var(--mf-tap));
+}
+
 /* 회원 탈퇴 — 설정 하단, 위험 동작은 확인 dialog에서만 강조 */
 .account-withdrawal {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 4px;
+  margin-top: 8px;
   padding-top: 12px;
   border-top: 1px solid var(--mf-line);
 }
@@ -4439,21 +4509,22 @@
     font-size: var(--mf-body-size);
   }
 
-  /* MOB-01: document를 가시 viewport에 고정해 body 이중 스크롤을 막는다.
+  /* MOB-01: 지도 UI(.map-first)가 있을 때만 document를 가시 viewport에 고정해
+     body 이중 스크롤을 막는다. /terms·/privacy 등 공개 문서는 document scroll을 쓴다.
      overflow-x는 숨기지 않는다(가로 문제를 가리지 않음). */
-  html {
+  html:has(.map-first) {
     height: 100%;
     height: 100dvh;
   }
 
-  body {
+  body:has(.map-first) {
     height: 100%;
     height: 100dvh;
     max-width: 100%;
     overflow-y: hidden;
   }
 
-  #root {
+  body:has(.map-first) #root {
     height: 100%;
     height: 100dvh;
     max-width: 100%;

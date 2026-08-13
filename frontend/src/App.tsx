@@ -6,18 +6,28 @@ import MobileStartupScreen, {
 } from '@/components/MobileStartupScreen';
 import MapFirstApp from '@/v2/MapFirstApp';
 import AdminReviewsPage from '@/admin/AdminReviewsPage';
+import LegalDocumentPage from '@/legal/LegalDocumentPage';
 
 /** v2 지도 중심 UI가 프로덕션 기능을 담는 단일 진입점이다. */
 export default function App() {
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [startupSeen, setStartupSeen] = useState(hasCompletedMobileStartup);
+  const pathname = window.location.pathname;
 
   const completeStartup = () => {
     rememberMobileStartup();
     setStartupSeen(true);
   };
 
-  if (window.location.pathname === '/admin/reviews') {
+  // 공개 법적 문서는 startup·로그인 여부와 무관하게 최우선 분기한다.
+  if (pathname === '/terms') {
+    return <LegalDocumentPage documentId="terms" />;
+  }
+  if (pathname === '/privacy') {
+    return <LegalDocumentPage documentId="privacy" />;
+  }
+
+  if (pathname === '/admin/reviews') {
     return <AdminReviewsPage />;
   }
 

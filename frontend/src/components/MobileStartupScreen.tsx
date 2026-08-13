@@ -105,6 +105,12 @@ export default function MobileStartupScreen({
             카카오 로그인
           </button>
         </footer>
+
+        <nav className="mobile-startup__legal" aria-label="법적 고지">
+          <a href="/terms">이용약관</a>
+          <span aria-hidden="true">·</span>
+          <a href="/privacy">개인정보처리방침</a>
+        </nav>
       </div>
     </main>
   );

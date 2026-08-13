@@ -90,4 +90,17 @@ describe('map-first P0 layout CSS contracts', () => {
       'box-shadow: inset 0 0 0 3px rgba(25, 31, 40, 0.92)',
     );
   });
+
+  it('mobile body overflow-y lock은 .map-first가 있을 때만 적용된다', async () => {
+    const css = await readMapFirstCss();
+    const mobileIdx = css.indexOf('@media (max-width: 479px)');
+    expect(mobileIdx).toBeGreaterThan(-1);
+    const mobile = css.slice(mobileIdx);
+    expect(mobile).toContain('body:has(.map-first)');
+    expect(mobile).toContain('html:has(.map-first)');
+    expect(mobile).toContain('body:has(.map-first) #root');
+    expect(mobile).toMatch(/body:has\(\.map-first\)\s*\{[^}]*overflow-y:\s*hidden/s);
+    // 전역 body { overflow-y: hidden } 회귀 방지
+    expect(mobile).not.toMatch(/(?:^|\n)\s*body\s*\{[^}]*overflow-y:\s*hidden/s);
+  });
 });
