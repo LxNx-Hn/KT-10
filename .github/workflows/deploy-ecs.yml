@@ -332,6 +332,7 @@ jobs:
         shell: bash
         env:
           AI_INTERNAL_SERVICE_TOKEN: ${{ secrets.AI_INTERNAL_SERVICE_TOKEN }}
+          ODSAY_API_KEY: ${{ secrets.ODSAY_API_KEY }}
           ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
           DEPLOY_FRONTEND: ${{ steps.plan.outputs.deploy_frontend }}
           DEPLOY_BACKEND: ${{ steps.plan.outputs.deploy_backend }}
@@ -349,6 +350,10 @@ jobs:
             echo "ORS_API_KEY secret is required for wheelchair routing." >&2
             exit 1
           fi
+          if [ "$DEPLOY_AI" = "true" ] && [ -z "$ODSAY_API_KEY" ]; then
+            echo "ODSAY_API_KEY secret is required for transit routing." >&2
+            exit 1
+          fi
           snapshot_desired_count() {
             local service="$1"
             local output_key="$2"
@@ -364,32 +369,6 @@ jobs:
             echo "$output_key=$desired_count" >> "$GITHUB_OUTPUT"
           }
 
-          require_task_secret_reference() {
-            local family="$1"
-            local container="$2"
-            local secret_name="$3"
-            local value_from
-            aws ecs describe-task-definition \
-              --task-definition "$family" \
-              --query taskDefinition \
-              > "$family.secret-source.json"
-            value_from="$(jq -r \
-              --arg container "$container" \
-              --arg secret_name "$secret_name" \
-              '[
-                .containerDefinitions[]
-                | select(.name == $container)
-                | .secrets[]?
-                | select(.name == $secret_name)
-                | .valueFrom
-              ][0] // empty' \
-              "$family.secret-source.json")"
-            if [ -z "$value_from" ] || [ "$value_from" = "None" ]; then
-              echo "$family/$container must reference managed secret $secret_name." >&2
-              exit 1
-            fi
-          }
-
           register_task_definition() {
             local family="$1"
             local container="$2"
@@ -397,6 +376,7 @@ jobs:
             local output_key="$4"
             local inject_internal_token="$5"
             local inject_ors_key="$6"
+            local inject_odsay_key="$7"
 
             aws ecs describe-task-definition \
               --task-definition "$family" \
@@ -408,8 +388,10 @@ jobs:
               --arg image "$image" \
               --arg internal_token "$AI_INTERNAL_SERVICE_TOKEN" \
               --arg ors_api_key "$ORS_API_KEY" \
+              --arg odsay_api_key "$ODSAY_API_KEY" \
               --argjson inject_internal_token "$inject_internal_token" \
               --argjson inject_ors_key "$inject_ors_key" \
+              --argjson inject_odsay_key "$inject_odsay_key" \
               'del(
                 .taskDefinitionArn,
                 .revision,
@@ -444,6 +426,18 @@ jobs:
                       )
                     else .
                     end
+                  | if $inject_odsay_key then
+                      .secrets = ((.secrets // []) | map(select(.name != "ODSAY_API_KEY")))
+                      | .environment = (
+                        (.environment // [])
+                        | map(select(.name != "ODSAY_API_KEY"))
+                        + [{
+                            name: "ODSAY_API_KEY",
+                            value: $odsay_api_key
+                          }]
+                      )
+                    else .
+                    end
                 else .
                 end
               )' \
@@ -463,15 +457,12 @@ jobs:
           snapshot_desired_count kt10-frontend frontend_previous_desired_count
 
           if [ "$DEPLOY_AI" = "true" ]; then
-            require_task_secret_reference \
-              kt10-ai-task \
-              ai \
-              ODSAY_API_KEY
             register_task_definition \
               kt10-ai-task \
               ai \
               "$registry/kt10-ai:$tag" \
               ai_task_definition \
+              true \
               true \
               true
           fi
@@ -482,6 +473,7 @@ jobs:
               "$registry/kt10-backend:$tag" \
               backend_task_definition \
               true \
+              false \
               false
           fi
           if [ "$DEPLOY_FRONTEND" = "true" ]; then
@@ -490,6 +482,7 @@ jobs:
               frontend \
               "$registry/kt10-frontend:$tag" \
               frontend_task_definition \
+              false \
               false \
               false
           fi
