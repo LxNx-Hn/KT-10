@@ -1172,7 +1172,9 @@ def _provider_text(value) -> str | None:
     if value is None or isinstance(value, (dict, list, tuple, set)):
         return None
     text = str(value).strip()
-    return text or None
+    if not text or text.casefold() in {"null", "none", "nan", "undefined"}:
+        return None
+    return text
 
 
 def _lane_low_floor_status(value) -> bool | None:
@@ -1646,7 +1648,15 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
             if low_floor_complete
             else None
         )
-        ramp_points = observation["accessibility"].get("ramp_points")
+        # ORS/TMAP 접근성 근거는 해당 보행·환승 선형에만 속한다. 후보
+        # 조립 중 공급자 근거가 대중교통 item에 남아 있더라도 버스·지하철
+        # 구간의 경사로 또는 휠체어 통행 근거로 복제하지 않는다.
+        walk_accessibility = (
+            observation["accessibility"]
+            if mode in {"walk", "transfer"}
+            else {}
+        )
+        ramp_points = walk_accessibility.get("ramp_points")
         if not isinstance(ramp_points, list) or not ramp_points:
             ramp_points = None
         public_ramp_points = (
@@ -1701,13 +1711,13 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
             ),
             "stairs_excluded_by_provider": (
                 True
-                if observation["accessibility"].get(
+                if walk_accessibility.get(
                     "stairs_excluded_by_provider"
                 ) is True
                 else None
             ),
             **_public_wheelchair_evidence(
-                observation["accessibility"]
+                walk_accessibility
             ),
             "bus_route_name": str(name) if mode == "bus" and name else None,
             "is_low_floor_bus": low_floor if mode == "bus" else None,

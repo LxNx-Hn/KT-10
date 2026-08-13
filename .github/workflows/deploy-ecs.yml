@@ -332,6 +332,7 @@ jobs:
         shell: bash
         env:
           AI_INTERNAL_SERVICE_TOKEN: ${{ secrets.AI_INTERNAL_SERVICE_TOKEN }}
+          ODSAY_API_KEY: ${{ secrets.ODSAY_API_KEY }}
           ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
           DEPLOY_FRONTEND: ${{ steps.plan.outputs.deploy_frontend }}
           DEPLOY_BACKEND: ${{ steps.plan.outputs.deploy_backend }}
@@ -347,6 +348,10 @@ jobs:
           fi
           if [ "$DEPLOY_AI" = "true" ] && [ -z "$ORS_API_KEY" ]; then
             echo "ORS_API_KEY secret is required for wheelchair routing." >&2
+            exit 1
+          fi
+          if [ "$DEPLOY_AI" = "true" ] && [ -z "$ODSAY_API_KEY" ]; then
+            echo "ODSAY_API_KEY secret is required for transit routing." >&2
             exit 1
           fi
 
@@ -372,6 +377,7 @@ jobs:
             local output_key="$4"
             local inject_internal_token="$5"
             local inject_ors_key="$6"
+            local inject_odsay_key="$7"
 
             aws ecs describe-task-definition \
               --task-definition "$family" \
@@ -383,8 +389,10 @@ jobs:
               --arg image "$image" \
               --arg internal_token "$AI_INTERNAL_SERVICE_TOKEN" \
               --arg ors_api_key "$ORS_API_KEY" \
+              --arg odsay_api_key "$ODSAY_API_KEY" \
               --argjson inject_internal_token "$inject_internal_token" \
               --argjson inject_ors_key "$inject_ors_key" \
+              --argjson inject_odsay_key "$inject_odsay_key" \
               'del(
                 .taskDefinitionArn,
                 .revision,
@@ -419,6 +427,17 @@ jobs:
                       )
                     else .
                     end
+                  | if $inject_odsay_key then
+                      .environment = (
+                        (.environment // [])
+                        | map(select(.name != "ODSAY_API_KEY"))
+                        + [{
+                            name: "ODSAY_API_KEY",
+                            value: $odsay_api_key
+                          }]
+                      )
+                    else .
+                    end
                 else .
                 end
               )' \
@@ -444,6 +463,7 @@ jobs:
               "$registry/kt10-ai:$tag" \
               ai_task_definition \
               true \
+              true \
               true
           fi
           if [ "$DEPLOY_BACKEND" = "true" ]; then
@@ -453,6 +473,7 @@ jobs:
               "$registry/kt10-backend:$tag" \
               backend_task_definition \
               true \
+              false \
               false
           fi
           if [ "$DEPLOY_FRONTEND" = "true" ]; then
@@ -461,6 +482,7 @@ jobs:
               frontend \
               "$registry/kt10-frontend:$tag" \
               frontend_task_definition \
+              false \
               false \
               false
           fi

@@ -19,6 +19,7 @@ from api.router import (
     _context_features,
     _enrich_subway_elevator_accessibility,
     _parse_api_features,
+    _provider_text,
     _public_segments,
     _static_features_cacheable,
     _wheelchair_candidate_constrained,
@@ -40,6 +41,11 @@ REQUIRED_LAYERS = {
     name: [object()]
     for name in ai_main.REQUIRED_LAYER_NAMES
 }
+
+
+@pytest.mark.parametrize("value", [None, "", "null", " NULL ", "None", "nan"])
+def test_provider_null_markers_remain_unknown(value):
+    assert _provider_text(value) is None
 
 
 def test_static_route_cache_accepts_only_exact_90m_features():
@@ -1344,6 +1350,75 @@ def test_combined_ors_constraints_and_tmap_ramp_reach_public_segment():
     ]
     assert segment["wheelchair_extra_info_full_route_coverage"] is True
     assert segment["wheelchair_extra_response_keys"]["osmid"] == "osmId"
+
+
+def test_walk_accessibility_evidence_is_not_copied_to_subway_segment():
+    evidence = {
+        "stairs_excluded_by_provider": True,
+        "ramp_points": [{
+            "lat": 35.105,
+            "lng": 129.005,
+            "turn_type": 129,
+            "replaces_stairs": True,
+        }],
+        "wheelchair_constraints_applied": True,
+        "wheelchair_restrictions": WHEELCHAIR_RESTRICTIONS,
+        "wheelchair_data_limitations": ["OSM 태그 누락 가능"],
+        "wheelchair_constraint_categories": [
+            "steps", "surface", "width", "wheelchair_access"
+        ],
+        "verified_extra_response_keys": {
+            "steepness": "steepness",
+            "suitability": "suitability",
+            "surface": "surface",
+            "waytype": "waytypes",
+            "osmid": "osmId",
+        },
+        "extra_info_full_route_coverage": True,
+    }
+    candidate = MergedRoute(
+        sources=["odsay"],
+        source="odsay",
+        path=[
+            Coordinate(35.1000, 129.0000),
+            Coordinate(35.1100, 129.0100),
+        ],
+        duration_min=10,
+        distance_m=900,
+        segments=[
+            {
+                "mode": "walk",
+                "duration_min": 2,
+                "distance_m": 100,
+                "raw": {"trafficType": 3},
+                "accessibility_evidence": evidence,
+            },
+            {
+                "mode": "subway",
+                "duration_min": 8,
+                "distance_m": 800,
+                "raw": {
+                    "trafficType": 1,
+                    "startName": "구서역",
+                    "endName": "남포역",
+                    "lane": [{"name": "부산 1호선", "subwayCode": 1}],
+                },
+                # 공급자 조립 객체에 잘못 남은 후보 공통 근거를 재현한다.
+                "accessibility_evidence": evidence,
+            },
+        ],
+    )
+
+    walk, subway = _public_segments(candidate)
+
+    assert walk["ramp_points"] == [{"lat": 35.105, "lng": 129.005}]
+    assert walk["wheelchair_constraints_applied"] is True
+    assert subway["ramp_points"] is None
+    assert subway["has_slope"] is None
+    assert subway["ramp_replaces_stairs"] is None
+    assert subway["ramp_evidence_source"] is None
+    assert subway["stairs_excluded_by_provider"] is None
+    assert "wheelchair_constraints_applied" not in subway
 
 
 def test_wheelchair_collection_fails_instead_of_using_tmap_without_ors(
