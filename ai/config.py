@@ -76,11 +76,6 @@ class Settings(BaseSettings):
     ORS_API_KEY: str = ""
     ORS_BASE_URL: AnyHttpUrl = "https://api.openrouteservice.org"
     ORS_CACHE_DIR: str = ""
-    ORS_CACHE_TTL_SECONDS: int = Field(
-        default=1800,
-        ge=60,
-        le=31_536_000,
-    )
     ORS_TIMEOUT_SECONDS: int = Field(default=20, ge=5, le=120)
     ORS_MAX_CONCURRENT_REQUESTS: int = Field(default=3, ge=1, le=10)
     ROUTE_FEATURE_CACHE_DIR: str = ""

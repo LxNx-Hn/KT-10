@@ -96,7 +96,6 @@ services:
       - ORS_API_KEY=${ORS_API_KEY:-}
       - ORS_BASE_URL=${ORS_BASE_URL:-https://api.openrouteservice.org}
       - ORS_CACHE_DIR=/app/ai/data/cache/ors
-      - ORS_CACHE_TTL_SECONDS=1800
       - ORS_TIMEOUT_SECONDS=20
       - ORS_MAX_CONCURRENT_REQUESTS=3
     volumes:

@@ -268,6 +268,38 @@ class OdsayRouteCollector(BaseRouteCollector):
             if accessible_subway_exits is None
             else accessible_subway_exits
         )
+        # 한 사용자 요청에서 후보들이 같은 실제 도보 구간을 공유하면 ORS
+        # wheelchair 계산과 cached-only 보조 결합을 동일 Task로 합친다.
+        self._walk_geometry_tasks: dict[
+            tuple[float, float, float, float, bool, bool],
+            asyncio.Task[WalkGeometryResult],
+        ] = {}
+
+    def _walk_geometry_identity(
+        self,
+        start: Coordinate,
+        end: Coordinate,
+    ) -> tuple[float, float, float, float, bool, bool]:
+        return (
+            round(start.lat, 7),
+            round(start.lng, 7),
+            round(end.lat, 7),
+            round(end.lng, 7),
+            self.uses_wheelchair,
+            self.avoid_stairs,
+        )
+
+    async def _shared_walk_geometry(
+        self,
+        start: Coordinate,
+        end: Coordinate,
+    ) -> WalkGeometryResult:
+        identity = self._walk_geometry_identity(start, end)
+        task = self._walk_geometry_tasks.get(identity)
+        if task is None:
+            task = asyncio.create_task(self._walk_geometry(start, end))
+            self._walk_geometry_tasks[identity] = task
+        return await asyncio.shield(task)
 
     def _accessible_exit(
         self,
@@ -702,33 +734,24 @@ class OdsayRouteCollector(BaseRouteCollector):
                 )
             primary = ors_candidates[0]
             evidence = dict(primary.accessibility_evidence)
-            if (
-                settings.TMAP_API_KEY
-                and not settings.TMAP_API_KEY.startswith("YOUR_")
-            ):
-                from collectors.tmap_collector import TmapRouteCollector
+            from collectors.tmap_collector import TmapRouteCollector
 
-                try:
-                    tmap_candidates = await TmapRouteCollector(
-                        avoid_stairs=True
-                    ).collect(start, end)
-                except (CollectorError, TimeoutError) as exc:
-                    log.warning(
-                        "휠체어 보행 경사로 근거 보완 실패 source=tmap detail=%s",
-                        str(exc),
-                    )
-                else:
-                    if (
-                        tmap_candidates
-                        and accessibility_paths_similar(
-                            primary.path,
-                            tmap_candidates[0].path,
-                        )
-                    ):
-                        evidence = merge_accessibility_evidence(
-                            evidence,
-                            tmap_candidates[0].accessibility_evidence,
-                        )
+            # TMAP은 요청 시 네트워크를 호출하지 않는다. 사전 수집된 캐시가
+            # 있고 ORS 선형과 일치할 때만 물리 경사로 안내점을 보탠다.
+            tmap_candidates = await TmapRouteCollector(
+                avoid_stairs=True
+            ).collect_cached(start, end)
+            if (
+                tmap_candidates
+                and accessibility_paths_similar(
+                    primary.path,
+                    tmap_candidates[0].path,
+                )
+            ):
+                evidence = merge_accessibility_evidence(
+                    evidence,
+                    tmap_candidates[0].accessibility_evidence,
+                )
             return WalkGeometryResult(
                 primary.path,
                 "exact",
@@ -879,7 +902,7 @@ class OdsayRouteCollector(BaseRouteCollector):
                 )
             walk_geometry_requests.append((index, endpoints))
         walk_geometry_results = await asyncio.gather(*(
-            self._walk_geometry(*endpoints)
+            self._shared_walk_geometry(*endpoints)
             for _, endpoints in walk_geometry_requests
         ))
         walk_geometries = {

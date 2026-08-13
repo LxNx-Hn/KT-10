@@ -5,6 +5,7 @@ ai/.env 에 실제 키가 설정돼 있어도 결과가 흔들리지 않도록,
 settings의 키 값은 monkeypatch로 강제 고정한다 (환경 비의존).
 """
 import asyncio
+import json
 import time
 from types import SimpleNamespace
 
@@ -420,8 +421,14 @@ def test_ors_persistent_cache_does_not_store_api_key(monkeypatch, tmp_path):
     asyncio.run(OrsWheelchairRouteCollector().collect(ORIGIN, DEST))
     asyncio.run(OrsWheelchairRouteCollector().collect(ORIGIN, DEST))
 
+    cache_path = next(tmp_path.glob("*.json"))
+    wrapper = json.loads(cache_path.read_text(encoding="utf-8"))
+    wrapper["cachedAtEpoch"] = 0
+    cache_path.write_text(json.dumps(wrapper), encoding="utf-8")
+    asyncio.run(OrsWheelchairRouteCollector().collect(ORIGIN, DEST))
+
     assert requests == 1
-    cache_text = next(tmp_path.glob("*.json")).read_text(encoding="utf-8")
+    cache_text = cache_path.read_text(encoding="utf-8")
     assert "test-secret" not in cache_text
 
 
@@ -484,12 +491,33 @@ def test_tmap_persistent_cache_avoids_repeated_provider_call(
 
     first, second = asyncio.run(collect_concurrently())
     third = asyncio.run(TmapRouteCollector().collect(ORIGIN, DEST))
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "")
+    cached_only = asyncio.run(
+        TmapRouteCollector().collect_cached(ORIGIN, DEST)
+    )
 
     assert requests == 1
     assert first[0].path == second[0].path
     assert second[0].path == third[0].path
+    assert cached_only[0].path == third[0].path
     cache_text = next(tmp_path.glob("*.json")).read_text(encoding="utf-8")
     assert "test-secret" not in cache_text
+
+
+def test_tmap_cached_only_miss_never_calls_provider(monkeypatch, tmp_path):
+    import collectors.tmap_collector as module
+
+    class ForbiddenClient:
+        def __init__(self, *_args, **_kwargs):
+            raise AssertionError("cached-only 조회가 TMAP 네트워크를 호출했습니다.")
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "test-secret")
+    monkeypatch.setattr(settings, "TMAP_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(module.httpx, "AsyncClient", ForbiddenClient)
+
+    assert asyncio.run(
+        TmapRouteCollector(avoid_stairs=True).collect_cached(ORIGIN, DEST)
+    ) == []
 
 
 def test_tmap_wheelchair_request_uses_official_stair_excluded_option_and_ramp_codes(
@@ -748,7 +776,7 @@ def test_odsay_wheelchair_walk_uses_ors_and_merges_similar_tmap_ramp(
     monkeypatch.setattr(settings, "ORS_API_KEY", "ors-key")
     monkeypatch.setattr(settings, "TMAP_API_KEY", "tmap-key")
     monkeypatch.setattr(OrsWheelchairRouteCollector, "collect", ors_collect)
-    monkeypatch.setattr(TmapRouteCollector, "collect", tmap_collect)
+    monkeypatch.setattr(TmapRouteCollector, "collect_cached", tmap_collect)
 
     path, quality, evidence = asyncio.run(
         OdsayRouteCollector(
@@ -779,7 +807,7 @@ def test_odsay_wheelchair_walk_never_falls_back_when_ors_is_unavailable(
     monkeypatch.setattr(settings, "ORS_API_KEY", "")
     monkeypatch.setattr(settings, "TMAP_API_KEY", "tmap-key")
     monkeypatch.setattr(OrsWheelchairRouteCollector, "collect", ors_collect)
-    monkeypatch.setattr(TmapRouteCollector, "collect", tmap_collect)
+    monkeypatch.setattr(TmapRouteCollector, "collect_cached", tmap_collect)
 
     with pytest.raises(CollectorNotConfigured):
         asyncio.run(
@@ -1427,6 +1455,37 @@ def test_odsay_builds_independent_walk_sections_concurrently(monkeypatch):
         "subway",
         "walk",
     ]
+
+
+def test_odsay_deduplicates_same_normalized_walk_section(monkeypatch):
+    collector = OdsayRouteCollector(
+        avoid_stairs=True,
+        uses_wheelchair=True,
+    )
+    calls = 0
+
+    async def fake_walk(start, end):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.01)
+        return WalkGeometryResult([start, end], "exact", {})
+
+    monkeypatch.setattr(collector, "_walk_geometry", fake_walk)
+    nearly_same_origin = Coordinate(
+        lat=ORIGIN.lat + 0.000000001,
+        lng=ORIGIN.lng + 0.000000001,
+    )
+
+    async def run():
+        return await asyncio.gather(
+            collector._shared_walk_geometry(ORIGIN, DEST),
+            collector._shared_walk_geometry(nearly_same_origin, DEST),
+        )
+
+    first, second = asyncio.run(run())
+
+    assert calls == 1
+    assert first is second
 
 
 @pytest.mark.parametrize("invalid_info", [None, [], "malformed"])

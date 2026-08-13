@@ -31,7 +31,10 @@ from collectors.base import (
 )
 from config import settings
 
-CACHE_SCHEMA_VERSION = 2
+CACHE_SCHEMA_VERSION = 3
+# 성공한 ORS wheelchair 응답은 운영 요청에서 다시 검증하지 않는다. 제약이나
+# 데이터 갱신 절차가 바뀔 때 이 값을 올려 명시적으로 무효화한다.
+ROUTE_DATA_VERSION = 1
 RESTRICTION_SCHEMA_VERSION = 2
 PROFILE = "wheelchair"
 AVOID_FEATURES = ("steps", "ferries")
@@ -106,6 +109,7 @@ def _cache_identity(origin: Coordinate, destination: Coordinate) -> dict:
             round(destination.lng, 7),
         ],
         "profile": PROFILE,
+        "routeDataVersion": ROUTE_DATA_VERSION,
         "restrictionSchemaVersion": RESTRICTION_SCHEMA_VERSION,
         "restrictions": dict(WHEELCHAIR_RESTRICTIONS),
         "avoidFeatures": list(AVOID_FEATURES),
@@ -131,14 +135,13 @@ def _read_cache(identity: dict) -> dict | None:
         return None
     try:
         wrapper = json.loads(path.read_text(encoding="utf-8"))
-        cached_at = float(wrapper["cachedAtEpoch"])
+        float(wrapper["cachedAtEpoch"])
         payload = wrapper["payload"]
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
         return None
     if (
         wrapper.get("schemaVersion") != CACHE_SCHEMA_VERSION
         or not isinstance(payload, dict)
-        or time.time() - cached_at > settings.ORS_CACHE_TTL_SECONDS
     ):
         return None
     return payload

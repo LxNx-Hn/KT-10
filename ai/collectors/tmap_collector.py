@@ -424,3 +424,26 @@ class TmapRouteCollector(BaseRouteCollector):
                 raise CollectorError(
                     f"TMAP 호출 또는 응답 처리 실패: {type(exc).__name__}"
                 ) from exc
+
+    async def collect_cached(
+        self,
+        origin: Coordinate,
+        destination: Coordinate,
+    ) -> list[RouteCandidate]:
+        """검증된 기존 TMAP 응답만 읽고 네트워크는 절대 호출하지 않는다.
+
+        사용자 휠체어 요청의 물리 경사로 정보는 사전 수집 결과가 있을 때만
+        보조 근거로 결합한다. 캐시 미스·만료·계약 불일치는 미확인으로 남긴다.
+        """
+        identity = _cache_identity(
+            origin,
+            destination,
+            search_option=self.search_option,
+        )
+        cached = await asyncio.to_thread(_read_cache, identity)
+        if cached is None:
+            return []
+        try:
+            return [self._candidate_from_data(cached)]
+        except CollectorError:
+            return []
