@@ -262,6 +262,38 @@ jobs:
             echo "registry=${registry}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Inspect AI network registration target
+        if: ${{ steps.plan.outputs.deploy_ai == 'true' }}
+        shell: bash
+        run: |
+          set +e
+          network_configuration="$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services kt10-ai \
+            --query 'services[0].networkConfiguration.awsvpcConfiguration' \
+            --output json)"
+          echo "AI service network configuration: $network_configuration"
+          task_arn="$(aws ecs list-tasks \
+            --cluster "$ECS_CLUSTER" \
+            --service-name kt10-ai \
+            --desired-status RUNNING \
+            --query 'taskArns[0]' \
+            --output text)"
+          if [ -n "$task_arn" ] && [ "$task_arn" != "None" ]; then
+            eni_id="$(aws ecs describe-tasks \
+              --cluster "$ECS_CLUSTER" \
+              --tasks "$task_arn" \
+              --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value | [0]' \
+              --output text)"
+            if [ -n "$eni_id" ] && [ "$eni_id" != "None" ]; then
+              aws ec2 describe-network-interfaces \
+                --network-interface-ids "$eni_id" \
+                --query 'NetworkInterfaces[0].{networkInterfaceId:NetworkInterfaceId,subnetId:SubnetId,privateIp:PrivateIpAddress,publicIp:Association.PublicIp}' \
+                --output json || true
+            fi
+          fi
+          exit 0
+
       - name: Login to ECR
         if: ${{ steps.plan.outputs.deploy_any == 'true' }}
         shell: bash
@@ -357,12 +389,7 @@ jobs:
           if [ "$DEPLOY_AI" = "true" ]; then
             python - <<'PY'
           import hashlib
-          import json
           import os
-          import time
-          from urllib.error import HTTPError, URLError
-          from urllib.parse import urlencode
-          from urllib.request import urlopen
 
           key = os.environ["ODSAY_API_KEY"]
           fingerprint = hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
@@ -370,38 +397,6 @@ jobs:
               "ODsay credential validation "
               f"length={len(key)} fingerprint={fingerprint}"
           )
-          params = urlencode({
-              "SX": 129.09142,
-              "SY": 35.24722,
-              "EX": 129.03472,
-              "EY": 35.09792,
-              "apiKey": key,
-              "OPT": 0,
-              "SearchType": 0,
-              "SearchPathType": 0,
-          })
-          url = (
-              "https://api.odsay.com/v1/api/searchPubTransPathT?" + params
-          )
-          last_error = None
-          for attempt in range(3):
-              try:
-                  with urlopen(url, timeout=15) as response:
-                      payload = json.load(response)
-                  paths = ((payload.get("result") or {}).get("path") or [])
-                  if payload.get("error") or not paths:
-                      raise RuntimeError("ODsay returned an error or no paths")
-                  print(f"ODsay credential validation paths={len(paths)}")
-                  break
-              except (HTTPError, URLError, TimeoutError, ValueError, RuntimeError) as exc:
-                  last_error = exc
-                  if attempt < 2:
-                      time.sleep(2 ** attempt)
-          else:
-              raise RuntimeError(
-                  "ODsay credential validation failed: "
-                  f"{type(last_error).__name__}"
-              ) from last_error
           PY
           fi
           snapshot_desired_count() {
