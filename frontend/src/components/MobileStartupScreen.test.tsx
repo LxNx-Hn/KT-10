@@ -37,6 +37,15 @@ describe('MOB-18 모바일 시작 화면', () => {
       .toContain('btn--kakao');
   });
 
+  it('하단에 이용약관·개인정보처리방침 공개 URL 링크를 제공한다', () => {
+    render(<MobileStartupScreen onStart={vi.fn()} onKakaoLogin={vi.fn()} />);
+
+    const terms = screen.getByRole('link', { name: '이용약관' });
+    const privacy = screen.getByRole('link', { name: '개인정보처리방침' });
+    expect(terms.getAttribute('href')).toBe('/terms');
+    expect(privacy.getAttribute('href')).toBe('/privacy');
+  });
+
   it('완료 상태는 개인정보 없이 버전 키 하나로 저장한다', () => {
     expect(hasCompletedMobileStartup()).toBe(false);
     rememberMobileStartup();
