@@ -695,8 +695,7 @@ export default function MapFirstApp({
             : '건물 그늘 '}
           {Math.round(selectedShade.shadeRatio * 100)}%
         </strong>
-        <span><i className="map-first__legend-dot map-first__legend-dot--shade" />그늘</span>
-        <span><i className="map-first__legend-dot map-first__legend-dot--sun" />햇빛</span>
+        <span><i className="map-first__legend-dot map-first__legend-dot--shade" />회색 구역</span>
         {selectedShade.status === 'estimated_demo' && <em>건물 높이 반영</em>}
       </div>
     );

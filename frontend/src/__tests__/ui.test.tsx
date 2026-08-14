@@ -1532,7 +1532,10 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(map.getAttribute('data-shade-visible')).toBe('true');
     expect(
       container.querySelector('.map-first__map-legend')?.textContent,
-    ).toMatch(/건물 그늘 50%.*그늘.*햇빛.*건물 높이 반영/);
+    ).toMatch(/건물 그늘 50%.*회색 구역.*건물 높이 반영/);
+    expect(
+      container.querySelector('.map-first__map-legend')?.textContent,
+    ).not.toContain('햇빛');
     expect(container.querySelector('.map-first__map-legend--slope')).toBeNull();
     expect(container.textContent).not.toContain('API 연결 모드');
     expect(container.textContent).not.toContain('검증용 내장 데이터');
@@ -1713,7 +1716,9 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(shade.getAttribute('aria-checked')).toBe('true');
     expect(slope.getAttribute('aria-checked')).toBe('false');
     expect(getByRole('note', { name: '경로 선 건물 그늘 안내' }).textContent)
-      .toMatch(/건물 그늘:.*그늘.*햇빛/);
+      .toMatch(/건물 그늘:.*회색 구역/);
+    expect(getByRole('note', { name: '경로 선 건물 그늘 안내' }).textContent)
+      .not.toContain('햇빛');
     expect(
       queryByRole('note', { name: '경로 선 이동수단 안내' }),
     ).toBeNull();
@@ -1739,7 +1744,9 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(slope.getAttribute('aria-checked')).toBe('false');
     expect(shade.getAttribute('aria-checked')).toBe('true');
     expect(getByRole('note', { name: '경로 선 건물 그늘 안내' }).textContent)
-      .toMatch(/건물 그늘:.*그늘.*햇빛/);
+      .toMatch(/건물 그늘:.*회색 구역/);
+    expect(getByRole('note', { name: '경로 선 건물 그늘 안내' }).textContent)
+      .not.toContain('햇빛');
 
     fireEvent.click(shade);
     expect(shade.getAttribute('aria-checked')).toBe('false');

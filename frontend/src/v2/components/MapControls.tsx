@@ -72,12 +72,7 @@ function MapInfoRouteKey({
         {' '}
         <span data-shade="shade">
           <i className="map-first__legend-dot map-first__legend-dot--shade" aria-hidden="true" />
-          그늘
-        </span>
-        {' · '}
-        <span data-shade="sun">
-          <i className="map-first__legend-dot map-first__legend-dot--sun" aria-hidden="true" />
-          햇빛
+          회색 구역
         </span>
       </p>
     );

@@ -401,8 +401,7 @@ function ShadeControls({
         {shade.estimateKind === 'lower_bound' ? '확인된 건물 그늘 최소 ' : '건물 그늘 '}
         {Math.round(shade.shadeRatio * 100)}%
       </span>
-      <span><i className="map__legend map__legend--shade" />그늘</span>
-      <span><i className="map__legend map__legend--sun" />햇빛 노출</span>
+      <span><i className="map__legend map__legend--shade" />회색 구역</span>
       {shade.buildingCount !== undefined && shade.knownHeightBuildingCount !== undefined && (
         <span>
           건물 높이 {shade.knownHeightBuildingCount}/{shade.buildingCount}건 확인
