@@ -5,11 +5,12 @@
 """
 from __future__ import annotations
 
+import ipaddress
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
@@ -73,6 +74,14 @@ class Settings(BaseSettings):
     # 액세스 토큰을 저장하지 않으므로 어드민 키 없이는 연결을 끊을 수 없다.
     # 비어 있으면 우리 DB만 정리하고 카카오 연결은 남는다.
     kakao_admin_key: str = ""
+
+    # Sign in with Apple (웹 Services ID). Team ID를 client_id 앞에 붙이지 않는다.
+    # 실제 .p8/키 값은 코드·로그·프론트엔드에 넣지 않고 환경변수로만 주입한다.
+    apple_client_id: str = ""
+    apple_team_id: str = ""
+    apple_key_id: str = ""
+    apple_private_key: SecretStr = SecretStr("")
+    apple_oauth_redirect_uri: str = ""
 
     # 탈퇴 기록의 분리 보관기간(일). 계정·서비스 데이터는 탈퇴 즉시 삭제되고,
     # 부정 이용 방지와 처리 오류 대응에 필요한 최소 정보만 이 기간 동안 남는다.
@@ -245,6 +254,33 @@ class Settings(BaseSettings):
             and self.session_signing_configured
             and self.database_configured
             and self.origin_security_configured
+        )
+
+    def _apple_web_oauth_redirect_uri_is_valid(self) -> bool:
+        parsed = self._parsed_http_url(
+            self.apple_oauth_redirect_uri,
+            origin_only=False,
+        )
+        if parsed is None or parsed.scheme != "https" or not parsed.hostname:
+            return False
+        hostname = parsed.hostname
+        if hostname.casefold() == "localhost":
+            return False
+        try:
+            ipaddress.ip_address(hostname)
+        except ValueError:
+            return True
+        return False
+
+    @property
+    def apple_web_oauth_configured(self) -> bool:
+        """웹 Sign in with Apple에 필요한 값이 모두 있는지. 미설정 시 mock으로 바꾸지 않는다."""
+        return bool(
+            self.apple_client_id
+            and self.apple_team_id
+            and self.apple_key_id
+            and self.apple_private_key.get_secret_value()
+            and self._apple_web_oauth_redirect_uri_is_valid()
         )
 
     @property
