@@ -2218,12 +2218,9 @@
   border-radius: 3px;
 }
 
+/* KakaoMap SHADOW_FILL과 동일 — 건물 그림자 polygon 회색 */
 .map-first__legend-dot--shade {
-  background: #00b84a;
-}
-
-.map-first__legend-dot--sun {
-  background: #ff5a1f;
+  background: #8290a8;
 }
 
 .map-first__legend-dot--slope-gentle,

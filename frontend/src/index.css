@@ -497,8 +497,8 @@ summary:focus-visible,
 .map__shade-toggle { min-height: 44px; padding: 0 .75rem; border: 1px solid var(--line); border-radius: 9px; background: #fff; font-weight: 700; }
 .map__shade-ratio { font-weight: 800; color: #006f3b; }
 .map__legend { display: inline-block; width: .8rem; height: .8rem; margin-right: .25rem; border-radius: 2px; vertical-align: -.08rem; }
-.map__legend--shade { background: #00b84a; }
-.map__legend--sun { background: #ff5a1f; }
+/* KakaoMap SHADOW_FILL과 동일 — 건물 그림자 polygon 회색 */
+.map__legend--shade { background: #8290a8; }
 .route-feedback {
   margin-top: 1rem;
   padding: 1rem;
