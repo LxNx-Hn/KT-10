@@ -10,7 +10,7 @@ import json
 import pytest
 from fastapi import Depends
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session
 
 from app.api import auth as auth_module
@@ -22,6 +22,7 @@ from app.database import (
     RouteReview,
     User,
     UserAgreement,
+    UserIdentity,
     UserPreference,
     UserWithdrawal,
     database_session,
@@ -92,6 +93,11 @@ def _seed(engine, *, is_admin=False):
             document_version="v1",
             action="accepted",
         ))
+        db.add(UserIdentity(
+            user_id=user.id,
+            provider="kakao",
+            provider_subject="7001",
+        ))
         db.commit()
     return "member"
 
@@ -144,6 +150,8 @@ def test_withdraw_deletes_account_and_service_data_immediately(withdraw_api):
         assert db.get(RouteReview, "review-1") is None
         # 이용약관 수락 기록도 계정 CASCADE로 함께 삭제한다.
         assert db.get(UserAgreement, "agreement-1") is None
+        # provider identity도 User CASCADE로 함께 삭제한다.
+        assert db.scalar(select(func.count()).select_from(UserIdentity)) == 0
 
 
 def test_route_impressions_are_deleted_not_just_detached(withdraw_api):

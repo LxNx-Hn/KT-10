@@ -21,6 +21,7 @@ from app.database import (
     Base,
     User,
     UserAgreement,
+    UserIdentity,
     UserPreference,
     database_session,
     optional_database_session,
@@ -168,6 +169,7 @@ def test_new_kakao_callback_does_not_create_account(signup_api):
         assert db.scalar(select(User)) is None
         assert db.scalar(select(UserPreference)) is None
         assert db.scalar(select(UserAgreement)) is None
+        assert db.scalar(select(UserIdentity)) is None
 
 
 def test_existing_user_with_current_terms_gets_session(signup_api):
@@ -192,6 +194,11 @@ def test_existing_user_with_current_terms_gets_session(signup_api):
     assert auth_module._SESSION_COOKIE in response.cookies
     with Session(engine) as db:
         assert db.get(User, "member").nickname == "부산길"
+        identities = list(db.scalars(select(UserIdentity)))
+        assert len(identities) == 1
+        assert identities[0].user_id == "member"
+        assert identities[0].provider == "kakao"
+        assert identities[0].provider_subject == KAKAO_ID
 
 
 def test_legacy_user_without_agreement_goes_to_consent(signup_api):
@@ -212,6 +219,10 @@ def test_legacy_user_without_agreement_goes_to_consent(signup_api):
     with Session(engine) as db:
         assert db.scalar(select(User)) is not None
         assert db.scalar(select(UserAgreement)) is None
+        identities = list(db.scalars(select(UserIdentity)))
+        assert len(identities) == 1
+        assert identities[0].user_id == "legacy"
+        assert identities[0].provider_subject == KAKAO_ID
 
 
 def test_old_terms_version_is_not_current_agreement(signup_api):
@@ -256,6 +267,11 @@ def test_signup_complete_creates_new_user_and_session(signup_api):
         assert agreements[0].document_type == DOCUMENT_TYPE_TERMS
         assert agreements[0].document_version == CURRENT_TERMS_VERSION
         assert agreements[0].action == AGREEMENT_ACTION_ACCEPTED
+        identities = list(db.scalars(select(UserIdentity)))
+        assert len(identities) == 1
+        assert identities[0].user_id == users[0].id
+        assert identities[0].provider == "kakao"
+        assert identities[0].provider_subject == KAKAO_ID
 
 
 def test_signup_complete_rejects_missing_acceptance(signup_api):
@@ -316,6 +332,11 @@ def test_signup_complete_existing_legacy_user(signup_api):
         assert users[0].id == "legacy"
         assert db.get(UserPreference, "legacy").profile == "disabled"
         assert db.scalar(select(UserAgreement).where(UserAgreement.user_id == "legacy")) is not None
+        identities = list(db.scalars(select(UserIdentity)))
+        assert len(identities) == 1
+        assert identities[0].user_id == "legacy"
+        assert identities[0].provider == "kakao"
+        assert identities[0].provider_subject == KAKAO_ID
 
 
 def test_signup_complete_rejects_replayed_pending_credential(signup_api):

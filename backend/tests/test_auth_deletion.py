@@ -24,6 +24,7 @@ from app.database import (
     RouteReview,
     User,
     UserAgreement,
+    UserIdentity,
     UserPreference,
     UserWithdrawal,
     database_session,
@@ -361,6 +362,11 @@ def test_existing_user_gets_deletion_credential_without_session(deletion_api):
         user = db.get(User, "member")
         assert user.nickname == "이전"
         assert db.scalar(select(func.count()).select_from(UserAgreement)) == 1
+        identities = list(db.scalars(select(UserIdentity)))
+        assert len(identities) == 1
+        assert identities[0].user_id == "member"
+        assert identities[0].provider == "kakao"
+        assert identities[0].provider_subject == KAKAO_ID
 
 
 def test_legacy_user_without_agreement_does_not_go_to_signup(deletion_api):
@@ -404,6 +410,7 @@ def test_unknown_kakao_user_does_not_create_account(deletion_api):
         assert db.scalar(select(User)) is None
         assert db.scalar(select(UserPreference)) is None
         assert db.scalar(select(UserAgreement)) is None
+        assert db.scalar(select(func.count()).select_from(UserIdentity)) == 0
 
 
 def test_deletion_status_reports_verified_without_identity(deletion_api):
@@ -474,6 +481,7 @@ def test_confirm_deletes_account_with_existing_policy(deletion_api, monkeypatch)
         assert record.status == "completed"
         assert record.pending_provider_id is None
         assert record.subject_hash == withdrawal_subject_hash(KAKAO_ID)
+        assert db.scalar(select(func.count()).select_from(UserIdentity)) == 0
 
 
 def test_confirm_replay_does_not_reissue_or_recreate(deletion_api, monkeypatch):
