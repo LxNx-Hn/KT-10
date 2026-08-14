@@ -47,6 +47,10 @@ _SIGNUP_COOKIE = "dongnet_signup_state"
 _SIGNUP_COOKIE_PATH = "/api/auth/signup"
 _SIGNUP_MAX_AGE = 600
 _SIGNUP_SALT = "dongnet-signup-pending-v1"
+_SIGNUP_PAYLOAD_VERSION = 2
+_PROVIDER_SUBJECT_MAX_LEN = 255
+# 이번 PR에서 signup-complete가 실제 계정을 만들 수 있는 공급자.
+_SIGNUP_SUPPORTED_PROVIDERS = frozenset({PROVIDER_KAKAO})
 _DELETION_COOKIE = "dongnet_deletion_state"
 _DELETION_COOKIE_PATH = "/api/auth/deletion"
 _DELETION_MAX_AGE = 600
@@ -128,7 +132,7 @@ def _set_session_cookie(response: Response, user_id: str) -> None:
 
 
 def _set_signup_cookie(response: Response, payload: dict) -> None:
-    # URLSafeTimedSerializer는 서명이지 암호화가 아니다. kakao_id는
+    # URLSafeTimedSerializer는 서명이지 암호화가 아니다. provider_subject는
     # HttpOnly·짧은 만료·signup API path로만 노출을 제한한다.
     response.set_cookie(
         _SIGNUP_COOKIE,
@@ -141,33 +145,152 @@ def _set_signup_cookie(response: Response, payload: dict) -> None:
     )
 
 
+def _validated_nickname(nickname: object) -> str | None:
+    if nickname is None:
+        return None
+    if (
+        not isinstance(nickname, str)
+        or not nickname.strip()
+        or len(nickname) > 100
+    ):
+        raise ValueError("Signup payload nickname is invalid.")
+    return nickname
+
+
+def _validated_provider_subject_common(subject: object) -> str:
+    # bool은 거부. str만 exact-match한다.
+    if type(subject) is not str or not subject:
+        raise ValueError("Signup payload provider subject is invalid.")
+    if len(subject) > _PROVIDER_SUBJECT_MAX_LEN:
+        raise ValueError("Signup payload provider subject is invalid.")
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in subject):
+        raise ValueError("Signup payload provider subject is invalid.")
+    return subject
+
+
+def _validated_kakao_provider_subject(subject: str) -> str:
+    if (
+        not subject.isdigit()
+        or int(subject) <= 0
+        or len(subject) > 64
+    ):
+        raise ValueError("Signup payload Kakao identity is invalid.")
+    return subject
+
+
+def _validated_provider_subject(provider: str, subject: object) -> str:
+    common = _validated_provider_subject_common(subject)
+    if provider == PROVIDER_KAKAO:
+        return _validated_kakao_provider_subject(common)
+    raise ValueError("Signup payload provider is unsupported.")
+
+
+def _new_signup_pending(
+    *,
+    provider: str,
+    provider_subject: str,
+    nickname: str | None = None,
+) -> dict:
+    return {
+        "version": _SIGNUP_PAYLOAD_VERSION,
+        "kind": "new",
+        "provider": provider,
+        "provider_subject": provider_subject,
+        "nickname": nickname,
+    }
+
+
+def _existing_signup_pending(*, user_id: str) -> dict:
+    return {
+        "version": _SIGNUP_PAYLOAD_VERSION,
+        "kind": "existing",
+        "user_id": user_id,
+    }
+
+
+def _is_signup_payload_version(value: object) -> bool:
+    # bool은 int subclass라 == 2 비교만으로는 부족하다.
+    return type(value) is int and value == _SIGNUP_PAYLOAD_VERSION
+
+
 def _validated_signup_payload(payload: object) -> dict:
+    """서명된 signup cookie를 내부 v2 representation으로 normalize한다.
+
+    legacy v1(new+kakao_id / existing+user_id)은 읽기만 허용한다.
+    v1/v2 혼합·unsupported provider는 fail-closed.
+    """
     if not isinstance(payload, dict):
         raise ValueError("Signup payload is not an object.")
     kind = payload.get("kind")
-    if kind == "new":
-        kakao_id = payload.get("kakao_id")
-        nickname = payload.get("nickname")
-        if (
-            not isinstance(kakao_id, str)
-            or not kakao_id.isdigit()
-            or int(kakao_id) <= 0
-            or len(kakao_id) > 64
-        ):
-            raise ValueError("Signup payload kakao identity is invalid.")
-        if nickname is not None and (
-            not isinstance(nickname, str)
-            or not nickname.strip()
-            or len(nickname) > 100
-        ):
-            raise ValueError("Signup payload nickname is invalid.")
-        return {"kind": "new", "kakao_id": kakao_id, "nickname": nickname}
     if kind == "existing":
+        unknown = set(payload) - {"kind", "user_id", "version"}
+        if unknown:
+            raise ValueError("Signup payload existing schema is invalid.")
+        if "version" in payload and not _is_signup_payload_version(
+            payload.get("version"),
+        ):
+            raise ValueError("Signup payload version is invalid.")
         user_id = payload.get("user_id")
         if not isinstance(user_id, str) or not user_id.strip() or len(user_id) > 36:
             raise ValueError("Signup payload user identity is invalid.")
-        return {"kind": "existing", "user_id": user_id}
-    raise ValueError("Signup payload kind is invalid.")
+        return {
+            "version": _SIGNUP_PAYLOAD_VERSION,
+            "kind": "existing",
+            "user_id": user_id,
+        }
+    if kind != "new":
+        raise ValueError("Signup payload kind is invalid.")
+
+    nickname = _validated_nickname(payload.get("nickname"))
+    has_legacy_kakao = "kakao_id" in payload
+    has_v2_identity = "provider" in payload or "provider_subject" in payload
+
+    # legacy v1 new: version 없음 + kakao_id만. provider 필드/혼합 금지.
+    if (
+        "version" not in payload
+        and has_legacy_kakao
+        and not has_v2_identity
+    ):
+        unknown = set(payload) - {"kind", "kakao_id", "nickname"}
+        if unknown:
+            raise ValueError("Signup payload legacy schema is invalid.")
+        kakao_id = _validated_kakao_provider_subject(
+            _validated_provider_subject_common(payload.get("kakao_id")),
+        )
+        return _new_signup_pending(
+            provider=PROVIDER_KAKAO,
+            provider_subject=kakao_id,
+            nickname=nickname,
+        )
+
+    # v2 new: kakao_id 혼합·잘못된 version 거부
+    if has_legacy_kakao:
+        raise ValueError("Signup payload mixes legacy and v2 identity fields.")
+    unknown = set(payload) - {
+        "version",
+        "kind",
+        "provider",
+        "provider_subject",
+        "nickname",
+    }
+    if unknown:
+        raise ValueError("Signup payload schema is invalid.")
+    if not _is_signup_payload_version(payload.get("version")):
+        raise ValueError("Signup payload version is invalid.")
+    provider = payload.get("provider")
+    if type(provider) is not str or not provider:
+        raise ValueError("Signup payload provider is invalid.")
+    if provider not in _SIGNUP_SUPPORTED_PROVIDERS:
+        raise ValueError("Signup payload provider is unsupported.")
+    provider_subject = _validated_provider_subject(
+        provider,
+        payload.get("provider_subject"),
+    )
+    return _new_signup_pending(
+        provider=provider,
+        provider_subject=provider_subject,
+        nickname=nickname,
+    )
 
 
 def _read_signup_payload(cookie: str | None) -> dict:
@@ -393,6 +516,26 @@ def _create_user_with_preference(
         return user
 
 
+def _create_user_from_pending_identity(db: Session, pending: dict) -> User:
+    """pending signup credential으로 User를 만든다. 지원 provider만 허용."""
+    if pending.get("kind") != "new":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid signup session.",
+        )
+    provider = pending.get("provider")
+    if provider == PROVIDER_KAKAO:
+        return _create_user_with_preference(
+            db,
+            kakao_id=pending["provider_subject"],
+            nickname=pending.get("nickname"),
+        )
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid signup session.",
+    )
+
+
 def _provider_identity(profile: object) -> tuple[str, str | None]:
     if not isinstance(profile, dict):
         raise ValueError("Kakao user profile is not an object.")
@@ -544,21 +687,18 @@ async def kakao_callback(
         return _deletion_callback_redirect(db, kakao_id)
     user = _find_kakao_user(db, kakao_id)
     if user is None:
-        return _pending_consent_redirect({
-            "kind": "new",
-            "kakao_id": kakao_id,
-            "nickname": nickname,
-        })
+        return _pending_consent_redirect(_new_signup_pending(
+            provider=PROVIDER_KAKAO,
+            provider_subject=kakao_id,
+            nickname=nickname,
+        ))
     user.nickname = nickname
     _ensure_kakao_identity_or_conflict(db, user)
     if has_current_terms_agreement(db, user):
         db.commit()
         return _issue_session_redirect(user.id)
     db.commit()
-    return _pending_consent_redirect({
-        "kind": "existing",
-        "user_id": user.id,
-    })
+    return _pending_consent_redirect(_existing_signup_pending(user_id=user.id))
 
 
 @router.get("/signup/status", response_model=None)
@@ -595,11 +735,7 @@ def signup_complete(
                 detail="Signup session is no longer valid.",
             )
     else:
-        user = _create_user_with_preference(
-            db,
-            kakao_id=pending["kakao_id"],
-            nickname=pending["nickname"],
-        )
+        user = _create_user_from_pending_identity(db, pending)
     consumed = consume_current_terms_agreement(db, user)
     db.commit()
     response = Response(

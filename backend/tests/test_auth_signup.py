@@ -126,6 +126,18 @@ def _set_pending_cookie(client: TestClient, token: str) -> None:
     )
 
 
+def _signup_token(payload: dict) -> str:
+    return auth_module._signup_serializer().dumps(payload)
+
+
+def _raw_signup_cookie(response) -> dict:
+    token = response.cookies[auth_module._SIGNUP_COOKIE]
+    return auth_module._signup_serializer().loads(
+        token,
+        max_age=auth_module._SIGNUP_MAX_AGE,
+    )
+
+
 def _cookie_cleared(response, name: str) -> bool:
     headers = response.headers.get_list("set-cookie")
     return any(
@@ -165,6 +177,15 @@ def test_new_kakao_callback_does_not_create_account(signup_api):
         and "Path=/api/auth/signup" in header
         for header in response.headers.get_list("set-cookie")
     )
+    raw = _raw_signup_cookie(response)
+    assert raw == {
+        "version": 2,
+        "kind": "new",
+        "provider": "kakao",
+        "provider_subject": KAKAO_ID,
+        "nickname": "부산길",
+    }
+    assert "kakao_id" not in raw
     with Session(engine) as db:
         assert db.scalar(select(User)) is None
         assert db.scalar(select(UserPreference)) is None
@@ -216,6 +237,12 @@ def test_legacy_user_without_agreement_goes_to_consent(signup_api):
     assert response.headers["location"] == "http://localhost:5173/signup/consent"
     assert auth_module._SIGNUP_COOKIE in response.cookies
     assert auth_module._SESSION_COOKIE not in response.cookies
+    raw = _raw_signup_cookie(response)
+    assert raw == {
+        "version": 2,
+        "kind": "existing",
+        "user_id": "legacy",
+    }
     with Session(engine) as db:
         assert db.scalar(select(User)) is not None
         assert db.scalar(select(UserAgreement)) is None
@@ -423,6 +450,11 @@ def test_signup_status_reports_pending_without_identity(signup_api):
 
     assert response.status_code == 200
     assert response.json() == {"pending": True}
+    assert "provider" not in response.text
+    assert "provider_subject" not in response.text
+    assert "nickname" not in response.text
+    assert "user_id" not in response.text
+    assert KAKAO_ID not in response.text
 
 
 def test_signup_status_without_cookie_is_guest(signup_api):
@@ -512,11 +544,302 @@ def test_consume_current_terms_agreement_is_false_when_already_accepted(signup_a
         assert db.scalar(select(func.count()).select_from(UserAgreement)) == 1
 
 
+def test_v2_kakao_pending_payload_validates(signup_api):
+    client, engine = signup_api
+    token = _signup_token({
+        "version": 2,
+        "kind": "new",
+        "provider": "kakao",
+        "provider_subject": KAKAO_ID,
+        "nickname": "부산길",
+    })
+    _set_pending_cookie(client, token)
+    response = client.post("/api/auth/signup/complete", json={"acceptTerms": True})
+    assert response.status_code == 204
+    with Session(engine) as db:
+        assert db.scalar(select(func.count()).select_from(User)) == 1
+        assert db.scalar(select(UserIdentity)).provider_subject == KAKAO_ID
+
+
+def test_legacy_v1_new_kakao_cookie_still_completes(signup_api):
+    client, engine = signup_api
+    token = _signup_token({
+        "kind": "new",
+        "kakao_id": KAKAO_ID,
+        "nickname": "레거시",
+    })
+    normalized = auth_module._validated_signup_payload({
+        "kind": "new",
+        "kakao_id": KAKAO_ID,
+        "nickname": "레거시",
+    })
+    assert normalized == {
+        "version": 2,
+        "kind": "new",
+        "provider": "kakao",
+        "provider_subject": KAKAO_ID,
+        "nickname": "레거시",
+    }
+    _set_pending_cookie(client, token)
+    response = client.post("/api/auth/signup/complete", json={"acceptTerms": True})
+    assert response.status_code == 204
+    with Session(engine) as db:
+        user = db.scalar(select(User))
+        assert user is not None
+        assert user.kakao_id == KAKAO_ID
+        assert user.nickname == "레거시"
+        assert db.scalar(select(func.count()).select_from(UserIdentity)) == 1
+
+
+def test_legacy_v1_existing_cookie_still_completes(signup_api):
+    client, engine = signup_api
+    with Session(engine) as db:
+        db.add(User(id="legacy", kakao_id=KAKAO_ID, nickname="이전"))
+        db.flush()
+        db.add(UserPreference(user_id="legacy", profile="disabled"))
+        db.commit()
+    token = _signup_token({"kind": "existing", "user_id": "legacy"})
+    _set_pending_cookie(client, token)
+    response = client.post("/api/auth/signup/complete", json={"acceptTerms": True})
+    assert response.status_code == 204
+    with Session(engine) as db:
+        assert db.get(User, "legacy") is not None
+        assert db.scalar(select(UserAgreement).where(UserAgreement.user_id == "legacy"))
+        assert db.scalar(select(func.count()).select_from(User)) == 1
+
+
+def test_unsupported_provider_is_fail_closed(signup_api):
+    client, engine = signup_api
+    token = _signup_token({
+        "version": 2,
+        "kind": "new",
+        "provider": "apple",
+        "provider_subject": "001234.abcdef",
+        "nickname": None,
+    })
+    _set_pending_cookie(client, token)
+    response = client.post("/api/auth/signup/complete", json={"acceptTerms": True})
+    assert response.status_code == 401
+    with Session(engine) as db:
+        assert db.scalar(select(User)) is None
+        assert db.scalar(select(UserIdentity)) is None
+        assert db.scalar(select(UserPreference)) is None
+        assert db.scalar(select(UserAgreement)) is None
+
+
+def test_signup_payload_version_must_be_integer_two(signup_api):
+    client, engine = signup_api
+    base = {
+        "kind": "new",
+        "provider": "kakao",
+        "provider_subject": KAKAO_ID,
+        "nickname": "부산길",
+    }
+    for version in (True, False, "2", 1, 3, None):
+        token = _signup_token({**base, "version": version})
+        _set_pending_cookie(client, token)
+        assert client.post(
+            "/api/auth/signup/complete",
+            json={"acceptTerms": True},
+        ).status_code == 401
+    with Session(engine) as db:
+        assert db.scalar(select(User)) is None
+
+
+def test_mixed_v2_and_legacy_kakao_id_is_rejected(signup_api):
+    client, engine = signup_api
+    token = _signup_token({
+        "version": 2,
+        "kind": "new",
+        "provider": "kakao",
+        "provider_subject": KAKAO_ID,
+        "kakao_id": KAKAO_ID,
+        "nickname": "혼합",
+    })
+    _set_pending_cookie(client, token)
+    assert client.post(
+        "/api/auth/signup/complete",
+        json={"acceptTerms": True},
+    ).status_code == 401
+    with Session(engine) as db:
+        assert db.scalar(select(User)) is None
+
+
+def test_versioned_kakao_id_only_payload_is_not_legacy(signup_api):
+    """version이 있으면 kakao_id-only를 legacy로 허용하지 않는다."""
+    client, engine = signup_api
+    token = _signup_token({
+        "version": 2,
+        "kind": "new",
+        "kakao_id": KAKAO_ID,
+        "nickname": "위조",
+    })
+    _set_pending_cookie(client, token)
+    assert client.post(
+        "/api/auth/signup/complete",
+        json={"acceptTerms": True},
+    ).status_code == 401
+    with Session(engine) as db:
+        assert db.scalar(select(User)) is None
+
+
+def test_provider_only_without_version_is_not_legacy(signup_api):
+    client, engine = signup_api
+    token = _signup_token({
+        "kind": "new",
+        "provider": "kakao",
+        "provider_subject": KAKAO_ID,
+    })
+    _set_pending_cookie(client, token)
+    assert client.post(
+        "/api/auth/signup/complete",
+        json={"acceptTerms": True},
+    ).status_code == 401
+    with Session(engine) as db:
+        assert db.scalar(select(User)) is None
+
+
+def test_existing_payload_rejects_mixed_identity_fields(signup_api):
+    client, engine = signup_api
+    with Session(engine) as db:
+        db.add(User(id="legacy", kakao_id=KAKAO_ID, nickname="이전"))
+        db.flush()
+        db.add(UserPreference(user_id="legacy"))
+        db.commit()
+    token = _signup_token({
+        "version": 2,
+        "kind": "existing",
+        "user_id": "legacy",
+        "provider": "kakao",
+        "provider_subject": KAKAO_ID,
+    })
+    _set_pending_cookie(client, token)
+    assert client.post(
+        "/api/auth/signup/complete",
+        json={"acceptTerms": True},
+    ).status_code == 401
+    with Session(engine) as db:
+        assert db.scalar(select(UserAgreement)) is None
+
+
+def test_provider_value_is_exact_match_only(signup_api):
+    client, engine = signup_api
+    for provider in ("KAKAO", " kakao ", True, 1, ["kakao"]):
+        token = _signup_token({
+            "version": 2,
+            "kind": "new",
+            "provider": provider,
+            "provider_subject": KAKAO_ID,
+        })
+        _set_pending_cookie(client, token)
+        assert client.post(
+            "/api/auth/signup/complete",
+            json={"acceptTerms": True},
+        ).status_code == 401
+    with Session(engine) as db:
+        assert db.scalar(select(User)) is None
+
+
+def test_provider_subject_rejects_non_string(signup_api):
+    client, engine = signup_api
+    for subject in (123456, True, None, ["123456"]):
+        token = _signup_token({
+            "version": 2,
+            "kind": "new",
+            "provider": "kakao",
+            "provider_subject": subject,
+        })
+        _set_pending_cookie(client, token)
+        assert client.post(
+            "/api/auth/signup/complete",
+            json={"acceptTerms": True},
+        ).status_code == 401
+    with Session(engine) as db:
+        assert db.scalar(select(User)) is None
+
+
+def test_missing_provider_is_invalid_signup_session(signup_api):
+    client, engine = signup_api
+    token = _signup_token({
+        "version": 2,
+        "kind": "new",
+        "provider_subject": KAKAO_ID,
+    })
+    _set_pending_cookie(client, token)
+    assert client.post(
+        "/api/auth/signup/complete",
+        json={"acceptTerms": True},
+    ).status_code == 401
+    with Session(engine) as db:
+        assert db.scalar(select(User)) is None
+
+
+def test_missing_provider_subject_is_invalid_signup_session(signup_api):
+    client, engine = signup_api
+    token = _signup_token({
+        "version": 2,
+        "kind": "new",
+        "provider": "kakao",
+    })
+    _set_pending_cookie(client, token)
+    assert client.post(
+        "/api/auth/signup/complete",
+        json={"acceptTerms": True},
+    ).status_code == 401
+    with Session(engine) as db:
+        assert db.scalar(select(User)) is None
+
+
+def test_invalid_kakao_provider_subject_is_rejected(signup_api):
+    client, engine = signup_api
+    for subject in ("", "abc", "0", "-1", "1" * 65, "12\n34"):
+        token = _signup_token({
+            "version": 2,
+            "kind": "new",
+            "provider": "kakao",
+            "provider_subject": subject,
+        })
+        _set_pending_cookie(client, token)
+        assert client.post(
+            "/api/auth/signup/complete",
+            json={"acceptTerms": True},
+        ).status_code == 401
+    with Session(engine) as db:
+        assert db.scalar(select(User)) is None
+        assert db.scalar(select(UserIdentity)) is None
+
+
+def test_replayed_v2_token_keeps_single_identity(signup_api):
+    client, engine = signup_api
+    pending = _callback(client)
+    token = pending.cookies[auth_module._SIGNUP_COOKIE]
+    _set_pending_cookie(client, token)
+    assert client.post(
+        "/api/auth/signup/complete",
+        json={"acceptTerms": True},
+    ).status_code == 204
+    _set_pending_cookie(client, token)
+    assert client.post(
+        "/api/auth/signup/complete",
+        json={"acceptTerms": True},
+    ).status_code == 409
+    with Session(engine) as db:
+        assert db.scalar(select(func.count()).select_from(User)) == 1
+        assert db.scalar(select(func.count()).select_from(UserIdentity)) == 1
+        assert db.scalar(select(func.count()).select_from(UserPreference)) == 1
+        assert db.scalar(select(func.count()).select_from(UserAgreement)) == 1
+
+
 def test_migration_revision_chain_points_at_current_head():
     versions = Path(__file__).resolve().parents[1] / "alembic" / "versions"
-    text = (versions / "20260813_0008_user_agreements.py").read_text(encoding="utf-8")
-    assert 'revision: str = "20260813_0008"' in text
-    assert "20260812_0007" in text
-    assert "user_agreements" in text
+    # head는 identities migration. agreements revision은 체인에 유지된다.
+    text = (versions / "20260814_0009_user_identities.py").read_text(encoding="utf-8")
+    assert 'revision: str = "20260814_0009"' in text
+    assert "20260813_0008" in text
+    assert "user_identities" in text
     assert "op.drop_table" in text
-    assert "INSERT INTO" not in text.upper()
+    agreements = (versions / "20260813_0008_user_agreements.py").read_text(
+        encoding="utf-8",
+    )
+    assert 'revision: str = "20260813_0008"' in agreements
+    assert "INSERT INTO" not in agreements.upper()
