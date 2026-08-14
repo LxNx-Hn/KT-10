@@ -56,6 +56,45 @@ class User(Base):
         back_populates="user",
         passive_deletes=True,
     )
+    identities: Mapped[list["UserIdentity"]] = relationship(
+        back_populates="user",
+        passive_deletes=True,
+    )
+
+
+class UserIdentity(Base):
+    """외부 인증 공급자 subject와 서비스 User를 연결한다.
+
+    users.kakao_id는 transition 기간 동안 유지한다. 신규·기존 Kakao 계정은
+    여기에 provider='kakao' 행을 함께 둔다. provider 값은 CHECK로 고정하지
+    않아 이후 공급자 확장을 막지 않는다.
+    """
+
+    __tablename__ = "user_identities"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_subject",
+            name="uq_user_identities_provider_subject",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "provider",
+            name="uq_user_identities_user_provider",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+    )
+    provider: Mapped[str] = mapped_column(String(32))
+    provider_subject: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
+    user: Mapped[User] = relationship(back_populates="identities")
 
 
 class UserWithdrawal(Base):

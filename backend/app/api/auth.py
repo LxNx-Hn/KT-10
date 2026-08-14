@@ -24,11 +24,18 @@ from ..agreements import (
 from ..database import (
     FacilityReport,
     User,
+    UserIdentity,
     UserPreference,
     UserWithdrawal,
     database_session,
     optional_database_session,
     utc_now_naive,
+)
+from ..identities import (
+    PROVIDER_KAKAO,
+    ProviderIdentityConflict,
+    ensure_kakao_identity,
+    find_user_by_provider_identity,
 )
 from ..settings import settings
 
@@ -312,8 +319,33 @@ def _clear_identity_cookies(response: Response) -> None:
     _clear_deletion_cookie(response)
 
 
+def _kakao_identity_conflict() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Kakao account identity conflict. Try again or contact support.",
+    )
+
+
+def _find_kakao_user(db: Session, kakao_id: str) -> User | None:
+    try:
+        return find_user_by_provider_identity(
+            db,
+            provider=PROVIDER_KAKAO,
+            provider_subject=kakao_id,
+        )
+    except ProviderIdentityConflict as exc:
+        raise _kakao_identity_conflict() from exc
+
+
+def _ensure_kakao_identity_or_conflict(db: Session, user: User) -> None:
+    try:
+        ensure_kakao_identity(db, user)
+    except ProviderIdentityConflict as exc:
+        raise _kakao_identity_conflict() from exc
+
+
 def _deletion_callback_redirect(db: Session, kakao_id: str) -> Response:
-    user = db.scalar(select(User).where(User.kakao_id == kakao_id))
+    user = _find_kakao_user(db, kakao_id)
     if user is None:
         response = RedirectResponse(
             _frontend_path("/account-deletion?result=not-found"),
@@ -332,9 +364,10 @@ def _create_user_with_preference(
     kakao_id: str,
     nickname: str | None,
 ) -> User:
-    """kakao_id unique race를 흡수해 한 계정만 남긴다."""
-    user = db.scalar(select(User).where(User.kakao_id == kakao_id))
+    """kakao_id unique race를 흡수해 한 계정·identity만 남긴다."""
+    user = _find_kakao_user(db, kakao_id)
     if user is not None:
+        _ensure_kakao_identity_or_conflict(db, user)
         return user
     created = User(kakao_id=kakao_id, nickname=nickname)
     try:
@@ -342,15 +375,21 @@ def _create_user_with_preference(
             db.add(created)
             db.flush()
             db.add(UserPreference(user_id=created.id))
+            db.add(UserIdentity(
+                user_id=created.id,
+                provider=PROVIDER_KAKAO,
+                provider_subject=kakao_id,
+            ))
             db.flush()
         return created
     except IntegrityError:
-        user = db.scalar(select(User).where(User.kakao_id == kakao_id))
+        user = _find_kakao_user(db, kakao_id)
         if user is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Signup could not be completed. Try Kakao login again.",
             )
+        _ensure_kakao_identity_or_conflict(db, user)
         return user
 
 
@@ -503,7 +542,7 @@ async def kakao_callback(
         raise HTTPException(status_code=502, detail="Kakao login provider request failed.") from exc
     if deletion_oauth:
         return _deletion_callback_redirect(db, kakao_id)
-    user = db.scalar(select(User).where(User.kakao_id == kakao_id))
+    user = _find_kakao_user(db, kakao_id)
     if user is None:
         return _pending_consent_redirect({
             "kind": "new",
@@ -511,6 +550,7 @@ async def kakao_callback(
             "nickname": nickname,
         })
     user.nickname = nickname
+    _ensure_kakao_identity_or_conflict(db, user)
     if has_current_terms_agreement(db, user):
         db.commit()
         return _issue_session_redirect(user.id)
