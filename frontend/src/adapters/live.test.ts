@@ -221,6 +221,37 @@ describe('live 경로 요청 제한시간', () => {
     });
   });
 
+  it('NIM 경로 설명은 route-set 토큰과 route ID만 전송한다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        routeId: 'route-1',
+        explanation: 'NIM 경로 설명입니다.',
+        provider: 'nvidia_nim',
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(liveAdapters.routes.explainRoute(
+      'route-set-token-1234567890',
+      'route-1',
+    )).resolves.toEqual({
+      routeId: 'route-1',
+      explanation: 'NIM 경로 설명입니다.',
+      provider: 'nvidia_nim',
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/routes/explain');
+    expect(JSON.parse(String(init.body))).toEqual({
+      routeSetToken: 'route-set-token-1234567890',
+      routeId: 'route-1',
+    });
+  });
+
   it('재채점은 route-set과 현재 weather scenario를 재사용한다', async () => {
     const token = 'route-set-token-1234567890';
     const current = [{ routeSetToken: token }] as ScoredRoute[];

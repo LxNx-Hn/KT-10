@@ -366,6 +366,9 @@ jobs:
           AI_INTERNAL_SERVICE_TOKEN: ${{ secrets.AI_INTERNAL_SERVICE_TOKEN }}
           ODSAY_API_KEY: ${{ secrets.ODSAY_API_KEY }}
           ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
+          NVIDIA_API_KEY_SECRET_ARN: ${{ vars.NVIDIA_API_KEY_SECRET_ARN || 'arn:aws:secretsmanager:ap-northeast-2:819044292803:secret:kt10/prod/nvidia-api-key-0h39Xl' }}
+          NIM_BASE_URL: ${{ vars.NIM_BASE_URL || 'https://integrate.api.nvidia.com/v1' }}
+          NIM_MODEL: ${{ vars.NIM_MODEL || 'nvidia/nvidia-nemotron-nano-9b-v2' }}
           DEPLOY_FRONTEND: ${{ steps.plan.outputs.deploy_frontend }}
           DEPLOY_BACKEND: ${{ steps.plan.outputs.deploy_backend }}
           DEPLOY_AI: ${{ steps.plan.outputs.deploy_ai }}
@@ -385,6 +388,16 @@ jobs:
           if [ "$DEPLOY_AI" = "true" ] && [ -z "$ODSAY_API_KEY" ]; then
             echo "ODSAY_API_KEY secret is required for transit routing." >&2
             exit 1
+          fi
+          if [ "$DEPLOY_BACKEND" = "true" ]; then
+            if [ -z "$NVIDIA_API_KEY_SECRET_ARN" ]; then
+              echo "NVIDIA_API_KEY_SECRET_ARN variable is required for NIM route explanations." >&2
+              exit 1
+            fi
+            if [ -z "$NIM_MODEL" ]; then
+              echo "NIM_MODEL variable is required for NIM route explanations." >&2
+              exit 1
+            fi
           fi
           if [ "$DEPLOY_AI" = "true" ]; then
             python - <<'PY'
@@ -422,6 +435,7 @@ jobs:
             local inject_internal_token="$5"
             local inject_ors_key="$6"
             local inject_odsay_key="$7"
+            local inject_nvidia_nim="$8"
 
             aws ecs describe-task-definition \
               --task-definition "$family" \
@@ -434,9 +448,13 @@ jobs:
               --arg internal_token "$AI_INTERNAL_SERVICE_TOKEN" \
               --arg ors_api_key "$ORS_API_KEY" \
               --arg odsay_api_key "$ODSAY_API_KEY" \
+              --arg nvidia_api_key_secret_arn "$NVIDIA_API_KEY_SECRET_ARN" \
+              --arg nim_base_url "$NIM_BASE_URL" \
+              --arg nim_model "$NIM_MODEL" \
               --argjson inject_internal_token "$inject_internal_token" \
               --argjson inject_ors_key "$inject_ors_key" \
               --argjson inject_odsay_key "$inject_odsay_key" \
+              --argjson inject_nvidia_nim "$inject_nvidia_nim" \
               'del(
                 .taskDefinitionArn,
                 .revision,
@@ -483,6 +501,37 @@ jobs:
                       )
                     else .
                     end
+                  | if $inject_nvidia_nim then
+                      .secrets = (
+                        (.secrets // [])
+                        | map(select(.name != "NVIDIA_API_KEY"))
+                        + [{
+                            name: "NVIDIA_API_KEY",
+                            valueFrom: $nvidia_api_key_secret_arn
+                          }]
+                      )
+                      | .environment = (
+                        (.environment // [])
+                        | map(
+                            select(
+                              .name != "NVIDIA_API_KEY"
+                              and .name != "NIM_BASE_URL"
+                              and .name != "NIM_MODEL"
+                            )
+                          )
+                        + [
+                          {
+                            name: "NIM_BASE_URL",
+                            value: $nim_base_url
+                          },
+                          {
+                            name: "NIM_MODEL",
+                            value: $nim_model
+                          }
+                        ]
+                      )
+                    else .
+                    end
                 else .
                 end
               )' \
@@ -509,7 +558,8 @@ jobs:
               ai_task_definition \
               true \
               true \
-              true
+              true \
+              false
           fi
           if [ "$DEPLOY_BACKEND" = "true" ]; then
             register_task_definition \
@@ -519,7 +569,8 @@ jobs:
               backend_task_definition \
               true \
               false \
-              false
+              false \
+              true
           fi
           if [ "$DEPLOY_FRONTEND" = "true" ]; then
             register_task_definition \
@@ -527,6 +578,7 @@ jobs:
               frontend \
               "$registry/kt10-frontend:$tag" \
               frontend_task_definition \
+              false \
               false \
               false \
               false

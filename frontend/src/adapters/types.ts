@@ -21,6 +21,12 @@ export interface PlacesAdapter {
   searchPlaces(query: string): Promise<Place[]>;
 }
 
+export interface RouteExplanation {
+  routeId: string;
+  explanation: string;
+  provider: 'nvidia_nim';
+}
+
 export interface RouteAdapter {
   /** 출발/도착지 기반 경로 후보 생성 */
   getCandidates(origin: Place, dest: Place): Promise<RouteCandidate[]>;
@@ -62,6 +68,14 @@ export interface RouteAdapter {
     routeSetToken: string,
     routeId: string,
   ): Promise<TransitArrivals>;
+  /**
+   * 선택된 경로의 서버 캐시 사실을 NIM 설명문으로 변환한다.
+   * NIM을 지원하지 않는 모드(mock)는 null을 반환한다.
+   */
+  explainRoute(
+    routeSetToken: string,
+    routeId: string,
+  ): Promise<RouteExplanation | null>;
   /**
    * 프로필·이동 조건 변경을 기존 route-set 재순위화로 처리한다.
    * 경로 공급자를 다시 호출하지 않으며 route-set token도 유지된다.
