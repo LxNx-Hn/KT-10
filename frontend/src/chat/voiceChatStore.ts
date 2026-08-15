@@ -5,6 +5,7 @@
  *       경로 조건 적용 → recalc → TTS 응답 → 대화 기록 표시.
  */
 import { create } from 'zustand';
+import { adapters } from '@/adapters';
 import { useAppStore } from '@/store/appStore';
 import { PROFILE_LIST } from '@/config/profiles';
 import { parseVoiceCommand } from '@/voice/commandParser';
@@ -61,6 +62,12 @@ function weatherPhrase(mode: WeatherAvoidanceMode): string {
     default:
       return '날씨 위험을 반영해 다시 추천했습니다.';
   }
+}
+
+function fallbackRouteExplanation(rec: ReturnType<typeof serverRankedRecommendations>[number]): string {
+  return rec.score.voiceSummary || rec.score.reasons
+    .map((reason) => reason.replace(/[.]\s*$/, ''))
+    .join(', ');
 }
 
 function newId(): string {
@@ -239,11 +246,17 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
       }
       app.selectRoute(rec.route.id);
       const caution = rec.score.cautions[0] ? ` 주의할 점은 ${rec.score.cautions[0]}` : '';
-      // Backend가 NIM 설명을 만들면 기존 voiceSummary 계약에 담는다. 생성할 수
-      // 없을 때도 같은 필드에는 규칙 기반 요약이 남아 있어 기존 경로 안내가 이어진다.
-      const explanation = rec.score.voiceSummary || rec.score.reasons
-        .map((reason) => reason.replace(/[.]\s*$/, ''))
-        .join(', ');
+      let explanation = fallbackRouteExplanation(rec);
+      if (rec.routeSetToken) {
+        try {
+          const nim = await adapters.routes.explainRoute(rec.routeSetToken, rec.route.id);
+          if (nim?.explanation.trim()) {
+            explanation = nim.explanation.trim();
+          }
+        } catch {
+          // NIM 설명은 선택적 보강이다. 실패하면 기존 규칙 기반 요약을 읽는다.
+        }
+      }
       const terminal = /[.!?…]$/.test(explanation) ? '' : '.';
       respond(`${ordWord(explainIdx)} 경로는 ${explanation}${terminal}${caution}`, 'EXPLAIN_ROUTE');
       return;

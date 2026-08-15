@@ -40,6 +40,7 @@ export const mockAdapters: Adapters = {
       routeId,
       arrivals: [],
     }),
+    explainRoute: () => Promise.resolve(null),
     // 데모는 서버 route-set이 없으므로 전달받은 후보를 그대로 재채점한다.
     rescore: async (current, profile, weatherScenario, options, topN = 5) => {
       const weather = WEATHER_SCENARIOS[weatherScenario];

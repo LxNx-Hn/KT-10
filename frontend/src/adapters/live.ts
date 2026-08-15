@@ -9,6 +9,7 @@ import type {
   WeatherCondition,
 } from '@/types';
 import type { WeatherScenarioId } from '@/data/weather';
+import type { RouteExplanation } from './types';
 import { API_BASE, throwApiError } from '@/api/http';
 import { hasKakaoKey } from '@/map/kakaoLoader';
 import { searchKakaoPlaces } from '@/map/kakaoPlaces';
@@ -129,6 +130,11 @@ export const liveAdapters: Adapters = {
       }, ROUTE_TIMEOUT_MS),
     getTransitArrivals: (routeSetToken, routeId) =>
       postJson<TransitArrivals>('/api/routes/transit-arrivals', {
+        routeSetToken,
+        routeId,
+      }, ROUTE_TIMEOUT_MS),
+    explainRoute: (routeSetToken, routeId) =>
+      postJson<RouteExplanation>('/api/routes/explain', {
         routeSetToken,
         routeId,
       }, ROUTE_TIMEOUT_MS),

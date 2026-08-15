@@ -64,17 +64,78 @@ describe('음성 챗봇 결과 계약', () => {
     expect(state.messages[state.messages.length - 1]?.text).toContain('다시 시도');
   });
 
-  it('경로 설명은 NIM이 보강한 voiceSummary를 먼저 사용한다', async () => {
+  it('경로 설명은 routeSetToken으로 NIM 설명을 먼저 요청한다', async () => {
     const ranked = serverRankedRecommendations(useAppStore.getState().recommendations);
-    ranked[0].score.voiceSummary = 'NIM 경로 설명입니다.';
-    ranked[0].score.reasons = ['규칙 기반 근거입니다.'];
-    useAppStore.setState({ recommendations: ranked });
+    const routeSetToken = 'route-set-token-1234567890';
+    const recommendations = ranked.map((item, index) => index === 0
+      ? {
+          ...item,
+          routeSetToken,
+          score: {
+            ...item.score,
+            voiceSummary: '규칙 기반 안내입니다.',
+            reasons: ['규칙 기반 근거입니다.'],
+          },
+        }
+      : item);
+    vi.spyOn(adapters.routes, 'explainRoute').mockResolvedValue({
+      routeId: recommendations[0].route.id,
+      explanation: 'NIM 경로 설명입니다.',
+      provider: 'nvidia_nim',
+    });
+    useAppStore.setState({ recommendations });
+
+    await useVoiceChatStore.getState().handleUserInput('첫 번째 경로 설명');
+
+    expect(adapters.routes.explainRoute).toHaveBeenCalledWith(
+      routeSetToken,
+      recommendations[0].route.id,
+    );
+    const messages = useVoiceChatStore.getState().messages;
+    const reply = messages[messages.length - 1]?.text ?? '';
+    expect(reply).toContain('NIM 경로 설명입니다.');
+    expect(reply).not.toContain('규칙 기반 안내입니다.');
+    expect(reply).not.toContain('규칙 기반 근거입니다.');
+    expect(reply).not.toContain('..');
+  });
+
+  it('NIM 설명 호출이 실패하면 기존 voiceSummary로 설명한다', async () => {
+    const ranked = serverRankedRecommendations(useAppStore.getState().recommendations);
+    const recommendations = ranked.map((item, index) => index === 0
+      ? {
+          ...item,
+          routeSetToken: 'route-set-token-1234567890',
+          score: {
+            ...item.score,
+            voiceSummary: '규칙 기반 안내입니다.',
+            reasons: ['규칙 기반 근거입니다.'],
+          },
+        }
+      : item);
+    vi.spyOn(adapters.routes, 'explainRoute').mockRejectedValue(new Error('NIM down'));
+    useAppStore.setState({ recommendations });
 
     await useVoiceChatStore.getState().handleUserInput('첫 번째 경로 설명');
 
     const messages = useVoiceChatStore.getState().messages;
     const reply = messages[messages.length - 1]?.text ?? '';
-    expect(reply).toContain('NIM 경로 설명입니다.');
+    expect(reply).toContain('규칙 기반 안내입니다.');
+    expect(reply).not.toContain('요청을 처리하지 못했습니다');
+  });
+
+  it('routeSetToken이 없으면 NIM 호출 없이 기존 설명을 사용한다', async () => {
+    const ranked = serverRankedRecommendations(useAppStore.getState().recommendations);
+    ranked[0].score.voiceSummary = '규칙 기반 안내입니다.';
+    ranked[0].score.reasons = ['규칙 기반 근거입니다.'];
+    vi.spyOn(adapters.routes, 'explainRoute');
+    useAppStore.setState({ recommendations: ranked });
+
+    await useVoiceChatStore.getState().handleUserInput('첫 번째 경로 설명');
+
+    expect(adapters.routes.explainRoute).not.toHaveBeenCalled();
+    const messages = useVoiceChatStore.getState().messages;
+    const reply = messages[messages.length - 1]?.text ?? '';
+    expect(reply).toContain('규칙 기반 안내입니다.');
     expect(reply).not.toContain('규칙 기반 근거입니다.');
     expect(reply).not.toContain('..');
   });
