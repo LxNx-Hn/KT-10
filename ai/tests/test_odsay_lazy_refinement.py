@@ -261,3 +261,117 @@ def test_daily_counter_persists_and_warns(tmp_path, monkeypatch, caplog):
     raw = json.dumps(counter, ensure_ascii=False)
     assert "test-key" not in raw
     assert "mapObject" not in raw
+
+
+# ── cache commit handoff race ──
+#
+# single-flight는 leader task가 끝나는 즉시 in-flight 항목을 지운다. persistent
+# cache 쓰기가 leader 밖에 있으면 "flight 없음 + cache 없음" 상태가 잠깐
+# 생기고, 그 창에 들어온 요청이 새 leader가 되어 network 호출이 한 번 더
+# 나간다. sleep 타이밍에 기대지 않고 Event로 그 창을 강제로 연다.
+
+
+class _BlockingStore:
+    """_store_payload를 특정 kind에서 붙잡아 race window를 여는 도구."""
+
+    def __init__(self, module, kind: str):
+        self._original = module._store_payload
+        self._module = module
+        self._kind = kind
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def __call__(self, kind, identity, payload):
+        if kind != self._kind:
+            await self._original(kind, identity, payload)
+            return
+        self.entered.set()
+        await self.release.wait()
+        await self._original(kind, identity, payload)
+
+
+def test_search_cache_commit_keeps_single_flight_ownership(
+    tmp_path,
+    monkeypatch,
+):
+    """cache commit 전에 도착한 동일 OD 요청이 network를 다시 호출하지 않는다."""
+    import collectors.odsay_collector as module
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", _CountingClient)
+    monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", str(tmp_path))
+    blocking = _BlockingStore(module, "search")
+    monkeypatch.setattr(module, "_store_payload", blocking)
+
+    async def run():
+        collector = OdsayRouteCollector()
+        first = asyncio.create_task(collector.collect(ORIGIN, DEST))
+        # network 응답은 끝났고 cache commit 직전에 멈춘 상태를 기다린다.
+        await asyncio.wait_for(blocking.entered.wait(), timeout=5)
+
+        second = asyncio.create_task(collector.collect(ORIGIN, DEST))
+        # 두 번째 요청이 leader/cache 판정을 마칠 때까지 진행시킨다.
+        for _ in range(50):
+            await asyncio.sleep(0)
+
+        blocking.release.set()
+        return await asyncio.gather(first, second)
+
+    results = asyncio.run(run())
+
+    assert all(len(result) == 1 for result in results)
+    # cache에 관측 가능해지기 전에 in-flight가 사라지면 여기서 2가 된다.
+    assert _CountingClient.search_calls == 1
+
+
+def test_load_lane_cache_commit_keeps_single_flight_ownership(
+    tmp_path,
+    monkeypatch,
+):
+    """loadLane도 cache commit까지 leader가 소유권을 유지한다."""
+    import collectors.odsay_collector as module
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", _CountingClient)
+    monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", str(tmp_path))
+    blocking = _BlockingStore(module, "lane")
+    monkeypatch.setattr(module, "_store_payload", blocking)
+
+    async def run():
+        collector = OdsayRouteCollector()
+        first = asyncio.create_task(
+            collector.refine_transit("100:1:1:2", ORIGIN, DEST)
+        )
+        await asyncio.wait_for(blocking.entered.wait(), timeout=5)
+
+        second = asyncio.create_task(
+            collector.refine_transit("100:1:1:2", ORIGIN, DEST)
+        )
+        for _ in range(50):
+            await asyncio.sleep(0)
+
+        blocking.release.set()
+        return await asyncio.gather(first, second)
+
+    results = asyncio.run(run())
+
+    assert all(len(paths) == 1 for paths in results)
+    assert _CountingClient.lane_calls == 1
+
+
+def test_sequential_request_after_leader_reuses_cache(tmp_path, monkeypatch):
+    """leader 완료 후 같은 요청은 network 없이 cache를 읽는다."""
+    import collectors.odsay_collector as module
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", _CountingClient)
+    monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", str(tmp_path))
+
+    async def run():
+        collector = OdsayRouteCollector()
+        await collector.collect(ORIGIN, DEST)
+        await collector.collect(ORIGIN, DEST)
+
+    asyncio.run(run())
+
+    assert _CountingClient.search_calls == 1
+    snapshot = instrumentation.counters.snapshot()
+    assert snapshot["cache_hits"].get("searchPubTransPathT") == 1
+    assert snapshot["network_calls"].get("searchPubTransPathT") == 1

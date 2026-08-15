@@ -444,6 +444,51 @@ class OdsayRouteCollector(BaseRouteCollector):
             return str(error)
         return None
 
+    @classmethod
+    def _validated_search_paths(cls, data: object) -> list:
+        """캐시해도 되는 search 응답인지 확인하고 후보 목록을 돌려준다.
+
+        single-flight leader가 캐시에 쓰기 전과 cache hit·follower 경로에서
+        같은 기준을 쓴다. 공급자 오류와 형식 위반은 캐시하지 않는다.
+        """
+        if not isinstance(data, dict):
+            raise CollectorError("ODsay 응답 본문이 JSON 객체가 아닙니다.")
+        api_error = cls._api_error(data)
+        if api_error:
+            raise CollectorError(f"ODsay 경로 검색 실패: {api_error}")
+        result = data.get("result")
+        if not isinstance(result, dict):
+            raise CollectorError("ODsay 응답의 result가 객체가 아닙니다.")
+        paths = result.get("path")
+        if paths is None:
+            return []
+        if not isinstance(paths, list):
+            raise CollectorError("ODsay 응답의 result.path가 배열이 아닙니다.")
+        return paths
+
+    @classmethod
+    def _validated_lane_paths(cls, data: object, map_object: str) -> list:
+        """캐시해도 되는 loadLane 응답인지 확인하고 선형을 돌려준다."""
+        if not isinstance(data, dict):
+            raise CollectorError(
+                "ODsay loadLane 응답 본문이 JSON 객체가 아닙니다.",
+                code="invalid_response",
+            )
+        api_error = cls._api_error(data)
+        if api_error:
+            # 공급자 오류 응답은 캐시하지 않고 그대로 실패로 반환한다.
+            raise CollectorError(
+                f"ODsay loadLane 실패: {api_error}",
+                code=_provider_error_code(data),
+            )
+        paths = cls._lane_paths(data, map_object)
+        if not paths or not any(paths):
+            raise CollectorError(
+                "ODsay loadLane 응답에 유효한 경로 좌표가 없습니다.",
+                code="empty_geometry",
+            )
+        return paths
+
     @staticmethod
     def _map_base(map_object: str) -> tuple[float, float]:
         try:
@@ -629,6 +674,11 @@ class OdsayRouteCollector(BaseRouteCollector):
 
                     fetched, waited = await with_concurrency_limit(_request)
                     semaphore_wait = waited
+                    # search와 같은 이유로 검증과 캐시 커밋까지 leader가
+                    # 소유한다. 캐시에 관측 가능해지기 전에 in-flight가
+                    # 사라지면 동일 mapObj 요청이 loadLane을 다시 호출한다.
+                    self._validated_lane_paths(fetched, load_lane_map_object)
+                    await _store_payload("lane", cache_identity, fetched)
                     return fetched
 
                 data, follower = await single_flight(
@@ -636,27 +686,8 @@ class OdsayRouteCollector(BaseRouteCollector):
                     _fetch,
                 )
                 outcome = "network" if network else "single-flight"
-            if not isinstance(data, dict):
-                raise CollectorError(
-                    "ODsay loadLane 응답 본문이 JSON 객체가 아닙니다.",
-                    code="invalid_response",
-                )
-            api_error = self._api_error(data)
-            if api_error:
-                # 공급자 오류 응답은 캐시하지 않고 그대로 실패로 반환한다.
-                raise CollectorError(
-                    f"ODsay loadLane 실패: {api_error}",
-                    code=_provider_error_code(data),
-                )
-            paths = self._lane_paths(data, load_lane_map_object)
-            if not paths or not any(paths):
-                raise CollectorError(
-                    "ODsay loadLane 응답에 유효한 경로 좌표가 없습니다.",
-                    code="empty_geometry",
-                )
-            if network:
-                await _store_payload("lane", cache_identity, data)
-            return paths
+            # cache hit·follower 경로도 같은 기준으로 다시 확인한다.
+            return self._validated_lane_paths(data, load_lane_map_object)
         except BaseException:
             outcome = "error"
             raise
@@ -1166,6 +1197,15 @@ class OdsayRouteCollector(BaseRouteCollector):
                             _request
                         )
                         semaphore_wait = waited
+                        # single-flight는 leader task가 끝나는 즉시 in-flight
+                        # 항목을 지운다. 캐시 쓰기가 이 밖에 있으면 "flight
+                        # 없음 + cache 없음" 창이 생겨 뒤따르는 동일 key 요청이
+                        # 새 leader가 되고 network 호출이 한 번 더 나간다.
+                        # 검증과 캐시 커밋까지 leader가 소유한다.
+                        self._validated_search_paths(fetched)
+                        await _store_payload(
+                            "search", search_identity, fetched
+                        )
                         return fetched
 
                     data, follower = await single_flight(
@@ -1173,24 +1213,8 @@ class OdsayRouteCollector(BaseRouteCollector):
                         _fetch_search,
                     )
                     outcome = "network" if network else "single-flight"
-                if not isinstance(data, dict):
-                    raise CollectorError("ODsay 응답 본문이 JSON 객체가 아닙니다.")
-                api_error = self._api_error(data)
-                if api_error:
-                    raise CollectorError(f"ODsay 경로 검색 실패: {api_error}")
-
-                result = data.get("result")
-                if not isinstance(result, dict):
-                    raise CollectorError("ODsay 응답의 result가 객체가 아닙니다.")
-                paths = result.get("path")
-                if paths is None:
-                    paths = []
-                elif not isinstance(paths, list):
-                    raise CollectorError(
-                        "ODsay 응답의 result.path가 배열이 아닙니다."
-                    )
-                if network:
-                    await _store_payload("search", search_identity, data)
+                # cache hit·follower 경로도 같은 기준으로 다시 확인한다.
+                paths = self._validated_search_paths(data)
             except BaseException:
                 outcome = "error"
                 raise
