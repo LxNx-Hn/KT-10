@@ -484,13 +484,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
         return;
       }
+      const firstId = serverRankedRecommendations(recommendations)[0]?.route.id ?? null;
       set({
         candidates: recommendations.map((r) => r.route),
         weather,
         recommendations,
-        selectedRouteId: serverRankedRecommendations(recommendations)[0]?.route.id ?? null,
+        selectedRouteId: firstId,
         loading: false,
       });
+      // 1순위 자동 선택도 카드 클릭과 같이 selectRoute를 거쳐
+      // estimated 대중교통 geometry 정밀화를 시작한다.
+      if (firstId) get().selectRoute(firstId);
     } catch (error) {
       if (!isLatestRecommendationRequest(requestGeneration)) return;
       set({

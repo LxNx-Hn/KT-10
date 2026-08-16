@@ -21,6 +21,7 @@ import type {
 } from '@/voice/intents';
 import { speak, stopSpeaking } from '@/voice/synthesis';
 import { serverRankedRecommendations } from '@/utils/routes';
+import { startSpeechRecognitionFromUserGesture } from '@/chat/useSpeechRecognition';
 
 const ORD_WORD = ['첫 번째', '두 번째', '세 번째'];
 const ordWord = (i: number) => ORD_WORD[i] ?? `${i + 1}번째`;
@@ -83,9 +84,11 @@ interface ChatState {
   profileConfirmed: boolean; // 대화 중 프로필 확정 여부
   lastGuide: string; // 마지막 안내(반복용)
   listenRequestId: number; // 외부(홈 마이크)에서 듣기 요청 트리거
+  voiceInputError: string | null;
 
   setStatus: (s: VoiceChatStatus) => void;
   setInterim: (t: string) => void;
+  setVoiceInputError: (message: string | null) => void;
   pushMessage: (role: VoiceChatMessage['role'], text: string, intent?: VoiceIntent) => void;
   requestListen: () => void;
   handleUserInput: (text: string) => Promise<void>;
@@ -108,9 +111,11 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
   profileConfirmed: false,
   lastGuide: '',
   listenRequestId: 0,
+  voiceInputError: null,
 
   setStatus: (status) => set({ status }),
   setInterim: (interim) => set({ interim }),
+  setVoiceInputError: (voiceInputError) => set({ voiceInputError }),
   pushMessage: (role, text, intent) =>
     set((s) => ({
       messages: [
@@ -118,7 +123,13 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
         { id: newId(), role, text, createdAt: new Date().toISOString(), intent },
       ],
     })),
-  requestListen: () => set((s) => ({ listenRequestId: s.listenRequestId + 1 })),
+  requestListen: () => {
+    set((s) => ({
+      listenRequestId: s.listenRequestId + 1,
+      voiceInputError: null,
+    }));
+    startSpeechRecognitionFromUserGesture();
+  },
 
   repeatLast: () => {
     const g = get().lastGuide;
@@ -136,6 +147,7 @@ export const useVoiceChatStore = create<ChatState>((set, get) => ({
       awaiting: null,
       profileConfirmed: false,
       lastGuide: '',
+      voiceInputError: null,
     }),
 
   handleUserInput: async (raw) => {

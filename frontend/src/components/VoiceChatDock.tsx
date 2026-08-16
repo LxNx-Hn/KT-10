@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useVoiceChatStore } from '@/chat/voiceChatStore';
-import { useSpeechRecognition } from '@/chat/useSpeechRecognition';
+import {
+  registerSpeechRecognitionStart,
+  speechRecognitionUserMessage,
+  useSpeechRecognition,
+} from '@/chat/useSpeechRecognition';
 import { useVisualViewportRect } from '@/hooks/useVisualViewportRect';
 import { primeSpeechOutput, stopSpeaking } from '@/voice/synthesis';
 import { PROFILE_LIST } from '@/config/profiles';
@@ -30,6 +34,7 @@ export default function VoiceChatDock({
   const interim = useVoiceChatStore((s) => s.interim);
   const awaiting = useVoiceChatStore((s) => s.awaiting);
   const listenRequestId = useVoiceChatStore((s) => s.listenRequestId);
+  const voiceInputError = useVoiceChatStore((s) => s.voiceInputError);
   const handleUserInput = useVoiceChatStore((s) => s.handleUserInput);
   const repeatLast = useVoiceChatStore((s) => s.repeatLast);
   const setStatus = useVoiceChatStore((s) => s.setStatus);
@@ -68,16 +73,25 @@ export default function VoiceChatDock({
       if (s.status === 'listening') s.setStatus('idle');
       s.setInterim('');
     },
-    onError: () => useVoiceChatStore.getState().setStatus('error'),
+    onError: (code) => {
+      const store = useVoiceChatStore.getState();
+      store.setVoiceInputError(speechRecognitionUserMessage(code));
+      store.setStatus('error');
+    },
   });
   const processing = status === 'thinking';
   const voiceBusy = status === 'thinking' || status === 'speaking';
 
-  // 외부(홈 마이크 버튼)에서 듣기 요청 시 시작
+  useEffect(() => {
+    registerSpeechRecognitionStart(start);
+    return () => registerSpeechRecognitionStart(null);
+  }, [start]);
+
+  // 외부(홈 마이크 버튼)에서 듣기 요청 시 패널만 연다.
+  // SpeechRecognition.start()는 requestListen의 사용자 클릭 스택에서 실행한다.
   useEffect(() => {
     if (listenRequestId > 0) {
       setOpen(true);
-      start();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listenRequestId]);
@@ -113,7 +127,11 @@ export default function VoiceChatDock({
             <span className={`voicedock__dot voicedock__dot--${status}`} aria-hidden="true" />
             <div className="voicedock__title-copy">
               <strong>음성 챗봇</strong>
-              <span className="voicedock__status-text">{STATUS_LABEL[status]}</span>
+              <span className="voicedock__status-text">
+                {status === 'error'
+                  ? (voiceInputError ?? STATUS_LABEL.error)
+                  : STATUS_LABEL[status]}
+              </span>
             </div>
           </div>
           <button
@@ -138,7 +156,9 @@ export default function VoiceChatDock({
           onClick={() => setOpen((v) => !v)}
         >
           <span className={`voicedock__dot voicedock__dot--${status}`} aria-hidden="true" />
-          음성 챗봇 · {STATUS_LABEL[status]} {open ? '▾' : '▴'}
+          음성 챗봇 · {status === 'error'
+            ? (voiceInputError ?? STATUS_LABEL.error)
+            : STATUS_LABEL[status]} {open ? '▾' : '▴'}
         </button>
       )}
 
@@ -190,6 +210,7 @@ export default function VoiceChatDock({
                   stop();
                 } else {
                   primeSpeechOutput();
+                  useVoiceChatStore.getState().setVoiceInputError(null);
                   start();
                 }
               }}

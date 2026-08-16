@@ -25,6 +25,7 @@ import {
   slopeMapColor,
 } from './utils/slopeLevel';
 import {
+  ALTERNATIVE_ROUTE_COLOR,
   TRANSPORT_MODE_COLOR,
   resolveSubwayLine,
   transportModeStrokeColor,
@@ -208,9 +209,9 @@ export function slopeLabel(
 
 export { SLOPE_COLOR_RAMP };
 
-const ALTERNATIVE_ROUTE_COLOR = TRANSPORT_MODE_COLOR.transfer;
-const SHADOW_FILL = '#8290a8';
-const SHADOW_STROKE = '#64748b';
+export { ALTERNATIVE_ROUTE_COLOR };
+export const SHADOW_FILL = '#8290a8';
+export const SHADOW_STROKE = '#64748b';
 const SHADED_ROUTE_COLOR = '#00b84a';
 const SUN_EXPOSED_ROUTE_COLOR = '#ff5a1f';
 
@@ -296,7 +297,7 @@ function segmentPathParts(
 
 function alternativeRoutePathParts(route: RouteCandidate): RoutePathPart[] {
   const routePath = validPath(route.path);
-  // 다른 후보는 항상 흐린 회색 한 가지라 경사 구간이 필요 없다.
+  // 다른 후보는 선택 경로보다 약한 단일 색이라 경사 구간이 필요 없다.
   return routePath
     ? [{ path: routePath, quality: route.geometryQuality }]
     : segmentPathParts(route, false);
@@ -650,7 +651,9 @@ function partStrokeColor(part: RoutePathPart): string {
 }
 
 function partStrokeStyle(part: RoutePathPart): string {
-  return transportModeStrokeStyle(part.mode, part.quality);
+  return transportModeStrokeStyle(part.mode, part.quality, {
+    slopePercent: part.slopePercent,
+  });
 }
 
 /**

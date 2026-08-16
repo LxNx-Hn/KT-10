@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, act } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import VoiceChatDock from './VoiceChatDock';
 import { useVoiceChatStore } from '@/chat/voiceChatStore';
+import { registerSpeechRecognitionStart } from '@/chat/useSpeechRecognition';
 
 async function readMapFirstCss(): Promise<string> {
   // Vitest Node 런타임; 앱 tsconfig에 @types/node 없음.
@@ -22,6 +23,7 @@ async function readMapFirstCss(): Promise<string> {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  registerSpeechRecognitionStart(null);
   Reflect.deleteProperty(window, 'visualViewport');
   useVoiceChatStore.setState({
     status: 'idle',
@@ -29,6 +31,7 @@ afterEach(() => {
     interim: '',
     awaiting: null,
     listenRequestId: 0,
+    voiceInputError: null,
   });
 });
 
@@ -272,5 +275,244 @@ describe('VoiceChatDock MOB-22 viewport', () => {
     expect(desktop).not.toContain('transform: translateX(-50%)');
     // 입력 16px·accessory는 max-width:479 모바일 블록 안에 있다.
     expect(font16).toBeGreaterThan(mobileIdx);
+  });
+});
+
+function installDockSpeechRecognition() {
+  const instances: Array<{
+    start: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
+    abort: ReturnType<typeof vi.fn>;
+    onstart: ((() => void) | null);
+    onerror: ((event: { error?: string }) => void) | null;
+    onend: ((() => void) | null);
+  }> = [];
+
+  function Recognition() {
+    const rec = {
+      lang: '',
+      continuous: false,
+      interimResults: false,
+      start: vi.fn(function start(this: typeof rec) {
+        this.onstart?.();
+      }),
+      stop: vi.fn(),
+      abort: vi.fn(),
+      onstart: null as ((() => void) | null),
+      onerror: null as ((event: { error?: string }) => void) | null,
+      onend: null as ((() => void) | null),
+    };
+    instances.push(rec);
+    return rec;
+  }
+
+  vi.stubGlobal('SpeechRecognition', Recognition);
+  return instances;
+}
+
+describe('VoiceChatDock 음성 인식', () => {
+  it('supported=false면 말하기 버튼이 disabled다', () => {
+    render(
+      <VoiceChatDock variant="map-first" open onOpenChange={() => undefined} />,
+    );
+    expect(
+      (screen.getByRole('button', { name: '음성 말하기' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it('사용자 클릭으로 recognition start가 한 번만 호출된다', () => {
+    const instances = installDockSpeechRecognition();
+    render(
+      <VoiceChatDock variant="map-first" open onOpenChange={() => undefined} />,
+    );
+    const button = screen.getByRole('button', { name: '음성 말하기' });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(instances[0]?.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('requestListen은 effect가 아니라 등록된 start를 동기 호출한다', () => {
+    const instances = installDockSpeechRecognition();
+    render(
+      <VoiceChatDock
+        variant="map-first"
+        open={false}
+        onOpenChange={() => undefined}
+      />,
+    );
+    act(() => {
+      useVoiceChatStore.getState().requestListen();
+    });
+    expect(instances[0]?.start).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['not-allowed', '마이크 권한을 확인해 주세요.'],
+    ['audio-capture', '마이크를 사용할 수 없어요.'],
+    ['network', '음성 인식 연결에 문제가 발생했어요.'],
+    ['no-speech', '음성이 들리지 않았어요. 다시 말씀해 주세요.'],
+    ['unknown', '음성 인식을 시작하지 못했어요.'],
+  ] as const)('%s 오류는 안내 문구를 보여준다', (code, message) => {
+    const instances = installDockSpeechRecognition();
+    render(
+      <VoiceChatDock variant="map-first" open onOpenChange={() => undefined} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '음성 말하기' }));
+    act(() => {
+      instances[0]?.onerror?.({ error: code });
+    });
+    expect(screen.getByText(message)).toBeTruthy();
+  });
+
+  it('onend 이후 idle로 돌아간다', () => {
+    const instances = installDockSpeechRecognition();
+    render(
+      <VoiceChatDock variant="map-first" open onOpenChange={() => undefined} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '음성 말하기' }));
+    act(() => {
+      instances[0]?.onend?.();
+    });
+    expect(useVoiceChatStore.getState().status).toBe('idle');
+    expect(screen.getByText('대기 중')).toBeTruthy();
+  });
+
+  it('thinking 중에는 말하기 버튼이 비활성이다', () => {
+    installDockSpeechRecognition();
+    useVoiceChatStore.setState({ status: 'thinking' });
+    render(
+      <VoiceChatDock variant="map-first" open onOpenChange={() => undefined} />,
+    );
+    expect(
+      (screen.getByRole('button', { name: '음성 말하기' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it('rerender 후 한 클릭도 recognition start를 한 번만 호출한다', () => {
+    const instances = installDockSpeechRecognition();
+    const { rerender } = render(
+      <VoiceChatDock variant="map-first" open onOpenChange={() => undefined} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '음성 말하기' }));
+    expect(instances[0]?.start).toHaveBeenCalledTimes(1);
+    act(() => {
+      instances[0]?.onend?.();
+    });
+    rerender(
+      <VoiceChatDock variant="map-first" open onOpenChange={() => undefined} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '음성 말하기' }));
+    expect(instances[0]?.start).toHaveBeenCalledTimes(2);
+  });
+
+  it('unmount 이후 requestListen은 dead start를 호출하지 않는다', () => {
+    const instances = installDockSpeechRecognition();
+    const { unmount } = render(
+      <VoiceChatDock
+        variant="map-first"
+        open={false}
+        onOpenChange={() => undefined}
+      />,
+    );
+    unmount();
+    act(() => {
+      useVoiceChatStore.getState().requestListen();
+    });
+    expect(instances[0]?.start).not.toHaveBeenCalled();
+  });
+
+  it('닫았다가 다시 연 뒤에도 start는 한 번만 호출된다', () => {
+    const instances = installDockSpeechRecognition();
+    const { rerender } = render(
+      <VoiceChatDock variant="map-first" open onOpenChange={() => undefined} />,
+    );
+    rerender(
+      <VoiceChatDock
+        variant="map-first"
+        open={false}
+        onOpenChange={() => undefined}
+      />,
+    );
+    act(() => {
+      useVoiceChatStore.getState().requestListen();
+    });
+    expect(instances[0]?.start).toHaveBeenCalledTimes(1);
+    act(() => {
+      instances[0]?.onend?.();
+    });
+    rerender(
+      <VoiceChatDock variant="map-first" open onOpenChange={() => undefined} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '음성 말하기' }));
+    expect(instances[0]?.start).toHaveBeenCalledTimes(2);
+  });
+
+  it('listening 중 requestListen은 추가 start를 하지 않는다', () => {
+    const instances = installDockSpeechRecognition();
+    render(
+      <VoiceChatDock
+        variant="map-first"
+        open={false}
+        onOpenChange={() => undefined}
+      />,
+    );
+    act(() => {
+      useVoiceChatStore.getState().requestListen();
+      useVoiceChatStore.getState().requestListen();
+    });
+    expect(instances[0]?.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborted는 error UI로 전환하지 않는다', () => {
+    const instances = installDockSpeechRecognition();
+    render(
+      <VoiceChatDock variant="map-first" open onOpenChange={() => undefined} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '음성 말하기' }));
+    act(() => {
+      instances[0]?.onerror?.({ error: 'aborted' });
+      instances[0]?.onend?.();
+    });
+    expect(useVoiceChatStore.getState().status).toBe('idle');
+    expect(useVoiceChatStore.getState().voiceInputError).toBeNull();
+    expect(screen.getByText('대기 중')).toBeTruthy();
+    expect(screen.queryByText('마이크 권한을 확인해 주세요.')).toBeNull();
+    expect(screen.queryByText('음성 인식을 시작하지 못했어요.')).toBeNull();
+  });
+
+  it('error 직후 onend가 와도 error 상태를 idle로 덮지 않는다', () => {
+    const instances = installDockSpeechRecognition();
+    render(
+      <VoiceChatDock variant="map-first" open onOpenChange={() => undefined} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '음성 말하기' }));
+    act(() => {
+      instances[0]?.onerror?.({ error: 'not-allowed' });
+      instances[0]?.onend?.();
+    });
+    expect(useVoiceChatStore.getState().status).toBe('error');
+    expect(screen.getByText('마이크 권한을 확인해 주세요.')).toBeTruthy();
+    expect(screen.queryByText('대기 중')).toBeNull();
+  });
+
+  it('no-speech는 재시도 가능하고 busy에 고정되지 않는다', () => {
+    const instances = installDockSpeechRecognition();
+    render(
+      <VoiceChatDock variant="map-first" open onOpenChange={() => undefined} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '음성 말하기' }));
+    act(() => {
+      instances[0]?.onerror?.({ error: 'no-speech' });
+      instances[0]?.onend?.();
+    });
+    expect(useVoiceChatStore.getState().status).toBe('error');
+    expect(screen.getByText('음성이 들리지 않았어요. 다시 말씀해 주세요.')).toBeTruthy();
+    expect(
+      (screen.getByRole('button', { name: '음성 말하기' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
   });
 });
