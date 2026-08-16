@@ -4,7 +4,8 @@ import { findPlace } from '@/data/places';
 import { demoCandidates } from '@/data/routes';
 import { WEATHER_SCENARIOS } from '@/data/weather';
 import { recommendRoutes } from '@/scoring/engine';
-import type { TransitRefinement } from '@/types';
+import type { TransitRefinement, ScoredRoute } from '@/types';
+import { serverRankedRecommendations } from '@/utils/routes';
 import { useAppStore } from './appStore';
 
 function deferred<T>() {
@@ -81,7 +82,7 @@ afterEach(() => {
 
 describe('카드 선택 시 대중교통 지연 정밀화', () => {
   it('estimated 대중교통 후보 선택은 refinement endpoint만 호출하고 geometry를 patch한다', async () => {
-    const recommendations = seedEstimatedTransitResults();
+    const recommendations = withTransitFirst(seedEstimatedTransitResults());
     const routeId = transitRouteId(recommendations);
     const refined: TransitRefinement = {
       routeId,
@@ -125,7 +126,7 @@ describe('카드 선택 시 대중교통 지연 정밀화', () => {
   });
 
   it('이미 exact인 후보 재선택은 refinement를 호출하지 않는다', async () => {
-    const recommendations = seedEstimatedTransitResults();
+    const recommendations = withTransitFirst(seedEstimatedTransitResults());
     const routeId = transitRouteId(recommendations);
     useAppStore.setState({
       recommendations: useAppStore.getState().recommendations.map((item) => ({
@@ -149,7 +150,7 @@ describe('카드 선택 시 대중교통 지연 정밀화', () => {
   });
 
   it('빠른 카드 전환에서 늦은 응답은 해당 후보 저장분만 갱신하고 현재 선택을 바꾸지 않는다', async () => {
-    const recommendations = seedEstimatedTransitResults();
+    const recommendations = withTransitFirst(seedEstimatedTransitResults());
     const withTransit = recommendations.filter(({ route }) =>
       route.segments.some(
         (segment) => segment.mode === 'bus' || segment.mode === 'subway',
@@ -210,7 +211,7 @@ describe('카드 선택 시 대중교통 지연 정밀화', () => {
   });
 
   it('진행 중인 후보를 다시 선택해도 중복 refinement를 만들지 않는다', async () => {
-    const recommendations = seedEstimatedTransitResults();
+    const recommendations = withTransitFirst(seedEstimatedTransitResults());
     const routeId = transitRouteId(recommendations);
     const pending = deferred<TransitRefinement>();
     const refineTransit = vi
@@ -237,5 +238,234 @@ describe('카드 선택 시 대중교통 지연 정밀화', () => {
       geometryQuality: 'exact',
     });
     await pending.promise;
+  });
+});
+
+function withTransitFirst(
+  recommendations: ReturnType<typeof seedEstimatedTransitResults>,
+) {
+  const transitIdx = recommendations.findIndex(({ route }) =>
+    route.segments.some(
+      (segment) => segment.mode === 'bus' || segment.mode === 'subway',
+    ),
+  );
+  if (transitIdx <= 0) return recommendations;
+  return [
+    recommendations[transitIdx],
+    ...recommendations.filter((_, index) => index !== transitIdx),
+  ];
+}
+
+describe('검색 직후 1순위 자동 선택의 대중교통 정밀화', () => {
+  async function searchWith(
+    recommendations: ScoredRoute[],
+  ) {
+    vi.spyOn(adapters.routes, 'recommend').mockResolvedValue(recommendations);
+    vi.spyOn(adapters.weather, 'getCurrent').mockResolvedValue(
+      WEATHER_SCENARIOS.normal,
+    );
+    useAppStore.setState({
+      origin: findPlace('gu-office') ?? null,
+      destination: findPlace('seomyeon-stn') ?? null,
+      candidates: [],
+      recommendations: [],
+      selectedRouteId: null,
+      loading: false,
+      error: null,
+      refiningRouteKeys: [],
+    });
+    await useAppStore.getState().search();
+  }
+
+  it('검색 후 1순위 estimated transit는 refineTransit을 1회 호출한다', async () => {
+    const recommendations = withTransitFirst(seedEstimatedTransitResults());
+    const firstId = recommendations[0].route.id;
+    const refined: TransitRefinement = {
+      routeId: firstId,
+      path: [
+        { lat: 35.11, lng: 129.01 },
+        { lat: 35.21, lng: 129.11 },
+      ],
+      segments: recommendations[0].route.segments.map((segment) => ({
+        ...segment,
+        geometryQuality: 'exact' as const,
+      })),
+      geometryQuality: 'exact',
+    };
+    const refineTransit = vi
+      .spyOn(adapters.routes, 'refineTransit')
+      .mockResolvedValue(refined);
+
+    await searchWith(recommendations);
+    expect(useAppStore.getState().selectedRouteId).toBe(firstId);
+    await vi.waitFor(() => {
+      expect(refineTransit).toHaveBeenCalledTimes(1);
+    });
+    expect(refineTransit).toHaveBeenCalledWith(
+      'route-set-token-1234567890',
+      firstId,
+    );
+    await vi.waitFor(() => {
+      expect(
+        useAppStore.getState().recommendations[0]?.route.geometryQuality,
+      ).toBe('exact');
+    });
+    expect(
+      useAppStore.getState().recommendations[0]?.route.path,
+    ).toEqual(refined.path);
+    expect(adapters.routes.recommend).toHaveBeenCalledTimes(1);
+  });
+
+  it('exact transit 1순위는 refinement를 호출하지 않는다', async () => {
+    const recommendations = withTransitFirst(seedEstimatedTransitResults()).map((item) => ({
+      ...item,
+      route: {
+        ...item.route,
+        geometryQuality: 'exact' as const,
+        segments: item.route.segments.map((segment) => ({
+          ...segment,
+          geometryQuality: 'exact' as const,
+        })),
+      },
+    }));
+    const refineTransit = vi.spyOn(adapters.routes, 'refineTransit');
+    await searchWith(recommendations);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(refineTransit).not.toHaveBeenCalled();
+  });
+
+  it('routeSetToken이 없으면 refinement를 호출하지 않는다', async () => {
+    const recommendations = withTransitFirst(seedEstimatedTransitResults()).map((item) => ({
+      ...item,
+      routeSetToken: undefined,
+    }));
+    const refineTransit = vi.spyOn(adapters.routes, 'refineTransit');
+    await searchWith(recommendations);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(refineTransit).not.toHaveBeenCalled();
+  });
+
+  it('200ms 전에 다른 경로를 선택하면 최초 1순위 refinement를 시작하지 않는다', async () => {
+    const recommendations = withTransitFirst(seedEstimatedTransitResults());
+    const withTransit = recommendations.filter(({ route }) =>
+      route.segments.some(
+        (segment) => segment.mode === 'bus' || segment.mode === 'subway',
+      ),
+    );
+    expect(withTransit.length).toBeGreaterThanOrEqual(2);
+    const firstId = recommendations[0].route.id;
+    const secondId = withTransit.find(({ route }) => route.id !== firstId)!.route.id;
+    const refineTransit = vi
+      .spyOn(adapters.routes, 'refineTransit')
+      .mockResolvedValue({
+        routeId: secondId,
+        path: [
+          { lat: 35.3, lng: 129.2 },
+          { lat: 35.4, lng: 129.3 },
+        ],
+        segments: [],
+        geometryQuality: 'exact',
+      });
+
+    await searchWith(recommendations);
+    useAppStore.getState().selectRoute(secondId);
+    await vi.waitFor(() => {
+      expect(refineTransit).toHaveBeenCalled();
+    });
+    expect(refineTransit).toHaveBeenCalledWith(
+      'route-set-token-1234567890',
+      secondId,
+    );
+    expect(refineTransit).not.toHaveBeenCalledWith(
+      expect.any(String),
+      firstId,
+    );
+    expect(useAppStore.getState().selectedRouteId).toBe(secondId);
+  });
+
+  it('refinement 실패 시 원본 geometry와 순위를 유지한다', async () => {
+    const recommendations = withTransitFirst(seedEstimatedTransitResults());
+    const firstId = recommendations[0].route.id;
+    const originalPath = recommendations[0].route.path;
+    const refineTransit = vi
+      .spyOn(adapters.routes, 'refineTransit')
+      .mockRejectedValue(new Error('provider down'));
+
+    await searchWith(recommendations);
+    await vi.waitFor(() => {
+      expect(refineTransit).toHaveBeenCalledTimes(1);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const state = useAppStore.getState();
+    expect(state.selectedRouteId).toBe(firstId);
+    expect(state.recommendations.map(({ route }) => route.id)).toEqual(
+      recommendations.map(({ route }) => route.id),
+    );
+    expect(state.recommendations[0]?.route.path).toEqual(originalPath);
+    expect(state.recommendations[0]?.route.geometryQuality).toBe('mixed');
+    expect(adapters.routes.recommend).toHaveBeenCalledTimes(1);
+  });
+
+  it('estimated transit 후보가 5개여도 검색 직후 선택된 1개만 refineTransit한다', async () => {
+    const template = withTransitFirst(seedEstimatedTransitResults())[0];
+    const recommendations = Array.from({ length: 5 }, (_, index) => ({
+      ...template,
+      route: {
+        ...template.route,
+        id: `est-transit-${index}`,
+        segments: template.route.segments.map((segment) => ({
+          ...segment,
+          id: `${segment.id}-${index}`,
+          geometryQuality:
+            segment.mode === 'bus' || segment.mode === 'subway'
+              ? 'estimated' as const
+              : segment.geometryQuality,
+        })),
+      },
+    }));
+    const firstId = serverRankedRecommendations(recommendations)[0]?.route.id;
+    const refineTransit = vi
+      .spyOn(adapters.routes, 'refineTransit')
+      .mockResolvedValue(null);
+
+    await searchWith(recommendations);
+    await vi.waitFor(() => {
+      expect(refineTransit).toHaveBeenCalledTimes(1);
+    });
+    expect(refineTransit).toHaveBeenCalledWith(
+      'route-set-token-1234567890',
+      firstId,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(refineTransit).toHaveBeenCalledTimes(1);
+    expect(refineTransit.mock.calls.every(([, routeId]) => routeId === firstId)).toBe(true);
+    expect(useAppStore.getState().selectedRouteId).toBe(firstId);
+  });
+
+  it('검색 후 MapFirstApp 자동선택 effect는 같은 1순위에 selectRoute를 다시 호출하지 않는다', async () => {
+    const recommendations = withTransitFirst(seedEstimatedTransitResults());
+    const refineTransit = vi
+      .spyOn(adapters.routes, 'refineTransit')
+      .mockResolvedValue(null);
+    const selectRoute = vi.spyOn(useAppStore.getState(), 'selectRoute');
+
+    await searchWith(recommendations);
+    expect(selectRoute).toHaveBeenCalledTimes(1);
+
+    const { selectedRouteId, recommendations: recs } = useAppStore.getState();
+    const ranked = serverRankedRecommendations(recs);
+    if (
+      ranked.length > 0
+      && !ranked.some(({ route }) => route.id === selectedRouteId)
+    ) {
+      useAppStore.getState().selectRoute(ranked[0].route.id);
+    }
+
+    await vi.waitFor(() => {
+      expect(refineTransit).toHaveBeenCalledTimes(1);
+    });
+    expect(selectRoute).toHaveBeenCalledTimes(1);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(refineTransit).toHaveBeenCalledTimes(1);
   });
 });

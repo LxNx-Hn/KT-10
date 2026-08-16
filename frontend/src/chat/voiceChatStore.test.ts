@@ -7,6 +7,7 @@ import { recommendRoutes } from '@/scoring/engine';
 import { useAppStore } from '@/store/appStore';
 import { serverRankedRecommendations } from '@/utils/routes';
 import { useVoiceChatStore } from './voiceChatStore';
+import { registerSpeechRecognitionStart } from './useSpeechRecognition';
 
 vi.mock('@/voice/synthesis', () => ({
   speak: vi.fn(() => false),
@@ -34,6 +35,7 @@ beforeEach(() => {
     profileConfirmed: true,
     lastGuide: '',
     listenRequestId: 0,
+    voiceInputError: null,
   });
 });
 
@@ -151,5 +153,15 @@ describe('음성 챗봇 결과 계약', () => {
     expect(state.options.avoidStairs).toBe(true);
     expect(state.recommendations).toEqual([]);
     expect(search).toHaveBeenCalled();
+  });
+
+  it('requestListen은 등록된 SpeechRecognition start를 동기 호출한다', () => {
+    const start = vi.fn();
+    registerSpeechRecognitionStart(start);
+    useVoiceChatStore.getState().requestListen();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(useVoiceChatStore.getState().listenRequestId).toBe(1);
+    expect(useVoiceChatStore.getState().voiceInputError).toBeNull();
+    registerSpeechRecognitionStart(null);
   });
 });

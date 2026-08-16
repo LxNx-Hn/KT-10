@@ -12,6 +12,12 @@ export const TRANSPORT_MODE_COLOR = {
   transfer: '#64748b',
 } as const;
 
+/**
+ * 예비 경로 색. 건물 그늘 stroke(#64748b)·fill(#8290a8) 및 선택 경로
+ * 버스/지하철/경사 ramp와 겹치지 않는 낮은 채도의 웜 타우페.
+ */
+export const ALTERNATIVE_ROUTE_COLOR = '#7a6a58';
+
 export type TransportSubwayLineId =
   | 'busan-1'
   | 'busan-2'
@@ -113,13 +119,18 @@ export function transportModeStrokeColor(
 }
 
 /**
- * 선 스타일은 이동수단이 아니라 geometry 품질만 나타낸다.
- * exact는 실선, 추정 선형은 shortdash다. 도보는 차콜색으로 구분하므로
- * 이동수단 때문에 점선이 되지 않는다.
+ * 선 스타일은 제품 시각 언어다. estimated geometry를 exact로 바꾸지 않는다.
+ * 버스·지하철은 품질과 무관하게 실선. 일반 도보는 차콜 점선.
+ * 경사 overlay가 켠 도보 구간만 경사색 가독성을 위해 실선이다.
  */
 export function transportModeStrokeStyle(
-  _mode: SegmentMode | undefined,
+  mode: SegmentMode | undefined,
   quality: string | undefined,
+  options?: { slopePercent?: number | null },
 ): string {
+  if (mode === 'bus' || mode === 'subway') return 'solid';
+  if (mode === 'walk') {
+    return typeof options?.slopePercent === 'number' ? 'solid' : 'shortdash';
+  }
   return quality === 'exact' ? 'solid' : 'shortdash';
 }

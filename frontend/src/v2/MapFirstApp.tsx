@@ -361,6 +361,7 @@ export default function MapFirstApp({
   const useCurrentLocation = useAppStore((state) => state.useCurrentLocation);
   const search = useAppStore((state) => state.search);
   const voiceStatus = useVoiceChatStore((state) => state.status);
+  const voiceInputError = useVoiceChatStore((state) => state.voiceInputError);
   const requestListen = useVoiceChatStore((state) => state.requestListen);
   const mobileHomeEnabled = useSyncExternalStore(
     subscribeMobileHome,
@@ -862,7 +863,7 @@ export default function MapFirstApp({
                     ? '분석 중'
                     : voiceStatus === 'speaking'
                       ? '안내 중'
-                      : '텍스트로 입력해 주세요'}
+                      : (voiceInputError ?? '텍스트로 입력해 주세요')}
               </span>
             )}
             <button

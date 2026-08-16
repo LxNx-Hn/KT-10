@@ -191,11 +191,16 @@ describe('PR #18 재현 — 이전 검색의 refinement 응답이 새 검색을 
     );
 
     useAppStore.getState().selectRoute(results[1].route.id);
+    const previousId = results[1].route.id;
     const search = useAppStore.getState().search();
     await search;
     await new Promise((resolve) => setTimeout(resolve, 300));
 
-    expect(refine).not.toHaveBeenCalled();
+    // 검색 직전 선택분의 debounce refinement는 generation이 바뀌어 시작되지 않는다.
+    expect(refine).not.toHaveBeenCalledWith(
+      'token-debounce-search-00000',
+      previousId,
+    );
   });
 
   it('검색 오류 뒤 도착한 이전 refinement는 현재 store를 patch하지 않는다', async () => {

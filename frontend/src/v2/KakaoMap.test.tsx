@@ -10,7 +10,10 @@ import type {
 } from '@/types';
 import KakaoMap, {
   KT_CLIMATE_SHELTER_MAX_VISIBLE_LEVEL,
+  SHADOW_FILL,
+  SHADOW_STROKE,
 } from './KakaoMap';
+import { ALTERNATIVE_ROUTE_COLOR } from './transportModeVisual';
 
 const loaderMocks = vi.hoisted(() => ({
   hasKakaoKey: vi.fn(() => true),
@@ -437,7 +440,7 @@ describe('KakaoMap production overlays', () => {
 
     const fullRouteLines = activePolylines().filter(
       (line) => line.options.path.length === 3
-        && line.options.strokeColor !== '#64748b',
+        && line.options.strokeColor !== ALTERNATIVE_ROUTE_COLOR,
     );
     // 이동수단별 본선: 전체 path 외곽선(white) + 구간 도보(차콜 점선)
     expect(fullRouteLines.map((line) => line.options.strokeColor)).toEqual([
@@ -459,7 +462,10 @@ describe('KakaoMap production overlays', () => {
     const alternativeLine = activePolylines().find(
       (line) => line.options.clickable === true,
     );
-    expect(alternativeLine?.options.strokeColor).toBe('#64748b');
+    expect(alternativeLine?.options.strokeColor).toBe(ALTERNATIVE_ROUTE_COLOR);
+    expect(alternativeLine?.options.strokeColor).not.toBe(SHADOW_STROKE);
+    expect(alternativeLine?.options.strokeColor).not.toBe(SHADOW_FILL);
+    expect(alternativeLine?.options.strokeOpacity).toBe(0.38);
     expect(alternativeLine?.options.strokeStyle).toBe('shortdash');
     expect(alternativeLine?.options.zIndex).toBe(2);
 
@@ -527,12 +533,12 @@ describe('KakaoMap production overlays', () => {
       ),
     ).toHaveLength(0);
 
-    // 도보선은 기본 차콜 실선으로 남고, 공급자 원본 정점을 그대로 쓴다.
+    // 도보선은 기본 차콜 점선으로 남고, 공급자 원본 정점을 그대로 쓴다.
     const walkLine = activePolylines().find(
       (line) => line.options.strokeColor === '#475569',
     );
     expect(walkLine).toBeDefined();
-    expect(walkLine?.options.strokeStyle).toBe('solid');
+    expect(walkLine?.options.strokeStyle).toBe('shortdash');
     expect(
       walkLine?.options.path.map((point) => [point.lat, point.lng]),
     ).toEqual(walkPath.map((point) => [point.lat, point.lng]));
@@ -593,6 +599,10 @@ describe('KakaoMap production overlays', () => {
         activePolylines().some((line) => line.options.strokeColor === '#F58A2A'),
       ).toBe(true);
     });
+    expect(
+      activePolylines().find((line) => line.options.strokeColor === '#F58A2A')
+        ?.options.strokeStyle,
+    ).toBe('solid');
     // 켠 뒤에는 기본 도보색 선이 남지 않는다.
     expect(
       activePolylines().some((line) => line.options.strokeColor === '#475569'),
@@ -895,8 +905,7 @@ describe('KakaoMap production overlays', () => {
     const walk = activePolylines().find((line) => line.options.strokeColor === '#475569');
     const bus = activePolylines().find((line) => line.options.strokeColor === '#3182f6');
     const subway = activePolylines().find((line) => line.options.strokeColor === '#f06a00');
-    // 선 스타일은 이동수단이 아니라 geometry 품질을 나타낸다. 모두 exact다.
-    expect(walk?.options.strokeStyle).toBe('solid');
+    expect(walk?.options.strokeStyle).toBe('shortdash');
     expect(bus?.options.strokeStyle).toBe('solid');
     expect(subway?.options.strokeStyle).toBe('solid');
     expect(
@@ -908,6 +917,71 @@ describe('KakaoMap production overlays', () => {
     expect(
       activePolylines().some((line) => line.options.strokeColor === '#7c3aed'),
     ).toBe(false);
+  });
+
+  it('estimated 버스·지하철도 실선이고 예비 경로는 그늘보다 낮은 z-index다', async () => {
+    const selected = scoredRoute('estimated-transit', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'mixed',
+      segments: [
+        {
+          id: 'w1',
+          mode: 'walk',
+          description: '도보',
+          durationMin: 3,
+          path: [ORIGIN, MIDPOINT],
+          geometryQuality: 'exact',
+        },
+        {
+          id: 'b1',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 8,
+          path: [MIDPOINT, { lat: 35.15, lng: 129.05 }],
+          geometryQuality: 'estimated',
+          busRouteName: '1001',
+        },
+        {
+          id: 's1',
+          mode: 'subway',
+          description: '부산2호선',
+          durationMin: 10,
+          path: [{ lat: 35.15, lng: 129.05 }, DESTINATION],
+          geometryQuality: 'estimated',
+        },
+      ],
+    });
+    const alternative = scoredRoute('alt-estimated', {
+      path: [ORIGIN, { lat: 35.14, lng: 129.02 }, DESTINATION],
+      geometryQuality: 'estimated',
+    });
+
+    render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected, alternative]}
+        selectedRouteId="estimated-transit"
+        onSelectRoute={vi.fn()}
+        showShade={false}
+        showSlope={false}
+      />,
+    );
+    await waitUntilReady();
+
+    const walk = activePolylines().find((line) => line.options.strokeColor === '#475569');
+    const bus = activePolylines().find((line) => line.options.strokeColor === '#3182f6');
+    const subway = activePolylines().find((line) => line.options.strokeColor === '#81bf48');
+    const alternativeLine = activePolylines().find(
+      (line) => line.options.clickable === true,
+    );
+    expect(walk?.options.strokeStyle).toBe('shortdash');
+    expect(bus?.options.strokeStyle).toBe('solid');
+    expect(subway?.options.strokeStyle).toBe('solid');
+    expect(alternativeLine?.options.strokeColor).toBe(ALTERNATIVE_ROUTE_COLOR);
+    expect(alternativeLine?.options.strokeColor).not.toBe(SHADOW_STROKE);
+    expect(alternativeLine?.options.zIndex).toBe(2);
+    expect(bus?.options.zIndex).toBeGreaterThan(alternativeLine?.options.zIndex ?? 0);
   });
 
   it('선택 경로 변경 시 이전 Polyline을 제거하고 새 경사선만 남긴다', async () => {
