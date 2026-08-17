@@ -29,19 +29,19 @@ const metrics = [
 
 const productScreens = [
   {
-    src: '/app/mobile-search.webp',
+    src: `${import.meta.env.BASE_URL}app/mobile-search.webp`,
     no: '01',
     title: '검색',
     en: 'SEARCH',
   },
   {
-    src: '/app/mobile-routes.webp',
+    src: `${import.meta.env.BASE_URL}app/mobile-routes.webp`,
     no: '02',
     title: '맞춤 경로 비교',
     en: 'COMPARE',
   },
   {
-    src: '/app/mobile-detail.webp',
+    src: `${import.meta.env.BASE_URL}app/mobile-detail.webp`,
     no: '03',
     title: '추천 이유 확인',
     en: 'UNDERSTAND',

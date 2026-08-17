@@ -6,10 +6,10 @@ interface LiveDemoSceneProps {
 }
 
 const GENERAL_CAPTURE =
-  '/demo/golden-general-first.png';
+  `${import.meta.env.BASE_URL}demo/golden-general-first.png`;
 
 const ELDERLY_CAPTURE =
-  '/demo/golden-elderly-first.png';
+  `${import.meta.env.BASE_URL}demo/golden-elderly-first.png`;
 
 export function LiveDemoScene({
   step,
