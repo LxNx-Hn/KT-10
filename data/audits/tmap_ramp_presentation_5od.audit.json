@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "tmap-ramp-precollection-v1",
+  "capturedAt": "2026-08-17T10:24:21.058869+00:00",
+  "status": "partial",
+  "sourceDocumentation": "https://tmapapi.tmapmobility.com/webservice/docs/tmapRoutePedestrianDoc.html",
+  "artifactDirectory": "C:\\Users\\KiKi\\Desktop\\CODE\\KT\\KT-10\\ai\\data\\precomputed\\tmap",
+  "requestedOdCount": 5,
+  "uniqueVerifiedWalkSegmentCount": 5,
+  "validatedTmapSegmentCount": 0,
+  "networkMissCount": 0,
+  "knownRampSegmentCount": 0,
+  "knownStairAlternativeRampSegmentCount": 0,
+  "results": [],
+  "failures": [
+    {
+      "odIndex": 1,
+      "source": "odsay",
+      "errorType": "CollectorError",
+      "detail": "ODsay가 유효한 부산 대중교통 경로를 반환하지 않았습니다. (1번 후보: 저상버스 또는 공식 접근 가능 출구 미확인; 2번 후보: 저상버스 또는 공식 접근 가능 출구 미확인; 3번 후보: 저상버스 또는 공식 접근 가능 출구 미확인)"
+    },
+    {
+      "odIndex": 2,
+      "source": "odsay",
+      "errorType": "CollectorError",
+      "detail": "ODsay가 유효한 부산 대중교통 경로를 반환하지 않았습니다. (1번 후보: 저상버스 또는 공식 접근 가능 출구 미확인; 2번 후보: 저상버스 또는 공식 접근 가능 출구 미확인; 3번 후보: 저상버스 또는 공식 접근 가능 출구 미확인)"
+    },
+    {
+      "odIndex": 3,
+      "source": "odsay",
+      "errorType": "CollectorError",
+      "detail": "ODsay 경로 검색 실패: 출, 도착지가 700m이내입니다."
+    },
+    {
+      "odIndex": 4,
+      "source": "odsay",
+      "errorType": "CollectorError",
+      "detail": "ODsay가 유효한 부산 대중교통 경로를 반환하지 않았습니다. (1번 후보: 저상버스 또는 공식 접근 가능 출구 미확인; 2번 후보: 저상버스 또는 공식 접근 가능 출구 미확인; 3번 후보: 저상버스 또는 공식 접근 가능 출구 미확인)"
+    },
+    {
+      "odIndex": 5,
+      "source": "odsay",
+      "errorType": "CollectorError",
+      "detail": "ODsay가 유효한 부산 대중교통 경로를 반환하지 않았습니다. (1번 후보: ORS 응답에 유효한 경로 좌표가 없습니다.; 2번 후보: 저상버스 또는 공식 접근 가능 출구 미확인; 3번 후보: 저상버스 또는 공식 접근 가능 출구 미확인)"
+    },
+    {
+      "segmentHash": "146365b72c55943f2d4b",
+      "source": "tmap",
+      "errorType": "RuntimeError",
+      "detail": "TMAP 경로가 ORS wheelchair 선형과 일치하지 않습니다."
+    },
+    {
+      "segmentHash": "a52431f92a2761b3b633",
+      "source": "tmap",
+      "errorType": "RuntimeError",
+      "detail": "TMAP 경로가 ORS wheelchair 선형과 일치하지 않습니다."
+    },
+    {
+      "segmentHash": "3d9d0e93ef7944d60667",
+      "source": "tmap",
+      "errorType": "RuntimeError",
+      "detail": "TMAP 경로가 ORS wheelchair 선형과 일치하지 않습니다."
+    },
+    {
+      "segmentHash": "4de9ea890729a4e1bd65",
+      "source": "tmap",
+      "errorType": "RuntimeError",
+      "detail": "TMAP 경로가 ORS wheelchair 선형과 일치하지 않습니다."
+    },
+    {
+      "segmentHash": "4a009d9599aeb0a45452",
+      "source": "tmap",
+      "errorType": "RuntimeError",
+      "detail": "TMAP 경로가 ORS wheelchair 선형과 일치하지 않습니다."
+    }
+  ]
+}

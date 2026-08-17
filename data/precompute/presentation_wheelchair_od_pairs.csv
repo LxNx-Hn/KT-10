@@ -1,0 +1,6 @@
+origin_name,origin_lat,origin_lng,dest_name,dest_lat,dest_lng,selection_reason,coordinate_source
+부산역,35.11520340622514,129.04154985192403,서면역,35.1578,129.0594,대표 도시철 이동 구간,Kakao Local API + repository place catalog
+서면역,35.1578,129.0594,부산시민공원,35.169,129.056,도심 단거리 보행 및 공원 접근,repository place catalog
+서면역,35.1578,129.0594,부산커피박물관,35.15494974,129.062679,전포 상권 단거리 보행,repository place catalog + public barrier-free tourism data
+부산역,35.11520340622514,129.04154985192403,이바구공작소,35.11709939,129.033822,초량 산복도로 급경사 표본,Kakao Local API + public barrier-free tourism data
+광안역 6번 접근가능 출구,35.1570099,129.1127609,해운대역 2번 접근가능 출구,35.1638386,129.1589558,공식 엘리베이터 접근가능 출구 간 이동,Busan Transportation Corporation evidence + OpenStreetMap coordinates

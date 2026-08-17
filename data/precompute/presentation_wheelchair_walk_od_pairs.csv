@@ -1,0 +1,5 @@
+origin_name,origin_lat,origin_lng,dest_name,dest_lat,dest_lng,selection_reason,coordinate_source
+동백역 1번 접근가능 출구,35.1612032,129.1479411,해운대역 2번 접근가능 출구,35.1638386,129.1589558,해운대 도심 단거리 보행 축,Busan Transportation Corporation evidence + OpenStreetMap coordinates
+구서역 3번 접근가능 출구,35.2479549,129.0911980,두실역 3번 접근가능 출구,35.2566891,129.0912305,금정구 직선형 보행 축,Busan Transportation Corporation evidence + OpenStreetMap coordinates
+범내골역 1번 접근가능 출구,35.1465944,129.0591424,서면역,35.1578,129.0594,부산진구 도심 직선형 보행 축,Busan Transportation Corporation evidence + repository place catalog
+광안역 6번 접근가능 출구,35.1570099,129.1127609,민락역 1번 접근가능 출구,35.1664665,129.1226628,수영구 도심 보행 축,Busan Transportation Corporation evidence + OpenStreetMap coordinates
