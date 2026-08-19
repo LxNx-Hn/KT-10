@@ -1,4 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { presentationData } from '../data/presentationData';
+import { stepSwap, useMotionVariants } from '../motion/stepSwap';
 
 interface AIRankerSceneProps {
   step: number;
@@ -15,14 +17,60 @@ const profiles = [
 
 const metrics = [
   ['380', 'OD'],
-  ['1,137', '실제 후보'],
-  ['6,822', '프로필 평가'],
+  ['1,137', '실제 후보 경로'],
+  ['6,822', '평가 라벨'],
   ['304 / 76', 'Train / Valid OD'],
+];
+
+const learnFlow = [
+  {
+    no: '01',
+    title: 'KT 믿음 K 2.0',
+    detail: '프로필별 평가 기준',
+  },
+  {
+    no: '02',
+    title: '판단 근거 · 평가 라벨',
+    detail: '프로필별 라벨 구성',
+  },
+  {
+    no: '03',
+    title: 'XGBoost Ranker',
+    detail: '경로 순위 학습',
+  },
+  {
+    no: '04',
+    title: 'NDCG@3 · Pairwise',
+    detail: '순위 품질 검증',
+  },
+  {
+    no: '05',
+    title: 'PWA 추천 연결',
+    detail: '실제 추천 경험',
+  },
+];
+
+const pwaOutputs = [
+  {
+    title: '프로필별 경로 점수',
+    detail: '0–100점',
+  },
+  {
+    title: 'AI Ranker 재정렬',
+    detail: '후보 우선순위',
+  },
+  {
+    title: '추천 이유 제공',
+    detail: '사용자 설명',
+  },
 ];
 
 export function AIRankerScene({
   step,
 }: AIRankerSceneProps) {
+  const { evaluationStandard } = presentationData;
+  const motionVars = useMotionVariants();
+
   return (
     <main className="ai-scene product-light">
       <div className="ai-grid" />
@@ -38,143 +86,155 @@ export function AIRankerScene({
       <AnimatePresence mode="wait">
         {step === 0 && (
           <motion.section
+            key="ai-intro"
             className="ai-intro"
-            initial={{ opacity: 0, y: 28 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -16 }}
-            transition={{ duration: 0.7 }}
+            {...stepSwap}
           >
-            <p className="copy-kicker">
+            <motion.p
+              className="copy-kicker"
+              variants={motionVars.fadeIn}
+              initial="hidden"
+              animate="show"
+            >
               AI APPLICATION
-            </p>
+            </motion.p>
 
             <h2>
-              규칙으로 끝내지 않고,
+              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
+                실제 후보 경로를
+              </motion.span>
               <br />
-              <em>경로 선호를 학습하는 구조까지.</em>
+              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
+                <em>순위 모델 학습으로 검증했습니다.</em>
+              </motion.span>
             </h2>
 
-            <p>
-              동넷은 규칙 기반 서비스와
+            <motion.p
+              variants={motionVars.fadeIn}
+              initial="hidden"
+              animate="show"
+            >
+              {`${evaluationStandard}이 프로필별 판단 근거를 정의하고,`}
               <br />
-              AI ranking 실험을 분리해 운영합니다.
-            </p>
+              XGBoost Ranker가 경로의 순서를 학습합니다.
+            </motion.p>
           </motion.section>
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
         {step === 1 && (
           <motion.section
+            key="ai-flow"
             className="ai-flow-stage"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            {...stepSwap}
           >
-            <div className="ai-flow-heading">
+            <motion.div
+              className="ai-flow-heading"
+              variants={motionVars.softRise}
+              initial="hidden"
+              animate="show"
+            >
               <small>PROFILE-SPECIFIC RANKING</small>
               <h2>
-                같은 후보라도,
-                <em> 프로필별 ranker는 다르게 봅니다.</em>
+                평가 기준은 판단 근거를 정의하고,
+                {' '}
+                <em>Ranker는 순서를 학습합니다.</em>
               </h2>
-            </div>
+            </motion.div>
 
-            <div className="ai-flow">
-              <article>
-                <small>01 · INPUT</small>
-                <strong>실제 후보 경로</strong>
-                <span>A · B · C · D · E</span>
-              </article>
+            <motion.div
+              className="ai-flow ai-flow-extended"
+              variants={motionVars.staggerContainer}
+              initial="hidden"
+              animate="show"
+            >
+              {learnFlow.map((item) => (
+                <motion.article
+                  key={item.no}
+                  className={
+                    item.no === '01'
+                      ? 'ai-model-card'
+                      : item.no === '03'
+                        ? 'ai-output-card'
+                        : undefined
+                  }
+                  variants={motionVars.softScale}
+                >
+                  <small>{item.no}</small>
+                  <strong>{item.title}</strong>
+                  <span>{item.detail}</span>
+                </motion.article>
+              ))}
+            </motion.div>
 
-              <i>→</i>
-
-              <article>
-                <small>02 · FEATURES</small>
-                <strong>경로 피처</strong>
-                <span>이동 · 접근성 · 환경</span>
-              </article>
-
-              <i>→</i>
-
-              <article className="ai-model-card">
-                <small>03 · MODEL</small>
-                <strong>XGBoost Ranker</strong>
-
-                <div className="ai-profile-row">
-                  {profiles.map((profile) => (
-                    <span key={profile}>
-                      {profile}
-                    </span>
-                  ))}
-                </div>
-              </article>
-
-              <i>→</i>
-
-              <article className="ai-output-card">
-                <small>04 · OUTPUT</small>
-                <strong>후보군 순위</strong>
-                <span>상대 적합도 비교</span>
-              </article>
-            </div>
+            <motion.p
+              className="ai-flow-note"
+              variants={motionVars.fadeIn}
+              initial="hidden"
+              animate="show"
+            >
+                평가 기준은 프로필별 판단 근거를 정의하고, Ranker는 경로의 순서를 학습합니다.
+                <span>
+                  {profiles.join(' · ')}
+                </span>
+              </motion.p>
           </motion.section>
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
         {step === 2 && (
           <motion.section
+            key="ai-baseline"
             className="ai-baseline-stage"
-            initial={{
-              opacity: 0,
-              y: 20,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            exit={{ opacity: 0 }}
+            {...stepSwap}
           >
-            <div className="ai-baseline-copy">
-              <small>BOOTSTRAP TECHNICAL BASELINE</small>
+            <motion.div
+              className="ai-baseline-copy"
+              variants={motionVars.staggerContainer}
+              initial="hidden"
+              animate="show"
+            >
+              <motion.small variants={motionVars.fadeIn}>
+                KT 믿음 K 2.0
+              </motion.small>
 
               <h2>
-                먼저,
+                KT 믿음 K 2.0
                 <br />
-                <em>재현 가능한 baseline을 만들었습니다.</em>
+                <em>기반 프로필 평가 기준</em>
               </h2>
 
               <p>
-                동일 방향 OD는 train과 validation을
-                넘나들지 않도록 분리합니다.
+                평가 기준은 프로필별 판단 근거를 정의하고,
+                Ranker는 경로의 순서를 학습합니다.
+                동일 방향 OD는 Train 304 / Valid 76으로 분리합니다.
               </p>
-            </div>
+            </motion.div>
 
-            <div className="ai-baseline-content">
-              <div className="ai-metric-grid">
-                {metrics.map(([value, label], index) => (
+            <motion.div
+              className="ai-baseline-content"
+              variants={motionVars.staggerContainer}
+              initial="hidden"
+              animate="show"
+            >
+              <motion.div
+                className="ai-metric-grid"
+                variants={motionVars.staggerContainer}
+              >
+                {metrics.map(([value, label]) => (
                   <motion.article
                     key={label}
-                    initial={{
-                      opacity: 0,
-                      y: 18,
-                    }}
-                    animate={{
-                      opacity: 1,
-                      y: 0,
-                    }}
-                    transition={{
-                      delay: index * 0.08,
-                    }}
+                    variants={motionVars.numberReveal}
                   >
                     <strong>{value}</strong>
                     <span>{label}</span>
                   </motion.article>
                 ))}
-              </div>
+              </motion.div>
 
-              <div className="ai-evaluation-card">
-                <small>RANKING QUALITY · TECHNICAL BASELINE</small>
+              <motion.div
+                className="ai-evaluation-card"
+                variants={motionVars.softScale}
+              >
+                <small>RANKING QUALITY · XGBoost Ranker</small>
 
                 <div>
                   <span>NDCG@3</span>
@@ -187,74 +247,55 @@ export function AIRankerScene({
                 </div>
 
                 <p>
-                  ※ 고정 루브릭 기반 기술 baseline이며,
-                  실제 사용자 효과를 의미하지 않습니다.
+                  ※ KT 믿음 K 2.0은 프로필별 평가 기준이며,
+                  위 수치는 XGBoost Ranker 검증 결과입니다.
                 </p>
-              </div>
-            </div>
+              </motion.div>
+            </motion.div>
           </motion.section>
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
         {step === 3 && (
           <motion.section
+            key="ai-pwa"
             className="ai-gate-stage"
-            initial={{
-              opacity: 0,
-              y: 22,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            exit={{ opacity: 0 }}
+            {...stepSwap}
           >
-            <div className="ai-gate-heading">
-              <small>MODEL GOVERNANCE</small>
+            <motion.div
+              className="ai-gate-heading"
+              variants={motionVars.softRise}
+              initial="hidden"
+              animate="show"
+            >
+              <small>FROM MODEL TO PWA</small>
 
               <h2>
-                모델을 만들었다고,
-                <br />
-                <em>바로 운영에 넣지는 않습니다.</em>
+                <span>검증된 모델 출력을</span>
+                <span>
+                  <em>PWA 추천 경험에 연결했습니다.</em>
+                </span>
               </h2>
-            </div>
+            </motion.div>
 
-            <div className="ai-gate-flow">
-              <article>
-                <small>TIER 01</small>
-                <strong>BOOTSTRAP</strong>
-                <span>기술 baseline</span>
-                <b>운영 자동 승격 금지</b>
-              </article>
-
-              <i>→</i>
-
-              <article>
-                <small>TIER 02</small>
-                <strong>HUMAN CANDIDATE</strong>
-                <span>사람 라벨 기반 후보</span>
-                <b>검토 필요</b>
-              </article>
-
-              <i>→</i>
-
-              <article className="ai-approved">
-                <small>TIER 03</small>
-                <strong>HUMAN VALIDATED</strong>
-                <span>근거 · 승인 검토</span>
-                <b>운영 후보</b>
-              </article>
-            </div>
-
-            <p className="ai-current-state">
-              CURRENT SERVICE · LIVE MODE
-              <strong> 규칙 기반 추천과 AI 실험 경로를 분리</strong>
-            </p>
+            <motion.div
+              className="ai-gate-flow"
+              variants={motionVars.staggerContainer}
+              initial="hidden"
+              animate="show"
+            >
+              {pwaOutputs.map((item) => (
+                <motion.article
+                  key={item.title}
+                  variants={motionVars.softScale}
+                >
+                  <strong>{item.title}</strong>
+                  <span>{item.detail}</span>
+                </motion.article>
+              ))}
+            </motion.div>
           </motion.section>
         )}
       </AnimatePresence>
-
 
       <div className="presentation-help">
         <span>SPACE</span>

@@ -11,11 +11,11 @@ const basicFacts = [
 ];
 
 const mobilityConditions = [
+  ['WALK', '보행 부담'],
+  ['TRANSFER', '환승'],
   ['SLOPE', '경사'],
   ['STAIRS', '계단'],
   ['ELEVATOR', '승강기'],
-  ['LOW FLOOR', '저상버스'],
-  ['WALK', '보행 부담'],
   ['SHADE', '그늘'],
   ['WEATHER', '날씨'],
 ];
@@ -48,15 +48,15 @@ export function ProblemDefinitionScene({
             </p>
 
             <h2>
-              문제는,
+              같은 길도 사용자에 따라
               <br />
-              <em>길이 없는 것이 아닙니다.</em>
+              <em>서로 다른 이동 부담이 됩니다.</em>
             </h2>
 
             <p>
-              같은 경로도 이동하는 사람과
+              교통약자는 보행 · 환승 · 시설 · 환경 조건을
               <br />
-              환경에 따라 전혀 다른 길이 됩니다.
+              서로 다르게 경험합니다.
             </p>
           </motion.section>
         )}
@@ -110,9 +110,9 @@ export function ProblemDefinitionScene({
           <h3>실제 이동을 바꾸는 조건</h3>
 
           <p>
-            특히 이동취약자에게는
+            원인은 도시 이동 환경과
             <br />
-            길 위의 조건이 이동 가능성을 바꿉니다.
+            경로 정보의 부족입니다.
           </p>
 
           <div className="definition-context-grid">

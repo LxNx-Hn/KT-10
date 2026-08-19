@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { stepSwap } from '../motion/stepSwap';
 
 interface DongNetRevealSceneProps {
   step: number;
@@ -8,9 +9,9 @@ const dataNodes = [
   { label: '경사', sub: 'SLOPE', x: '15%', y: '28%', delay: 0.05 },
   { label: '승강기', sub: 'ELEVATOR', x: '29%', y: '67%', delay: 0.12 },
   { label: '저상버스', sub: 'LOW FLOOR', x: '43%', y: '23%', delay: 0.19 },
-  { label: '보행 부담', sub: 'WALK', x: '60%', y: '70%', delay: 0.26 },
+  { label: '단차', sub: 'CURB', x: '60%', y: '70%', delay: 0.26 },
   { label: '그늘', sub: 'SHADE', x: '72%', y: '27%', delay: 0.33 },
-  { label: '환승', sub: 'TRANSFER', x: '82%', y: '57%', delay: 0.4 },
+  { label: '계단', sub: 'STAIRS', x: '82%', y: '57%', delay: 0.4 },
   { label: '날씨', sub: 'WEATHER', x: '91%', y: '34%', delay: 0.47 },
 ];
 
@@ -44,23 +45,20 @@ export function DongNetRevealScene({
           <motion.section
             key="reveal-intro"
             className="reveal-intro"
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.75 }}
+            {...stepSwap}
           >
             <p className="copy-kicker">SO, WHAT SHOULD A MAP SEE?</p>
 
             <h2>
-              길만 봐서는
+              동넷은 사람과
               <br />
-              알 수 없습니다.
+              길 위의 조건을 함께 봅니다.
             </h2>
 
             <p>
-              이동하는 사람과,
+              경사 · 계단 · 승강기 · 그늘처럼
               <br />
-              그 길 위의 조건을 함께 봐야 합니다.
+              사용자 조건이 경로 평가에 들어갑니다.
             </p>
           </motion.section>
         )}
@@ -182,83 +180,70 @@ export function DongNetRevealScene({
 
       <AnimatePresence>
         {step >= 2 && (
-          <motion.section
-            className="dongnet-reveal-title"
-            initial={{
-              opacity: 0,
-              scale: 0.96,
-              y: 18,
-            }}
-            animate={{
-              opacity: 1,
-              scale: 1,
-              y: 0,
-            }}
-            transition={{
-              duration: 0.8,
-              ease: [0.22, 1, 0.36, 1],
-            }}
-          >
-            <div className="dongnet-wordmark">
-              <span className="dongnet-mark" />
-
-              <div>
-                <p>DONGNET</p>
-                <small>동넷</small>
-              </div>
-            </div>
-
-            <h2>
-              길을 찾는 것에서,
-              <br />
-              <em>나에게 맞는 길을 고르는 것</em>으로.
-            </h2>
-          </motion.section>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {step >= 3 && (
           <motion.div
-            className="reveal-final-model"
-            initial={{
-              opacity: 0,
-              y: 26,
-            }}
+            key="reveal-finale"
+            className={`reveal-finale${step >= 3 ? ' is-split' : ''}`}
+            initial={{ opacity: 0 }}
             animate={{
               opacity: 1,
-              y: 0,
+              visibility: 'visible',
+              pointerEvents: 'auto',
             }}
-            transition={{
-              duration: 0.75,
-              ease: [0.22, 1, 0.36, 1],
+            exit={{
+              opacity: 0,
+              visibility: 'hidden',
+              pointerEvents: 'none',
             }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           >
-            <div className="model-block">
-              <small>01</small>
-              <strong>후보 경로</strong>
-            </div>
+            <section className="dongnet-reveal-title">
+              <div className="dongnet-wordmark">
+                <span className="dongnet-mark" />
 
-            <span className="model-arrow">+</span>
+                <div>
+                  <p>DONGNET</p>
+                  <small>동넷</small>
+                </div>
+              </div>
 
-            <div className="model-block">
-              <small>02</small>
-              <strong>길 위의 데이터</strong>
-            </div>
+              <h2>
+                <span>길을 찾는 것에서,</span>
+                <span>
+                  <em>나에게 맞는 길을 고르는 것으로.</em>
+                </span>
+              </h2>
+            </section>
 
-            <span className="model-arrow">+</span>
+            {step >= 3 ? (
+              <div className="reveal-final-model">
+                <div className="model-block">
+                  <small>01</small>
+                  <strong>후보 경로 수집</strong>
+                  <span className="model-block-sub">ODsay · TMAP · ORS</span>
+                </div>
 
-            <div className="model-block">
-              <small>03</small>
-              <strong>사용자 조건</strong>
-            </div>
+                <span className="model-arrow">+</span>
 
-            <span className="model-arrow model-arrow-result">→</span>
+                <div className="model-block">
+                  <small>02</small>
+                  <strong>길 위의 데이터</strong>
+                </div>
 
-            <div className="model-block model-block-highlight">
-              <small>DONGNET</small>
-              <strong>맞춤 적합도 비교</strong>
-            </div>
+                <span className="model-arrow">+</span>
+
+                <div className="model-block">
+                  <small>03</small>
+                  <strong>사용자 조건</strong>
+                </div>
+
+                <span className="model-arrow model-arrow-result">→</span>
+
+                <div className="model-block model-block-highlight">
+                  <small>DONGNET</small>
+                  <strong>맞춤 적합도 비교</strong>
+                </div>
+              </div>
+            ) : null}
           </motion.div>
         )}
       </AnimatePresence>

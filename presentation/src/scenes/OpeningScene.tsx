@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { presentationData } from '../data/presentationData';
+import { ProblemPrologueScene } from './ProblemPrologueScene';
 
 interface OpeningSceneProps {
   step: number;
@@ -14,6 +15,10 @@ const alternatePath =
 export function OpeningScene({ step }: OpeningSceneProps) {
   const { origin, destination } = presentationData.demo;
 
+  if (step === 1) {
+    return <ProblemPrologueScene />;
+  }
+
   return (
     <main className="opening-scene">
       <div className="opening-vignette" />
@@ -22,8 +27,8 @@ export function OpeningScene({ step }: OpeningSceneProps) {
         className="map-stage"
         initial={{ opacity: 0, scale: 1.025 }}
         animate={{
-          opacity: step >= 1 ? 1 : 0,
-          scale: step >= 1 ? 1 : 1.025,
+          opacity: step >= 2 ? 1 : 0,
+          scale: step >= 2 ? 1 : 1.025,
         }}
         transition={{ duration: 1.25, ease: [0.22, 1, 0.36, 1] }}
       >
@@ -63,8 +68,8 @@ export function OpeningScene({ step }: OpeningSceneProps) {
             className="route-alternate"
             initial={{ pathLength: 0, opacity: 0 }}
             animate={{
-              pathLength: step >= 4 ? 1 : 0,
-              opacity: step >= 4 ? 0.28 : 0,
+              pathLength: step >= 5 ? 1 : 0,
+              opacity: step >= 5 ? 0.28 : 0,
             }}
             transition={{ duration: 1.2, ease: 'easeInOut' }}
           />
@@ -73,7 +78,7 @@ export function OpeningScene({ step }: OpeningSceneProps) {
             d={routePath}
             className="route-main-glow"
             initial={{ pathLength: 0 }}
-            animate={{ pathLength: step >= 2 ? 1 : 0 }}
+            animate={{ pathLength: step >= 3 ? 1 : 0 }}
             transition={{
               duration: 1.65,
               ease: [0.65, 0, 0.35, 1],
@@ -85,7 +90,7 @@ export function OpeningScene({ step }: OpeningSceneProps) {
             d={routePath}
             className="route-main"
             initial={{ pathLength: 0 }}
-            animate={{ pathLength: step >= 2 ? 1 : 0 }}
+            animate={{ pathLength: step >= 3 ? 1 : 0 }}
             transition={{
               duration: 1.65,
               ease: [0.65, 0, 0.35, 1],
@@ -97,8 +102,8 @@ export function OpeningScene({ step }: OpeningSceneProps) {
           className="route-point route-point-origin"
           initial={{ scale: 0, opacity: 0 }}
           animate={{
-            scale: step >= 2 ? 1 : 0,
-            opacity: step >= 2 ? 1 : 0,
+            scale: step >= 3 ? 1 : 0,
+            opacity: step >= 3 ? 1 : 0,
           }}
           transition={{ type: 'spring', stiffness: 220, damping: 18 }}
         >
@@ -113,14 +118,14 @@ export function OpeningScene({ step }: OpeningSceneProps) {
           className="route-point route-point-destination"
           initial={{ scale: 0, opacity: 0 }}
           animate={{
-            scale: step >= 2 ? 1 : 0,
-            opacity: step >= 2 ? 1 : 0,
+            scale: step >= 3 ? 1 : 0,
+            opacity: step >= 3 ? 1 : 0,
           }}
           transition={{
             type: 'spring',
             stiffness: 220,
             damping: 18,
-            delay: step >= 2 ? 1.25 : 0,
+            delay: step >= 3 ? 1.25 : 0,
           }}
         >
           <span className="point-core destination-core" />
@@ -152,7 +157,7 @@ export function OpeningScene({ step }: OpeningSceneProps) {
           </motion.section>
         )}
 
-        {step === 3 && (
+        {step === 4 && (
           <motion.section
             key="fastest"
             className="opening-copy route-question-copy"
@@ -170,7 +175,7 @@ export function OpeningScene({ step }: OpeningSceneProps) {
           </motion.section>
         )}
 
-        {step === 4 && (
+        {step === 5 && (
           <motion.section
             key="but"
             className="opening-copy route-question-copy"
@@ -188,7 +193,7 @@ export function OpeningScene({ step }: OpeningSceneProps) {
           </motion.section>
         )}
 
-        {step >= 5 && (
+        {step === 6 && (
           <motion.section
             key="question"
             className="opening-copy opening-final-question"

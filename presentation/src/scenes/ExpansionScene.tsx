@@ -1,12 +1,53 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { stepSwap, useMotionVariants } from '../motion/stepSwap';
 
 interface ExpansionSceneProps {
   step: number;
 }
 
+const roadmap = [
+  {
+    no: '01',
+    kicker: 'NOW · PWA',
+    title: '현재 · PWA 운영',
+    body: '설치 가능한 웹앱으로 서비스 제공',
+    tags: ['dongnet.kr', 'PWA', '프로필 추천'],
+  },
+  {
+    no: '02',
+    kicker: 'NEXT · PWA DEPTH',
+    title: '다음 · PWA 고도화',
+    body: '접근성·성능·사용성 개선',
+    tags: ['접근성', '성능', '사용성'],
+  },
+  {
+    no: '03',
+    kicker: 'NEXT · SCALE',
+    title: '확장 · 지역·공공 연계',
+    body: '지역 데이터와 공공 이동 서비스 연결',
+    tags: ['지역 데이터', '추천 API', '공공 이동'],
+  },
+];
+
+const loop = [
+  ['01', 'PWA 실제 이용', '경로 추천'],
+  ['02', '사용자 피드백', '후기 · 오류 신고'],
+  ['03', '품질 지표 확인', '추천 품질'],
+  ['04', '추천 개선', '프로필별 경로 평가'],
+];
+
+const nextMetrics = [
+  ['01', 'PWA 이용 지속률', '설치 가능한 웹앱을 얼마나 이어 쓰는가'],
+  ['02', '프로필별 만족도', '사용자 조건에 맞는 이동 경험'],
+  ['03', '추천 품질', '프로필별 경로 평가와 재정렬'],
+  ['04', '지역 적용성', '다른 지역에서도 동일 구조가 유효한가'],
+];
+
 export function ExpansionScene({
   step,
 }: ExpansionSceneProps) {
+  const motionVars = useMotionVariants();
+
   return (
     <main className="expansion-scene product-light">
       <div className="expansion-grid" />
@@ -22,228 +63,219 @@ export function ExpansionScene({
       <AnimatePresence mode="wait">
         {step === 0 && (
           <motion.section
+            key="expansion-intro"
             className="expansion-intro"
-            initial={{ opacity: 0, y: 28 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -16 }}
-            transition={{ duration: 0.7 }}
+            {...stepSwap}
           >
-            <p className="copy-kicker">
+            <motion.p
+              className="copy-kicker"
+              variants={motionVars.fadeIn}
+              initial="hidden"
+              animate="show"
+            >
               SERVICE EXPANSION
-            </p>
+            </motion.p>
 
             <h2>
-              부산에서 시작해,
-              <br />
-              <em>더 넓은 이동 문제로 확장합니다.</em>
+              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
+                하나의 PWA로,
+              </motion.span>
+              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
+                <em>모바일 이동 경험을 확장합니다.</em>
+              </motion.span>
             </h2>
 
-            <p>
-              현재 서비스와 향후 확장 전략을
+            <motion.p
+              variants={motionVars.fadeIn}
+              initial="hidden"
+              animate="show"
+            >
+              프로필별 경로 평가와 추천을
               <br />
-              단계적으로 설계했습니다.
-            </p>
+              설치 가능한 웹앱으로 운영합니다.
+            </motion.p>
           </motion.section>
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
         {step === 1 && (
           <motion.section
+            key="expansion-roadmap"
             className="expansion-roadmap"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            {...stepSwap}
           >
-            <div className="expansion-heading">
+            <motion.div
+              className="expansion-heading"
+              variants={motionVars.softRise}
+              initial="hidden"
+              animate="show"
+            >
               <small>EXPANSION ROADMAP</small>
               <h2>
-                하나의 경로 서비스에서,
-                <em> 이동 접근성 인프라로.</em>
+                <span>하나의 PWA로,</span>
+                <span>
+                  <em>모바일 이동 경험을 확장합니다.</em>
+                </span>
               </h2>
-            </div>
+            </motion.div>
 
-            <div className="expansion-cards">
-              <article className="expansion-now">
-                <div className="expansion-number">01</div>
-                <small>NOW · BUSAN</small>
-                <h3>실제 서비스</h3>
+            <motion.div
+              className="expansion-cards"
+              variants={motionVars.staggerContainer}
+              initial="hidden"
+              animate="show"
+            >
+              {roadmap.flatMap((card, index) => {
+                const article = (
+                  <motion.article
+                    key={card.no}
+                    className={index === 0 ? 'expansion-now' : undefined}
+                    variants={motionVars.softScale}
+                  >
+                    <div className="expansion-number">{card.no}</div>
+                    <small>{card.kicker}</small>
+                    <h3>{card.title}</h3>
+                    <p>{card.body}</p>
+                    <div>
+                      {card.tags.map((tag) => (
+                        <span key={tag}>{tag}</span>
+                      ))}
+                    </div>
+                  </motion.article>
+                );
 
-                <p>
-                  사용자 프로필과 이동 조건에 따른
-                  부산 맞춤 경로 추천
-                </p>
+                if (index === 0) {
+                  return [article];
+                }
 
-                <div>
-                  <span>dongnet.kr</span>
-                  <span>추천 이유</span>
-                  <span>후기 · 시설 신고</span>
-                </div>
-              </article>
-
-              <i>→</i>
-
-              <article>
-                <div className="expansion-number">02</div>
-                <small>NEXT · REGION</small>
-                <h3>지역 확장</h3>
-
-                <p>
-                  지역별 교통·접근성·환경 데이터를
-                  동일한 평가 구조에 연결
-                </p>
-
-                <div>
-                  <span>지역 데이터</span>
-                  <span>공간 레이어</span>
-                  <span>공통 scoring contract</span>
-                </div>
-              </article>
-
-              <i>→</i>
-
-              <article>
-                <div className="expansion-number">03</div>
-                <small>NEXT · PUBLIC MOBILITY</small>
-                <h3>공공 이동 서비스 연계</h3>
-
-                <p>
-                  지자체 이동지원·교통복지 서비스에서
-                  활용 가능한 추천 구조로 확장
-                </p>
-
-                <div>
-                  <span>추천 API</span>
-                  <span>이동지원</span>
-                  <span>정책 연계안</span>
-                </div>
-              </article>
-            </div>
+                return [
+                  <motion.i
+                    key={`arrow-${card.no}`}
+                    className="motion-arrow"
+                    variants={motionVars.drawLine}
+                  >
+                    →
+                  </motion.i>,
+                  article,
+                ];
+              })}
+            </motion.div>
           </motion.section>
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
         {step === 2 && (
           <motion.section
+            key="expansion-loop"
             className="expansion-loop"
-            initial={{
-              opacity: 0,
-              y: 20,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            exit={{ opacity: 0 }}
+            {...stepSwap}
           >
-            <div className="expansion-loop-copy">
-              <small>HUMAN FEEDBACK LOOP</small>
+            <motion.div
+              className="expansion-loop-copy"
+              variants={motionVars.softRise}
+              initial="hidden"
+              animate="show"
+            >
+              <small>PWA QUALITY LOOP</small>
 
               <h2>
-                서비스가 쓰일수록,
+                이용이 쌓이면,
                 <br />
-                <em>검증 가능한 피드백도 쌓이도록.</em>
+                <em>검증도 쌓입니다.</em>
               </h2>
 
               <p>
-                사용자 동의와 검토를 거친 피드백은
-                향후 모델 검증 데이터로 활용할 수 있습니다.
+                PWA 실제 이용 → 사용자 피드백 → 품질 지표 확인 → 추천 개선
               </p>
-            </div>
+            </motion.div>
 
-            <div className="feedback-loop-diagram">
-              <article>
-                <small>01</small>
-                <strong>실제 이용</strong>
-                <span>경로 추천</span>
-              </article>
+            <motion.div
+              className="feedback-loop-diagram"
+              variants={motionVars.staggerContainer}
+              initial="hidden"
+              animate="show"
+            >
+              {loop.flatMap(([no, title, detail], index) => {
+                const article = (
+                  <motion.article
+                    key={title}
+                    className={index === 3 ? 'loop-accent' : undefined}
+                    variants={motionVars.softScale}
+                  >
+                    <small>{no}</small>
+                    <strong>{title}</strong>
+                    <span>{detail}</span>
+                  </motion.article>
+                );
 
-              <i>→</i>
+                if (index === 0) {
+                  return [article];
+                }
 
-              <article>
-                <small>02</small>
-                <strong>사용자 피드백</strong>
-                <span>후기 · 오류 신고</span>
-              </article>
-
-              <i>→</i>
-
-              <article>
-                <small>03</small>
-                <strong>Human Validation</strong>
-                <span>근거 검토</span>
-              </article>
-
-              <i>→</i>
-
-              <article className="loop-accent">
-                <small>04</small>
-                <strong>추천 개선</strong>
-                <span>차기 모델 후보</span>
-              </article>
-            </div>
+                return [
+                  <motion.i
+                    key={`loop-arrow-${title}`}
+                    className="motion-arrow"
+                    variants={motionVars.drawLine}
+                  >
+                    →
+                  </motion.i>,
+                  article,
+                ];
+              })}
+            </motion.div>
           </motion.section>
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
         {step === 3 && (
           <motion.section
+            key="expansion-impact"
             className="expansion-impact"
-            initial={{
-              opacity: 0,
-              y: 20,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            exit={{ opacity: 0 }}
+            {...stepSwap}
           >
-            <div className="expansion-impact-title">
+            <motion.div
+              className="expansion-impact-title"
+              variants={motionVars.softRise}
+              initial="hidden"
+              animate="show"
+            >
               <small>EFFECTIVENESS · NEXT METRICS</small>
 
               <h2>
-                확장은 기능 수가 아니라,
-                <br />
-                <em>실제 이동 경험의 변화로 검증합니다.</em>
+                <span>PWA 운영 이후,</span>
+                <span>
+                  <em>실제 이동 경험의 변화로 검증합니다.</em>
+                </span>
               </h2>
-            </div>
+            </motion.div>
 
-            <div className="impact-metric-grid">
-              <article>
-                <small>01</small>
-                <strong>추천 선택</strong>
-                <span>어떤 추천이 실제로 선택되는가</span>
-              </article>
+            <motion.div
+              className="impact-metric-grid"
+              variants={motionVars.staggerContainer}
+              initial="hidden"
+              animate="show"
+            >
+              {nextMetrics.map(([no, title, detail]) => (
+                <motion.article
+                  key={title}
+                  variants={motionVars.softScale}
+                >
+                  <small>{no}</small>
+                  <strong>{title}</strong>
+                  <span>{detail}</span>
+                </motion.article>
+              ))}
+            </motion.div>
 
-              <article>
-                <small>02</small>
-                <strong>이동 만족도</strong>
-                <span>프로필별 체감 이동 부담 변화</span>
-              </article>
-
-              <article>
-                <small>03</small>
-                <strong>데이터 개선</strong>
-                <span>시설 오류·접근성 신고 반영</span>
-              </article>
-
-              <article>
-                <small>04</small>
-                <strong>지역 적용성</strong>
-                <span>다른 지역에서도 동일 구조가 유효한가</span>
-              </article>
-            </div>
-
-            <p className="future-label">
+            <motion.p
+              className="future-label"
+              variants={motionVars.fadeIn}
+              initial="hidden"
+              animate="show"
+            >
               ※ 위 항목은 향후 서비스 효과 검증 지표입니다.
-            </p>
+            </motion.p>
           </motion.section>
         )}
       </AnimatePresence>
-
 
       <div className="presentation-help">
         <span>SPACE</span>

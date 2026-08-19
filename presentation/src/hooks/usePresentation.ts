@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-const SCENE_MAX_STEPS = [5, 2, 2, 3, 3, 2, 4, 4, 3, 4, 4, 3, 4];
+const SCENE_MAX_STEPS = [6, 2, 2, 3, 3, 2, 4, 3, 3, 2, 5, 3, 4];
 
 export function usePresentation() {
   const [scene, setScene] = useState(0);
@@ -115,8 +115,7 @@ export function usePresentation() {
       }
 
       if (/^[1-9]$/.test(event.key)) {
-        const target = Number(event.key) - 1;
-        goToScene(target);
+        goToScene(Number(event.key) - 1);
       }
     };
 
