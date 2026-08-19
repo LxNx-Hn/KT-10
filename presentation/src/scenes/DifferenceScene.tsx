@@ -1,31 +1,28 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { stepSwap, useMotionVariants } from '../motion/stepSwap';
 
 interface DifferenceSceneProps {
   step: number;
 }
 
-const baseFacts = [
-  '소요 시간',
-  '도보 거리',
-  '환승',
-  '교통수단',
-  '경로 형상',
+const commercialPoints = [
+  '시간 · 거리 중심',
+  '다수 사용자 기준',
+  '빠른 도착 중심',
 ];
 
-const dongnetContext = [
-  '90m 지형 경사',
-  '9개 공간 레이어',
-  '건물 그늘',
-  '날씨 · 대기',
-  '승강기',
-  '저상버스',
-  '보행 부담',
-  '사용자 프로필',
+const dongnetPoints = [
+  '사용자 프로필 반영',
+  '이동 부담 · 접근성 · 환경 조건 평가',
+  '후보 경로 재정렬',
+  '추천 이유 제공',
 ];
 
 export function DifferenceScene({
   step,
 }: DifferenceSceneProps) {
+  const motionVars = useMotionVariants();
+
   return (
     <main className="difference-scene">
       <div className="difference-glow" />
@@ -41,199 +38,127 @@ export function DifferenceScene({
           <motion.section
             key="diff-question"
             className="difference-question"
-            initial={{
-              opacity: 0,
-              y: 28,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            exit={{
-              opacity: 0,
-              y: -18,
-            }}
-            transition={{ duration: 0.7 }}
+            {...stepSwap}
           >
-            <p className="copy-kicker">
-              THE SIMPLE QUESTION
-            </p>
+            <motion.div
+              className="layout-fill"
+              variants={motionVars.staggerContainer}
+              initial="hidden"
+              animate="show"
+            >
+              <motion.p
+                className="copy-kicker"
+                variants={motionVars.fadeIn}
+              >
+                THE DIFFERENCE
+              </motion.p>
 
-            <h2>
-              “그래서,
-              <br />
-              <em>그냥 길찾기랑 뭐가 다른데?</em>”
-            </h2>
+              <h2>
+                <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
+                  동넷은 길찾기의 기준을
+                </motion.span>
+                <br />
+                <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
+                  <em>어떻게 바꿨을까요?</em>
+                </motion.span>
+              </h2>
+            </motion.div>
           </motion.section>
         )}
-      </AnimatePresence>
 
-      <motion.section
-        className="difference-board"
-        initial={{ opacity: 0 }}
-        animate={{
-          opacity:
-            step >= 1 && step < 4
-              ? 1
-              : step >= 4
-                ? 0.08
-                : 0,
-        }}
-        transition={{ duration: 0.65 }}
-      >
-        <article className="difference-column difference-base">
-          <div className="difference-column-heading">
-            <small>ROUTE PROVIDER</small>
-            <h3>경로 후보</h3>
-            <p>
-              실제 이동 가능한 길에 대한
-              <br />
-              기본 사실을 제공합니다.
-            </p>
-          </div>
-
-          <div className="difference-fact-list">
-            {baseFacts.map((fact, index) => (
-              <motion.div
-                key={fact}
-                initial={{
-                  opacity: 0,
-                  x: -15,
-                }}
-                animate={{
-                  opacity: step >= 1 ? 1 : 0,
-                  x: step >= 1 ? 0 : -15,
-                }}
-                transition={{
-                  delay: index * 0.07,
-                }}
-              >
-                <span>0{index + 1}</span>
-                <strong>{fact}</strong>
-              </motion.div>
-            ))}
-          </div>
-        </article>
-
-        <div className="difference-bridge">
-          <motion.span
-            initial={{
-              scaleX: 0,
-            }}
-            animate={{
-              scaleX: step >= 2 ? 1 : 0,
-            }}
-            transition={{
-              duration: 0.8,
-            }}
-          />
-          <strong>+</strong>
-        </div>
-
-        <article
-          className={`difference-column difference-dongnet ${
-            step >= 2 ? 'visible' : ''
-          }`}
-        >
-          <div className="difference-column-heading">
-            <small>DONGNET CONTEXT</small>
-            <h3>길 위의 맥락</h3>
-            <p>
-              후보 위에 실제 이동 환경과
-              <br />
-              사용자 조건을 더합니다.
-            </p>
-          </div>
-
-          <div className="dongnet-context-grid">
-            {dongnetContext.map((item, index) => (
-              <motion.div
-                key={item}
-                initial={{
-                  opacity: 0,
-                  scale: 0.9,
-                }}
-                animate={{
-                  opacity: step >= 2 ? 1 : 0,
-                  scale: step >= 2 ? 1 : 0.9,
-                }}
-                transition={{
-                  delay: index * 0.05,
-                }}
-              >
-                <span className="context-pulse" />
-                <strong>{item}</strong>
-              </motion.div>
-            ))}
-          </div>
-        </article>
-      </motion.section>
-
-      <AnimatePresence>
-        {step >= 3 && (
-          <motion.div
-            className="difference-personalize"
-            initial={{
-              opacity: 0,
-              y: 20,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            transition={{ duration: 0.65 }}
-          >
-            <div>
-              <small>SAME CANDIDATES</small>
-              <strong>A · B · C · D · E</strong>
-            </div>
-
-            <span>→</span>
-
-            <div className="persona-switch">
-              <small>GENERAL</small>
-              <strong>일반</strong>
-            </div>
-
-            <span>→</span>
-
-            <div>
-              <small>PERSONALIZED RANKING</small>
-              <strong>후보군 비교</strong>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {step >= 4 && (
+        {step === 1 && (
           <motion.section
-            className="difference-ending"
-            initial={{
-              opacity: 0,
-              scale: 0.96,
-            }}
-            animate={{
-              opacity: 1,
-              scale: 1,
-            }}
-            transition={{
-              duration: 0.75,
-              ease: [0.22, 1, 0.36, 1],
-            }}
+            key="diff-board"
+            className="difference-board difference-board-simple"
+            {...stepSwap}
           >
-            <small>THE DIFFERENCE</small>
+            <motion.article
+              className="difference-column difference-base visible"
+              initial={{ opacity: 0, x: -16 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.36, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <div className="difference-column-heading">
+                <small>COMMERCIAL ROUTING</small>
+                <h3>상용 길찾기</h3>
+              </div>
 
-            <h2>
-              지도는 <span>길을 찾고,</span>
-              <br />
-              동넷은 <em>나에게 맞는 길을 고릅니다.</em>
-            </h2>
+              <div className="difference-fact-list">
+                {commercialPoints.map((fact, index) => (
+                  <div key={fact}>
+                    <span>0{index + 1}</span>
+                    <strong>{fact}</strong>
+                  </div>
+                ))}
+              </div>
+            </motion.article>
 
-            <p>
-              경로 생성이 아니라,
-              경로 위의 맥락을 해석하고 비교하는 서비스.
-            </p>
+            <motion.div
+              className="difference-bridge"
+              initial={{ opacity: 0, scaleX: 0 }}
+              animate={{ opacity: 1, scaleX: 1 }}
+              transition={{
+                delay: 0.28,
+                duration: 0.32,
+                ease: [0.22, 1, 0.36, 1],
+              }}
+            >
+              <span />
+              <strong>vs</strong>
+            </motion.div>
+
+            <motion.article
+              className="difference-column difference-dongnet visible"
+              initial={{ opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{
+                duration: 0.36,
+                delay: 0.08,
+                ease: [0.22, 1, 0.36, 1],
+              }}
+            >
+              <div className="difference-column-heading">
+                <small>DONGNET ROUTING</small>
+                <h3>DongNet</h3>
+              </div>
+
+              <div className="dongnet-context-grid dongnet-context-simple">
+                {dongnetPoints.map((item) => (
+                  <div key={item}>
+                    <span className="context-pulse" />
+                    <strong>{item}</strong>
+                  </div>
+                ))}
+              </div>
+              <p className="difference-ors-note">
+                이동지원 후보는 ORS로 보완합니다.
+              </p>
+            </motion.article>
+          </motion.section>
+        )}
+
+        {step >= 2 && (
+          <motion.section
+            key="diff-ending"
+            className="difference-ending"
+            {...stepSwap}
+          >
+            <motion.div
+              className="layout-fill"
+              variants={motionVars.staggerContainer}
+              initial="hidden"
+              animate="show"
+            >
+              <motion.small variants={motionVars.fadeIn}>
+                THE DIFFERENCE
+              </motion.small>
+
+              <h2>
+                상용 길찾기: <span>시간·거리 중심의 최적 경로</span>
+                <br />
+                DongNet: <em>이동 조건·접근성·환경 중심의 적합 경로</em>
+              </h2>
+            </motion.div>
           </motion.section>
         )}
       </AnimatePresence>

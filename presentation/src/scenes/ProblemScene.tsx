@@ -125,6 +125,14 @@ export function ProblemScene({ step }: ProblemSceneProps) {
           />
         </svg>
 
+        {step >= 1 && (
+          <div className="problem-route-labels">
+            <span className="route-label route-label-general">일반</span>
+            <span className="route-label route-label-elderly">고령자</span>
+            <span className="route-label route-label-mobility">이동지원</span>
+          </div>
+        )}
+
         <div className="profile-stack">
           {profileOrder.map((key, index) => {
             const profile = profiles[key];
@@ -155,6 +163,9 @@ export function ProblemScene({ step }: ProblemSceneProps) {
                 <div className="profile-story-main">
                   <p>{profile.english}</p>
                   <h3>{profile.label}</h3>
+                  {'note' in profile && (
+                    <small className="profile-note">{profile.note}</small>
+                  )}
                   <span>{profile.description}</span>
                 </div>
 
@@ -180,12 +191,12 @@ export function ProblemScene({ step }: ProblemSceneProps) {
               ease: [0.22, 1, 0.36, 1],
             }}
           >
-            <p className="copy-kicker">ONE DESTINATION, DIFFERENT NEEDS</p>
+            <p className="copy-kicker">ONE DESTINATION, DIFFERENT CONDITIONS</p>
 
             <h2>
-              좋은 길의 기준은
+              같은 목적지라도,
               <br />
-              <em>사람마다 다릅니다.</em>
+              <em>프로필마다 좋은 경로의 기준은 달라집니다.</em>
             </h2>
           </motion.section>
         )}

@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { goldenDemo } from '../data/goldenDemo';
+import { stepSwap, useMotionVariants } from '../motion/stepSwap';
 
 interface LiveDemoSceneProps {
   step: number;
@@ -14,6 +15,8 @@ const ELDERLY_CAPTURE =
 export function LiveDemoScene({
   step,
 }: LiveDemoSceneProps) {
+  const motionVars = useMotionVariants();
+
   return (
     <main className="live-scene product-light real-demo-scene">
       <div className="live-light live-light-a" />
@@ -30,55 +33,48 @@ export function LiveDemoScene({
           <motion.section
             key="live-intro"
             className="live-intro"
-            initial={{
-              opacity: 0,
-              y: 28,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            exit={{
-              opacity: 0,
-              y: -16,
-            }}
-            transition={{
-              duration: 0.7,
-            }}
+            {...stepSwap}
           >
-            <p className="copy-kicker">
+            <motion.p
+              className="copy-kicker"
+              variants={motionVars.fadeIn}
+              initial="hidden"
+              animate="show"
+            >
               ENOUGH EXPLANATION.
-            </p>
+            </motion.p>
 
             <h2>
-              이제,
+              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
+                이제,
+              </motion.span>
               <br />
-              <em>직접 보여드리겠습니다.</em>
+              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
+                <em>직접 보여드리겠습니다.</em>
+              </motion.span>
             </h2>
 
-            <p>
+            <motion.p
+              variants={motionVars.fadeIn}
+              initial="hidden"
+              animate="show"
+            >
               같은 출발지와 목적지에서
               <br />
               프로필만 바꿔보겠습니다.
-            </p>
+            </motion.p>
           </motion.section>
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {step >= 1 && (
+      {step >= 1 && (
+        <div className="real-demo-layout">
           <motion.section
             className="real-demo-context"
-            initial={{
-              opacity: 0,
-              x: -22,
-            }}
-            animate={{
-              opacity: 1,
-              x: 0,
-            }}
+            initial={{ opacity: 0, x: -16 }}
+            animate={{ opacity: 1, x: 0 }}
             transition={{
-              duration: 0.65,
+              duration: 0.36,
               ease: [0.22, 1, 0.36, 1],
             }}
           >
@@ -108,228 +104,210 @@ export function LiveDemoScene({
               </strong>
             </div>
           </motion.section>
-        )}
-      </AnimatePresence>
 
-      {step >= 1 && (
-        <motion.div
-          className="real-device-anchor"
-          initial={{
-            opacity: 0,
-            scale: 0.9,
-            y: 32,
-          }}
-          animate={{
-            opacity: 1,
-            scale:
-              step >= 2
-                ? 1.015
-                : 1,
-            y: 0,
-          }}
-          transition={{
-            duration: 0.8,
-            ease: [0.22, 1, 0.36, 1],
-          }}
-        >
-          <div className="real-device-frame">
-            <div className="real-device-label">
-              <span className="live-status" />
+          <div className="real-device-slot">
+            <motion.div
+              className="real-device-motion"
+              initial={{ opacity: 0, y: 18, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{
+                duration: 0.42,
+                ease: [0.22, 1, 0.36, 1],
+              }}
+            >
+              <div className="real-device-frame">
+                <div className="real-device-label">
+                  <span className="live-status" />
 
-              <strong>
-                {step >= 2
-                  ? 'ELDERLY'
-                  : 'GENERAL'}
-              </strong>
+                  <AnimatePresence mode="wait">
+                    <motion.strong
+                      key={step >= 2 ? 'ELDERLY' : 'GENERAL'}
+                      variants={motionVars.numberReveal}
+                      initial="hidden"
+                      animate="show"
+                    >
+                      {step >= 2 ? 'ELDERLY' : 'GENERAL'}
+                    </motion.strong>
+                  </AnimatePresence>
 
-              <small>dongnet.kr</small>
-            </div>
+                  <small>dongnet.kr</small>
+                </div>
 
-            <div className="real-device-screen">
-              <AnimatePresence mode="sync">
-                <motion.img
-                  key={
-                    step >= 2
-                      ? 'elderly'
-                      : 'general'
-                  }
-                  src={
-                    step >= 2
-                      ? ELDERLY_CAPTURE
-                      : GENERAL_CAPTURE
-                  }
-                  alt={
-                    step >= 2
-                      ? '고령자 프로필 동넷 실제 추천 결과'
-                      : '일반 프로필 동넷 실제 추천 결과'
-                  }
-                  initial={{
-                    opacity: 0,
-                    scale: 1.015,
-                  }}
-                  animate={{
-                    opacity: 1,
-                    scale: 1,
-                  }}
-                  exit={{
-                    opacity: 0,
-                    scale: 0.99,
-                  }}
-                  transition={{
-                    duration: 0.55,
-                  }}
-                />
-              </AnimatePresence>
-            </div>
+                <div className="real-device-screen">
+                  <AnimatePresence mode="sync">
+                    <motion.img
+                      key={
+                        step >= 2
+                          ? 'elderly'
+                          : 'general'
+                      }
+                      src={
+                        step >= 2
+                          ? ELDERLY_CAPTURE
+                          : GENERAL_CAPTURE
+                      }
+                      alt={
+                        step >= 2
+                          ? '고령자 프로필 동넷 실제 추천 결과'
+                          : '일반 프로필 동넷 실제 추천 결과'
+                      }
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.32 }}
+                    />
+                  </AnimatePresence>
+                </div>
+              </div>
+
+              <motion.div
+                className="real-proof-badge"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.42, duration: 0.28 }}
+              >
+                <span />
+                ACTUAL SERVICE CAPTURE
+              </motion.div>
+            </motion.div>
           </div>
 
-          <div className="real-proof-badge">
-            <span />
-            ACTUAL SERVICE CAPTURE
-          </div>
-        </motion.div>
+          <AnimatePresence mode="wait">
+            {step === 1 && (
+              <motion.section
+                key="general-proof"
+                className="real-demo-result"
+                initial={{ opacity: 0, x: 16 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <motion.div
+                  className="layout-fill"
+                  variants={motionVars.staggerContainer}
+                  initial="hidden"
+                  animate="show"
+                >
+                  <motion.small variants={motionVars.fadeIn}>
+                    GENERAL · 1ST
+                  </motion.small>
+
+                  <motion.h3 variants={motionVars.softRise}>
+                    도보 + 168 + 도시철도
+                  </motion.h3>
+
+                  <div className="real-result-metrics">
+                    <motion.div variants={motionVars.numberReveal}>
+                      <strong>69</strong>
+                      <span>분</span>
+                    </motion.div>
+
+                    <motion.div variants={motionVars.numberReveal}>
+                      <strong>1,252</strong>
+                      <span>m 도보</span>
+                    </motion.div>
+
+                    <motion.div variants={motionVars.numberReveal}>
+                      <strong>55</strong>
+                      <span>적합도</span>
+                    </motion.div>
+                  </div>
+
+                  <motion.p variants={motionVars.fadeIn}>
+                    일반 프로필에서는
+                    <br />
+                    이 경로가 1위입니다.
+                  </motion.p>
+                </motion.div>
+              </motion.section>
+            )}
+
+            {step >= 2 && (
+              <motion.section
+                key="elderly-proof"
+                className="real-demo-result real-demo-result-elderly"
+                initial={{ opacity: 0, x: 16 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <motion.div
+                  className="layout-fill"
+                  variants={motionVars.staggerContainer}
+                  initial="hidden"
+                  animate="show"
+                >
+                  <motion.small variants={motionVars.fadeIn}>
+                    ELDERLY · 1ST
+                  </motion.small>
+
+                  <motion.h3 variants={motionVars.softRise}>
+                    도보 + 도시철도 + 1001
+                  </motion.h3>
+
+                  <div className="real-result-metrics">
+                    <motion.div variants={motionVars.numberReveal}>
+                      <strong>77</strong>
+                      <span>분</span>
+                    </motion.div>
+
+                    <motion.div variants={motionVars.numberReveal}>
+                      <strong>1,068</strong>
+                      <span>m 도보</span>
+                    </motion.div>
+
+                    <motion.div variants={motionVars.numberReveal}>
+                      <strong>36</strong>
+                      <span>적합도</span>
+                    </motion.div>
+                  </div>
+
+                  <motion.div
+                    className="real-rank-shift"
+                    variants={motionVars.softRise}
+                  >
+                    <div>
+                      <small>GENERAL</small>
+                      <strong>3위</strong>
+                    </div>
+
+                    <span>→</span>
+
+                    <div>
+                      <small>ELDERLY</small>
+                      <strong>1위</strong>
+                    </div>
+                  </motion.div>
+
+                  <motion.p variants={motionVars.fadeIn}>
+                    같은 후보 C가
+                    <br />
+                    <b>일반 3위 → 고령자 1위</b>로
+                    올라왔습니다.
+                  </motion.p>
+                </motion.div>
+              </motion.section>
+            )}
+          </AnimatePresence>
+        </div>
       )}
-
-      <AnimatePresence mode="wait">
-        {step === 1 && (
-          <motion.section
-            key="general-proof"
-            className="real-demo-result"
-            initial={{
-              opacity: 0,
-              x: 20,
-            }}
-            animate={{
-              opacity: 1,
-              x: 0,
-            }}
-            exit={{
-              opacity: 0,
-              x: 15,
-            }}
-            transition={{
-              duration: 0.6,
-              delay: 0.15,
-            }}
-          >
-            <small>GENERAL · 1ST</small>
-
-            <h3>
-              도보 + 168 + 도시철도
-            </h3>
-
-            <div className="real-result-metrics">
-              <div>
-                <strong>69</strong>
-                <span>분</span>
-              </div>
-
-              <div>
-                <strong>1,252</strong>
-                <span>m 도보</span>
-              </div>
-
-              <div>
-                <strong>55</strong>
-                <span>적합도</span>
-              </div>
-            </div>
-
-            <p>
-              일반 프로필에서는
-              <br />
-              이 경로가 1위입니다.
-            </p>
-          </motion.section>
-        )}
-
-        {step >= 2 && (
-          <motion.section
-            key="elderly-proof"
-            className="real-demo-result real-demo-result-elderly"
-            initial={{
-              opacity: 0,
-              x: 22,
-            }}
-            animate={{
-              opacity: 1,
-              x: 0,
-            }}
-            transition={{
-              duration: 0.6,
-              delay: 0.15,
-            }}
-          >
-            <small>ELDERLY · 1ST</small>
-
-            <h3>
-              도보 + 도시철도 + 1001
-            </h3>
-
-            <div className="real-result-metrics">
-              <div>
-                <strong>77</strong>
-                <span>분</span>
-              </div>
-
-              <div>
-                <strong>1,068</strong>
-                <span>m 도보</span>
-              </div>
-
-              <div>
-                <strong>36</strong>
-                <span>적합도</span>
-              </div>
-            </div>
-
-            <div className="real-rank-shift">
-              <div>
-                <small>GENERAL</small>
-                <strong>3위</strong>
-              </div>
-
-              <span>→</span>
-
-              <div>
-                <small>ELDERLY</small>
-                <strong>1위</strong>
-              </div>
-            </div>
-
-            <p>
-              같은 후보 C가
-              <br />
-              <b>일반 3위 → 고령자 1위</b>로
-              올라왔습니다.
-            </p>
-          </motion.section>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {step >= 1 && (
-          <motion.div
-            className="live-url real-live-url"
-            initial={{
-              opacity: 0,
-              x: 15,
-            }}
-            animate={{
-              opacity: 1,
-              x: 0,
-            }}
-            transition={{
-              duration: 0.55,
-            }}
-          >
-            <span className="live-status" />
+          <div className="real-live-url-slot">
+            <motion.div
+              className="live-url real-live-url"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.3, delay: 0.36 }}
+            >
+              <span className="live-status" />
 
-            <div>
-              <small>LIVE SERVICE</small>
-              <strong>dongnet.kr</strong>
-            </div>
-          </motion.div>
+              <div>
+                <small>LIVE SERVICE</small>
+                <strong>dongnet.kr</strong>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

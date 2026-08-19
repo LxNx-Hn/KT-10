@@ -80,7 +80,7 @@ export function EndingScene({
         </div>
 
         <AnimatePresence>
-          {step >= 2 && (
+          {step === 2 && (
             <>
               <motion.div
                 className="ending-persona persona-general"

@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { stepSwap, useMotionVariants } from '../motion/stepSwap';
 
 interface BuiltSceneProps {
   step: number;
@@ -21,9 +22,9 @@ const metrics = [
     en: 'END-TO-END SERVICE',
   },
   {
-    value: '460',
-    label: '전체 테스트',
-    en: 'TOTAL TESTS',
+    value: 'PWA',
+    label: '서비스 배포',
+    en: 'LIVE WEB SERVICE',
   },
 ];
 
@@ -74,6 +75,7 @@ const ciLanes = [
 export function BuiltScene({
   step,
 }: BuiltSceneProps) {
+  const motionVars = useMotionVariants();
   return (
     <main className="built-scene product-light">
       <div className="proof-grid-bg" />
@@ -91,123 +93,95 @@ export function BuiltScene({
           <motion.section
             key="proof-intro"
             className="proof-intro"
-            initial={{
-              opacity: 0,
-              y: 28,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            exit={{
-              opacity: 0,
-              y: -18,
-            }}
-            transition={{ duration: 0.7 }}
+            {...stepSwap}
           >
-            <p className="copy-kicker">
-              NOT JUST A CONCEPT.
-            </p>
+            <motion.p
+              className="copy-kicker"
+              variants={motionVars.fadeIn}
+              initial="hidden"
+              animate="show"
+            >
+              LIVE SERVICE
+            </motion.p>
 
             <h2>
-              아이디어에서 끝내지 않고,
+              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
+                실제 서비스로
+              </motion.span>
               <br />
-              <em>실제 서비스로 연결했습니다.</em>
+              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
+                <em>구현하고 검증했습니다.</em>
+              </motion.span>
             </h2>
 
-            <p>
+            <motion.p
+              variants={motionVars.fadeIn}
+              initial="hidden"
+              animate="show"
+            >
               경로 데이터부터 사용자 경험,
               <br />
               검증과 운영 환경까지.
-            </p>
+            </motion.p>
           </motion.section>
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
         {step === 1 && (
           <motion.section
+            key="proof-metrics"
             className="proof-metrics-stage"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.6 }}
+            {...stepSwap}
           >
-            <div className="proof-section-heading">
+            <motion.div
+              className="proof-section-heading"
+              variants={motionVars.softRise}
+              initial="hidden"
+              animate="show"
+            >
               <small>BUILT AS A SERVICE</small>
               <h2>
-                하나의 기능이 아니라,
-                <em> 서비스 전체를 구현했습니다.</em>
+                검색부터 추천 설명까지,
+                {' '}
+                <em>서비스 전체를 구현했습니다.</em>
               </h2>
-            </div>
+            </motion.div>
 
-            <div className="proof-metrics-grid">
-              {metrics.map((metric, index) => (
+            <motion.div
+              className="proof-metrics-grid"
+              variants={motionVars.staggerContainer}
+              initial="hidden"
+              animate="show"
+            >
+              {metrics.map((metric) => (
                 <motion.article
                   key={metric.label}
-                  initial={{
-                    opacity: 0,
-                    y: 26,
-                  }}
-                  animate={{
-                    opacity: 1,
-                    y: 0,
-                  }}
-                  transition={{
-                    duration: 0.65,
-                    delay: index * 0.09,
-                  }}
+                  variants={motionVars.numberReveal}
                 >
                   <small>{metric.en}</small>
-
-                  <motion.strong
-                    initial={{
-                      opacity: 0,
-                      scale: 0.88,
-                    }}
-                    animate={{
-                      opacity: 1,
-                      scale: 1,
-                    }}
-                    transition={{
-                      delay: 0.15 + index * 0.09,
-                      duration: 0.6,
-                    }}
-                  >
-                    {metric.value}
-                  </motion.strong>
-
+                  <strong>{metric.value}</strong>
                   <span>{metric.label}</span>
-
                   <div className="metric-rule" />
                 </motion.article>
               ))}
-            </div>
+            </motion.div>
 
-            <p className="proof-metric-note">
+            <motion.p
+              className="proof-metric-note"
+              variants={motionVars.fadeIn}
+              initial="hidden"
+              animate="show"
+            >
               6개 사용자 프로필과 9개 공간 데이터 레이어를 연결하고,
-              검색부터 추천·설명까지 E2E 흐름을 구현한 뒤 테스트로 검증했습니다.
-            </p>
+              검색부터 추천·설명까지 E2E 흐름을 실제 서비스로 구현했습니다.
+            </motion.p>
           </motion.section>
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
         {step === 2 && (
           <motion.section
+            key="proof-product"
             className="proof-product-stage"
-            initial={{
-              opacity: 0,
-              y: 20,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            exit={{
-              opacity: 0,
-            }}
-            transition={{ duration: 0.7 }}
+            {...stepSwap}
           >
             <div className="proof-product-copy">
               <small>FROM MODEL TO EXPERIENCE</small>
@@ -215,7 +189,13 @@ export function BuiltScene({
               <h2>
                 추천 결과를
                 <br />
-                <em>사용자가 이해할 수 있는 경험으로.</em>
+                <em>
+                  <span className="presentation-nowrap">
+                    사용자가 이해할 수 있는
+                  </span>
+                  <br />
+                  경험으로.
+                </em>
               </h2>
 
               <p>
@@ -241,7 +221,7 @@ export function BuiltScene({
                   key={screen.no}
                   initial={{
                     opacity: 0,
-                    y: 30,
+                    y: index === 1 ? -8 : 16,
                     rotate: index === 0 ? -3 : index === 2 ? 3 : 0,
                   }}
                   animate={{
@@ -250,8 +230,8 @@ export function BuiltScene({
                     rotate: index === 0 ? -3 : index === 2 ? 3 : 0,
                   }}
                   transition={{
-                    delay: index * 0.1,
-                    duration: 0.75,
+                    delay: index === 1 ? 0.06 : 0.18,
+                    duration: 0.38,
                     ease: [0.22, 1, 0.36, 1],
                   }}
                 >
@@ -271,26 +251,81 @@ export function BuiltScene({
             </div>
           </motion.section>
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
         {step === 3 && (
           <motion.section
-            className="proof-ci-stage"
-            initial={{
-              opacity: 0,
-              y: 22,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            exit={{
-              opacity: 0,
-            }}
-            transition={{ duration: 0.7 }}
+            key="proof-collab"
+            className="proof-collab-stage"
+            {...stepSwap}
           >
-            <div className="proof-ci-heading">
+            <motion.div
+              className="proof-ci-heading"
+              variants={motionVars.softRise}
+              initial="hidden"
+              animate="show"
+            >
+              <small>TEAM INTEGRATION</small>
+
+              <h2>
+                데이터 계약과 API 스키마를 기준으로
+                <br />
+                <em>각 영역을 연결하고 통합 검증했습니다.</em>
+              </h2>
+            </motion.div>
+
+            <motion.div
+              className="proof-collab-flow"
+              variants={motionVars.staggerContainer}
+              initial="hidden"
+              animate="show"
+            >
+                {(
+                  [
+                    ['01', 'DA', '피처 · 평가 · Ranker'],
+                    ['02', 'Backend', 'API 계약 · 데이터 통합'],
+                    ['03', 'Frontend', '접근성 UI · 경로 시각화'],
+                    ['04', 'QA', '프로필 · E2E 검증'],
+                  ] as const
+                ).flatMap(([no, title, detail], index) => {
+                  const card = (
+                    <motion.article key={title} variants={motionVars.softScale}>
+                      <small>{no}</small>
+                      <strong>{title}</strong>
+                      <span>{detail}</span>
+                    </motion.article>
+                  );
+
+                  if (index === 0) {
+                    return [card];
+                  }
+
+                  return [
+                    <motion.i
+                      key={`arrow-${title}`}
+                      className="motion-arrow"
+                      variants={motionVars.drawLine}
+                    >
+                      →
+                    </motion.i>,
+                    card,
+                  ];
+                })}
+              </motion.div>
+          </motion.section>
+        )}
+
+        {step === 4 && (
+          <motion.section
+            key="proof-ci"
+            className="proof-ci-stage"
+            {...stepSwap}
+          >
+            <motion.div
+              className="proof-ci-heading"
+              variants={motionVars.softRise}
+              initial="hidden"
+              animate="show"
+            >
               <small>CONTINUOUS VALIDATION</small>
 
               <h2>
@@ -301,26 +336,42 @@ export function BuiltScene({
 
               <p>
                 AI · Backend · Frontend · Production의
+                <br />
                 품질 게이트를 GitHub Actions에서 검사합니다.
               </p>
-            </div>
 
-            <div className="proof-ci-board">
-              {ciLanes.map((lane, index) => (
+              <div className="proof-ci-footer">
+                <div>
+                  <small>PIPELINE</small>
+                  <strong>GitHub Actions</strong>
+                </div>
+
+                <span>→</span>
+
+                <div>
+                  <small>QUALITY GATES</small>
+                  <strong>4</strong>
+                </div>
+
+                <span>→</span>
+
+                <div className="ci-footer-accent">
+                  <small>PRODUCTION VALIDATION</small>
+                  <strong>READY</strong>
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              className="proof-ci-board"
+              variants={motionVars.staggerContainer}
+              initial="hidden"
+              animate="show"
+            >
+              {ciLanes.map((lane) => (
                 <motion.article
                   key={lane.name}
-                  initial={{
-                    opacity: 0,
-                    x: 24,
-                  }}
-                  animate={{
-                    opacity: 1,
-                    x: 0,
-                  }}
-                  transition={{
-                    delay: index * 0.09,
-                    duration: 0.6,
-                  }}
+                  variants={motionVars.softRise}
                 >
                   <div className="ci-lane-main">
                     <span className="ci-status-dot" />
@@ -345,73 +396,48 @@ export function BuiltScene({
 
                   <motion.div
                     className="ci-progress"
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{
-                      delay: 0.18 + index * 0.09,
-                      duration: 0.9,
-                    }}
+                    variants={motionVars.drawLine}
                   />
                 </motion.article>
               ))}
-            </div>
-
-            <div className="proof-ci-footer">
-              <div>
-                <small>PIPELINE</small>
-                <strong>GitHub Actions</strong>
-              </div>
-
-              <span>→</span>
-
-              <div>
-                <small>QUALITY GATES</small>
-                <strong>4</strong>
-              </div>
-
-              <span>→</span>
-
-              <div className="ci-footer-accent">
-                <small>PRODUCTION VALIDATION</small>
-                <strong>READY</strong>
-              </div>
-            </div>
+            </motion.div>
           </motion.section>
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
-        {step >= 4 && (
+        {step >= 5 && (
           <motion.section
+            key="proof-live"
             className="proof-live-result"
-            initial={{
-              opacity: 0,
-              scale: 0.96,
-            }}
-            animate={{
-              opacity: 1,
-              scale: 1,
-            }}
-            transition={{
-              duration: 0.75,
-              ease: [0.22, 1, 0.36, 1],
-            }}
+            {...stepSwap}
           >
-            <div className="proof-live-label">
+            <motion.div
+              className="proof-live-label"
+              variants={motionVars.fadeIn}
+              initial="hidden"
+              animate="show"
+            >
               <span />
-              LIVE SERVICE
-            </div>
+              LIVE PWA SERVICE
+            </motion.div>
 
             <h2>
-              그리고 지금,
+              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
+                그리고 지금,
+              </motion.span>
               <br />
-              <em>dongnet.kr에서 동작하고 있습니다.</em>
+              <motion.span variants={motionVars.softScale} initial="hidden" animate="show">
+                <em>dongnet.kr에서 동작하고 있습니다.</em>
+              </motion.span>
             </h2>
 
-            <p>
-              데이터 → 추천 → 사용자 경험까지,
-              하나의 서비스로 연결했습니다.
-            </p>
+            <motion.p
+              variants={motionVars.fadeIn}
+              initial="hidden"
+              animate="show"
+            >
+              PWA로 실제 서비스 흐름을 검증했고,
+              프로필별 경로 추천을 운영하고 있습니다.
+            </motion.p>
           </motion.section>
         )}
       </AnimatePresence>

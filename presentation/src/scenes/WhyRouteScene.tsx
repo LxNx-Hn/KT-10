@@ -47,7 +47,11 @@ export function WhyRouteScene({
   step,
 }: WhyRouteSceneProps) {
   return (
-    <main className="why-scene product-light">
+    <main
+      className={`why-scene product-light ${
+        step >= 4 ? 'why-final-step' : ''
+      }`}
+    >
       <div className="why-grid" />
 
       <div className="presentation-hud">
@@ -319,7 +323,7 @@ export function WhyRouteScene({
             <small>DONGNET EXPLAINS THE RESULT</small>
 
             <h2>
-              더 빠른 길이 아니라,
+              DongNet은
               <br />
               <em>나에게 더 맞는 길을 고릅니다.</em>
             </h2>

@@ -2,11 +2,9 @@
 
 :root {
   font-family:
-    Inter,
     'Noto Sans KR',
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
+    'Apple SD Gothic Neo',
+    system-ui,
     sans-serif;
 
   color: #f7fafc;
