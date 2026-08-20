@@ -312,8 +312,14 @@ def test_route_id_distinguishes_different_lane_sequences():
     """표시 문자열이 같아도 실제 노선·정류장이 다르면 route ID가 달라야 한다."""
     from api.router import _route_id
 
-    left = _route_id(_feature_with_lane("BUS-A", "STOP-1", "STOP-9"))
-    right = _route_id(_feature_with_lane("BUS-B", "STOP-2", "STOP-8"))
+    left_feature = _feature_with_lane("BUS-A", "STOP-1", "STOP-9")
+    right_feature = _feature_with_lane("BUS-B", "STOP-2", "STOP-8")
+    right_raw = right_feature["_segments"][1]["raw"]
+    right_raw["lane"][0]["busNo"] = "200"
+    right_raw["startName"] = "부전역"
+    right_raw["endName"] = "양정역"
+    left = _route_id(left_feature)
+    right = _route_id(right_feature)
 
     assert left != right, (
         "서로 다른 노선·승하차 정류장 후보가 같은 route ID로 충돌함"
@@ -330,8 +336,8 @@ def test_route_id_is_stable_for_same_semantic_candidate():
     )
 
 
-def test_route_id_distinguishes_different_normalized_map_objects():
-    """표시·노선 정보가 같아도 실제 mapObj가 다르면 ID가 달라야 한다."""
+def test_route_id_ignores_provider_specific_ids_and_map_objects():
+    """같은 의미의 경로는 공급자 내부 ID나 ODsay mapObj와 무관해야 한다."""
     from api.router import _route_id
 
     left = _feature_with_lane(
@@ -347,7 +353,10 @@ def test_route_id_distinguishes_different_normalized_map_objects():
         map_object="100:1:1:3",
     )
 
-    assert _route_id(left) != _route_id(right)
+    right["_segments"][1]["raw"]["lane"][0]["busID"] = "BUS-B"
+    right["_segments"][1]["raw"]["startID"] = "OTHER-START"
+    right["_segments"][1]["raw"]["endID"] = "OTHER-END"
+    assert _route_id(left) == _route_id(right)
     # 축약형과 loadLane 정규형은 같은 semantic mapObj다.
     normalized = _feature_with_lane(
         "BUS-A",
