@@ -179,6 +179,52 @@ describe('v2 경로 표시 모델', () => {
     ]);
   });
 
+  it('TMAP 장거리 교통수단을 미분류하지 않고 노선명과 함께 표시한다', () => {
+    const view = buildRouteViewModel(
+      makeItem({
+        segments: [
+          {
+            id: 'train-1',
+            mode: 'train',
+            description: 'KTX · 부산역 → 울산역',
+            durationMin: 22,
+          },
+          {
+            id: 'express-1',
+            mode: 'express_bus',
+            description: '부산-경주 · 부산종합버스터미널 → 경주시외버스터미널',
+            durationMin: 50,
+            busRouteName: '부산-경주',
+          },
+          {
+            id: 'ferry-1',
+            mode: 'ferry',
+            description: '부산-제주 · 부산항 → 제주항',
+            durationMin: 690,
+          },
+          {
+            id: 'air-1',
+            mode: 'airplane',
+            description: 'BX8101 · 김해공항 → 제주공항',
+            durationMin: 65,
+          },
+        ],
+      }),
+      1,
+      'general',
+    );
+
+    expect(view.transitSteps.map(({ modeLabel, routeLabel }) => ({
+      modeLabel,
+      routeLabel,
+    }))).toEqual([
+      { modeLabel: '열차', routeLabel: 'KTX' },
+      { modeLabel: '고속·시외버스', routeLabel: '부산-경주' },
+      { modeLabel: '여객선', routeLabel: '부산-제주' },
+      { modeLabel: '항공', routeLabel: 'BX8101' },
+    ]);
+  });
+
   it('계단 정보가 미확인이면 배지를 노출하지 않는다', () => {
     const view = buildRouteViewModel(makeItem(), 1, 'general');
     const stairs = view.facts.find((fact) => fact.id === 'stairs');
