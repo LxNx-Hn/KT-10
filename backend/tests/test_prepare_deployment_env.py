@@ -141,7 +141,7 @@ def test_check_rejects_withdrawal_salt_reused_from_another_secret(
         prepare_deployment_env.check()
 
 
-def test_check_accepts_explicit_osmnx_when_tmap_is_absent(
+def test_check_rejects_osmnx_only_without_tmap_transit(
     tmp_path: Path,
     monkeypatch,
 ):
@@ -157,7 +157,8 @@ def test_check_accepts_explicit_osmnx_when_tmap_is_absent(
     )
     monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
 
-    prepare_deployment_env.check()
+    with pytest.raises(SystemExit):
+        prepare_deployment_env.check()
 
 
 def test_check_rejects_missing_wheelchair_routing_key(
@@ -312,7 +313,7 @@ def test_check_rejects_bootstrap_model_when_route_mode_is_not_ai(
         (
             "TMAP_API_KEY=tmap-key",
             "TMAP_API_KEY=",
-            "exact walking geometry",
+            "TMAP_API_KEY",
         ),
         (
             "OSMNX_REQUEST_TIMEOUT_SECONDS=12",
