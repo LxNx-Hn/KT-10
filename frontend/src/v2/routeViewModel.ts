@@ -279,7 +279,15 @@ export type V2SubwayLineId = TransportSubwayLineId;
 export interface V2TransitStep {
   id: string;
   mode: SegmentMode;
-  modeLabel: '도보' | '버스' | '지하철' | '환승';
+  modeLabel:
+    | '도보'
+    | '버스'
+    | '지하철'
+    | '환승'
+    | '열차'
+    | '고속·시외버스'
+    | '여객선'
+    | '항공';
   durationMin: number;
   /** 버스 번호 또는 도시철도 호선명. 구조화 값/확인 가능한 설명이 없으면 생략한다. */
   routeLabel?: string;
@@ -325,6 +333,12 @@ function formatBusRouteLabel(value: string | undefined): string | undefined {
   return /번$/u.test(routeName) ? routeName : `${routeName}번`;
 }
 
+function formatTransitRouteLabel(description: string): string | undefined {
+  const [routeName] = description.split(' · ', 1);
+  const cleaned = routeName?.trim();
+  return cleaned && !cleaned.includes('→') ? cleaned : undefined;
+}
+
 /**
  * 카드용 이동수단 순서. 원본 segment 순서를 유지하고 API에 없는 노선명은 추측하지 않는다.
  */
@@ -364,6 +378,39 @@ export function buildTransitSteps(route: RouteCandidate): V2TransitStep[] {
           mode: segment.mode,
           modeLabel: '환승',
           durationMin,
+        };
+      case 'train':
+        return {
+          id: segment.id,
+          mode: segment.mode,
+          modeLabel: '열차',
+          durationMin,
+          routeLabel: formatTransitRouteLabel(segment.description),
+        };
+      case 'express_bus':
+        return {
+          id: segment.id,
+          mode: segment.mode,
+          modeLabel: '고속·시외버스',
+          durationMin,
+          routeLabel: segment.busRouteName?.trim()
+            || formatTransitRouteLabel(segment.description),
+        };
+      case 'ferry':
+        return {
+          id: segment.id,
+          mode: segment.mode,
+          modeLabel: '여객선',
+          durationMin,
+          routeLabel: formatTransitRouteLabel(segment.description),
+        };
+      case 'airplane':
+        return {
+          id: segment.id,
+          mode: segment.mode,
+          modeLabel: '항공',
+          durationMin,
+          routeLabel: formatTransitRouteLabel(segment.description),
         };
     }
   });
