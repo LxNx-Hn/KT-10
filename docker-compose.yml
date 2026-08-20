@@ -79,6 +79,7 @@ services:
       # Decoding 키 선택 규칙을 적용한다.
       - DATA_GO_KR_SERVICE_KEY=${DECO:-${DATA_GO_KR_SERVICE_KEY:-}}
       - ODSAY_API_KEY=${ODSAY_API_KEY:-}
+      - TRANSIT_PROVIDER_ORDER=${TRANSIT_PROVIDER_ORDER:-odsay,tmap}
       - ELEVATION_CACHE_DIR=/app/ai/data/cache/elevation
       - ELEVATION_DEM_DIR=/app/ai/data/cache/elevation/dem
       - ELEVATION_REGIONAL_DEM_PATH=/app/ai/data/precomputed/busan_dem_clipped_90m.tif
@@ -94,6 +95,11 @@ services:
       - TMAP_API_KEY=${TMAP_API_KEY:-}
       - TMAP_CACHE_TTL_SECONDS=1800
       - TMAP_MAX_CONCURRENT_REQUESTS=3
+      - TMAP_TRANSIT_CACHE_DIR=/app/ai/data/cache/tmap-transit
+      - TMAP_TRANSIT_CACHE_TTL_SECONDS=1800
+      - TMAP_TRANSIT_TIMEOUT_SECONDS=12
+      - TMAP_TRANSIT_MAX_CANDIDATES=10
+      - TMAP_TRANSIT_MAX_CONCURRENT_REQUESTS=3
       - ORS_API_KEY=${ORS_API_KEY:-}
       - ORS_BASE_URL=${ORS_BASE_URL:-https://api.openrouteservice.org}
       - ORS_CACHE_DIR=/app/ai/data/cache/ors
@@ -106,6 +112,7 @@ services:
       - odsay-cache:/app/ai/data/cache/odsay
       - route-feature-cache:/app/ai/data/cache/route_features
       - tmap-cache:/app/ai/data/cache/tmap
+      - tmap-transit-cache:/app/ai/data/cache/tmap-transit
       - ors-cache:/app/ai/data/cache/ors
     command: uvicorn main:app --app-dir ai --host 0.0.0.0 --port 8001 --reload
     healthcheck:
@@ -144,6 +151,7 @@ volumes:
   odsay-cache:
   route-feature-cache:
   tmap-cache:
+  tmap-transit-cache:
   ors-cache:
   vworld-cache:
   shade-cache:
