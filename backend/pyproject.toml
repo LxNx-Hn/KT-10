@@ -1,6 +1,6 @@
 [project]
 name = "barrier-free-route-backend"
-version = "0.1.0"
+version = "2.0.0"
 description = "부산 전역 교통약자 접근성 경로 추천 API"
 requires-python = ">=3.10"
 
