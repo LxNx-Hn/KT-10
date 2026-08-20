@@ -141,12 +141,14 @@ jobs:
       VITE_KAKAO_MAP_KEY: ci-kakao-js-key
       KAKAO_REST_API_KEY: ci-kakao-rest-key
       KAKAO_OAUTH_CLIENT_SECRET: ci-kakao-oauth-secret
-      ODSAY_API_KEY: ci-odsay-key
+      ODSAY_API_KEY: ""
+      TRANSIT_PROVIDER_ORDER: tmap
       TMAP_API_KEY: ci-tmap-key
       ORS_API_KEY: ci-ors-key
       VWORLD_API_KEY: ci-vworld-key
       OPENWEATHER_API_KEY: ci-openweather-key
       BUS_SERVICE_KEY: ci-bus-service-key
+      DATA_GO_KR_SERVICE_KEY: ci-public-data-key
     steps:
       - uses: actions/checkout@v7
       - name: Validate production environment
