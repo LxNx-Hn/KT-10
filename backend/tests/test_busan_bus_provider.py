@@ -1,7 +1,10 @@
+import asyncio
+
 from defusedxml import ElementTree
 
 import pytest
 
+import app.providers.busan_bus as provider
 from app.providers.busan_bus import _arrival, _parse_root
 
 
@@ -57,3 +60,39 @@ def test_rejects_xml_external_entity_payload():
     </response>"""
     with pytest.raises(RuntimeError, match="안전한 형식"):
         _parse_root(payload)
+
+
+def test_matches_tmap_stop_name_to_nearest_bims_stop_and_caches(monkeypatch):
+    provider.clear_bus_stop_match_cache()
+    calls = 0
+    root = ElementTree.fromstring("""
+      <response><body><items>
+        <item><bstopid>505790000</bstopid><bstopnm>시청</bstopnm>
+          <gpsx>129.0751</gpsx><gpsy>35.1798</gpsy></item>
+        <item><bstopid>505790100</bstopid><bstopnm>시청</bstopnm>
+          <gpsx>129.0800</gpsx><gpsy>35.1850</gpsy></item>
+      </items></body></response>
+    """)
+
+    async def fake_request(path, params):
+        nonlocal calls
+        calls += 1
+        assert path == "busStopList"
+        assert params["bstopnm"] == "시청"
+        return root
+
+    monkeypatch.setattr(provider, "_request", fake_request)
+
+    async def run():
+        return await asyncio.gather(*(
+            provider.find_bus_stop_candidates("시청", lat=35.1797, lng=129.0750)
+            for _ in range(2)
+        ))
+
+    first, _duplicate = asyncio.run(run())
+    cached = asyncio.run(provider.find_bus_stop_candidates(
+        "시청", lat=35.1797, lng=129.0750
+    ))
+    assert first[0].stop_id == "505790000"
+    assert cached[0].stop_id == "505790000"
+    assert calls == 1
