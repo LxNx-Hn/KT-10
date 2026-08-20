@@ -15,14 +15,12 @@ def _clear(monkeypatch):
 
 def _payload(station: str, rows: list[dict[str, str]]):
     return {
-        "response": {
-            "header": {"resultCode": "00", "resultMsg": "NORMAL SERVICE."},
-            "body": {
-                "items": {"item": [dict(row, sname=station) for row in rows]},
-                "numOfRows": 1000,
-                "pageNo": 1,
-                "totalCount": len(rows),
-            },
+        "header": {"resultCode": "00", "resultMsg": "NORMAL SERVICE."},
+        "body": {
+            "items": {"item": [dict(row, sname=station) for row in rows]},
+            "numOfRows": 1000,
+            "pageNo": 1,
+            "totalCount": len(rows),
         },
     }
 
@@ -31,11 +29,13 @@ def test_next_journey_matches_same_train_and_direction(monkeypatch):
     common = {"line": "1", "dayType": "1", "endcode": "95"}
     payloads = {
         "부산": _payload("부산", [
+            dict(common, trainno="9001", updown="0", arrtime="10:01:00", dayType="2"),
             dict(common, trainno="1000", updown="0", arrtime="09:58:00"),
             dict(common, trainno="1001", updown="0", arrtime="10:05:00"),
             dict(common, trainno="1001", updown="1", arrtime="10:06:00"),
         ]),
         "서면": _payload("서면", [
+            dict(common, trainno="9001", updown="0", arrtime="10:14:00", dayType="2"),
             dict(common, trainno="1001", updown="1", arrtime="09:54:00"),
             dict(common, trainno="1001", updown="0", arrtime="10:18:00"),
         ]),
