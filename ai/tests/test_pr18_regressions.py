@@ -166,8 +166,8 @@ def test_cancelled_while_waiting_for_semaphore_is_not_counted_as_network(
 ):
     """semaphore 대기 중 취소된 요청은 실제 network 호출이 아니다.
 
-    현재 구현은 record_network_call()을 with_concurrency_limit() 앞에서
-    호출하므로 HTTP가 시작되지 않아도 일일 counter가 증가한다.
+    호출 슬롯 예약은 with_concurrency_limit() 안에서 이뤄져야 하므로
+    semaphore를 얻기 전에 취소된 요청은 일일 counter를 소비하지 않는다.
     """
     import collectors.odsay_collector as module
 
