@@ -10,6 +10,10 @@ export const TRANSPORT_MODE_COLOR = {
   /** 호선을 모르는 지하철 fallback (카드·지도 공통). */
   subway: '#7c3aed',
   transfer: '#64748b',
+  train: '#0054a6',
+  express_bus: '#1d4ed8',
+  ferry: '#0891b2',
+  airplane: '#0f766e',
 } as const;
 
 /**
@@ -115,7 +119,8 @@ export function transportModeStrokeColor(
   }
   if (mode === 'bus') return TRANSPORT_MODE_COLOR.bus;
   if (mode === 'transfer') return TRANSPORT_MODE_COLOR.transfer;
-  return TRANSPORT_MODE_COLOR.bus;
+  if (mode) return TRANSPORT_MODE_COLOR[mode];
+  return TRANSPORT_MODE_COLOR.transfer;
 }
 
 /**
@@ -128,7 +133,7 @@ export function transportModeStrokeStyle(
   quality: string | undefined,
   options?: { slopePercent?: number | null },
 ): string {
-  if (mode === 'bus' || mode === 'subway') return 'solid';
+  if (mode && mode !== 'walk' && mode !== 'transfer') return 'solid';
   if (mode === 'walk') {
     return typeof options?.slopePercent === 'number' ? 'solid' : 'shortdash';
   }
