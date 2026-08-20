@@ -62,37 +62,22 @@ def test_rejects_xml_external_entity_payload():
         _parse_root(payload)
 
 
-def test_matches_tmap_stop_name_to_nearest_bims_stop_and_caches(monkeypatch):
-    provider.clear_bus_stop_match_cache()
-    calls = 0
-    root = ElementTree.fromstring("""
-      <response><body><items>
-        <item><bstopid>505790000</bstopid><bstopnm>시청</bstopnm>
-          <gpsx>129.0751</gpsx><gpsy>35.1798</gpsy></item>
-        <item><bstopid>505790100</bstopid><bstopnm>시청</bstopnm>
-          <gpsx>129.0800</gpsx><gpsy>35.1850</gpsy></item>
-      </items></body></response>
-    """)
+def test_matches_tmap_stop_to_local_bims_index_without_external_lookup(monkeypatch):
+    monkeypatch.setattr(provider, "_BUS_STOPS", (
+        provider._LocalBusStop(
+            "505790000", "시청", "01001", 35.1798, 129.0751, "시청"
+        ),
+        provider._LocalBusStop(
+            "505790100", "시청", "01002", 35.1850, 129.0800, "시청"
+        ),
+    ))
 
-    async def fake_request(path, params):
-        nonlocal calls
-        calls += 1
-        assert path == "busStopList"
-        assert params["bstopnm"] == "시청"
-        return root
+    async def fail_request(*_args, **_kwargs):
+        raise AssertionError("정류소 매칭 중 외부 API를 호출했습니다.")
 
-    monkeypatch.setattr(provider, "_request", fake_request)
-
-    async def run():
-        return await asyncio.gather(*(
-            provider.find_bus_stop_candidates("시청", lat=35.1797, lng=129.0750)
-            for _ in range(2)
-        ))
-
-    first, _duplicate = asyncio.run(run())
-    cached = asyncio.run(provider.find_bus_stop_candidates(
+    monkeypatch.setattr(provider, "_request", fail_request)
+    result = asyncio.run(provider.find_bus_stop_candidates(
         "시청", lat=35.1797, lng=129.0750
     ))
-    assert first[0].stop_id == "505790000"
-    assert cached[0].stop_id == "505790000"
-    assert calls == 1
+
+    assert [item.stop_id for item in result] == ["505790000"]
