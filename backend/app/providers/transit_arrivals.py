@@ -8,18 +8,17 @@ from __future__ import annotations
 
 import asyncio
 import re
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, datetime
 from math import ceil
 from threading import Lock
 from time import monotonic
 from weakref import WeakKeyDictionary
 from zoneinfo import ZoneInfo
 
-import httpx
-
 from ..models import RouteSegment, TransitLegArrival
 from ..settings import settings
 from .busan_bus import get_bus_arrivals
+from .busan_subway import clear_subway_timetable_cache, get_next_subway_journey
 
 _KST = ZoneInfo("Asia/Seoul")
 _CACHE_TTL_SECONDS = 30.0
@@ -30,7 +29,6 @@ _loop_locks: WeakKeyDictionary[
     dict[str, asyncio.Lock],
 ] = WeakKeyDictionary()
 _loop_locks_guard = Lock()
-_TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$")
 
 
 def _cache_get(key: str) -> TransitLegArrival | None:
@@ -153,88 +151,33 @@ async def _bus_arrival(segment: RouteSegment) -> TransitLegArrival:
         return result
 
 
-def _service_day(value: date) -> int:
-    if value.weekday() == 5:
-        return 2
-    if value.weekday() == 6:
-        return 3
-    return 1
-
-
-def _parse_clock(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    cleaned = value.strip()
-    return cleaned if _TIME_PATTERN.fullmatch(cleaned) else None
-
-
-def _minutes_until(clock: str, reference: datetime) -> int:
-    parts = [int(part) for part in clock.split(":")]
-    while len(parts) < 3:
-        parts.append(0)
-    scheduled = datetime.combine(
-        reference.date(),
-        time(parts[0], parts[1], parts[2]),
-        tzinfo=_KST,
-    )
-    if scheduled < reference - timedelta(minutes=1):
-        scheduled += timedelta(days=1)
-    return max(0, ceil((scheduled - reference).total_seconds() / 60))
-
-
 async def _subway_arrival(
     segment: RouteSegment,
     reference: datetime,
 ) -> TransitLegArrival:
-    start_id = (segment.transit_start_id or "").strip()
-    end_id = (segment.transit_end_id or "").strip()
-    source = "ODsay 지하철 시간표"
-    if not settings.odsay_api_key or not start_id or not end_id:
+    start_name = (segment.station_name or "").strip()
+    end_name = (segment.end_station_name or "").strip()
+    source = "부산교통공사 도시철도 시간표"
+    if not settings.live_subway_timetable or not start_name or not end_name:
         return _unavailable(
             segment,
-            "지하철 시간표를 조회할 역 식별자가 없습니다.",
+            "지하철 시간표를 조회할 역 이름 또는 공공데이터 인증키가 없습니다.",
             source=source,
         )
     local_reference = reference.astimezone(_KST)
     bucket = local_reference.strftime("%Y%m%d%H%M")
-    key = f"subway:{start_id}:{end_id}:{bucket}"
+    key = f"subway:{_route_key(start_name)}:{_route_key(end_name)}:{bucket}"
     if cached := _cache_get(key):
         return _for_segment(cached, segment)
     async with _request_lock(key):
         if cached := _cache_get(key):
             return _for_segment(cached, segment)
-        params = {
-            "apiKey": settings.odsay_api_key,
-            "SID": start_id,
-            "EID": end_id,
-            "MODE": 1,
-            "DAY": _service_day(local_reference.date()),
-            "TIME": local_reference.strftime("%H%M"),
-            "output": "json",
-        }
         try:
-            async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
-                response = await client.get(
-                    "https://api.odsay.com/v1/api/subwayPathSchedule",
-                    params=params,
-                )
-                response.raise_for_status()
-                payload = response.json()
-            if not isinstance(payload, dict):
-                raise TypeError("ODsay 시간표 응답이 JSON 객체가 아닙니다.")
-            payload_result = payload.get("result")
-            if not isinstance(payload_result, dict):
-                raise TypeError("ODsay 시간표 응답에 결과 객체가 없습니다.")
-            paths = payload_result.get("path")
-            if not isinstance(paths, list) or not paths or not isinstance(paths[0], dict):
-                raise TypeError("ODsay 시간표 응답에 경로 목록이 없습니다.")
-            info = paths[0].get("info")
-            if not isinstance(info, dict):
-                raise TypeError("ODsay 시간표 응답에 요약 정보가 없습니다.")
-            departure = _parse_clock(info.get("departureTime"))
-            arrival = _parse_clock(info.get("arrivalTime"))
-            if departure is None:
-                raise RuntimeError("ODsay 시간표 응답에 출발시간이 없습니다.")
+            journey = await get_next_subway_journey(
+                start_name,
+                end_name,
+                local_reference,
+            )
             result = TransitLegArrival(
                 segment_id=segment.id,
                 mode="subway",
@@ -242,14 +185,17 @@ async def _subway_arrival(
                 route_name=segment.description.split(" · ", 1)[0],
                 boarding_stop_name=segment.station_name,
                 direction=segment.transit_direction,
-                arrival_min=_minutes_until(departure, local_reference),
-                departure_time=departure,
-                destination_arrival_time=arrival,
+                arrival_min=max(
+                    0,
+                    ceil((journey.departure_at - local_reference).total_seconds() / 60),
+                ),
+                departure_time=journey.departure_time,
+                destination_arrival_time=journey.destination_arrival_time,
                 arrival_message="시간표 기준이며 실시간 열차 위치는 아닙니다.",
                 observed_at=datetime.now(UTC),
                 source=source,
             )
-        except (httpx.HTTPError, TypeError, ValueError, RuntimeError):
+        except RuntimeError:
             result = _unavailable(
                 segment,
                 "지하철 시간표를 불러오지 못했습니다.",
@@ -282,3 +228,4 @@ def clear_transit_arrival_cache() -> None:
         _cache.clear()
     with _loop_locks_guard:
         _loop_locks.clear()
+    clear_subway_timetable_cache()
