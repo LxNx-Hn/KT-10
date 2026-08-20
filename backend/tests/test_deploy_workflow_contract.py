@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "deploy-ecs.yml"
 
@@ -22,6 +21,10 @@ def test_task_definitions_inject_tmap_public_data_bus_and_ors_keys():
     assert 'value: $bus_service_key' in workflow
     assert 'name: "ORS_API_KEY"' in workflow
     assert 'value: $ors_api_key' in workflow
+    assert 'name: "ODSAY_DAILY_BUDGET"' in workflow
+    assert 'value: "29"' in workflow
+    assert 'name: "TRANSIT_PROVIDER_ORDER"' in workflow
+    assert 'value: "odsay,tmap"' in workflow
     assert "TMAP_API_KEY secret is required for transit routing." in workflow
     assert "ODSAY_API_KEY secret is required" not in workflow
     assert "ORS_API_KEY secret is required for wheelchair routing." in workflow
