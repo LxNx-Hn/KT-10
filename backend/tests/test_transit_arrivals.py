@@ -7,11 +7,13 @@ from fastapi.testclient import TestClient
 import app.main as app_main
 import app.providers.transit_arrivals as provider
 from app.providers.busan_subway import SubwayJourney
+from app.providers.busan_bus import BusStopCandidate
 from app.data.weather import WEATHER_SCENARIOS
 from app.main import app
 from app.models import (
     BusArrival,
     BusStopArrivals,
+    LatLng,
     RouteCandidate,
     RouteSegment,
     TransitLegArrival,
@@ -98,6 +100,38 @@ def test_bus_arrival_is_filtered_and_single_flight_cached(monkeypatch):
     ]))
     assert calls == 1
     assert reused[0].segment_id == "another-route-bus-1"
+
+
+def test_tmap_bus_stop_id_is_resolved_once_by_name_and_coordinate(monkeypatch):
+    monkeypatch.setattr(settings, "bus_service_key", "configured")
+    segment = _bus_segment()
+    segment.transit_start_id = "639485"
+    segment.station_name = "부산시청"
+    segment.path = [
+        LatLng(lat=35.1797, lng=129.0750),
+        LatLng(lat=35.1800, lng=129.0760),
+    ]
+    resolved: list[tuple[str, float | None, float | None]] = []
+
+    async def fake_find(name, *, lat, lng):
+        resolved.append((name, lat, lng))
+        return [BusStopCandidate("505790000", "부산시청", 12.0)]
+
+    async def fake_get(stop_id):
+        assert stop_id == "505790000"
+        return BusStopArrivals(
+            stop_id=stop_id,
+            stop_name="부산시청",
+            arrivals=[BusArrival(route_name="100", arrival_min=4)],
+        )
+
+    monkeypatch.setattr(provider, "find_bus_stop_candidates", fake_find)
+    monkeypatch.setattr(provider, "get_bus_arrivals", fake_get)
+    result = asyncio.run(provider.get_route_transit_arrivals([segment]))[0]
+
+    assert result.status == "live"
+    assert result.arrival_min == 4
+    assert resolved == [("부산시청", 35.1797, 129.0750)]
 
 
 def test_subway_schedule_is_lazy_and_truthfully_labeled(monkeypatch):
