@@ -254,6 +254,16 @@ def test_readiness_reports_exact_walk_geometry_capability(monkeypatch):
         lambda: {**REQUIRED_LAYERS, "future_layer": [object()]},
     )
     monkeypatch.setattr(ai_main, "regional_dem_ready", lambda: True)
+    monkeypatch.setattr(
+        ai_main,
+        "read_daily_counter",
+        lambda: {
+            "observed_total_today": 29,
+            "estimated_remaining_service_budget": 0,
+            "network_calls_blocked": True,
+            "blocked_reason": "daily_budget",
+        },
+    )
 
     response = client.get("/ready")
 
@@ -266,6 +276,11 @@ def test_readiness_reports_exact_walk_geometry_capability(monkeypatch):
     assert capabilities["configured_transit_providers"] == [
         "odsay", "tmap"
     ]
+    assert capabilities["odsay_daily_network_budget"] == 29
+    assert capabilities["odsay_network_calls_today"] == 29
+    assert capabilities["odsay_network_calls_remaining"] == 0
+    assert capabilities["odsay_network_calls_blocked"] is True
+    assert capabilities["odsay_blocked_reason"] == "daily_budget"
 
 
 def test_readiness_rejects_missing_wheelchair_routing_provider(monkeypatch):
