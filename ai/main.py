@@ -69,6 +69,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="교통약자 경로추천 AI 서버",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
