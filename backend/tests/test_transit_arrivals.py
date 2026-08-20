@@ -40,6 +40,11 @@ def _bus_segment() -> RouteSegment:
         duration_min=15,
         bus_route_name="100",
         transit_start_id="505780000",
+        station_name="부산역",
+        path=[
+            LatLng(lat=35.1151, lng=129.0414),
+            LatLng(lat=35.1578, lng=129.0592),
+        ],
     )
 
 
@@ -82,7 +87,14 @@ def test_bus_arrival_is_filtered_and_single_flight_cached(monkeypatch):
             ],
         )
 
+    async def fake_find(name, *, lat, lng):
+        assert name == "부산역"
+        assert lat == 35.1151
+        assert lng == 129.0414
+        return [BusStopCandidate("505780000", "부산역", 8.0)]
+
     monkeypatch.setattr(provider, "get_bus_arrivals", fake_get)
+    monkeypatch.setattr(provider, "find_bus_stop_candidates", fake_find)
 
     async def run():
         return await asyncio.gather(*(
