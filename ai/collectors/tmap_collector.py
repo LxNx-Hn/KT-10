@@ -121,13 +121,14 @@ def _read_cache(identity: dict, validator=None) -> dict | None:
             continue
         try:
             wrapper = json.loads(path.read_text(encoding="utf-8"))
-            float(wrapper["cachedAtEpoch"])
+            cached_at = float(wrapper["cachedAtEpoch"])
             payload = wrapper["payload"]
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
             continue
         if (
             wrapper.get("schemaVersion") == CACHE_SCHEMA_VERSION
             and isinstance(payload, dict)
+            and time.time() - cached_at <= settings.TMAP_CACHE_TTL_SECONDS
         ):
             if validator is not None:
                 try:
@@ -218,7 +219,11 @@ def write_precomputed_cache(
     payload: dict,
     cache_dir: Path,
 ) -> None:
-    """검증된 공급자 응답을 배포 이미지용 읽기 전용 캐시로 내보낸다."""
+    """검증된 공급자 응답을 24시간 이내 단기 캐시로 내보낸다.
+
+    TMAP 약관상 장기 배포 자산으로 사용할 수 없으므로 읽는 시점에도
+    ``TMAP_CACHE_TTL_SECONDS``를 적용한다.
+    """
     collector = TmapRouteCollector(
         avoid_stairs=search_option == STAIR_EXCLUDED_SEARCH_OPTION
     )
