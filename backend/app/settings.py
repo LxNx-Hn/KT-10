@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     kakao_rest_api_key: str = ""        # Kakao 장소검색(REST)
     openweather_api_key: str = ""       # 실시간 날씨
     bus_service_key: str = ""           # 공공데이터 저상버스 도착(정류장 데이터셋 필요)
+    data_go_kr_service_key: str = ""     # 공공데이터포털 공통 인증키(도시철도 시간표 등)
     odsay_api_key: str = ""             # 실제 대중교통 후보 생성(서버 전용)
 
     # 키 존재 여부가 아니라 운영자가 선택한 모드로 경로 공급자를 결정한다.
@@ -154,6 +155,10 @@ class Settings(BaseSettings):
     @property
     def live_bus(self) -> bool:
         return bool(self.bus_service_key.strip())
+
+    @property
+    def live_subway_timetable(self) -> bool:
+        return bool(self.data_go_kr_service_key.strip())
 
     @property
     def live_routes(self) -> bool:
@@ -312,6 +317,7 @@ class Settings(BaseSettings):
             "kakao_place_search": self.live_places,
             "live_weather": self.live_weather,
             "live_bus_arrivals": self.live_bus,
+            "live_subway_timetable": self.live_subway_timetable,
             "postgresql": self.database_configured,
             "session_signing": self.session_signing_configured,
             "origin_security": self.origin_security_configured,
