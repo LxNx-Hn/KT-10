@@ -6,6 +6,11 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from math import asin, cos, radians, sin, sqrt
+import re
+from threading import Lock
+from time import monotonic
 from typing import Any
 
 from defusedxml import ElementTree
@@ -17,6 +22,16 @@ from ..settings import settings
 
 log = logging.getLogger("providers.busan_bus")
 _BASE_URL = "https://apis.data.go.kr/6260000/BusanBIMS"
+_STOP_MATCH_CACHE_TTL_SECONDS = 24 * 3600
+_stop_match_cache: dict[str, tuple[float, tuple[BusStopCandidate, ...]]] = {}
+_stop_match_cache_guard = Lock()
+
+
+@dataclass(frozen=True)
+class BusStopCandidate:
+    stop_id: str
+    stop_name: str
+    distance_m: float | None
 
 
 def _text(item: Any, name: str) -> str | None:
@@ -91,6 +106,104 @@ async def search_bus_stops(query: str) -> list[BusStopArrivals]:
         if stop_id and stop_name:
             result.append(BusStopArrivals(stop_id=stop_id, stop_name=stop_name, arrivals=[]))
     return result
+
+
+def _stop_name_key(value: str | None) -> str:
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", value or "").casefold()
+
+
+def _coordinate(item: Any, *names: str) -> float | None:
+    for name in names:
+        raw = _text(item, name)
+        if raw is None:
+            continue
+        try:
+            return float(raw)
+        except ValueError:
+            continue
+    return None
+
+
+def _distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    earth_radius_m = 6_371_000.0
+    d_lat = radians(lat2 - lat1)
+    d_lng = radians(lng2 - lng1)
+    first = sin(d_lat / 2) ** 2
+    second = cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lng / 2) ** 2
+    return earth_radius_m * 2 * asin(sqrt(first + second))
+
+
+async def find_bus_stop_candidates(
+    stop_name: str,
+    *,
+    lat: float | None = None,
+    lng: float | None = None,
+) -> list[BusStopCandidate]:
+    """정류소명과 경로 좌표가 함께 맞는 BIMS 정류소 후보를 가까운 순서로 찾는다."""
+    query = stop_name.strip()
+    expected = _stop_name_key(query)
+    if not expected:
+        return []
+    cache_key = f"{expected}:{lat if lat is None else round(lat, 5)}:{lng if lng is None else round(lng, 5)}"
+    now = monotonic()
+    with _stop_match_cache_guard:
+        cached = _stop_match_cache.get(cache_key)
+        if cached is not None and cached[0] > now:
+            return list(cached[1])
+    root = await _request("busStopList", {
+        "pageNo": 1,
+        "numOfRows": 100,
+        "bstopnm": query,
+    })
+    candidates: list[BusStopCandidate] = []
+    for item in root.findall(".//item"):
+        stop_id = _text(item, "bstopid")
+        found_name = _text(item, "bstopnm")
+        found_key = _stop_name_key(found_name)
+        if not stop_id or not found_name or not found_key:
+            continue
+        if expected != found_key and expected not in found_key and found_key not in expected:
+            continue
+        found_lng = _coordinate(item, "gpsx", "x", "lng", "lon")
+        found_lat = _coordinate(item, "gpsy", "y", "lat")
+        distance = (
+            _distance_m(lat, lng, found_lat, found_lng)
+            if lat is not None
+            and lng is not None
+            and found_lat is not None
+            and found_lng is not None
+            else None
+        )
+        candidates.append(BusStopCandidate(stop_id, found_name, distance))
+    exact = [item for item in candidates if _stop_name_key(item.stop_name) == expected]
+    selected = exact or candidates
+    selected.sort(key=lambda item: (
+        item.distance_m is None,
+        item.distance_m if item.distance_m is not None else float("inf"),
+        item.stop_id,
+    ))
+    if lat is not None and lng is not None:
+        nearby = [
+            item for item in selected
+            if item.distance_m is not None and item.distance_m <= 500
+        ]
+        if nearby:
+            result = nearby[:5]
+        else:
+            result = []
+    else:
+        result = selected[:5] if len(selected) == 1 else []
+    with _stop_match_cache_guard:
+        _stop_match_cache[cache_key] = (
+            monotonic() + _STOP_MATCH_CACHE_TTL_SECONDS,
+            tuple(result),
+        )
+    return result
+
+
+def clear_bus_stop_match_cache() -> None:
+    with _stop_match_cache_guard:
+        _stop_match_cache.clear()
 
 
 def _arrival(item: Any, suffix: str) -> BusArrival | None:
