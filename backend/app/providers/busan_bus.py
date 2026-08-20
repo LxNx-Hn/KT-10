@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+import json
 from math import asin, cos, radians, sin, sqrt
+from pathlib import Path
 import re
-from threading import Lock
-from time import monotonic
 from typing import Any
 
 from defusedxml import ElementTree
@@ -22,9 +22,7 @@ from ..settings import settings
 
 log = logging.getLogger("providers.busan_bus")
 _BASE_URL = "https://apis.data.go.kr/6260000/BusanBIMS"
-_STOP_MATCH_CACHE_TTL_SECONDS = 24 * 3600
-_stop_match_cache: dict[str, tuple[float, tuple[BusStopCandidate, ...]]] = {}
-_stop_match_cache_guard = Lock()
+_STOP_SNAPSHOT = Path(__file__).resolve().parents[3] / "data" / "ai" / "busan_bus_stops.json"
 
 
 @dataclass(frozen=True)
@@ -32,6 +30,16 @@ class BusStopCandidate:
     stop_id: str
     stop_name: str
     distance_m: float | None
+
+
+@dataclass(frozen=True)
+class _LocalBusStop:
+    stop_id: str
+    stop_name: str
+    ars_no: str | None
+    lat: float
+    lng: float
+    name_key: str
 
 
 def _text(item: Any, name: str) -> str | None:
@@ -93,35 +101,47 @@ async def search_bus_stops(query: str) -> list[BusStopArrivals]:
     query = query.strip()
     if not query:
         return []
-    params: dict[str, str | int] = {"pageNo": 1, "numOfRows": 30}
     if query.isdigit() and len(query) == 5:
-        params["arsno"] = query
+        matches = [stop for stop in _BUS_STOPS if stop.ars_no == query]
     else:
-        params["bstopnm"] = query
-    root = await _request("busStopList", params)
-    result: list[BusStopArrivals] = []
-    for item in root.findall(".//item"):
-        stop_id = _text(item, "bstopid")
-        stop_name = _text(item, "bstopnm")
-        if stop_id and stop_name:
-            result.append(BusStopArrivals(stop_id=stop_id, stop_name=stop_name, arrivals=[]))
-    return result
+        key = _stop_name_key(query)
+        matches = [stop for stop in _BUS_STOPS if key and key in stop.name_key]
+        matches.sort(key=lambda stop: (stop.name_key != key, stop.stop_name, stop.stop_id))
+    return [
+        BusStopArrivals(stop_id=stop.stop_id, stop_name=stop.stop_name, arrivals=[])
+        for stop in matches[:30]
+    ]
 
 
 def _stop_name_key(value: str | None) -> str:
     return re.sub(r"[^0-9A-Za-z가-힣]", "", value or "").casefold()
 
 
-def _coordinate(item: Any, *names: str) -> float | None:
-    for name in names:
-        raw = _text(item, name)
-        if raw is None:
-            continue
+def _load_bus_stops() -> tuple[_LocalBusStop, ...]:
+    try:
+        payload = json.loads(_STOP_SNAPSHOT.read_text(encoding="utf-8"))
+        rows = payload["stops"]
+        expected_count = int(payload["count"])
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("BIMS 정류소 로컬 인덱스를 읽을 수 없습니다.") from exc
+    result: list[_LocalBusStop] = []
+    for row in rows:
         try:
-            return float(raw)
-        except ValueError:
-            continue
-    return None
+            item = _LocalBusStop(
+                stop_id=str(row["id"]),
+                stop_name=str(row["name"]),
+                ars_no=str(row["arsNo"]) if row.get("arsNo") else None,
+                lat=float(row["lat"]),
+                lng=float(row["lng"]),
+                name_key=_stop_name_key(str(row["name"])),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("BIMS 정류소 로컬 인덱스 항목이 올바르지 않습니다.") from exc
+        if item.stop_id and item.stop_name and item.name_key:
+            result.append(item)
+    if len(result) != expected_count:
+        raise RuntimeError("BIMS 정류소 로컬 인덱스 전체 건수가 일치하지 않습니다.")
+    return tuple(result)
 
 
 def _distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -139,71 +159,45 @@ async def find_bus_stop_candidates(
     lat: float | None = None,
     lng: float | None = None,
 ) -> list[BusStopCandidate]:
-    """정류소명과 경로 좌표가 함께 맞는 BIMS 정류소 후보를 가까운 순서로 찾는다."""
-    query = stop_name.strip()
-    expected = _stop_name_key(query)
-    if not expected:
+    """공식 로컬 인덱스에서 이름과 좌표가 일치하는 BIMS 정류소 하나를 찾는다."""
+    expected = _stop_name_key(stop_name)
+    if not expected or lat is None or lng is None:
         return []
-    cache_key = f"{expected}:{lat if lat is None else round(lat, 5)}:{lng if lng is None else round(lng, 5)}"
-    now = monotonic()
-    with _stop_match_cache_guard:
-        cached = _stop_match_cache.get(cache_key)
-        if cached is not None and cached[0] > now:
-            return list(cached[1])
-    root = await _request("busStopList", {
-        "pageNo": 1,
-        "numOfRows": 100,
-        "bstopnm": query,
-    })
     candidates: list[BusStopCandidate] = []
-    for item in root.findall(".//item"):
-        stop_id = _text(item, "bstopid")
-        found_name = _text(item, "bstopnm")
-        found_key = _stop_name_key(found_name)
-        if not stop_id or not found_name or not found_key:
+    for stop in _BUS_STOPS:
+        if (
+            expected != stop.name_key
+            and expected not in stop.name_key
+            and stop.name_key not in expected
+        ):
             continue
-        if expected != found_key and expected not in found_key and found_key not in expected:
-            continue
-        found_lng = _coordinate(item, "gpsx", "x", "lng", "lon")
-        found_lat = _coordinate(item, "gpsy", "y", "lat")
-        distance = (
-            _distance_m(lat, lng, found_lat, found_lng)
-            if lat is not None
-            and lng is not None
-            and found_lat is not None
-            and found_lng is not None
-            else None
-        )
-        candidates.append(BusStopCandidate(stop_id, found_name, distance))
+        candidates.append(BusStopCandidate(
+            stop.stop_id,
+            stop.stop_name,
+            _distance_m(lat, lng, stop.lat, stop.lng),
+        ))
     exact = [item for item in candidates if _stop_name_key(item.stop_name) == expected]
     selected = exact or candidates
     selected.sort(key=lambda item: (
-        item.distance_m is None,
         item.distance_m if item.distance_m is not None else float("inf"),
         item.stop_id,
     ))
-    if lat is not None and lng is not None:
-        nearby = [
-            item for item in selected
-            if item.distance_m is not None and item.distance_m <= 500
-        ]
-        if nearby:
-            result = nearby[:5]
-        else:
-            result = []
-    else:
-        result = selected[:5] if len(selected) == 1 else []
-    with _stop_match_cache_guard:
-        _stop_match_cache[cache_key] = (
-            monotonic() + _STOP_MATCH_CACHE_TTL_SECONDS,
-            tuple(result),
-        )
-    return result
+    nearest = selected[0] if selected else None
+    return (
+        [nearest]
+        if nearest is not None
+        and nearest.distance_m is not None
+        and nearest.distance_m <= 500
+        else []
+    )
+
+
+_BUS_STOPS = _load_bus_stops()
 
 
 def clear_bus_stop_match_cache() -> None:
-    with _stop_match_cache_guard:
-        _stop_match_cache.clear()
+    """기존 테스트 호출 호환용. 정류소 매칭은 불변 로컬 인덱스라 캐시가 없다."""
+    return None
 
 
 def _arrival(item: Any, suffix: str) -> BusArrival | None:
