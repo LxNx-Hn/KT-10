@@ -1859,7 +1859,7 @@ def test_feature_pipeline_keeps_display_path_but_analyzes_walk_parts(
         }
 
     monkeypatch.setattr(
-        api_router.OdsayRouteCollector,
+        OdsayRouteCollector,
         "collect",
         collect_odsay,
     )
@@ -1932,7 +1932,7 @@ def test_refine_transit_endpoint_returns_exact_lane_paths(monkeypatch):
         ]]
 
     monkeypatch.setattr(
-        api_router.OdsayRouteCollector,
+        OdsayRouteCollector,
         "refine_transit",
         fake_refine,
     )
@@ -1961,7 +1961,7 @@ def test_refine_transit_endpoint_keeps_provider_failure_explicit(monkeypatch):
         raise AiCollectorError("ODsay loadLane 실패: quota exceeded")
 
     monkeypatch.setattr(
-        api_router.OdsayRouteCollector,
+        OdsayRouteCollector,
         "refine_transit",
         fail_refine,
     )
