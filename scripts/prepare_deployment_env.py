@@ -69,6 +69,7 @@ IMPORT_SOURCES = {
     "VWORLD_API_KEY": ROOT / "backend" / ".env",
     "OPENWEATHER_API_KEY": ROOT / "backend" / ".env",
     "BUS_SERVICE_KEY": ROOT / "backend" / ".env",
+    "DATA_GO_KR_SERVICE_KEY": ROOT / "ai" / ".env",
 }
 # 외부 전달 파일에서 쓰일 수 있는 명칭을 정규화한다. JavaScript 키와
 # REST 키는 서로 대체할 수 없으므로 의도적으로 별도 항목으로 유지한다.
@@ -82,6 +83,7 @@ IMPORT_ALIASES = {
     "VWORLD_API_KEY": ("VWORLD_API_KEY",),
     "OPENWEATHER_API_KEY": ("OPENWEATHER_API_KEY",),
     "BUS_SERVICE_KEY": ("BUS_SERVICE_KEY", "BUSAN_BUS_API_KEY"),
+    "DATA_GO_KR_SERVICE_KEY": ("DATA_GO_KR_SERVICE_KEY", "DECO"),
 }
 
 
@@ -179,6 +181,10 @@ def check() -> None:
         key for key in (*REQUIRED_EXTERNAL, *GENERATED)
         if not values.get(key) or values[key].startswith("YOUR_")
     ]
+    if not (
+        values.get("DECO") or values.get("DATA_GO_KR_SERVICE_KEY")
+    ):
+        missing.append("DECO or DATA_GO_KR_SERVICE_KEY")
     origin = values.get("PUBLIC_ORIGIN", "")
     parsed = urlparse(origin)
     try:
