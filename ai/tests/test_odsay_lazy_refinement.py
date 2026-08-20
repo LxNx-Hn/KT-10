@@ -1,6 +1,7 @@
 """ODsay 지연 정밀화·single-flight·동시성 상한·일일 counter 회귀 테스트."""
 import asyncio
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 import collectors.odsay_instrumentation as instrumentation
 import pytest
@@ -225,17 +226,22 @@ async def _expect_error(collector):
     return None
 
 
-def test_daily_counter_persists_and_warns(tmp_path, monkeypatch, caplog):
+def test_daily_counter_persists_and_enforces_hard_cap(
+    tmp_path,
+    monkeypatch,
+    caplog,
+):
     monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", str(tmp_path))
     monkeypatch.setattr(settings, "ODSAY_DAILY_BUDGET", 10)
     instrumentation._warned_ratios.clear()
 
     for _ in range(7):
-        instrumentation.record_network_call("searchPubTransPathT")
+        assert instrumentation.record_network_call("searchPubTransPathT")
 
     counter = instrumentation.read_daily_counter()
     assert counter is not None
-    assert counter["warning_only"] is True
+    assert counter["warning_only"] is False
+    assert counter["hard_limit"] is True
     assert counter["observed_total_today"] == 7
     assert counter["estimated_remaining_service_budget"] == 3
     assert (
@@ -244,23 +250,131 @@ def test_daily_counter_persists_and_warns(tmp_path, monkeypatch, caplog):
 
     with caplog.at_level("WARNING"):
         for _ in range(3):
-            instrumentation.record_network_call("loadLane")
+            assert instrumentation.record_network_call("loadLane")
     counter = instrumentation.read_daily_counter()
     assert counter["observed_total_today"] == 10
     assert counter["estimated_remaining_service_budget"] == 0
+    assert counter["network_calls_blocked"] is True
+    assert counter["blocked_reason"] == "daily_budget"
     assert any("100%" in message for message in caplog.messages)
 
-    # 100%는 경고 기준일 뿐 hard cap이 아니다. 초과 호출도 계속 기록된다.
-    instrumentation.record_network_call("loadLane")
+    # hard cap 이후의 신규 호출은 예약되지 않고 관측 호출 수도 늘지 않는다.
+    assert instrumentation.record_network_call("loadLane") is False
     counter = instrumentation.read_daily_counter()
-    assert counter["warning_only"] is True
-    assert counter["observed_total_today"] == 11
+    assert counter["observed_total_today"] == 10
     assert counter["estimated_remaining_service_budget"] == 0
 
     # counter 파일에는 키·좌표·mapObj가 포함되지 않는다.
     raw = json.dumps(counter, ensure_ascii=False)
     assert "test-key" not in raw
     assert "mapObject" not in raw
+
+
+def test_daily_hard_cap_reservation_is_atomic(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "ODSAY_DAILY_BUDGET", 29)
+
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        results = list(executor.map(
+            lambda _: instrumentation.record_network_call(
+                "searchPubTransPathT"
+            ),
+            range(80),
+        ))
+
+    assert results.count(True) == 29
+    assert results.count(False) == 51
+    counter = instrumentation.read_daily_counter()
+    assert counter is not None
+    assert counter["observed_total_today"] == 29
+    assert counter["network_calls_blocked"] is True
+
+
+def test_provider_quota_response_blocks_remaining_network_slots(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "ODSAY_DAILY_BUDGET", 29)
+
+    assert instrumentation.record_network_call("searchPubTransPathT")
+    instrumentation.block_network_calls_for_provider_quota()
+
+    assert instrumentation.record_network_call("loadLane") is False
+    counter = instrumentation.read_daily_counter()
+    assert counter is not None
+    assert counter["observed_total_today"] == 1
+    assert counter["provider_quota_blocked"] is True
+    assert counter["blocked_reason"] == "provider_quota"
+
+
+def test_cached_search_remains_available_after_daily_cap(
+    tmp_path,
+    monkeypatch,
+):
+    import collectors.odsay_collector as module
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", _CountingClient)
+    monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "ODSAY_DAILY_BUDGET", 1)
+
+    collector = OdsayRouteCollector()
+    first = asyncio.run(collector.collect(ORIGIN, DEST))
+    second = asyncio.run(collector.collect(ORIGIN, DEST))
+
+    assert len(first) == 1
+    assert len(second) == 1
+    assert _CountingClient.search_calls == 1
+    counter = instrumentation.read_daily_counter()
+    assert counter is not None
+    assert counter["observed_total_today"] == 1
+    assert counter["network_calls_blocked"] is True
+
+
+def test_daily_cap_prevents_http_transport(tmp_path, monkeypatch):
+    import collectors.odsay_collector as module
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", _CountingClient)
+    monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "ODSAY_DAILY_BUDGET", 1)
+    assert instrumentation.record_network_call("searchPubTransPathT")
+
+    with pytest.raises(CollectorError) as captured:
+        asyncio.run(OdsayRouteCollector().collect(ORIGIN, DEST))
+
+    assert captured.value.code == "quota_exceeded"
+    assert _CountingClient.search_calls == 0
+
+
+def test_http_429_arms_provider_quota_breaker(tmp_path, monkeypatch):
+    import collectors.odsay_collector as module
+
+    class QuotaClient(_CountingClient):
+        async def get(self, url, **kwargs):
+            type(self).search_calls += 1
+            return module.httpx.Response(
+                429,
+                request=module.httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(module.httpx, "AsyncClient", QuotaClient)
+    monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "ODSAY_DAILY_BUDGET", 29)
+    QuotaClient.search_calls = 0
+
+    with pytest.raises(CollectorError) as captured:
+        asyncio.run(OdsayRouteCollector().collect(ORIGIN, DEST))
+    assert captured.value.code == "quota_exceeded"
+
+    counter = instrumentation.read_daily_counter()
+    assert counter is not None
+    assert counter["observed_total_today"] == 1
+    assert counter["blocked_reason"] == "provider_quota"
+
+    with pytest.raises(CollectorError) as blocked:
+        asyncio.run(OdsayRouteCollector().collect(ORIGIN, DEST))
+    assert blocked.value.code == "quota_exceeded"
+    assert QuotaClient.search_calls == 1
 
 
 # ── cache commit handoff race ──
