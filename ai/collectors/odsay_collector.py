@@ -23,6 +23,10 @@ from uuid import uuid4
 
 import httpx
 from config import settings
+from merger.route_merger import (
+    accessibility_paths_similar,
+    merge_accessibility_evidence,
+)
 
 from collectors.base import (
     BaseRouteCollector,
@@ -33,6 +37,7 @@ from collectors.base import (
 )
 from collectors.odsay_instrumentation import (
     anonymized_hash,
+    block_network_calls_for_provider_quota,
     ensure_correlation_id,
     record_network_call,
     single_flight,
@@ -44,10 +49,7 @@ from collectors.odsay_instrumentation import (
 from collectors.odsay_instrumentation import (
     log_call as log_odsay_call,
 )
-from merger.route_merger import (
-    accessibility_paths_similar,
-    merge_accessibility_evidence,
-)
+
 
 def _provider_error_code(data: dict) -> str:
     """ODsay 오류 응답 코드를 재시도 정책 분류로 옮긴다."""
@@ -78,6 +80,15 @@ def _transport_error_code(exc: BaseException) -> str:
     if isinstance(exc, httpx.TransportError):
         return "network_error"
     return "invalid_response"
+
+
+def _raise_for_status(response: httpx.Response) -> None:
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        if _transport_error_code(exc) == "quota_exceeded":
+            block_network_calls_for_provider_quota()
+        raise
 
 
 CACHE_SCHEMA_VERSION = 2
@@ -455,7 +466,13 @@ class OdsayRouteCollector(BaseRouteCollector):
             raise CollectorError("ODsay 응답 본문이 JSON 객체가 아닙니다.")
         api_error = cls._api_error(data)
         if api_error:
-            raise CollectorError(f"ODsay 경로 검색 실패: {api_error}")
+            code = _provider_error_code(data)
+            if code == "quota_exceeded":
+                block_network_calls_for_provider_quota()
+            raise CollectorError(
+                f"ODsay 경로 검색 실패: {api_error}",
+                code=code,
+            )
         result = data.get("result")
         if not isinstance(result, dict):
             raise CollectorError("ODsay 응답의 result가 객체가 아닙니다.")
@@ -477,9 +494,12 @@ class OdsayRouteCollector(BaseRouteCollector):
         api_error = cls._api_error(data)
         if api_error:
             # 공급자 오류 응답은 캐시하지 않고 그대로 실패로 반환한다.
+            code = _provider_error_code(data)
+            if code == "quota_exceeded":
+                block_network_calls_for_provider_quota()
             raise CollectorError(
                 f"ODsay loadLane 실패: {api_error}",
-                code=_provider_error_code(data),
+                code=code,
             )
         paths = cls._lane_paths(data, map_object)
         if not paths or not any(paths):
@@ -648,7 +668,11 @@ class OdsayRouteCollector(BaseRouteCollector):
                         async with httpx.AsyncClient(
                             follow_redirects=True
                         ) as client:
-                            record_network_call("loadLane")
+                            if not record_network_call("loadLane"):
+                                raise CollectorError(
+                                    "ODsay 일일 network 호출 상한에 도달했습니다.",
+                                    code="quota_exceeded",
+                                )
                             network = True
                             odsay_counters.record_network_attempt("loadLane")
                             try:
@@ -668,7 +692,7 @@ class OdsayRouteCollector(BaseRouteCollector):
                         http_status = getattr(
                             response, "status_code", None
                         )
-                        response.raise_for_status()
+                        _raise_for_status(response)
                         payload = response.json()
                         return payload
 
@@ -1156,7 +1180,13 @@ class OdsayRouteCollector(BaseRouteCollector):
                             async with httpx.AsyncClient(
                                 follow_redirects=True
                             ) as client:
-                                record_network_call("searchPubTransPathT")
+                                if not record_network_call(
+                                    "searchPubTransPathT"
+                                ):
+                                    raise CollectorError(
+                                        "ODsay 일일 network 호출 상한에 도달했습니다.",
+                                        code="quota_exceeded",
+                                    )
                                 network = True
                                 odsay_counters.record_network_attempt(
                                     "searchPubTransPathT"
@@ -1189,7 +1219,7 @@ class OdsayRouteCollector(BaseRouteCollector):
                             http_status = getattr(
                                 resp, "status_code", None
                             )
-                            resp.raise_for_status()
+                            _raise_for_status(resp)
                             payload = resp.json()
                             return payload
 
