@@ -17,7 +17,11 @@ from zoneinfo import ZoneInfo
 
 from ..models import RouteSegment, TransitLegArrival
 from ..settings import settings
-from .busan_bus import get_bus_arrivals
+from .busan_bus import (
+    clear_bus_stop_match_cache,
+    find_bus_stop_candidates,
+    get_bus_arrivals,
+)
 from .busan_subway import clear_subway_timetable_cache, get_next_subway_journey
 
 _KST = ZoneInfo("Asia/Seoul")
@@ -94,33 +98,70 @@ def _unavailable(
 
 async def _bus_arrival(segment: RouteSegment) -> TransitLegArrival:
     stop_id = (segment.transit_start_id or "").strip()
-    if not settings.live_bus or not stop_id:
+    path_start = segment.path[0] if segment.path else None
+    if not settings.live_bus or (
+        not stop_id and (not segment.station_name or path_start is None)
+    ):
         return _unavailable(
             segment,
             "실시간 버스 도착정보를 조회할 정류소 식별자가 없습니다.",
             source="부산광역시 부산버스정보시스템",
         )
-    key = f"bus:{stop_id}:{_route_key(segment.bus_route_name)}"
+    location_key = (
+        f"{round(path_start.lat, 5)}:{round(path_start.lng, 5)}"
+        if path_start is not None
+        else ""
+    )
+    key = (
+        f"bus:{stop_id}:{_route_key(segment.station_name)}:"
+        f"{location_key}:{_route_key(segment.bus_route_name)}"
+    )
     if cached := _cache_get(key):
         return _for_segment(cached, segment)
     async with _request_lock(key):
         if cached := _cache_get(key):
             return _for_segment(cached, segment)
-        try:
-            stop = await get_bus_arrivals(stop_id)
-        except RuntimeError:
+        expected_route = _route_key(segment.bus_route_name)
+        candidate_ids: list[str] = []
+        if re.fullmatch(r"\d{9,}", stop_id):
+            candidate_ids.append(stop_id)
+        if segment.station_name:
+            try:
+                matched_stops = await find_bus_stop_candidates(
+                    segment.station_name,
+                    lat=path_start.lat if path_start is not None else None,
+                    lng=path_start.lng if path_start is not None else None,
+                )
+            except RuntimeError:
+                matched_stops = []
+            candidate_ids.extend(
+                item.stop_id for item in matched_stops if item.stop_id not in candidate_ids
+            )
+        matching = []
+        stop = None
+        for candidate_id in candidate_ids:
+            try:
+                candidate_stop = await get_bus_arrivals(candidate_id)
+            except RuntimeError:
+                continue
+            candidate_matching = [
+                item
+                for item in candidate_stop.arrivals
+                if expected_route and _route_key(item.route_name) == expected_route
+            ]
+            if candidate_matching:
+                stop = candidate_stop
+                matching = candidate_matching
+                break
+            if stop is None:
+                stop = candidate_stop
+        if stop is None:
             result = _unavailable(
                 segment,
                 "실시간 버스 도착정보를 불러오지 못했습니다.",
                 source="부산광역시 부산버스정보시스템",
             )
         else:
-            expected_route = _route_key(segment.bus_route_name)
-            matching = [
-                item
-                for item in stop.arrivals
-                if expected_route and _route_key(item.route_name) == expected_route
-            ]
             matching.sort(
                 key=lambda item: (
                     item.arrival_min is None,
@@ -228,4 +269,5 @@ def clear_transit_arrival_cache() -> None:
         _cache.clear()
     with _loop_locks_guard:
         _loop_locks.clear()
+    clear_bus_stop_match_cache()
     clear_subway_timetable_cache()
