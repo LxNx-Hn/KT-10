@@ -504,7 +504,7 @@ def test_tmap_persistent_cache_avoids_repeated_provider_call(
     assert "test-secret" not in cache_text
 
 
-def test_tmap_precomputed_cache_survives_age_and_never_calls_provider(
+def test_tmap_precomputed_cache_expires_within_license_window(
     monkeypatch,
     tmp_path,
 ):
@@ -552,7 +552,7 @@ def test_tmap_precomputed_cache_survives_age_and_never_calls_provider(
         TmapRouteCollector(avoid_stairs=True).collect_cached(ORIGIN, DEST)
     )
 
-    assert result[0].path == [ORIGIN, DEST]
+    assert result == []
     assert not writable.exists()
 
 
