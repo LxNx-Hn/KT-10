@@ -53,7 +53,7 @@ REQUIRED_EXTERNAL = (
     "VITE_KAKAO_MAP_KEY",
     "KAKAO_REST_API_KEY",
     "KAKAO_OAUTH_CLIENT_SECRET",
-    "ODSAY_API_KEY",
+    "TMAP_API_KEY",
     "ORS_API_KEY",
     "VWORLD_API_KEY",
     "OPENWEATHER_API_KEY",
@@ -277,19 +277,27 @@ def check() -> None:
         vworld_cache_ttl = 0
     if not 1 <= vworld_cache_ttl <= 24 * 365:
         missing.append("VWORLD_CACHE_TTL_HOURS(1..8760)")
+    provider_order = tuple(
+        item.strip().casefold()
+        for item in values.get(
+            "TRANSIT_PROVIDER_ORDER", "odsay,tmap"
+        ).split(",")
+        if item.strip()
+    )
     if (
-        not values.get("TMAP_API_KEY")
-        and values.get("OSMNX_WALK_GEOMETRY_ENABLED", "").lower() != "true"
+        not provider_order
+        or len(set(provider_order)) != len(provider_order)
+        or any(item not in {"odsay", "tmap"} for item in provider_order)
     ):
-        missing.append(
-            "exact walking geometry(TMAP_API_KEY or OSMNX_WALK_GEOMETRY_ENABLED=true)"
-        )
+        missing.append("TRANSIT_PROVIDER_ORDER(odsay,tmap or tmap)")
+    if "tmap" in provider_order and not values.get("TMAP_API_KEY"):
+        missing.append("TMAP_API_KEY(tmap transit provider)")
+    if "odsay" in provider_order and not values.get("ODSAY_API_KEY"):
+        print("선택 설정 미입력: ODSAY_API_KEY (TMAP으로 자동 전환)")
     if missing:
         print("배포 준비 미완료: " + ", ".join(dict.fromkeys(missing)))
         raise SystemExit(1)
     print("배포 필수 설정 확인 완료")
-    if not values.get("TMAP_API_KEY"):
-        print("선택 설정 미입력: TMAP_API_KEY (보행 상세 보강 기능만 비활성)")
 
 
 def main() -> None:
