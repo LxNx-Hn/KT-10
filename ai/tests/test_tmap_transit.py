@@ -1,0 +1,235 @@
+import asyncio
+
+import pytest
+
+from collectors.base import CollectorError, Coordinate, RouteCandidate
+from collectors.odsay_collector import OdsayRouteCollector
+from collectors.tmap_transit_collector import TmapTransitRouteCollector
+from collectors.transit_provider import (
+    TransitProviderCollector,
+    provider_order,
+)
+from collectors.transit_walk import WalkGeometryResult
+from config import settings
+
+
+ORIGIN = Coordinate(lat=35.1796, lng=129.0756)
+DESTINATION = Coordinate(lat=35.1579, lng=129.0591)
+
+
+def _walk_leg(start, end, line):
+    return {
+        "mode": "WALK",
+        "sectionTime": 120,
+        "distance": 130,
+        "start": {"name": start[0], "lon": start[1], "lat": start[2]},
+        "end": {"name": end[0], "lon": end[1], "lat": end[2]},
+        "steps": [{"linestring": line}],
+    }
+
+
+def _payload():
+    return {
+        "metaData": {
+            "plan": {
+                "itineraries": [{
+                    "totalTime": 720,
+                    "transferCount": 0,
+                    "totalWalkDistance": 260,
+                    "totalDistance": 3000,
+                    "fare": {"regular": {"totalFare": 1600}},
+                    "legs": [
+                        _walk_leg(
+                            ("출발지", 129.0756, 35.1796),
+                            ("시청", 129.0760, 35.1793),
+                            "129.0756,35.1796 129.0760,35.1793",
+                        ),
+                        {
+                            "mode": "SUBWAY",
+                            "sectionTime": 480,
+                            "distance": 2740,
+                            "route": "부산1호선",
+                            "routeId": "260011002",
+                            "service": 1,
+                            "start": {
+                                "name": "시청",
+                                "lon": 129.0760,
+                                "lat": 35.1793,
+                            },
+                            "end": {
+                                "name": "서면",
+                                "lon": 129.0594,
+                                "lat": 35.1582,
+                            },
+                            "passStopList": {"stations": [
+                                {
+                                    "stationID": "SUB-1",
+                                    "stationName": "시청",
+                                    "lon": "129.0760",
+                                    "lat": "35.1793",
+                                },
+                                {
+                                    "stationID": "SUB-2",
+                                    "stationName": "서면",
+                                    "lon": "129.0594",
+                                    "lat": "35.1582",
+                                },
+                            ]},
+                            "passShape": {
+                                "linestring": (
+                                    "129.0760,35.1793 129.0700,35.1700 "
+                                    "129.0594,35.1582"
+                                )
+                            },
+                        },
+                        _walk_leg(
+                            ("서면", 129.0594, 35.1582),
+                            ("도착지", 129.0591, 35.1579),
+                            "129.0594,35.1582 129.0591,35.1579",
+                        ),
+                    ],
+                }]
+            }
+        }
+    }
+
+
+def test_tmap_transit_normalizes_exact_route_and_caches(
+    monkeypatch,
+    tmp_path,
+):
+    import collectors.tmap_transit_collector as module
+
+    requests = 0
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return _payload()
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            nonlocal requests
+            requests += 1
+            return Response()
+
+    async def resolve(_self, start, end):
+        return WalkGeometryResult([start, end], "exact", {})
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "TMAP_TRANSIT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "TMAP_TRANSIT_CACHE_TTL_SECONDS", 1800)
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+    monkeypatch.setattr(module.TransitWalkGeometryResolver, "resolve", resolve)
+
+    first = asyncio.run(
+        TmapTransitRouteCollector().collect(
+            ORIGIN,
+            DESTINATION,
+            max_candidates=1,
+        )
+    )
+    second = asyncio.run(
+        TmapTransitRouteCollector().collect(
+            ORIGIN,
+            DESTINATION,
+            max_candidates=1,
+        )
+    )
+
+    assert requests == 1
+    assert first[0].source == "tmap_transit"
+    assert first[0].duration_min == 12
+    assert first[0].geometry_quality == "exact"
+    assert [item["mode"] for item in first[0].segments] == [
+        "walk", "subway", "walk"
+    ]
+    assert first[0].segments[1]["raw"]["startID"] == "SUB-1"
+    assert first[0].segments[1]["raw"]["endID"] == "SUB-2"
+    assert first[0].segments[1]["raw"]["lane"] == [{
+        "name": "부산1호선",
+        "subwayCode": 71,
+    }]
+    assert second[0].path == first[0].path
+    cache_text = next(tmp_path.glob("*.json")).read_text(encoding="utf-8")
+    assert "test-key" not in cache_text
+
+
+def test_transit_provider_uses_tmap_when_odsay_is_not_configured(monkeypatch):
+    route = RouteCandidate(
+        source="tmap_transit",
+        path=[ORIGIN, DESTINATION],
+        duration_min=12,
+        distance_m=3000,
+    )
+    tmap_calls = 0
+
+    async def tmap_collect(_self, *_args, **_kwargs):
+        nonlocal tmap_calls
+        tmap_calls += 1
+        return [route]
+
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_ORDER", "odsay,tmap")
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "")
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "test-key")
+    monkeypatch.setattr(TmapTransitRouteCollector, "collect", tmap_collect)
+
+    collector = TransitProviderCollector()
+    result = asyncio.run(
+        collector.collect(ORIGIN, DESTINATION, max_candidates=5)
+    )
+
+    assert result == [route]
+    assert tmap_calls == 1
+    assert collector.attempted_sources == ["odsay", "tmap_transit"]
+    assert collector.selected_source == "tmap_transit"
+    assert "odsay" in collector.source_errors
+
+
+def test_transit_provider_falls_back_after_odsay_failure(monkeypatch):
+    route = RouteCandidate(
+        source="tmap_transit",
+        path=[ORIGIN, DESTINATION],
+        duration_min=12,
+        distance_m=3000,
+    )
+
+    async def odsay_collect(_self, *_args, **_kwargs):
+        raise CollectorError("ODsay 한도 초과", code="quota_exceeded")
+
+    async def tmap_collect(_self, *_args, **_kwargs):
+        return [route]
+
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_ORDER", "odsay,tmap")
+    monkeypatch.setattr(OdsayRouteCollector, "collect", odsay_collect)
+    monkeypatch.setattr(TmapTransitRouteCollector, "collect", tmap_collect)
+
+    collector = TransitProviderCollector()
+    result = asyncio.run(
+        collector.collect(ORIGIN, DESTINATION, max_candidates=5)
+    )
+
+    assert result == [route]
+    assert collector.selected_source == "tmap_transit"
+    assert collector.source_errors == {
+        "odsay": "CollectorError: ODsay 한도 초과"
+    }
+
+
+@pytest.mark.parametrize("value", ["", "odsay,odsay", "unknown"])
+def test_transit_provider_order_rejects_invalid_configuration(value):
+    with pytest.raises(ValueError):
+        provider_order(value)
