@@ -32,6 +32,13 @@ describe('transportModeVisual', () => {
     }
   });
 
+  it('열차·고속버스·여객선·항공은 각 전용색의 실선이다', () => {
+    for (const mode of ['train', 'express_bus', 'ferry', 'airplane'] as const) {
+      expect(transportModeStrokeColor(mode)).toBe(TRANSPORT_MODE_COLOR[mode]);
+      expect(transportModeStrokeStyle(mode, 'estimated')).toBe('solid');
+    }
+  });
+
   it('일반 도보는 품질과 무관하게 점선이고, 경사값이 있으면 실선이다', () => {
     expect(transportModeStrokeStyle('walk', 'exact')).toBe('shortdash');
     expect(transportModeStrokeStyle('walk', 'estimated')).toBe('shortdash');
