@@ -165,7 +165,9 @@ def test_lifespan_preloads_regional_walk_graph_when_enabled(monkeypatch):
     assert calls == [True]
 
 
-def test_readiness_requires_odsay_but_not_model_artifact(monkeypatch):
+def test_readiness_requires_any_transit_provider_but_not_model_artifact(
+    monkeypatch,
+):
     monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "")
     monkeypatch.setattr(ai_main.settings, "TMAP_API_KEY", "")
     monkeypatch.setattr(ai_main.settings, "ORS_API_KEY", "")
@@ -183,6 +185,9 @@ def test_readiness_requires_odsay_but_not_model_artifact(monkeypatch):
     body = response.json()
     assert body["checks"] == {
         "odsay_configured": False,
+        "tmap_transit_configured": False,
+        "transit_provider_configured": False,
+        "transit_provider_order_valid": True,
         "spatial_layers_loaded": True,
         "regional_dem_precomputed": True,
         "exact_walking_geometry_ready": False,
@@ -228,10 +233,10 @@ def test_readiness_rejects_candidate_pipeline_without_exact_walk_geometry(
     assert response.status_code == 503
     assert response.json()["ready"] is False
     assert response.json()["spatial_layer_count"] == 12
-    assert response.json()["capabilities"] == {
-        "exact_walking_geometry_configured": False,
-        "wheelchair_routing_configured": True,
-    }
+    capabilities = response.json()["capabilities"]
+    assert capabilities["exact_walking_geometry_configured"] is False
+    assert capabilities["wheelchair_routing_configured"] is True
+    assert capabilities["configured_transit_providers"] == ["odsay"]
 
 
 def test_readiness_reports_exact_walk_geometry_capability(monkeypatch):
@@ -255,10 +260,12 @@ def test_readiness_reports_exact_walk_geometry_capability(monkeypatch):
     assert response.status_code == 200
     assert response.json()["ready"] is True
     assert response.json()["spatial_layer_count"] == 13
-    assert response.json()["capabilities"] == {
-        "exact_walking_geometry_configured": True,
-        "wheelchair_routing_configured": True,
-    }
+    capabilities = response.json()["capabilities"]
+    assert capabilities["exact_walking_geometry_configured"] is True
+    assert capabilities["wheelchair_routing_configured"] is True
+    assert capabilities["configured_transit_providers"] == [
+        "odsay", "tmap"
+    ]
 
 
 def test_readiness_rejects_missing_wheelchair_routing_provider(monkeypatch):
@@ -1659,11 +1666,16 @@ def test_wheelchair_collection_reports_odsay_failure_when_only_over_limit_walks_
         asyncio.run(_collect_static_featured_routes(request))
 
     assert captured.value.status_code == 503
-    assert captured.value.detail["required_source"] == "odsay transit"
+    assert captured.value.detail["required_source"] == (
+        "public transit route provider"
+    )
     assert captured.value.detail["max_walk_distance_m"] == 15_000
-    assert captured.value.detail["sources"] == {
-        "odsay": "CollectorError: ODsay 응답 시간이 초과되었습니다."
-    }
+    assert captured.value.detail["sources"]["odsay"] == (
+        "CollectorError: ODsay 응답 시간이 초과되었습니다."
+    )
+    assert captured.value.detail["sources"]["tmap_transit"].startswith(
+        "CollectorNotConfigured:"
+    )
     assert tmap_calls == 0
 
 
@@ -1860,6 +1872,7 @@ def test_labeling_candidates_rejects_over_limit_top_n(monkeypatch):
     from config import settings as ai_settings
 
     monkeypatch.setattr(ai_settings, "ODSAY_MAX_CANDIDATES", 5)
+    monkeypatch.setattr(ai_settings, "TMAP_TRANSIT_MAX_CANDIDATES", 5)
     response = client.post("/labeling/candidates", json={
         "origin_lat": 35.1151, "origin_lng": 129.0414, "origin_name": "부산역",
         "dest_lat": 35.1972, "dest_lng": 128.9902, "dest_name": "북구청",
