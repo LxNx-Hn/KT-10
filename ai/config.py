@@ -72,9 +72,28 @@ class Settings(BaseSettings):
     TMAP_CACHE_TTL_SECONDS: int = Field(
         default=1800,
         ge=60,
-        le=31_536_000,
+        # TMAP 약관상 저장 데이터는 24시간 이상 사용할 수 없다.
+        le=86_399,
     )
     TMAP_MAX_CONCURRENT_REQUESTS: int = Field(default=3, ge=1, le=10)
+    # ODsay가 없어도 동작하는 통합 대중교통 공급자. TMAP 한 번의 요청으로
+    # 최대 10개 후보와 대중교통/보행 선형을 함께 받는다.
+    TMAP_TRANSIT_CACHE_DIR: str = ""
+    TMAP_TRANSIT_CACHE_TTL_SECONDS: int = Field(
+        default=1800,
+        ge=60,
+        le=86_399,
+    )
+    TMAP_TRANSIT_TIMEOUT_SECONDS: int = Field(default=12, ge=3, le=120)
+    TMAP_TRANSIT_MAX_CANDIDATES: int = Field(default=10, ge=1, le=10)
+    TMAP_TRANSIT_MAX_CONCURRENT_REQUESTS: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+    )
+    # 앞의 공급자가 미설정/한도/장애/계약 오류이면 다음 공급자를 사용한다.
+    # 지원 값은 odsay,tmap이며 중복·미지원 값은 readiness와 요청에서 거부한다.
+    TRANSIT_PROVIDER_ORDER: str = "odsay,tmap"
     # OpenRouteService의 wheelchair profile은 계단 회피뿐 아니라 OSM에
     # 기록된 노면·평탄도·폭·턱·경사·wheelchair 접근 제한을 함께 적용한다.
     # TMAP의 물리 경사로 안내점과 역할이 다르므로 별도 키로 관리한다.
