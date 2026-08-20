@@ -514,11 +514,25 @@ jobs:
                       .secrets = ((.secrets // []) | map(select(.name != "ODSAY_API_KEY")))
                       | .environment = (
                         (.environment // [])
-                        | map(select(.name != "ODSAY_API_KEY"))
-                        + [{
-                            name: "ODSAY_API_KEY",
-                            value: $odsay_api_key
-                          }]
+                        | map(select(
+                            .name != "ODSAY_API_KEY"
+                            and .name != "ODSAY_DAILY_BUDGET"
+                            and .name != "TRANSIT_PROVIDER_ORDER"
+                          ))
+                        + [
+                            {
+                              name: "ODSAY_API_KEY",
+                              value: $odsay_api_key
+                            },
+                            {
+                              name: "ODSAY_DAILY_BUDGET",
+                              value: "29"
+                            },
+                            {
+                              name: "TRANSIT_PROVIDER_ORDER",
+                              value: "odsay,tmap"
+                            }
+                          ]
                       )
                     else .
                     end
