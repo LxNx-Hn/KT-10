@@ -9,17 +9,17 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-
 from api.router import _get_layers, router
+from collectors.odsay_instrumentation import read_daily_counter
 from collectors.osmnx_collector import prepare_regional_graph
 from collectors.transit_provider import (
     configured_provider_names,
     provider_order,
 )
 from config import settings
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from features.elevation import prepare_regional_dem, regional_dem_ready
 
 logger = logging.getLogger(__name__)
@@ -136,6 +136,12 @@ def readiness():
     wheelchair_routing_ready = bool(
         ors_key and not ors_key.startswith("YOUR_")
     )
+    odsay_budget_state = read_daily_counter() or {
+        "observed_total_today": 0,
+        "estimated_remaining_service_budget": settings.ODSAY_DAILY_BUDGET,
+        "network_calls_blocked": False,
+        "blocked_reason": None,
+    }
     ready = (
         transit_ready
         and transit_order_valid
@@ -164,6 +170,17 @@ def readiness():
             "configured_transit_providers": list(configured_transit),
             "exact_walking_geometry_configured": exact_walk_geometry_ready,
             "wheelchair_routing_configured": wheelchair_routing_ready,
+            "odsay_daily_network_budget": settings.ODSAY_DAILY_BUDGET,
+            "odsay_network_calls_today": odsay_budget_state[
+                "observed_total_today"
+            ],
+            "odsay_network_calls_remaining": odsay_budget_state[
+                "estimated_remaining_service_budget"
+            ],
+            "odsay_network_calls_blocked": odsay_budget_state[
+                "network_calls_blocked"
+            ],
+            "odsay_blocked_reason": odsay_budget_state["blocked_reason"],
         },
         "spatial_layer_count": layer_count,
         "model_artifact_required": False,
