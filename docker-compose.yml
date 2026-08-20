@@ -88,7 +88,7 @@ services:
       - ODSAY_CACHE_TTL_SECONDS=1800
       - ODSAY_MAX_CANDIDATES=10
       - ODSAY_MAX_CONCURRENT_REQUESTS=3
-      - ODSAY_DAILY_BUDGET=1000
+      - ODSAY_DAILY_BUDGET=29
       - ROUTE_FEATURE_CACHE_DIR=/app/ai/data/cache/route_features
       - ROUTE_FEATURE_CACHE_TTL_SECONDS=1800
       - TMAP_CACHE_DIR=/app/ai/data/cache/tmap
