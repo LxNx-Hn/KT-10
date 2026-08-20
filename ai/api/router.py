@@ -23,7 +23,6 @@ from collectors.base import (
     CollectorNotConfigured,
     Coordinate,
 )
-from collectors.odsay_collector import OdsayRouteCollector
 from collectors.ors_collector import OrsWheelchairRouteCollector
 from collectors.transit_provider import TransitProviderCollector
 from collectors.odsay_instrumentation import (
@@ -442,6 +441,17 @@ async def refine_transit(req: RefineTransitRequest) -> dict:
     검색·후보 재수집·순위화를 다시 실행하지 않으며, 실패는 정상 geometry로
     위장하지 않고 명시적 오류로 반환한다.
     """
+    try:
+        from collectors.odsay_collector import OdsayRouteCollector
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": "ODsay 정밀화 플러그인이 설치되지 않았습니다.",
+                "code": "provider_not_installed",
+                "retryable": False,
+            },
+        ) from exc
     collector = OdsayRouteCollector()
     route_token = route_id_hash.set(
         hashlib.sha256(req.route_id.encode("utf-8")).hexdigest()[:12]
@@ -1146,7 +1156,13 @@ def _summary(feature: dict) -> str:
     labels = []
     for segment in feature["_segments"]:
         label = segment.get("bus_route_name") or {
-            "subway": "도시철도", "walk": "도보", "transfer": "환승"
+            "subway": "도시철도",
+            "walk": "도보",
+            "transfer": "환승",
+            "train": "열차",
+            "express_bus": "고속·시외버스",
+            "ferry": "여객선",
+            "airplane": "항공",
         }.get(segment.get("mode"))
         if label and label not in labels:
             labels.append(str(label))
@@ -1154,32 +1170,45 @@ def _summary(feature: dict) -> str:
 
 
 def _transit_identity(feature: dict) -> list:
-    """정밀화로 변하지 않는 대중교통 노선·승하차 식별자 sequence.
-
-    lane ID·승하차 정류장 ID·wayCode는 ODsay search 응답에 이미 들어 있고
-    loadLane 정밀화로 바뀌지 않는다. 표시 문자열만으로는 서로 다른 경로가
-    같은 route ID로 충돌할 수 있어 이 값들을 fingerprint에 포함한다.
-    mapObj 원문은 route ID·로그·응답 어디에도 넣지 않는다.
-    """
+    """공급자 ID 체계와 무관한 노선·승하차 식별자 sequence."""
     identity: list = []
     for segment in feature.get("_segments") or []:
         mode = segment.get("mode")
-        if mode not in {"bus", "subway"}:
+        if mode not in {
+            "bus", "subway", "train", "express_bus", "ferry", "airplane"
+        }:
             continue
         raw = segment.get("raw")
         raw = raw if isinstance(raw, dict) else {}
         lanes = raw.get("lane")
         lane_ids = [
-            _first_known(lane, "busID", "busNo", "subwayCode", "name")
+            _identity_text(_first_known(
+                lane, "busNo", "name", "subwayCode", "routeID", "busID"
+            ))
             for lane in (lanes if isinstance(lanes, list) else [])
             if isinstance(lane, dict)
         ]
+        if not any(lane_ids):
+            lane_ids = [_identity_text(
+                segment.get("bus_route_name")
+                or str(segment.get("description") or "").split(" · ", 1)[0]
+            )]
+        description_stops = str(segment.get("description") or "").split(" · ")[-1]
+        described_start, separator, described_end = description_stops.partition(" → ")
         identity.append([
             mode,
             [value for value in lane_ids if value],
-            _first_known(raw, "startID", "startName"),
-            _first_known(raw, "endID", "endName"),
-            _first_known(raw, "wayCode", "way"),
+            _identity_text(
+                _first_known(raw, "startName", "startID")
+                or segment.get("station_name")
+                or (described_start if separator else None)
+            ),
+            _identity_text(
+                _first_known(raw, "endName", "endID")
+                or segment.get("end_station_name")
+                or (described_end if separator else None)
+            ),
+            _identity_text(_first_known(raw, "way", "wayCode")),
         ])
     return identity
 
@@ -1192,57 +1221,59 @@ def _first_known(mapping: dict, *keys: str) -> str | None:
     return None
 
 
+def _identity_text(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = re.sub(r"[^0-9A-Za-z가-힣]", "", str(value)).casefold()
+    return normalized or None
+
+
 def _route_id(feature: dict) -> str:
     """대중교통 정밀화 전후 동일한 semantic 경로 식별자.
 
     전체 정밀 path 해시는 loadLane 정밀화로 값이 바뀌므로 사용하지 않는다.
     노선·승하차·보행 geometry는 정밀화로 변하지 않는 관측값이다.
     """
-    walk_points = [
-        Coordinate(lat=float(point["lat"]), lng=float(point["lng"]))
+    transit_identity = _transit_identity(feature)
+    walk_segments = [
+        segment
         for segment in feature["_segments"]
         if segment.get("mode") in {"walk", "transfer"}
-        for point in segment.get("path") or []
     ]
-    if not walk_points:
+    if transit_identity:
+        walk_identity: list = []
+        for segment in walk_segments:
+            points = segment.get("path") or []
+            endpoints = [points[0], points[-1]] if len(points) >= 2 else []
+            distance = segment.get("distance_m")
+            walk_identity.append({
+                "endpoints": [
+                    [round(float(point["lat"]), 4), round(float(point["lng"]), 4)]
+                    for point in endpoints
+                ],
+                "distance_50m": (
+                    round(float(distance) / 50) if distance is not None else None
+                ),
+            })
+    else:
         walk_points = [
+            Coordinate(lat=float(point["lat"]), lng=float(point["lng"]))
+            for segment in walk_segments
+            for point in segment.get("path") or []
+        ] or [
             Coordinate(lat=float(point["lat"]), lng=float(point["lng"]))
             for point in feature["_path"]
         ]
-    sampled_walk = sample_path_by_distance(walk_points, n=41) or walk_points
-    descriptor = feature.get("_transit_refinement")
-    raw_map_object = (
-        descriptor.get("map_object")
-        if isinstance(descriptor, dict)
-        else None
-    )
-    normalized_map_object_hash = None
-    if isinstance(raw_map_object, str) and raw_map_object.strip():
-        normalized_map_object = OdsayRouteCollector._load_lane_map_object(
-            raw_map_object
-        )
-        normalized_map_object_hash = hashlib.sha256(
-            normalized_map_object.encode("utf-8")
-        ).hexdigest()
-    fingerprint = {
-        "sources": sorted(feature["_sources"]),
-        "map_object_hash": normalized_map_object_hash,
-        "walk_path": [
+        sampled_walk = sample_path_by_distance(walk_points, n=41) or walk_points
+        walk_identity = [
             [round(point.lat, 5), round(point.lng, 5)]
             for point in sampled_walk
-        ],
+        ]
+    fingerprint = {
+        "walk": walk_identity,
         # 표시 문자열이 같아도 실제 노선·승하차가 다르면 서로 다른 경로다.
-        "transit": _transit_identity(feature),
-        "segments": [
-            [
-                segment.get("mode"),
-                segment.get("bus_route_name"),
-                segment.get("station_name"),
-                segment.get("description"),
-                segment.get("distance_m"),
-            ]
-            for segment in feature["_segments"]
-        ],
+        "transit": transit_identity,
+        "modes": [segment.get("mode") for segment in feature["_segments"]],
     }
     digest = hashlib.sha256(json.dumps(fingerprint, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
     return f"route-{digest[:20]}"
