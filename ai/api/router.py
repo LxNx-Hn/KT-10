@@ -25,6 +25,7 @@ from collectors.base import (
 )
 from collectors.odsay_collector import OdsayRouteCollector
 from collectors.ors_collector import OrsWheelchairRouteCollector
+from collectors.transit_provider import TransitProviderCollector
 from collectors.odsay_instrumentation import (
     adopt_correlation_id,
     log_rank,
@@ -506,13 +507,17 @@ async def recommend(req: RecommendRequest):
 @router.post("/labeling/candidates")
 async def labeling_candidates(req: RecommendRequest):
     """초기 라벨링용 후보와 당시 피처를 생성한다. 모델 준비 전에도 호출할 수 있다."""
-    if req.candidate_limit > settings.ODSAY_MAX_CANDIDATES:
+    provider_limit = max(
+        settings.ODSAY_MAX_CANDIDATES,
+        settings.TMAP_TRANSIT_MAX_CANDIDATES,
+    )
+    if req.candidate_limit > provider_limit:
         # 요청보다 적게 수집한 결과를 정상 응답처럼 보이지 않게 한다.
         raise HTTPException(
             status_code=422,
             detail=(
                 f"요청한 후보 수 {req.candidate_limit}개가 서버 상한 "
-                f"{settings.ODSAY_MAX_CANDIDATES}개를 초과합니다. "
+                f"{provider_limit}개를 초과합니다. "
                 "후보 수를 줄여 다시 요청해 주세요."
             ),
         )
@@ -561,7 +566,7 @@ async def _collect_static_featured_routes(
     # no authoritative travel-time value and therefore must not become a
     # scored standalone route candidate.
     avoid_stairs = req.uses_wheelchair or req.avoid_stairs
-    odsay_collector = OdsayRouteCollector(
+    transit_collector = TransitProviderCollector(
         avoid_stairs=avoid_stairs,
         uses_wheelchair=req.uses_wheelchair,
     )
@@ -569,18 +574,18 @@ async def _collect_static_featured_routes(
         # 휠체어 후보의 단일 보행 기준은 ORS wheelchair다. TMAP은
         # ODsay 내부에서 사전 수집된 동일 선형 경사로 근거만 결합하므로
         # 사용자 요청의 독립 후보 수집·network 경로에는 넣지 않는다.
-        collectors = [odsay_collector, OrsWheelchairRouteCollector()]
+        collectors = [transit_collector, OrsWheelchairRouteCollector()]
         tasks = [
-            odsay_collector.collect(
+            transit_collector.collect(
                 origin, destination, max_candidates=req.candidate_limit
             ),
             collectors[1].collect(origin, destination),
         ]
     else:
         tmap_collector = TmapRouteCollector(avoid_stairs=avoid_stairs)
-        collectors = [odsay_collector, tmap_collector]
+        collectors = [transit_collector, tmap_collector]
         tasks = [
-            odsay_collector.collect(
+            transit_collector.collect(
                 origin, destination, max_candidates=req.candidate_limit
             ),
             tmap_collector.collect(origin, destination),
@@ -597,13 +602,28 @@ async def _collect_static_featured_routes(
     source_errors: dict[str, str] = {}
     for source, result in zip(source_names, results):
         if isinstance(result, Exception):
-            failed.append(source)
-            source_errors[source] = f"{type(result).__name__}: {result}"
+            if source == "transit" and transit_collector.attempted_sources:
+                failed.extend(transit_collector.attempted_sources)
+                source_errors.update(transit_collector.source_errors)
+            else:
+                failed.append(source)
+                source_errors[source] = f"{type(result).__name__}: {result}"
         elif not result:
             failed.append(source)
             source_errors[source] = "NoRoutes"
         else:
-            succeeded.append(source)
+            succeeded.append(
+                transit_collector.selected_source
+                if source == "transit" and transit_collector.selected_source
+                else source
+            )
+            if source == "transit":
+                failed.extend(
+                    item
+                    for item in transit_collector.attempted_sources
+                    if item != transit_collector.selected_source
+                )
+                source_errors.update(transit_collector.source_errors)
             candidates.extend(result)
 
     if req.uses_wheelchair:
@@ -632,7 +652,9 @@ async def _collect_static_featured_routes(
     ]
     if (
         req.uses_wheelchair
-        and "odsay" not in succeeded
+        and not any(
+            name in succeeded for name in {"odsay", "tmap_transit"}
+        )
         and req.max_walk_distance_m is not None
         and non_transit_candidates
         and all(
@@ -647,7 +669,7 @@ async def _collect_static_featured_routes(
                     "대중교통 공급자 실패로 지원 도보거리 이내의 "
                     "휠체어 경로를 확인할 수 없습니다."
                 ),
-                "required_source": "odsay transit",
+                "required_source": "public transit route provider",
                 "max_walk_distance_m": req.max_walk_distance_m,
                 "sources": source_errors,
             },
@@ -727,9 +749,13 @@ async def _collect_static_featured_routes(
         }
         route_features.append(feature)
 
+    attempted_sources = [
+        *transit_collector.attempted_sources,
+        *(name for name in source_names if name != "transit"),
+    ]
     return route_features, {
         "captured_at": datetime.now(UTC).isoformat(),
-        "sources_attempted": source_names,
+        "sources_attempted": list(dict.fromkeys(attempted_sources)),
         "sources_succeeded": succeeded,
         "sources_failed": failed,
         "source_errors": source_errors,
