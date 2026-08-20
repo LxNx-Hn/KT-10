@@ -28,7 +28,8 @@ services:
     environment:
       AI_INTERNAL_SERVICE_TOKEN: ${AI_INTERNAL_SERVICE_TOKEN:?AI_INTERNAL_SERVICE_TOKEN is required}
       APP_ENV: production
-      ODSAY_API_KEY: ${ODSAY_API_KEY:?ODSAY_API_KEY is required}
+      ODSAY_API_KEY: ${ODSAY_API_KEY:-}
+      TRANSIT_PROVIDER_ORDER: ${TRANSIT_PROVIDER_ORDER:-odsay,tmap}
       # 공공데이터포털의 URL Decoding 키(DECO)를 우선 사용한다. 예전
       # DATA_GO_KR_SERVICE_KEY는 호환용 fallback이며, 키를 프론트엔드나
       # Backend 컨테이너에 전달하지 않는다.
@@ -46,11 +47,16 @@ services:
       ELEVATION_CACHE_TTL_SECONDS: ${ELEVATION_CACHE_TTL_SECONDS:-2592000}
       ROUTE_FEATURE_CACHE_DIR: /app/ai/data/cache/route_features
       ROUTE_FEATURE_CACHE_TTL_SECONDS: ${ROUTE_FEATURE_CACHE_TTL_SECONDS:-1800}
-      TMAP_API_KEY: ${TMAP_API_KEY:-}
+      TMAP_API_KEY: ${TMAP_API_KEY:?TMAP_API_KEY is required}
       TMAP_CACHE_DIR: /app/ai/data/cache/tmap
       TMAP_PRECOMPUTED_CACHE_DIR: /app/ai/data/precomputed/tmap
       TMAP_CACHE_TTL_SECONDS: ${TMAP_CACHE_TTL_SECONDS:-1800}
       TMAP_MAX_CONCURRENT_REQUESTS: ${TMAP_MAX_CONCURRENT_REQUESTS:-3}
+      TMAP_TRANSIT_CACHE_DIR: /app/ai/data/cache/tmap-transit
+      TMAP_TRANSIT_CACHE_TTL_SECONDS: ${TMAP_TRANSIT_CACHE_TTL_SECONDS:-1800}
+      TMAP_TRANSIT_TIMEOUT_SECONDS: ${TMAP_TRANSIT_TIMEOUT_SECONDS:-12}
+      TMAP_TRANSIT_MAX_CANDIDATES: ${TMAP_TRANSIT_MAX_CANDIDATES:-10}
+      TMAP_TRANSIT_MAX_CONCURRENT_REQUESTS: ${TMAP_TRANSIT_MAX_CONCURRENT_REQUESTS:-3}
       ORS_API_KEY: ${ORS_API_KEY:?ORS_API_KEY is required}
       ORS_BASE_URL: ${ORS_BASE_URL:-https://api.openrouteservice.org}
       ORS_CACHE_DIR: /app/ai/data/cache/ors
@@ -74,6 +80,7 @@ services:
       - elevation-cache:/app/ai/data/cache/elevation
       - route-feature-cache:/app/ai/data/cache/route_features
       - tmap-cache:/app/ai/data/cache/tmap
+      - tmap-transit-cache:/app/ai/data/cache/tmap-transit
       - ors-cache:/app/ai/data/cache/ors
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/ready', timeout=3)"]
@@ -201,6 +208,7 @@ volumes:
   elevation-cache:
   route-feature-cache:
   tmap-cache:
+  tmap-transit-cache:
   ors-cache:
   vworld-cache:
   shade-cache:
