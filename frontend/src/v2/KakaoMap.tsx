@@ -192,6 +192,10 @@ const MODE_COLOR: Record<SegmentMode, string> = {
   bus: TRANSPORT_MODE_COLOR.bus,
   subway: TRANSPORT_MODE_COLOR.subway,
   transfer: TRANSPORT_MODE_COLOR.transfer,
+  train: TRANSPORT_MODE_COLOR.train,
+  express_bus: TRANSPORT_MODE_COLOR.express_bus,
+  ferry: TRANSPORT_MODE_COLOR.ferry,
+  airplane: TRANSPORT_MODE_COLOR.airplane,
 };
 
 /** 구간 경사색. 값 없으면 기본 도보색. 판정은 slopeLevel 유틸과 동일. */
