@@ -84,13 +84,10 @@ def _cache_put(key: str, rows: list[dict[str, str]]) -> None:
 def _parse_page(payload: object) -> tuple[list[dict[str, str]], int]:
     if not isinstance(payload, dict):
         raise RuntimeError("도시철도 시간표 응답이 JSON 객체가 아닙니다.")
-    response = payload.get("response")
-    if not isinstance(response, dict):
-        raise RuntimeError("도시철도 시간표 응답에 response가 없습니다.")
-    header = response.get("header")
+    header = payload.get("header")
     if not isinstance(header, dict) or str(header.get("resultCode")) != "00":
         raise RuntimeError("도시철도 시간표 API가 정상 응답을 반환하지 않았습니다.")
-    body = response.get("body")
+    body = payload.get("body")
     if not isinstance(body, dict):
         raise RuntimeError("도시철도 시간표 응답에 body가 없습니다.")
     try:
@@ -156,7 +153,11 @@ async def _fetch_station_schedule(station_name: str, day_type: int) -> list[dict
             if page * _PAGE_SIZE >= total_count or not page_rows:
                 break
             page += 1
-        exact = [row for row in rows if _station_query(row["sname"]) == station]
+        exact = [
+            row for row in rows
+            if _station_query(row["sname"]) == station
+            and row["dayType"] == str(day_type)
+        ]
         if not exact:
             raise RuntimeError("요청한 역의 도시철도 시간표가 없습니다.")
         _cache_put(key, exact)
