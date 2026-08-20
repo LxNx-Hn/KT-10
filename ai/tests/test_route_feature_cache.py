@@ -73,6 +73,7 @@ def test_wheelchair_cache_identity_is_separate_from_general_route():
 def test_route_feature_cache_identity_changes_after_provider_key_rotation(
     monkeypatch,
 ):
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_ORDER", "odsay,tmap")
     monkeypatch.setattr(settings, "ODSAY_API_KEY", "odsay-key-before")
     monkeypatch.setattr(settings, "ORS_API_KEY", "ors-key-before")
     before = cache_identity(35.1, 129.0, 35.2, 129.1)
@@ -87,3 +88,20 @@ def test_route_feature_cache_identity_changes_after_provider_key_rotation(
     serialized = str(after_ors)
     assert "odsay-key-after" not in serialized
     assert "ors-key-after" not in serialized
+
+
+def test_tmap_only_cache_identity_ignores_unused_odsay_key(monkeypatch):
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_ORDER", "tmap")
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "tmap-key-before")
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "odsay-key-before")
+    before = cache_identity(35.1, 129.0, 35.2, 129.1)
+
+    monkeypatch.setattr(settings, "ODSAY_API_KEY", "odsay-key-after")
+    after_odsay = cache_identity(35.1, 129.0, 35.2, 129.1)
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "tmap-key-after")
+    after_tmap = cache_identity(35.1, 129.0, 35.2, 129.1)
+
+    assert before == after_odsay
+    assert after_odsay != after_tmap
+    assert before["geometryProfile"]["transitProviderOrder"] == ["tmap"]
+    assert "odsay" not in before["geometryProfile"]["transitCredentialFingerprints"]
