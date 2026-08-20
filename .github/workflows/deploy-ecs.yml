@@ -365,7 +365,10 @@ jobs:
         env:
           AI_INTERNAL_SERVICE_TOKEN: ${{ secrets.AI_INTERNAL_SERVICE_TOKEN }}
           ODSAY_API_KEY: ${{ secrets.ODSAY_API_KEY }}
+          TMAP_API_KEY: ${{ secrets.TMAP_API_KEY }}
           ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY || secrets.DECO }}
+          BUS_SERVICE_KEY: ${{ secrets.BUS_SERVICE_KEY }}
           NVIDIA_API_KEY_SECRET_ARN: ${{ vars.NVIDIA_API_KEY_SECRET_ARN || 'arn:aws:secretsmanager:ap-northeast-2:819044292803:secret:kt10/prod/nvidia-api-key-0h39Xl' }}
           NIM_BASE_URL: ${{ vars.NIM_BASE_URL || 'https://integrate.api.nvidia.com/v1' }}
           NIM_MODEL: ${{ vars.NIM_MODEL || 'nvidia/nvidia-nemotron-nano-9b-v2' }}
@@ -385,8 +388,17 @@ jobs:
             echo "ORS_API_KEY secret is required for wheelchair routing." >&2
             exit 1
           fi
-          if [ "$DEPLOY_AI" = "true" ] && [ -z "$ODSAY_API_KEY" ]; then
-            echo "ODSAY_API_KEY secret is required for transit routing." >&2
+          if [ "$DEPLOY_AI" = "true" ] && [ -z "$TMAP_API_KEY" ]; then
+            echo "TMAP_API_KEY secret is required for transit routing." >&2
+            exit 1
+          fi
+          if { [ "$DEPLOY_BACKEND" = "true" ] || [ "$DEPLOY_AI" = "true" ]; } \
+            && [ -z "$DATA_GO_KR_SERVICE_KEY" ]; then
+            echo "DATA_GO_KR_SERVICE_KEY or DECO secret is required for public transit data." >&2
+            exit 1
+          fi
+          if [ "$DEPLOY_BACKEND" = "true" ] && [ -z "$BUS_SERVICE_KEY" ]; then
+            echo "BUS_SERVICE_KEY secret is required for live bus arrivals." >&2
             exit 1
           fi
           if [ "$DEPLOY_BACKEND" = "true" ]; then
@@ -404,10 +416,10 @@ jobs:
           import hashlib
           import os
 
-          key = os.environ["ODSAY_API_KEY"]
+          key = os.environ["TMAP_API_KEY"]
           fingerprint = hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
           print(
-              "ODsay credential validation "
+              "TMAP credential validation "
               f"length={len(key)} fingerprint={fingerprint}"
           )
           PY
@@ -435,7 +447,10 @@ jobs:
             local inject_internal_token="$5"
             local inject_ors_key="$6"
             local inject_odsay_key="$7"
-            local inject_nvidia_nim="$8"
+            local inject_tmap_key="$8"
+            local inject_data_key="$9"
+            local inject_bus_key="${10}"
+            local inject_nvidia_nim="${11}"
 
             aws ecs describe-task-definition \
               --task-definition "$family" \
@@ -448,12 +463,18 @@ jobs:
               --arg internal_token "$AI_INTERNAL_SERVICE_TOKEN" \
               --arg ors_api_key "$ORS_API_KEY" \
               --arg odsay_api_key "$ODSAY_API_KEY" \
+              --arg tmap_api_key "$TMAP_API_KEY" \
+              --arg data_go_kr_service_key "$DATA_GO_KR_SERVICE_KEY" \
+              --arg bus_service_key "$BUS_SERVICE_KEY" \
               --arg nvidia_api_key_secret_arn "$NVIDIA_API_KEY_SECRET_ARN" \
               --arg nim_base_url "$NIM_BASE_URL" \
               --arg nim_model "$NIM_MODEL" \
               --argjson inject_internal_token "$inject_internal_token" \
               --argjson inject_ors_key "$inject_ors_key" \
               --argjson inject_odsay_key "$inject_odsay_key" \
+              --argjson inject_tmap_key "$inject_tmap_key" \
+              --argjson inject_data_key "$inject_data_key" \
+              --argjson inject_bus_key "$inject_bus_key" \
               --argjson inject_nvidia_nim "$inject_nvidia_nim" \
               'del(
                 .taskDefinitionArn,
@@ -498,6 +519,33 @@ jobs:
                             name: "ODSAY_API_KEY",
                             value: $odsay_api_key
                           }]
+                      )
+                    else .
+                    end
+                  | if $inject_tmap_key then
+                      .secrets = ((.secrets // []) | map(select(.name != "TMAP_API_KEY")))
+                      | .environment = (
+                        (.environment // [])
+                        | map(select(.name != "TMAP_API_KEY"))
+                        + [{name: "TMAP_API_KEY", value: $tmap_api_key}]
+                      )
+                    else .
+                    end
+                  | if $inject_data_key then
+                      .secrets = ((.secrets // []) | map(select(.name != "DATA_GO_KR_SERVICE_KEY")))
+                      | .environment = (
+                        (.environment // [])
+                        | map(select(.name != "DATA_GO_KR_SERVICE_KEY"))
+                        + [{name: "DATA_GO_KR_SERVICE_KEY", value: $data_go_kr_service_key}]
+                      )
+                    else .
+                    end
+                  | if $inject_bus_key then
+                      .secrets = ((.secrets // []) | map(select(.name != "BUS_SERVICE_KEY")))
+                      | .environment = (
+                        (.environment // [])
+                        | map(select(.name != "BUS_SERVICE_KEY"))
+                        + [{name: "BUS_SERVICE_KEY", value: $bus_service_key}]
                       )
                     else .
                     end
@@ -559,6 +607,9 @@ jobs:
               true \
               true \
               true \
+              true \
+              true \
+              false \
               false
           fi
           if [ "$DEPLOY_BACKEND" = "true" ]; then
@@ -570,6 +621,9 @@ jobs:
               true \
               false \
               false \
+              false \
+              true \
+              true \
               true
           fi
           if [ "$DEPLOY_FRONTEND" = "true" ]; then
@@ -578,6 +632,9 @@ jobs:
               frontend \
               "$registry/kt10-frontend:$tag" \
               frontend_task_definition \
+              false \
+              false \
+              false \
               false \
               false \
               false \
