@@ -12,8 +12,8 @@ from weakref import WeakKeyDictionary
 
 from config import settings
 
-# v12: 명시적 OSM steps+ramp=no 차단 검증 전 후보 캐시를 재사용하지 않는다.
-CACHE_SCHEMA_VERSION = 12
+# v13: 공급자 순서와 실제 선택 가능한 키만 캐시 identity에 포함한다.
+CACHE_SCHEMA_VERSION = 13
 _write_locks: dict[str, Lock] = {}
 _write_locks_guard = Lock()
 _request_locks: WeakKeyDictionary = WeakKeyDictionary()
@@ -36,6 +36,19 @@ def cache_identity(
     avoid_stairs: bool = False,
     uses_wheelchair: bool = False,
 ) -> dict:
+    provider_order = [
+        name.strip().casefold()
+        for name in settings.TRANSIT_PROVIDER_ORDER.split(",")
+        if name.strip()
+    ]
+    transit_credentials = {
+        name: fingerprint
+        for name, fingerprint in (
+            ("odsay", _credential_fingerprint(settings.ODSAY_API_KEY)),
+            ("tmap", _credential_fingerprint(settings.TMAP_API_KEY)),
+        )
+        if name in provider_order and fingerprint is not None
+    }
     return {
         "schemaVersion": CACHE_SCHEMA_VERSION,
         "origin": [round(origin_lat, 5), round(origin_lng, 5)],
@@ -51,11 +64,14 @@ def cache_identity(
             "orsCredentialFingerprint": _credential_fingerprint(
                 settings.ORS_API_KEY
             ),
-            "odsayCredentialFingerprint": _credential_fingerprint(
-                settings.ODSAY_API_KEY
+            "transitProviderOrder": provider_order,
+            "transitCredentialFingerprints": transit_credentials,
+            "odsayLoadLane": (
+                settings.ODSAY_LOAD_LANE_ENABLED
+                if "odsay" in provider_order
+                else None
             ),
-            "odsayLoadLane": settings.ODSAY_LOAD_LANE_ENABLED,
-            "tmapConfigured": not uses_wheelchair and bool(
+            "tmapConfigured": bool(
                 settings.TMAP_API_KEY
                 and not settings.TMAP_API_KEY.startswith("YOUR_")
             ),
