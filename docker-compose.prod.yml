@@ -39,7 +39,7 @@ services:
       ODSAY_LOAD_LANE_ENABLED: ${ODSAY_LOAD_LANE_ENABLED:-true}
       ODSAY_MAX_CANDIDATES: ${ODSAY_MAX_CANDIDATES:-10}
       ODSAY_MAX_CONCURRENT_REQUESTS: ${ODSAY_MAX_CONCURRENT_REQUESTS:-3}
-      ODSAY_DAILY_BUDGET: ${ODSAY_DAILY_BUDGET:-1000}
+      ODSAY_DAILY_BUDGET: ${ODSAY_DAILY_BUDGET:-29}
       ELEVATION_CACHE_DIR: /app/ai/data/cache/elevation
       ELEVATION_DEM_DIR: /app/ai/data/cache/elevation/dem
       ELEVATION_REGIONAL_DEM_PATH: /app/ai/data/precomputed/busan_dem_clipped_90m.tif
