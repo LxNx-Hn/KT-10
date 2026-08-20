@@ -107,7 +107,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="교통약자 접근성 경로 추천 API",
     description="부산 전역 서비스 · 부산역 권역 MVP · 실제 후보와 사람 라벨 기반 접근성 순위화",
-    version="0.3.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
