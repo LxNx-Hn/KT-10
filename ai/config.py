@@ -41,9 +41,9 @@ class Settings(BaseSettings):
     # AI 프로세스 전체에서 동시에 열 수 있는 ODsay HTTP 요청 수
     # (search와 loadLane 포함).
     ODSAY_MAX_CONCURRENT_REQUESTS: int = Field(default=3, ge=1, le=10)
-    # 이 서비스가 하루에 관측한 ODsay network 호출의 운영 경고 기준.
-    # 초과해도 요청을 실패시키지 않고 운영 로그 경고만 남긴다.
-    ODSAY_DAILY_BUDGET: int = Field(default=1000, ge=1, le=1_000_000)
+    # ODsay의 30회 일일 한도를 넘지 않도록 신규 network 호출은 29회까지만
+    # 원자적으로 예약한다. 캐시 hit는 이 상한을 소비하지 않는다.
+    ODSAY_DAILY_BUDGET: int = Field(default=29, ge=1, le=1_000_000)
     # 일반 서비스는 ODsay loadLane 정밀 선형을 유지한다. 오프라인 보행망을
     # 쓰는 배치 수집은 정류장 연결선을 estimated로 기록하는 모드를 선택할 수 있다.
     ODSAY_LOAD_LANE_ENABLED: bool = True
