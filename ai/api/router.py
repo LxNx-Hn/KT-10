@@ -1693,6 +1693,9 @@ def _public_wheelchair_evidence(accessibility: dict) -> dict:
 
 
 def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
+    transit_modes = {
+        "bus", "subway", "train", "express_bus", "ferry", "airplane"
+    }
     route_facilities = _parse_api_features(candidate)
     observations = []
     for item in candidate.segments:
@@ -1836,7 +1839,15 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
         segments.append({
             "id": f"{candidate.source}-{index}",
             "mode": mode,
-            "description": description or {"walk": "보행 이동", "bus": "버스 이동", "subway": "도시철도 이동"}.get(mode, "환승 이동"),
+            "description": description or {
+                "walk": "보행 이동",
+                "bus": "버스 이동",
+                "subway": "도시철도 이동",
+                "train": "열차 이동",
+                "express_bus": "고속·시외버스 이동",
+                "ferry": "여객선 이동",
+                "airplane": "항공 이동",
+            }.get(mode, "환승 이동"),
             "duration_min": item["duration_min"],
             "distance_m": item.get("distance_m"),
             # ODsay의 trafficType=3은 보행만 뜻하며 실내·실외를 구분하지 않는다.
@@ -1861,39 +1872,43 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
             **_public_wheelchair_evidence(
                 walk_accessibility
             ),
-            "bus_route_name": str(name) if mode == "bus" and name else None,
+            "bus_route_name": (
+                str(name) if mode in {"bus", "express_bus"} and name else None
+            ),
             "is_low_floor_bus": low_floor if mode == "bus" else None,
             "transit_start_id": (
                 _first_known(raw, "startLocalStationID", "startID")
-                if mode == "bus"
+                if mode in {"bus", "express_bus"}
                 else _first_known(raw, "startID")
-                if mode == "subway"
+                if mode in transit_modes
                 else None
             ),
             "transit_end_id": (
                 _first_known(raw, "endLocalStationID", "endID")
-                if mode == "bus"
+                if mode in {"bus", "express_bus"}
                 else _first_known(raw, "endID")
-                if mode == "subway"
+                if mode in transit_modes
                 else None
             ),
             "transit_route_id": (
                 _first_known(lane, "busLocalBlID", "busID")
-                if mode == "bus"
+                if mode in {"bus", "express_bus"}
                 else _first_known(lane, "subwayCode")
                 if mode == "subway"
+                else _first_known(lane, "routeID")
+                if mode in transit_modes
                 else None
             ),
             "transit_direction": (
                 _provider_text(raw.get("way"))
-                if mode == "subway"
+                if mode in transit_modes
                 else None
             ),
             "transit_direction_code": (
                 direction_code if mode == "subway" else None
             ),
             "transit_interval_min": (
-                interval_min if mode in {"bus", "subway"} else None
+                interval_min if mode in {"bus", "subway", "express_bus"} else None
             ),
             "fast_boarding_position": (
                 _provider_text(raw.get("door"))
@@ -1915,8 +1930,8 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
                 if mode == "bus"
                 else None
             ),
-            "station_name": start_name if mode == "subway" else None,
-            "end_station_name": end_name if mode == "subway" else None,
+            "station_name": start_name if mode in transit_modes else None,
+            "end_station_name": end_name if mode in transit_modes else None,
             "has_elevator": elevator,
             "needs_vertical_move": needs_vertical_move,
             "path": [{"lat": point.lat, "lng": point.lng} for point in item.get("path") or []] or None,
