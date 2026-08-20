@@ -970,6 +970,8 @@ def test_public_segments_preserve_existing_transit_guidance_and_lookup_ids():
     assert bus["transit_start_id"] == "505780000"
     assert bus["transit_route_id"] == "5200100000"
     assert bus["transit_interval_min"] == 8
+    assert bus["station_name"] == "부산역"
+    assert bus["end_station_name"] == "서면역"
     assert subway["transit_start_id"] == "119"
     assert subway["transit_end_id"] == "125"
     assert subway["transit_direction"] == "노포"
@@ -978,6 +980,43 @@ def test_public_segments_preserve_existing_transit_guidance_and_lookup_ids():
     assert subway["start_exit_no"] == "8"
     assert subway["end_exit_no"] == "1"
     assert subway["end_station_name"] == "동래역"
+
+
+def test_public_segments_preserve_tmap_train_identity_and_names():
+    raw = {
+        "trafficType": 5,
+        "sectionTime": 45,
+        "distance": 52000,
+        "startName": "부산역",
+        "endName": "울산역",
+        "startID": "tm-start",
+        "endID": "tm-end",
+        "lane": [{"name": "KTX", "routeID": "ktx-101"}],
+    }
+    candidate = RouteCandidate(
+        source="tmap_transit",
+        path=[Coordinate(35.1151, 129.0414), Coordinate(35.5514, 129.1386)],
+        duration_min=45,
+        distance_m=52000,
+        raw_response={"info": {}, "subPath": [raw]},
+        segments=[{
+            "mode": "train",
+            "duration_min": 45,
+            "distance_m": 52000,
+            "path": [],
+            "raw": raw,
+        }],
+    )
+
+    segment = _public_segments(candidate)[0]
+
+    assert segment["mode"] == "train"
+    assert segment["description"] == "KTX · 부산역 → 울산역"
+    assert segment["transit_start_id"] == "tm-start"
+    assert segment["transit_end_id"] == "tm-end"
+    assert segment["transit_route_id"] == "ktx-101"
+    assert segment["station_name"] == "부산역"
+    assert segment["end_station_name"] == "울산역"
 
 
 def test_smart_shelter_requires_same_boarding_stop_name_and_nearby_coordinate():
