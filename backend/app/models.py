@@ -15,7 +15,16 @@ from pydantic.alias_generators import to_camel
 ProfileId = Literal[
     "general", "elderly", "child", "youth", "disabled", "pregnant"
 ]
-SegmentMode = Literal["walk", "bus", "subway", "transfer"]
+SegmentMode = Literal[
+    "walk",
+    "bus",
+    "subway",
+    "transfer",
+    "train",
+    "express_bus",
+    "ferry",
+    "airplane",
+]
 AirQuality = Literal["good", "moderate", "bad", "very_bad"]
 SkyCondition = Literal["clear", "cloudy", "rain", "snow"]
 WeatherScenarioId = Literal["normal", "heatwave", "coldwave", "rain", "dust"]
