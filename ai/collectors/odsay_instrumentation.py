@@ -200,10 +200,12 @@ def log_rank(route_id: str, final_rank: int) -> None:
     )
 
 
-# ── 일일 network 호출 카운터 (영속 cache 디렉터리에 날짜별 파일) ──
+# ── 일일 network 호출 hard cap (영속 cache 디렉터리에 날짜별 파일) ──
 
 _budget_file_guard = Lock()
 _warned_ratios: set[tuple[str, float]] = set()
+_memory_budget_calls: dict[tuple[str, str], dict[str, int]] = {}
+_provider_quota_blocks: set[tuple[str, str]] = set()
 
 
 def _budget_path(today: str) -> Path | None:
@@ -213,66 +215,141 @@ def _budget_path(today: str) -> Path | None:
     return Path(cache_dir) / f"odsay-daily-counter-{today}.json"
 
 
-def record_network_call(endpoint: str) -> None:
-    """실제 ODsay network 호출 1회를 날짜별 원자적 counter에 더한다.
+def _budget_state_key(today: str) -> tuple[str, str]:
+    return (settings.ODSAY_CACHE_DIR.strip(), today)
 
-    counter 저장 실패는 경로 결과에 영향을 주지 않으며 운영 경고만 남긴다.
+
+def _valid_calls(data: object) -> dict[str, int]:
+    raw_calls = (
+        data.get("observed_service_calls_today")
+        if isinstance(data, dict)
+        else None
+    )
+    return {
+        str(name): int(value)
+        for name, value in (
+            raw_calls.items() if isinstance(raw_calls, dict) else []
+        )
+        if isinstance(value, int)
+        and not isinstance(value, bool)
+        and value >= 0
+    }
+
+
+def _read_budget_file(path: Path | None) -> dict:
+    if path is None or not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _combined_budget_state(
+    today: str,
+    path: Path | None,
+) -> tuple[dict[str, int], bool]:
+    key = _budget_state_key(today)
+    data = _read_budget_file(path)
+    disk_calls = _valid_calls(data)
+    memory_calls = _memory_budget_calls.get(key, {})
+    calls = {
+        name: max(disk_calls.get(name, 0), memory_calls.get(name, 0))
+        for name in set(disk_calls) | set(memory_calls)
+    }
+    provider_blocked = bool(data.get("provider_quota_blocked")) or key in (
+        _provider_quota_blocks
+    )
+    return calls, provider_blocked
+
+
+def _budget_payload(
+    today: str,
+    calls: dict[str, int],
+    *,
+    provider_blocked: bool,
+) -> dict:
+    total = sum(calls.values())
+    budget = settings.ODSAY_DAILY_BUDGET
+    budget_blocked = total >= budget
+    blocked_reason = (
+        "provider_quota"
+        if provider_blocked
+        else "daily_budget"
+        if budget_blocked
+        else None
+    )
+    return {
+        "date": today,
+        "observed_service_calls_today": calls,
+        "observed_total_today": total,
+        "warning_only": False,
+        "hard_limit": True,
+        "budget": budget,
+        "estimated_remaining_service_budget": max(0, budget - total),
+        "network_calls_blocked": provider_blocked or budget_blocked,
+        "blocked_reason": blocked_reason,
+        "provider_quota_blocked": provider_blocked,
+        "note": (
+            "캐시 조회는 허용하지만 새 ODsay network 호출은 일일 hard cap 또는 "
+            "공급자 quota 응답 이후 차단한다. 카운터는 이 AI 인스턴스가 관측한 "
+            "호출만 포함한다."
+        ),
+    }
+
+
+def _write_budget_file(path: Path | None, data: dict) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(data, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def record_network_call(endpoint: str) -> bool:
+    """ODsay network 호출 슬롯을 날짜별 hard cap 안에서 원자적으로 예약한다.
+
+    ``True``일 때만 실제 HTTP transport를 시작한다. 캐시 디렉터리가 없거나
+    파일 저장이 실패해도 프로세스 메모리 카운터로 29회 상한을 유지한다.
     """
     today = datetime.now(KST).strftime("%Y%m%d")
     path = _budget_path(today)
-    if path is None:
-        return
+    allowed = False
+    total = 0
     try:
         with _budget_file_guard:
-            data: dict = {}
-            if path.is_file():
-                try:
-                    data = json.loads(path.read_text(encoding="utf-8"))
-                except (json.JSONDecodeError, OSError, ValueError):
-                    data = {}
-            if not isinstance(data, dict):
-                data = {}
-            raw_calls = data.get("observed_service_calls_today")
-            # 손상된 파일의 값(문자열·None·중첩 객체)은 버리고 다시 센다.
-            calls = {
-                str(name): int(value)
-                for name, value in (
-                    raw_calls.items() if isinstance(raw_calls, dict) else []
-                )
-                if isinstance(value, int) and not isinstance(value, bool)
-                and value >= 0
-            }
-            calls[endpoint] = calls.get(endpoint, 0) + 1
+            calls, provider_blocked = _combined_budget_state(today, path)
             total = sum(calls.values())
-            data = {
-                "date": today,
-                "observed_service_calls_today": calls,
-                "observed_total_today": total,
-                # 운영 참고선일 뿐 요청을 차단하는 hard limit가 아니다.
-                "warning_only": True,
-                "budget": settings.ODSAY_DAILY_BUDGET,
-                "estimated_remaining_service_budget": max(
-                    0, settings.ODSAY_DAILY_BUDGET - total
-                ),
-                "note": (
-                    "경고 기준을 넘어도 호출을 차단하지 않는다. 이 서비스 "
-                    "프로세스가 관측한 호출만 포함하며 계정 전체 quota가 아니다."
-                ),
-            }
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+            if not provider_blocked and total < settings.ODSAY_DAILY_BUDGET:
+                calls[endpoint] = calls.get(endpoint, 0) + 1
+                total += 1
+                allowed = True
+            key = _budget_state_key(today)
+            _memory_budget_calls[key] = dict(calls)
+            data = _budget_payload(
+                today,
+                calls,
+                provider_blocked=provider_blocked,
+            )
             try:
-                temporary.write_text(
-                    json.dumps(data, ensure_ascii=False),
-                    encoding="utf-8",
+                _write_budget_file(path, data)
+            except (OSError, ValueError, TypeError, OverflowError) as exc:
+                log.warning(
+                    "ODsay 일일 hard-cap 파일 저장 실패 (%s)",
+                    type(exc).__name__,
                 )
-                temporary.replace(path)
-            finally:
-                temporary.unlink(missing_ok=True)
     except (OSError, ValueError, TypeError, OverflowError) as exc:
-        # 관측 기능 장애가 경로 요청 실패로 전파되지 않게 격리한다.
-        log.warning("ODsay 일일 counter 저장 실패 (%s)", type(exc).__name__)
-        return
+        # 메모리 상태도 갱신하지 못했다면 안전하게 새 호출을 차단한다.
+        log.error("ODsay 일일 hard-cap 예약 실패 (%s)", type(exc).__name__)
+        return False
     for ratio in _BUDGET_WARN_RATIOS:
         threshold = settings.ODSAY_DAILY_BUDGET * ratio
         key = (today, ratio)
@@ -280,23 +357,53 @@ def record_network_call(endpoint: str) -> None:
             _warned_ratios.add(key)
             log.warning(
                 "ODsay 일일 관측 호출이 경고 기준의 %d%%에 도달 "
-                "(observed=%d warning_reference=%d, 호출 차단 없음)",
+                "(observed=%d hard_limit=%d, limit 도달 시 신규 호출 차단)",
                 int(ratio * 100),
                 total,
                 settings.ODSAY_DAILY_BUDGET,
+            )
+    return allowed
+
+
+def block_network_calls_for_provider_quota() -> None:
+    """ODsay가 quota 초과를 반환하면 KST 날짜가 바뀔 때까지 신규 호출을 막는다."""
+    today = datetime.now(KST).strftime("%Y%m%d")
+    path = _budget_path(today)
+    with _budget_file_guard:
+        calls, _ = _combined_budget_state(today, path)
+        key = _budget_state_key(today)
+        _memory_budget_calls[key] = dict(calls)
+        _provider_quota_blocks.add(key)
+        data = _budget_payload(today, calls, provider_blocked=True)
+        try:
+            _write_budget_file(path, data)
+        except (OSError, ValueError, TypeError, OverflowError) as exc:
+            log.warning(
+                "ODsay provider quota 차단 파일 저장 실패 (%s)",
+                type(exc).__name__,
             )
 
 
 def read_daily_counter() -> dict | None:
     today = datetime.now(KST).strftime("%Y%m%d")
     path = _budget_path(today)
-    if path is None or not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError, ValueError):
-        return None
-    return data if isinstance(data, dict) else None
+    with _budget_file_guard:
+        calls, provider_blocked = _combined_budget_state(today, path)
+        if not calls and not provider_blocked and (path is None or not path.is_file()):
+            return None
+        return _budget_payload(
+            today,
+            calls,
+            provider_blocked=provider_blocked,
+        )
+
+
+def reset_daily_budget_state_for_tests() -> None:
+    """테스트 간 프로세스 메모리 hard-cap 상태가 섞이지 않게 초기화한다."""
+    with _budget_file_guard:
+        _memory_budget_calls.clear()
+        _provider_quota_blocks.clear()
+        _warned_ratios.clear()
 
 
 # ── 이벤트 루프별 semaphore와 single-flight ──
