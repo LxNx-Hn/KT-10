@@ -15,6 +15,10 @@ from fastapi.responses import JSONResponse
 
 from api.router import _get_layers, router
 from collectors.osmnx_collector import prepare_regional_graph
+from collectors.transit_provider import (
+    configured_provider_names,
+    provider_order,
+)
 from config import settings
 from features.elevation import prepare_regional_dem, regional_dem_ready
 
@@ -115,6 +119,15 @@ def readiness():
     )
     tmap_key = settings.TMAP_API_KEY.strip()
     tmap_ready = bool(tmap_key and not tmap_key.startswith("YOUR_"))
+    try:
+        configured_transit = configured_provider_names()
+        configured_order = provider_order()
+        transit_order_valid = True
+    except ValueError:
+        configured_transit = ()
+        configured_order = ()
+        transit_order_valid = False
+    transit_ready = bool(configured_transit)
     exact_walk_geometry_ready = bool(
         tmap_ready or settings.OSMNX_WALK_GEOMETRY_ENABLED
     )
@@ -123,7 +136,8 @@ def readiness():
         ors_key and not ors_key.startswith("YOUR_")
     )
     ready = (
-        odsay_ready
+        transit_ready
+        and transit_order_valid
         and layers_ready
         and dem_ready
         and exact_walk_geometry_ready
@@ -135,6 +149,9 @@ def readiness():
         "service": "ai",
         "checks": {
             "odsay_configured": odsay_ready,
+            "tmap_transit_configured": tmap_ready,
+            "transit_provider_configured": transit_ready,
+            "transit_provider_order_valid": transit_order_valid,
             "spatial_layers_loaded": layers_ready,
             "regional_dem_precomputed": dem_ready,
             "internal_service_auth": internal_auth_ready,
@@ -142,6 +159,8 @@ def readiness():
             "wheelchair_routing_configured": wheelchair_routing_ready,
         },
         "capabilities": {
+            "transit_provider_order": list(configured_order),
+            "configured_transit_providers": list(configured_transit),
             "exact_walking_geometry_configured": exact_walk_geometry_ready,
             "wheelchair_routing_configured": wheelchair_routing_ready,
         },
