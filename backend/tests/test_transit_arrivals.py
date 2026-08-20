@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 import app.main as app_main
 import app.providers.transit_arrivals as provider
+from app.providers.busan_subway import SubwayJourney
 from app.data.weather import WEATHER_SCENARIOS
 from app.main import app
 from app.models import (
@@ -26,7 +27,7 @@ def _clear_state(monkeypatch):
     provider.clear_transit_arrival_cache()
     route_set_cache.clear()
     monkeypatch.setattr(settings, "bus_service_key", "")
-    monkeypatch.setattr(settings, "odsay_api_key", "")
+    monkeypatch.setattr(settings, "data_go_kr_service_key", "")
 
 
 def _bus_segment() -> RouteSegment:
@@ -53,6 +54,7 @@ def _subway_segment() -> RouteSegment:
         description="부산 1호선 · 부산역 → 서면역",
         duration_min=12,
         station_name="부산역",
+        end_station_name="서면역",
         transit_start_id="114",
         transit_end_id="119",
         transit_direction="노포",
@@ -99,45 +101,26 @@ def test_bus_arrival_is_filtered_and_single_flight_cached(monkeypatch):
 
 
 def test_subway_schedule_is_lazy_and_truthfully_labeled(monkeypatch):
-    monkeypatch.setattr(settings, "odsay_api_key", "configured")
+    monkeypatch.setattr(settings, "data_go_kr_service_key", "configured")
     calls = 0
-
-    class FakeResponse:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "result": {
-                    "path": [{
-                        "info": {
-                            "departureTime": "10:05:00",
-                            "arrivalTime": "10:18:00",
-                        },
-                    }],
-                },
-            }
-
-    class FakeClient:
-        def __init__(self, **_kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
-
-        async def get(self, url, *, params):
-            nonlocal calls
-            calls += 1
-            assert url.endswith("/subwayPathSchedule")
-            assert params["SID"] == "114"
-            assert params["EID"] == "119"
-            return FakeResponse()
-
-    monkeypatch.setattr(provider.httpx, "AsyncClient", FakeClient)
     reference = datetime(2026, 8, 3, 1, 0, tzinfo=UTC)  # KST 10:00
+
+    async def fake_journey(start_name, end_name, local_reference):
+        nonlocal calls
+        calls += 1
+        assert start_name == "부산역"
+        assert end_name == "서면역"
+        assert local_reference.hour == 10
+        return SubwayJourney(
+            departure_time="10:05:00",
+            destination_arrival_time="10:18:00",
+            departure_at=datetime(2026, 8, 3, 10, 5, tzinfo=local_reference.tzinfo),
+            destination_arrival_at=datetime(
+                2026, 8, 3, 10, 18, tzinfo=local_reference.tzinfo
+            ),
+        )
+
+    monkeypatch.setattr(provider, "get_next_subway_journey", fake_journey)
 
     async def run():
         return await asyncio.gather(*(
@@ -155,6 +138,7 @@ def test_subway_schedule_is_lazy_and_truthfully_labeled(monkeypatch):
     assert result.arrival_min == 5
     assert result.departure_time == "10:05:00"
     assert "실시간 열차 위치는 아닙니다" in (result.arrival_message or "")
+    assert result.source == "부산교통공사 도시철도 시간표"
 
 
 def test_route_arrival_endpoint_uses_existing_route_set_only(monkeypatch):
