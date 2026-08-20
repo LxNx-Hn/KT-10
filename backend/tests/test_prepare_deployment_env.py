@@ -80,6 +80,7 @@ def _valid_production_env() -> str:
         "VWORLD_CACHE_TTL_HOURS=168",
         "OPENWEATHER_API_KEY=weather-key",
         "BUS_SERVICE_KEY=bus-key",
+        "DATA_GO_KR_SERVICE_KEY=public-data-key",
         "POSTGRES_PASSWORD=" + "p" * 24,
         "SESSION_SECRET=" + "s" * 48,
         "TRAINING_ANONYMIZATION_SALT=" + "a" * 32,
@@ -168,6 +169,24 @@ def test_check_rejects_missing_wheelchair_routing_key(
     target = tmp_path / ".env.production"
     target.write_text(
         _valid_production_env().replace("ORS_API_KEY=ors-key", "ORS_API_KEY="),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
+
+    with pytest.raises(SystemExit):
+        prepare_deployment_env.check()
+
+
+def test_check_rejects_missing_public_transit_data_key(
+    tmp_path: Path,
+    monkeypatch,
+):
+    target = tmp_path / ".env.production"
+    target.write_text(
+        _valid_production_env().replace(
+            "DATA_GO_KR_SERVICE_KEY=public-data-key",
+            "DATA_GO_KR_SERVICE_KEY=",
+        ),
         encoding="utf-8",
     )
     monkeypatch.setattr(prepare_deployment_env, "TARGET", target)
