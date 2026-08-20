@@ -40,7 +40,15 @@ export interface Place extends LatLng {
 
 /* ───────────────────────── 경로 구간 ───────────────────────── */
 
-export type SegmentMode = 'walk' | 'bus' | 'subway' | 'transfer';
+export type SegmentMode =
+  | 'walk'
+  | 'bus'
+  | 'subway'
+  | 'transfer'
+  | 'train'
+  | 'express_bus'
+  | 'ferry'
+  | 'airplane';
 
 /**
  * 3값 논리 정보. 접근성 데이터는 "있음/없음/미확인"을 구분해야 한다.
