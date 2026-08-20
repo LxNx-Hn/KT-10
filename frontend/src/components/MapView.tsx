@@ -162,7 +162,16 @@ export default function MapView() {
     if (selectedPath.length >= 2) {
       const segmentPaths = (selectedRoute?.segments ?? []).filter((segment) => (segment.path?.length ?? 0) >= 2);
       if (segmentPaths.length) {
-        const colors = { walk: '#16a34a', bus: '#1f6feb', subway: '#7c3aed', transfer: '#64748b' };
+        const colors = {
+          walk: '#16a34a',
+          bus: '#1f6feb',
+          subway: '#7c3aed',
+          transfer: '#64748b',
+          train: '#0054a6',
+          express_bus: '#1d4ed8',
+          ferry: '#0891b2',
+          airplane: '#0f766e',
+        };
         for (const segment of segmentPaths) {
           const line = new kakao.maps.Polyline({
             path: segment.path!.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
