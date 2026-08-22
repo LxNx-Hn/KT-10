@@ -289,13 +289,23 @@ def _merge_paths(paths: list[list[Coordinate]]) -> list[Coordinate]:
 
 def _walk_path(leg: dict) -> list[Coordinate]:
     steps = leg.get("steps")
-    if not isinstance(steps, list):
-        return []
-    return _merge_paths([
-        _line_string(step.get("linestring"))
-        for step in steps
-        if isinstance(step, dict)
-    ])
+    if isinstance(steps, list) and steps:
+        merged = _merge_paths([
+            _line_string(step.get("linestring"))
+            for step in steps
+            if isinstance(step, dict)
+        ])
+        if len(merged) >= 2:
+            return merged
+    shape = leg.get("passShape")
+    if isinstance(shape, dict):
+        line = _line_string(shape.get("linestring"))
+        if len(line) >= 2:
+            return line
+    line = _line_string(leg.get("linestring"))
+    if len(line) >= 2:
+        return line
+    return []
 
 
 def _transit_path(leg: dict) -> list[Coordinate]:
@@ -346,8 +356,15 @@ def _route_name(value: object, mode: str) -> str | None:
 
 
 def _subway_code(name: str | None) -> int | None:
-    matched = re.search(r"(?:부산)?\s*([1-4])\s*호선", name or "")
-    return 70 + int(matched.group(1)) if matched else None
+    if not name:
+        return None
+    matched = re.search(r"(?:부산)?\s*(?:도시철도|지하철)?\s*([1-4])\s*호선", name)
+    if matched:
+        return 70 + int(matched.group(1))
+    matched = re.search(r"\b([1-4])\b", name)
+    if matched:
+        return 70 + int(matched.group(1))
+    return None
 
 
 def _lane_payload(leg: dict, mode: str) -> list[dict]:
@@ -363,7 +380,12 @@ def _lane_payload(leg: dict, mode: str) -> list[dict]:
         if mode in {"bus", "express_bus"}:
             normalized.update({"busNo": name, "busID": route_id})
         elif mode == "subway":
-            normalized["subwayCode"] = _subway_code(name)
+            code = _subway_code(name)
+            if code is None:
+                service = leg.get("service", lane.get("service"))
+                if service in (1, 2, 3, 4, "1", "2", "3", "4"):
+                    code = 70 + int(service)
+            normalized["subwayCode"] = code
         elif route_id is not None:
             normalized["routeID"] = route_id
         result.append({key: value for key, value in normalized.items() if value is not None})
@@ -375,14 +397,35 @@ def _normalized_leg(leg: dict, mode: str) -> dict:
     end = leg.get("end")
     start_coord = _coordinate(start, "start")
     end_coord = _coordinate(end, "end")
+    stations = _pass_stations(leg)
+    start_station_name = (
+        str(stations[0].get("stationName") or "").strip()
+        if stations and isinstance(stations[0], dict)
+        else ""
+    )
+    end_station_name = (
+        str(stations[-1].get("stationName") or "").strip()
+        if stations and isinstance(stations[-1], dict)
+        else ""
+    )
+    start_name = (
+        start_station_name
+        or str(start.get("name") or "").strip()
+        or None
+    )
+    end_name = (
+        end_station_name
+        or str(end.get("name") or "").strip()
+        or None
+    )
     return {
         "trafficType": _TRAFFIC_TYPE[mode],
         "sectionTime": _number(
             leg.get("sectionTime"), "sectionTime", positive=False
         ) / 60,
         "distance": _number(leg.get("distance"), "distance", positive=False),
-        "startName": str(start.get("name") or "").strip() or None,
-        "endName": str(end.get("name") or "").strip() or None,
+        "startName": start_name,
+        "endName": end_name,
         "startX": start_coord.lng,
         "startY": start_coord.lat,
         "endX": end_coord.lng,

@@ -477,3 +477,53 @@ def test_transit_provider_bounds_both_slow_providers(monkeypatch):
 def test_transit_provider_order_rejects_invalid_configuration(value):
     with pytest.raises(ValueError):
         provider_order(value)
+
+
+def test_tmap_transit_extracts_walk_from_pass_shape_and_linestring():
+    import collectors.tmap_transit_collector as module
+
+    leg_pass_shape = {
+        "passShape": {
+            "linestring": "129.0756,35.1796 129.0760,35.1793",
+        }
+    }
+    leg_linestring = {
+        "linestring": "129.0756,35.1796 129.0760,35.1793",
+    }
+    leg_empty = {}
+
+    assert len(module._walk_path(leg_pass_shape)) == 2
+    assert len(module._walk_path(leg_linestring)) == 2
+    assert module._walk_path(leg_empty) == []
+
+
+def test_tmap_transit_subway_code_and_station_names():
+    import collectors.tmap_transit_collector as module
+
+    assert module._subway_code("부산1호선") == 71
+    assert module._subway_code("부산 1호선") == 71
+    assert module._subway_code("부산 도시철도 2호선") == 72
+    assert module._subway_code("부산지하철 3호선") == 73
+    assert module._subway_code("4호선") == 74
+
+    leg = {
+        "mode": "SUBWAY",
+        "route": "부산 도시철도 1호선",
+        "service": 1,
+        "start": {"name": "시청역 1호선", "lon": 129.076, "lat": 35.1793},
+        "end": {"name": "서면역 1호선", "lon": 129.0594, "lat": 35.1582},
+        "passStopList": {
+            "stationList": [
+                {"stationID": "SUB-1", "stationName": "시청"},
+                {"stationID": "SUB-2", "stationName": "서면"},
+            ]
+        },
+        "sectionTime": 480,
+        "distance": 2740,
+    }
+
+    norm = module._normalized_leg(leg, "subway")
+    assert norm["startName"] == "시청"
+    assert norm["endName"] == "서면"
+    assert norm["lane"][0]["subwayCode"] == 71
+
