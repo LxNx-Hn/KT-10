@@ -101,15 +101,20 @@ def test_invalid_route_set_tokens_do_not_leak_locks():
     """임의 token 요청이 서버 메모리의 lock map을 증가시키면 안 된다."""
     before = len(route_set_cache._token_locks)
 
+    response = client.post(
+        "/api/routes/refine-transit",
+        json={
+            "routeSetToken": "nonexistent-token-" + "0" * 30,
+            "routeId": "route-a",
+        },
+    )
+    assert response.status_code == 409
+
+    # HTTP 요청 1만 회의 이벤트 루프 생성 비용과 무관하게, 공격 입력의
+    # cardinality 자체는 잠금 생성 경계에서 모두 검증한다.
     for index in range(10_000):
-        response = client.post(
-            "/api/routes/refine-transit",
-            json={
-                "routeSetToken": f"nonexistent-token-{index:040d}"[:64],
-                "routeId": "route-a",
-            },
-        )
-        assert response.status_code == 409
+        token = f"nonexistent-token-{index:040d}"[:64]
+        assert route_set_cache._claim_token_lock(token) is None
 
     after = len(route_set_cache._token_locks)
     assert after == before, (
