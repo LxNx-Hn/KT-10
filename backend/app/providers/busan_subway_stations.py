@@ -48,7 +48,8 @@ _DUPLICATE_STATIONS = {
     for station in stations
     if sum(station in other for other in LINE_STATIONS.values()) > 1
 }
-_LINE_SUFFIX = re.compile(r"\(([1-4])\)$")
+_LINE_SUFFIX = re.compile(r"\(([1-4]|부산[1-4]호선|[1-4]호선|동해선)\)$")
+_LINE_AFFIX = re.compile(r"^(?:부산)?\s*[1-4]호선\s*|\s*(?:부산)?\s*[1-4]호선$")
 
 # B551542 운행시각표 API가 부산교통공사 시설 스냅샷과 다른 sname을
 # 반환하는 외부 철도·경전철 환승역. 2026-08-22 각 역 실응답의 sname을
@@ -62,12 +63,32 @@ _PUBLIC_STATION_ALIASES = {
 }
 
 
+def _norm_key(value: str) -> str:
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", value).casefold()
+
+
+_CANONICAL_STATION_MAP: dict[str, str] = {}
+for _stns in LINE_STATIONS.values():
+    for _stn in _stns:
+        _CANONICAL_STATION_MAP[_norm_key(_stn)] = _stn
+        _CANONICAL_STATION_MAP[_norm_key(_stn.replace(".", "·"))] = _stn
+        _CANONICAL_STATION_MAP[_norm_key(_stn.replace(".", " "))] = _stn
+
+
 def station_base(value: str | None) -> str:
-    """역 접미사와 공공데이터 호선 접미사만 제거한다."""
+    """역 접미사, 호선 접두/접미사, 가운뎃점/마침표를 정규화해 canonical 역명을 반환한다."""
     cleaned = (value or "").strip()
+    if not cleaned:
+        return ""
+    cleaned = _LINE_SUFFIX.sub("", cleaned).strip()
+    cleaned = _LINE_AFFIX.sub("", cleaned).strip()
     if len(cleaned) > 1 and cleaned.endswith("역"):
-        cleaned = cleaned[:-1]
-    return _LINE_SUFFIX.sub("", cleaned).strip()
+        cleaned = cleaned[:-1].strip()
+    # 정규화 키로 canonical 역명 매핑 (예: "국제금융센터·부산은행" -> "국제금융센터.부산은행")
+    norm = _norm_key(cleaned)
+    if canonical := _CANONICAL_STATION_MAP.get(norm):
+        return canonical
+    return cleaned
 
 
 def line_from_route_id(route_id: object) -> str | None:
@@ -76,7 +97,14 @@ def line_from_route_id(route_id: object) -> str | None:
     text = str(route_id).strip()
     if text in LINE_STATIONS:
         return text
-    return ROUTE_ID_TO_LINE.get(text)
+    if mapped := ROUTE_ID_TO_LINE.get(text):
+        return mapped
+    matched = re.search(r"(?:부산)?\s*([1-4])\s*호선", text)
+    if matched:
+        return matched.group(1)
+    if text.startswith("26001100") and len(text) >= 9 and text[-1] in LINE_STATIONS:
+        return text[-1]
+    return None
 
 
 def resolve_line(

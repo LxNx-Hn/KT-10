@@ -240,3 +240,33 @@ def test_matching_direction_can_cross_midnight_within_duration_limit():
     assert (
         journey.destination_arrival_at - journey.departure_at
     ).total_seconds() == 14 * 60
+
+
+def test_station_base_and_line_from_route_id_variations():
+    from app.providers.busan_subway_stations import (
+        line_from_route_id,
+        resolve_line,
+        station_base,
+    )
+
+    assert station_base("국제금융센터·부산은행") == "국제금융센터.부산은행"
+    assert station_base("국제금융센터부산은행역") == "국제금융센터.부산은행"
+    assert station_base("경성대·부경대") == "경성대.부경대"
+    assert station_base("경성대부경대역") == "경성대.부경대"
+    assert station_base("부산1호선 시청역") == "시청"
+    assert station_base("시청역(1호선)") == "시청"
+    assert station_base("교대역(동해선)") == "교대"
+    assert station_base("서면역 1호선") == "서면"
+
+    assert line_from_route_id("71") == "1"
+    assert line_from_route_id("1") == "1"
+    assert line_from_route_id("부산 1호선") == "1"
+    assert line_from_route_id("부산1호선") == "1"
+    assert line_from_route_id("1호선") == "1"
+    assert line_from_route_id("부산도시철도 2호선") == "2"
+    assert line_from_route_id("260011001") == "1"
+    assert line_from_route_id("260011002") == "2"
+
+    assert resolve_line("국제금융센터·부산은행", "서면역", "부산2호선") == "2"
+    assert resolve_line("부산1호선 시청역", "교대역(1호선)") == "1"
+
