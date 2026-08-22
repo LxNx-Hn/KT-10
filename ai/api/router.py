@@ -601,10 +601,35 @@ async def _collect_static_featured_routes(
             tmap_collector.collect(origin, destination),
         ]
     source_names = [collector.source_name for collector in collectors]
-    results = await asyncio.gather(
-        *tasks,
-        return_exceptions=True,
+    collection_tasks = [asyncio.create_task(task) for task in tasks]
+    _, pending = await asyncio.wait(
+        collection_tasks,
+        timeout=settings.ROUTE_COLLECTION_TOTAL_TIMEOUT_SECONDS,
     )
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+        log.warning(
+            "경로 후보 전체 수집 제한시간 초과 sources=%s timeout=%.1f",
+            [
+                source
+                for source, task in zip(source_names, collection_tasks)
+                if task in pending
+            ],
+            settings.ROUTE_COLLECTION_TOTAL_TIMEOUT_SECONDS,
+        )
+    results: list[object] = []
+    for source, task in zip(source_names, collection_tasks):
+        if task in pending:
+            results.append(TimeoutError(
+                f"{source} 후보 수집 전체 제한시간을 초과했습니다."
+            ))
+            continue
+        try:
+            results.append(task.result())
+        except Exception as exc:  # 공급자별 실패를 아래 공통 계약으로 변환한다.
+            results.append(exc)
 
     candidates = []
     succeeded: list[str] = []
