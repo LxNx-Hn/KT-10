@@ -445,19 +445,24 @@ def test_concurrent_refinements_of_two_candidates_are_both_preserved(
     )
 
 
-_FIXED_NOW = datetime(2026, 7, 27, 14, 10, tzinfo=KST)
-
-
-class _FixedDatetime(datetime):
-    @classmethod
-    def now(cls, tz=None):
-        return _FIXED_NOW.astimezone(tz) if tz else _FIXED_NOW
-
-
-def _gate_weather(feels_like: float, observed: datetime) -> WeatherCondition:
-    return WeatherCondition(
+@pytest.mark.parametrize(
+    ("hour", "feels_like", "has_weather"),
+    [
+        (2, 31.0, True),
+        (9, 24.9, True),
+        (14, 31.0, False),
+        (18, 10.0, True),
+    ],
+)
+def test_building_shade_is_not_blocked_by_time_temperature_or_weather(
+    hour,
+    feels_like,
+    has_weather,
+):
+    observed = datetime(2026, 7, 27, 14, 10, tzinfo=KST)
+    weather = WeatherCondition(
         label="실시간",
-        temp_c=30.0,
+        temp_c=feels_like,
         feels_like_c=feels_like,
         precipitation_mm=0.0,
         wind_ms=1.0,
@@ -466,91 +471,9 @@ def _gate_weather(feels_like: float, observed: datetime) -> WeatherCondition:
         air="good",
         observed_at=observed,
         air_quality_observed_at=observed,
-    )
+    ) if has_weather else None
 
-
-@pytest.mark.parametrize(
-    ("hour", "feels_like", "observed_offset_s", "expected"),
-    [
-        (9, 31.0, -60, "departure-outside-10-18-kst"),
-        (18, 31.0, -60, "departure-outside-10-18-kst"),
-        (14, 24.9, -60, "feels-like-below-25"),
-        (14, 31.0, -7200, "weather-observation-expired"),
-        (14, 31.0, -60, None),
-    ],
-)
-def test_shade_gate_reasons(
-    monkeypatch, hour, feels_like, observed_offset_s, expected
-):
-    from datetime import timedelta
-
-    monkeypatch.setattr(app_main, "datetime", _FixedDatetime)
-    observed = _FIXED_NOW + timedelta(seconds=observed_offset_s)
-    weather = _gate_weather(feels_like, observed)
-    departure = _FIXED_NOW.replace(hour=hour, minute=11)
-
-    assert _shade_gate_reason(weather, departure) == expected
-
-
-def test_shade_gate_accepts_observation_older_than_weather_cache_ttl(monkeypatch):
-    """관측 유효 범위는 응답 재사용 창이 아니라 전용 설정으로 판정한다.
-
-    observedAt은 공급자 관측 시각이므로 캐시에 머문 시간과 공급자 산출
-    지연이 함께 쌓인다. 캐시 수명을 신선도 기준으로 쓰면 정상 관측도
-    만료로 판정돼 그늘이 계산되지 않는다.
-    """
-    from datetime import timedelta
-
-    monkeypatch.setattr(app_main, "datetime", _FixedDatetime)
-    monkeypatch.setattr(settings, "weather_cache_ttl_seconds", 300)
-    monkeypatch.setattr(
-        settings,
-        "shade_weather_observation_validity_seconds",
-        3600,
-    )
-    # 캐시 수명(300초)보다 오래됐지만 관측 유효 범위(3600초) 안이다.
-    weather = _gate_weather(31.0, _FIXED_NOW - timedelta(seconds=900))
-    departure = _FIXED_NOW.replace(hour=14, minute=11)
-
-    assert _shade_gate_reason(weather, departure) is None
-
-
-def test_shade_gate_allows_departure_within_observation_validity(monkeypatch):
-    """시각별 그늘 갱신을 위해 유효 범위 안의 미래 출발시각은 허용한다."""
-    from datetime import timedelta
-
-    monkeypatch.setattr(app_main, "datetime", _FixedDatetime)
-    monkeypatch.setattr(
-        settings,
-        "shade_weather_observation_validity_seconds",
-        3600,
-    )
-    weather = _gate_weather(31.0, _FIXED_NOW - timedelta(seconds=60))
-    # 관측 시각 기준 약 50분 뒤 출발은 유효 범위 안이다.
-    departure = _FIXED_NOW.replace(hour=15, minute=0)
-
-    assert _shade_gate_reason(weather, departure) is None
-
-
-def test_shade_gate_requires_weather_context(monkeypatch):
-    monkeypatch.setattr(app_main, "datetime", _FixedDatetime)
-    assert (
-        _shade_gate_reason(None, _FIXED_NOW.replace(hour=14))
-        == "no-weather-context"
-    )
-
-
-def test_shade_gate_rejects_future_departure_beyond_observation_validity(
-    monkeypatch,
-):
-    from datetime import timedelta
-
-    monkeypatch.setattr(app_main, "datetime", _FixedDatetime)
-    weather = _gate_weather(31.0, _FIXED_NOW - timedelta(seconds=60))
-    # 미래 출발시각(관측 유효기간 초과)에 현재 관측을 예보처럼 쓰지 않는다.
-    future = (_FIXED_NOW + timedelta(hours=3)).replace(hour=16)
-
-    assert (
-        _shade_gate_reason(weather, future)
-        == "departure-beyond-observation-validity"
-    )
+    assert _shade_gate_reason(
+        weather,
+        observed.replace(hour=hour),
+    ) is None
