@@ -932,7 +932,11 @@ async def routes_recommend(
                 candidates,
                 effective_options.departure_at,
                 weather=current_weather,
-                wait_for_buildings=True,
+                # 새 회랑의 VWorld WFS 다운로드는 ALB 응답 제한보다 길 수
+                # 있다. 초기 추천은 검증된 캐시만 즉시 결합하고 누락 회랑을
+                # 비동기 예열한다. 프론트엔드는 route-set 생성 직후
+                # refresh-shade를 호출해 같은 후보에 완성된 그늘을 반영한다.
+                wait_for_buildings=False,
             )
             scored = await rank_ai_pipeline_candidates(
                 candidates,
@@ -1003,7 +1007,9 @@ async def routes_recommend(
         candidates,
         effective_options.departure_at,
         weather=weather,
-        wait_for_buildings=(settings.route_mode == "live"),
+        # 초기 추천의 사용자 응답은 건물 회랑 콜드 다운로드에 묶지 않는다.
+        # refresh-shade가 동일 route-set에서 누락 회랑만 동기 완성한다.
+        wait_for_buildings=False,
     )
     if settings.route_mode == "live":
         try:
