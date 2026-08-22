@@ -116,6 +116,17 @@ function needsTransitRefinement(route: RouteCandidate): boolean {
   );
 }
 
+/**
+ * 초기 추천은 새 VWorld 회랑 다운로드를 기다리지 않는다. 서버가 캐시에서
+ * 그늘을 확정하지 못한 후보가 있을 때만 동일 route-set을 백그라운드에서
+ * 한 번 갱신한다. 야간(not_daylight)은 결측이 아니므로 다시 조회하지 않는다.
+ */
+function needsAutomaticShadeRefresh(recommendations: ScoredRoute[]): boolean {
+  return recommendations.some(({ route, routeSetToken }) =>
+    Boolean(routeSetToken) && route.shade?.status === 'unavailable',
+  );
+}
+
 function beginRecommendationRequest(): number {
   recommendationRequestGeneration += 1;
   return recommendationRequestGeneration;
@@ -139,6 +150,33 @@ function routeSemanticKey(route: RouteCandidate): string {
       stationName: segment.stationName ?? null,
       description: segment.description,
     })),
+  });
+}
+
+/** 그늘 갱신 응답이 먼저 끝난 대중교통 정밀 선형을 되돌리지 않게 한다. */
+function preserveRefinedGeometry(
+  refreshed: ScoredRoute[],
+  current: ScoredRoute[],
+): ScoredRoute[] {
+  const currentById = new Map(current.map((item) => [item.route.id, item]));
+  return refreshed.map((item) => {
+    const previous = currentById.get(item.route.id);
+    if (
+      !previous
+      || previous.route.geometryQuality !== 'exact'
+      || item.route.geometryQuality === 'exact'
+    ) {
+      return item;
+    }
+    return {
+      ...item,
+      route: {
+        ...item.route,
+        path: previous.route.path,
+        segments: previous.route.segments,
+        geometryQuality: previous.route.geometryQuality,
+      },
+    };
   });
 }
 
@@ -196,7 +234,7 @@ interface AppState {
   loadDemoOd: () => void;
   search: () => Promise<void>;
   rescore: () => Promise<void>;
-  refreshShade: () => Promise<boolean>;
+  refreshShade: (options?: { silentFailure?: boolean }) => Promise<boolean>;
   invalidateTransitRefinements: () => void;
 
   /* 음성 챗봇 연동 액션 (요구사항 §9) */
@@ -495,6 +533,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 1순위 자동 선택도 카드 클릭과 같이 selectRoute를 거쳐
       // estimated 대중교통 geometry 정밀화를 시작한다.
       if (firstId) get().selectRoute(firstId);
+      // 콜드 VWorld 회랑 때문에 첫 경로 응답이 ALB 제한을 넘지 않도록
+      // 경로 카드는 먼저 표시하고, 필요한 경우에만 같은 route-set의
+      // 그늘을 자동 완성한다. 실패해도 이미 표시한 경로는 유지한다.
+      if (needsAutomaticShadeRefresh(recommendations)) {
+        void get().refreshShade({ silentFailure: true });
+      }
     } catch (error) {
       if (!isLatestRecommendationRequest(requestGeneration)) return;
       set({
@@ -562,7 +606,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   /** 기존 후보군을 유지하고 선택 시각의 그늘과 순위만 갱신한다. */
-  refreshShade: async () => {
+  refreshShade: async ({ silentFailure = false } = {}) => {
     const {
       profile,
       weatherScenario,
@@ -571,7 +615,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       recommendations: previous,
     } = get();
     if (!previous.length) return false;
-    const requestGeneration = beginRecommendationRequest();
+    const requestGeneration = silentFailure
+      ? recommendationRequestGeneration
+      : beginRecommendationRequest();
+    const candidateGeneration = recommendationGeneration;
     const previousSelected = previous.find(
       ({ route }) => route.id === selectedRouteId,
     );
@@ -588,37 +635,49 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
       if (
         !isLatestRecommendationRequest(requestGeneration)
+        || recommendationGeneration !== candidateGeneration
         || !recommendations.length
       ) {
         return false;
       }
+      const currentRecommendations = get().recommendations;
+      const appliedRecommendations = silentFailure
+        ? preserveRefinedGeometry(recommendations, currentRecommendations)
+        : recommendations;
       const semanticMatch = previousSemanticKey
-        ? recommendations.find(
+        ? appliedRecommendations.find(
           ({ route }) => routeSemanticKey(route) === previousSemanticKey,
         )
         : undefined;
-      const directMatch = recommendations.find(
+      const directMatch = appliedRecommendations.find(
         ({ route }) => route.id === selectedRouteId,
       );
       set({
-        candidates: recommendations.map(({ route }) => route),
-        recommendations,
+        candidates: appliedRecommendations.map(({ route }) => route),
+        recommendations: appliedRecommendations,
         selectedRouteId: (
           semanticMatch
           ?? directMatch
-          ?? serverRankedRecommendations(recommendations)[0]
+          ?? serverRankedRecommendations(appliedRecommendations)[0]
         )?.route.id ?? null,
         error: null,
       });
       return true;
     } catch (error) {
-      if (!isLatestRecommendationRequest(requestGeneration)) return false;
-      set({
-        error: toUserMessage(
-          error,
-          '그늘 계산 시각을 갱신하지 못했습니다. 경로를 다시 검색해 주세요.',
-        ),
-      });
+      if (
+        !isLatestRecommendationRequest(requestGeneration)
+        || recommendationGeneration !== candidateGeneration
+      ) {
+        return false;
+      }
+      if (!silentFailure) {
+        set({
+          error: toUserMessage(
+            error,
+            '그늘 계산 시각을 갱신하지 못했습니다. 경로를 다시 검색해 주세요.',
+          ),
+        });
+      }
       return false;
     }
   },
