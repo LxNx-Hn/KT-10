@@ -172,6 +172,65 @@ def test_tmap_transit_normalizes_exact_route_and_caches(
     assert "test-key" not in cache_text
 
 
+def test_tmap_transit_retries_one_transient_non_json_response(
+    monkeypatch,
+    tmp_path,
+):
+    import collectors.tmap_transit_collector as module
+
+    requests = 0
+    delays: list[float] = []
+
+    class Response:
+        status_code = 200
+
+        def __init__(self, valid: bool):
+            self.valid = valid
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            if not self.valid:
+                raise ValueError("temporary non-JSON response")
+            return _payload()
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            nonlocal requests
+            requests += 1
+            return Response(valid=requests == 2)
+
+    async def record_delay(seconds: float):
+        delays.append(seconds)
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "TMAP_TRANSIT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+    monkeypatch.setattr(module.asyncio, "sleep", record_delay)
+
+    result = asyncio.run(
+        TmapTransitRouteCollector().collect(
+            ORIGIN,
+            DESTINATION,
+            max_candidates=1,
+        )
+    )
+
+    assert len(result) == 1
+    assert requests == 2
+    assert delays == [module.RETRY_DELAY_SECONDS]
+
+
 def test_tmap_transit_resolves_only_missing_walk_geometry(monkeypatch):
     import collectors.tmap_transit_collector as module
 
