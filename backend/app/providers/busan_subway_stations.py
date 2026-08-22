@@ -50,6 +50,17 @@ _DUPLICATE_STATIONS = {
 }
 _LINE_SUFFIX = re.compile(r"\(([1-4])\)$")
 
+# B551542 운행시각표 API가 부산교통공사 시설 스냅샷과 다른 sname을
+# 반환하는 외부 철도·경전철 환승역. 2026-08-22 각 역 실응답의 sname을
+# 개발 단계에서 조회해 고정했으며 런타임 추측·재시도에 사용하지 않는다.
+_PUBLIC_STATION_ALIASES = {
+    ("1", "교대"): "교대(1)",
+    ("2", "벡스코"): "벡스코(시립미술관)",
+    ("2", "사상"): "사상(2)",
+    ("3", "거제"): "거제(3)",
+    ("3", "대저"): "대저(3)",
+}
+
 
 def station_base(value: str | None) -> str:
     """역 접미사와 공공데이터 호선 접미사만 제거한다."""
@@ -95,6 +106,8 @@ def public_station_name(station_name: str, line: str) -> str:
     base = station_base(station_name)
     if line not in LINE_STATIONS or base not in LINE_STATIONS[line]:
         raise ValueError("노선에 해당하는 역을 확인할 수 없습니다.")
+    if alias := _PUBLIC_STATION_ALIASES.get((line, base)):
+        return alias
     return f"{base}({line})" if base in _DUPLICATE_STATIONS else base
 
 
@@ -110,3 +123,14 @@ def journey_direction(
         raise ValueError("승차역과 하차역이 같습니다.")
     # 실제 운행시각표 교차 확인: 역 순서 감소=0, 증가=1.
     return "1" if end_index > start_index else "0"
+
+
+def journey_terminal(
+    start_station_name: str,
+    end_station_name: str,
+    route_id: object = None,
+) -> str:
+    """노선 순서로 확정한 실제 진행방향의 종착역 이름을 반환한다."""
+    line = resolve_line(start_station_name, end_station_name, route_id)
+    direction = journey_direction(start_station_name, end_station_name, line)
+    return LINE_STATIONS[line][-1 if direction == "1" else 0]
