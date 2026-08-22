@@ -510,6 +510,67 @@ def test_tmap_persistent_cache_avoids_repeated_provider_call(
     assert "test-secret" not in cache_text
 
 
+def test_tmap_retries_one_transient_non_json_response(monkeypatch, tmp_path):
+    import collectors.tmap_collector as module
+
+    payload = {
+        "features": [{
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [ORIGIN.lng, ORIGIN.lat],
+                    [DEST.lng, DEST.lat],
+                ],
+            },
+            "properties": {"totalTime": 600, "totalDistance": 1000},
+        }],
+    }
+    requests = 0
+    delays: list[float] = []
+
+    class Response:
+        def __init__(self, valid: bool):
+            self.valid = valid
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            if not self.valid:
+                raise ValueError("temporary non-JSON response")
+            return payload
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            nonlocal requests
+            requests += 1
+            return Response(valid=requests == 2)
+
+    async def record_delay(seconds: float):
+        delays.append(seconds)
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "test-secret")
+    monkeypatch.setattr(settings, "TMAP_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "TMAP_PRECOMPUTED_CACHE_DIR", "")
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+    monkeypatch.setattr(module.asyncio, "sleep", record_delay)
+
+    result = asyncio.run(TmapRouteCollector().collect(ORIGIN, DEST))
+
+    assert len(result) == 1
+    assert requests == 2
+    assert delays == [module.RETRY_DELAY_SECONDS]
+
+
 def test_tmap_precomputed_cache_expires_within_license_window(
     monkeypatch,
     tmp_path,
