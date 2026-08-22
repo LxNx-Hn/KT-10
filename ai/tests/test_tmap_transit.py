@@ -1,5 +1,6 @@
 import asyncio
 
+import httpx
 import pytest
 
 from collectors.base import CollectorError, Coordinate, RouteCandidate
@@ -229,6 +230,19 @@ def test_tmap_transit_retries_one_transient_non_json_response(
     assert len(result) == 1
     assert requests == 2
     assert delays == [module.RETRY_DELAY_SECONDS]
+
+
+def test_tmap_transit_accepts_unescaped_control_character_in_text():
+    import collectors.tmap_transit_collector as module
+
+    response = httpx.Response(
+        200,
+        content=b'{"metaData":{"description":"first\x00second"}}',
+    )
+
+    assert module._response_json(response) == {
+        "metaData": {"description": "first\x00second"},
+    }
 
 
 def test_tmap_transit_resolves_only_missing_walk_geometry(monkeypatch):
