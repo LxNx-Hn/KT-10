@@ -37,7 +37,16 @@ services:
       - NIM_MAX_OUTPUT_TOKENS=${NIM_MAX_OUTPUT_TOKENS:-800}
       - NIM_RESPONSE_ATTEMPTS=${NIM_RESPONSE_ATTEMPTS:-2}
       - NIM_ROUTE_EXPLANATION_MAX_ROUTES=${NIM_ROUTE_EXPLANATION_MAX_ROUTES:-3}
+      # 평소 개발 실행은 demo 기본값을 유지하되, --env-file로 운영 설정을
+      # 지정한 검증에서는 운영과 같은 live 공급자 구성을 사용한다.
+      - ROUTE_MODE=${ROUTE_MODE:-demo}
+      - BUILDING_SOURCE=${BUILDING_SOURCE:-demo}
       - DATA_GO_KR_SERVICE_KEY=${DECO:-${DATA_GO_KR_SERVICE_KEY:-}}
+      - VWORLD_API_KEY=${VWORLD_API_KEY:-}
+      - VWORLD_API_DOMAIN=${PUBLIC_ORIGIN:-http://localhost:5173}
+      - KAKAO_REST_API_KEY=${KAKAO_REST_API_KEY:-}
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
+      - BUS_SERVICE_KEY=${BUS_SERVICE_KEY:-}
       - DATABASE_URL=postgresql+psycopg://kt10:kt10-local-only@postgres:5432/kt10
       - MAX_SUPPORTED_TOTAL_WALK_M=15000
       - ROUTE_DEFAULT_TOP_N=5
