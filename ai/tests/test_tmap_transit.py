@@ -61,7 +61,7 @@ def _payload():
                                 "lon": 129.0594,
                                 "lat": 35.1582,
                             },
-                            "passStopList": {"stations": [
+                            "passStopList": {"stationList": [
                                 {
                                     "stationID": "SUB-1",
                                     "stationName": "시청",
@@ -101,6 +101,7 @@ def test_tmap_transit_normalizes_exact_route_and_caches(
     import collectors.tmap_transit_collector as module
 
     requests = 0
+    walk_resolver_calls = 0
 
     class Response:
         status_code = 200
@@ -127,6 +128,8 @@ def test_tmap_transit_normalizes_exact_route_and_caches(
             return Response()
 
     async def resolve(_self, start, end):
+        nonlocal walk_resolver_calls
+        walk_resolver_calls += 1
         return WalkGeometryResult([start, end], "exact", {})
 
     monkeypatch.setattr(settings, "TMAP_API_KEY", "test-key")
@@ -151,6 +154,7 @@ def test_tmap_transit_normalizes_exact_route_and_caches(
     )
 
     assert requests == 1
+    assert walk_resolver_calls == 0
     assert first[0].source == "tmap_transit"
     assert first[0].duration_min == 12
     assert first[0].geometry_quality == "exact"
@@ -166,6 +170,31 @@ def test_tmap_transit_normalizes_exact_route_and_caches(
     assert second[0].path == first[0].path
     cache_text = next(tmp_path.glob("*.json")).read_text(encoding="utf-8")
     assert "test-key" not in cache_text
+
+
+def test_tmap_transit_resolves_only_missing_walk_geometry(monkeypatch):
+    import collectors.tmap_transit_collector as module
+
+    payload = _payload()
+    legs = payload["metaData"]["plan"]["itineraries"][0]["legs"]
+    legs[0].pop("steps")
+    legs[2].pop("steps")
+    resolved: list[tuple[Coordinate, Coordinate]] = []
+
+    async def resolve(_self, start, end):
+        resolved.append((start, end))
+        return WalkGeometryResult([start, end], "exact", {})
+
+    monkeypatch.setattr(module.TransitWalkGeometryResolver, "resolve", resolve)
+    candidates = asyncio.run(
+        TmapTransitRouteCollector()._from_payload(
+            payload,
+            max_candidates=1,
+        )
+    )
+
+    assert len(resolved) == 2
+    assert candidates[0].geometry_quality == "exact"
 
 
 def test_transit_provider_uses_tmap_when_odsay_is_not_configured(monkeypatch):
