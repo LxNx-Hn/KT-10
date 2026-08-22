@@ -571,6 +571,24 @@ def test_tmap_retries_one_transient_non_json_response(monkeypatch, tmp_path):
     assert delays == [module.RETRY_DELAY_SECONDS]
 
 
+def test_tmap_accepts_confirmed_unescaped_nul_inside_poi_text():
+    import collectors.tmap_collector as module
+
+    response = httpx.Response(
+        200,
+        content=(
+            b'{"type":"FeatureCollection","features":[],'
+            b'"poi":"first\x00second"}'
+        ),
+    )
+
+    assert module._response_json(response) == {
+        "type": "FeatureCollection",
+        "features": [],
+        "poi": "first\x00second",
+    }
+
+
 def test_tmap_precomputed_cache_expires_within_license_window(
     monkeypatch,
     tmp_path,
