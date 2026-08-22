@@ -61,6 +61,18 @@ _request_semaphores: WeakKeyDictionary = WeakKeyDictionary()
 _request_state_guard = Lock()
 
 
+def _response_json(response: httpx.Response) -> object:
+    """TMAP 문자열의 비이스케이프 제어문자만 허용해 응답을 복구한다."""
+    try:
+        return response.json()
+    except ValueError:
+        content = getattr(response, "content", None)
+        if not isinstance(content, (bytes, bytearray)):
+            raise
+        encoding = getattr(response, "encoding", None) or "utf-8"
+        return json.loads(bytes(content).decode(encoding), strict=False)
+
+
 def _cache_dir() -> Path | None:
     configured = settings.TMAP_TRANSIT_CACHE_DIR.strip()
     if configured:
@@ -671,7 +683,7 @@ class TmapTransitRouteCollector(BaseRouteCollector):
                                 },
                             )
                     response.raise_for_status()
-                    data = response.json()
+                    data = _response_json(response)
                     # 파싱 가능한 후보가 하나 이상일 때만 성공 응답을 캐시한다.
                     candidates = await self._from_payload(
                         data,
