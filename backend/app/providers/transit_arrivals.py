@@ -22,7 +22,11 @@ from .busan_bus import (
     find_bus_stop_candidates,
     get_bus_arrivals,
 )
-from .busan_subway import clear_subway_timetable_cache, get_next_subway_journey
+from .busan_subway import (
+    SubwayTimetableError,
+    clear_subway_timetable_cache,
+    get_next_subway_journey,
+)
 
 _KST = ZoneInfo("Asia/Seoul")
 _CACHE_TTL_SECONDS = 30.0
@@ -190,7 +194,11 @@ async def _subway_arrival(
         )
     local_reference = reference.astimezone(_KST)
     bucket = local_reference.strftime("%Y%m%d%H%M")
-    key = f"subway:{_route_key(start_name)}:{_route_key(end_name)}:{bucket}"
+    route_id = (segment.transit_route_id or "").strip()
+    key = (
+        f"subway:{_route_key(start_name)}:{_route_key(end_name)}:"
+        f"{_route_key(route_id)}:{bucket}"
+    )
     if cached := _cache_get(key):
         return _for_segment(cached, segment)
     async with _request_lock(key):
@@ -201,6 +209,7 @@ async def _subway_arrival(
                 start_name,
                 end_name,
                 local_reference,
+                route_id,
             )
             result = TransitLegArrival(
                 segment_id=segment.id,
@@ -219,10 +228,10 @@ async def _subway_arrival(
                 observed_at=datetime.now(UTC),
                 source=source,
             )
-        except RuntimeError:
+        except SubwayTimetableError as exc:
             result = _unavailable(
                 segment,
-                "지하철 시간표를 불러오지 못했습니다.",
+                exc.public_message,
                 source=source,
             )
         _cache_put(key, result)
