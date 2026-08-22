@@ -55,6 +55,22 @@ _quota_backoff_until = 0.0
 _quota_backoff_guard = Lock()
 
 
+def _response_json(response: httpx.Response) -> object:
+    """TMAP이 POI 문자열에 넣는 비이스케이프 제어문자를 안전하게 읽는다.
+
+    실제 200 응답에서 상호명 사이 NUL 문자가 확인됐다. 문자열 내부 제어문자만
+    허용하고, 이후 후보 스키마·좌표·수치 검증은 기존과 동일하게 수행한다.
+    """
+    try:
+        return response.json()
+    except ValueError:
+        content = getattr(response, "content", None)
+        if not isinstance(content, (bytes, bytearray)):
+            raise
+        encoding = getattr(response, "encoding", None) or "utf-8"
+        return json.loads(bytes(content).decode(encoding), strict=False)
+
+
 def _point_to_path_distance_m(point: Coordinate, path: list[Coordinate]) -> float:
     """부산 범위의 짧은 구간을 국소 평면으로 투영해 선형까지 거리를 구한다."""
     latitude_scale = 111_320.0
@@ -504,7 +520,7 @@ class TmapRouteCollector(BaseRouteCollector):
                                 "Content-Type": "application/json",
                             }, timeout=10.0)
                     resp.raise_for_status()
-                    data = resp.json()
+                    data = _response_json(resp)
                     if not isinstance(data, dict):
                         raise CollectorError(
                             "TMAP 응답 본문이 JSON 객체가 아닙니다.",
