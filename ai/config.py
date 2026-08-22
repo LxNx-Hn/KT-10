@@ -106,7 +106,7 @@ class Settings(BaseSettings):
     # 보완 호출의 상한. 초과 시 공급자가 준 승하차 지점 연결은 estimated로
     # 유지하며, 전체 대중교통 후보를 지연시키지 않는다.
     TRANSIT_WALK_ENRICHMENT_TIMEOUT_SECONDS: float = Field(
-        default=2.5,
+        default=4.0,
         ge=0.5,
         le=10,
     )
