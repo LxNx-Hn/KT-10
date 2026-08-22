@@ -270,6 +270,47 @@ def test_tmap_transit_resolves_only_missing_walk_geometry(monkeypatch):
     assert candidates[0].geometry_quality == "exact"
 
 
+def test_tmap_transit_bounds_missing_walk_enrichment(monkeypatch):
+    import collectors.tmap_collector as tmap_walk_module
+
+    payload = _payload()
+    legs = payload["metaData"]["plan"]["itineraries"][0]["legs"]
+    legs[0].pop("steps")
+    cancelled = asyncio.Event()
+
+    async def blocking_collect(_self, *_args, **_kwargs):
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "configured")
+    monkeypatch.setattr(
+        settings,
+        "TRANSIT_WALK_ENRICHMENT_TIMEOUT_SECONDS",
+        0.01,
+    )
+    monkeypatch.setattr(
+        tmap_walk_module.TmapRouteCollector,
+        "collect",
+        blocking_collect,
+    )
+
+    candidates = asyncio.run(
+        TmapTransitRouteCollector()._from_payload(
+            payload,
+            max_candidates=1,
+        )
+    )
+
+    first_walk = candidates[0].segments[0]
+    assert cancelled.is_set()
+    assert first_walk["geometry_quality"] == "estimated"
+    assert first_walk["path"] == [ORIGIN, Coordinate(35.1793, 129.0760)]
+    assert candidates[0].segments[2]["geometry_quality"] == "exact"
+
+
 def test_transit_provider_uses_tmap_when_odsay_is_not_configured(monkeypatch):
     route = RouteCandidate(
         source="tmap_transit",
