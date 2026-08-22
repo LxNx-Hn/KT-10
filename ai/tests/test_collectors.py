@@ -32,6 +32,12 @@ ORIGIN = Coordinate(lat=35.1626, lng=129.0530)
 DEST = Coordinate(lat=35.1578, lng=129.0594)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_odsay_disk_cache(monkeypatch):
+    """Mock transport tests must never consume a developer/Docker cache hit."""
+    monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", "")
+
+
 def test_wheelchair_odsay_uses_nearest_official_accessible_subway_exits():
     origin = Coordinate(lat=35.2479, lng=129.0912)
     destination = Coordinate(lat=35.0977, lng=129.0349)
