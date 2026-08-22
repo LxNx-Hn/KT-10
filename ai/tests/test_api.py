@@ -1361,6 +1361,52 @@ def test_odsay_analysis_ignores_confirmed_zero_distance_walk_part():
     assert _analysis_route_parts(candidate) == []
 
 
+def test_tmap_transit_analysis_uses_only_exact_walking_parts():
+    first = Coordinate(35.1000, 129.0000)
+    boarding = Coordinate(35.1100, 129.0000)
+    alighting = Coordinate(35.1200, 129.0000)
+    destination = Coordinate(35.1300, 129.0000)
+    candidate = MergedRoute(
+        sources=["tmap_transit"],
+        source="tmap_transit",
+        path=[first, boarding, alighting, destination],
+        duration_min=30,
+        distance_m=5000,
+        geometry_quality="exact",
+        segments=[
+            {
+                "mode": "walk",
+                "path": [first, boarding],
+                "geometry_quality": "exact",
+                "duration_min": 5,
+                "distance_m": 300,
+            },
+            {
+                "mode": "subway",
+                "path": [boarding, alighting],
+                "geometry_quality": "exact",
+                "duration_min": 20,
+                "distance_m": 4400,
+            },
+            {
+                "mode": "walk",
+                "path": [alighting, destination],
+                "geometry_quality": "exact",
+                "duration_min": 5,
+                "distance_m": 300,
+            },
+        ],
+    )
+
+    assert _analysis_route_parts(candidate) == [
+        [(35.1000, 129.0000), (35.1100, 129.0000)],
+        [(35.1200, 129.0000), (35.1300, 129.0000)],
+    ]
+
+    candidate.segments[2]["geometry_quality"] = "estimated"
+    assert _analysis_route_parts(candidate) == []
+
+
 def test_tmap_standalone_analysis_uses_full_walking_path():
     path = [
         Coordinate(35.1000, 129.0000),
