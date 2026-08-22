@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     # 앞의 공급자가 미설정/한도/장애/계약 오류이면 다음 공급자를 사용한다.
     # 지원 값은 odsay,tmap이며 중복·미지원 값은 readiness와 요청에서 거부한다.
     TRANSIT_PROVIDER_ORDER: str = "odsay,tmap"
+    # ODsay에 먼저 단독 응답 기회를 주되, 이 시간을 넘기면 TMAP을 병렬로
+    # 시작한다. 두 공급자를 순차 timeout까지 기다려 ALB 제한을 넘기지 않는다.
+    TRANSIT_PROVIDER_HEDGE_SECONDS: float = Field(default=2.0, ge=0, le=5)
+    TRANSIT_PROVIDER_TOTAL_TIMEOUT_SECONDS: float = Field(
+        default=12.0,
+        ge=8,
+        le=30,
+    )
     # OpenRouteService의 wheelchair profile은 계단 회피뿐 아니라 OSM에
     # 기록된 노면·평탄도·폭·턱·경사·wheelchair 접근 제한을 함께 적용한다.
     # TMAP의 물리 경사로 안내점과 역할이 다르므로 별도 키로 관리한다.
