@@ -21,6 +21,10 @@ import { searchKakaoPlaces } from '@/map/kakaoPlaces';
  */
 const DEFAULT_TIMEOUT_MS = 7000;
 const ROUTE_TIMEOUT_MS = 20000;
+// VWorld 회랑을 처음 채우는 주간 그늘 갱신은 일반 경로 추천보다 오래 걸릴
+// 수 있다. 서버가 정상 계산 중인데 20초에 먼저 취소해 재시도를 유발하지
+// 않도록, 사용자가 명시적으로 요청한 그늘 갱신에만 긴 제한을 적용한다.
+const SHADE_REFRESH_TIMEOUT_MS = 60000;
 
 /** 타임아웃이 있는 fetch (백엔드 무응답 시 무한 대기 방지) */
 async function fetchWithTimeout(
@@ -121,7 +125,7 @@ export const liveAdapters: Adapters = {
         profile,
         options,
         ...(topN !== undefined ? { topN } : {}),
-      }, ROUTE_TIMEOUT_MS);
+      }, SHADE_REFRESH_TIMEOUT_MS);
     },
     refineTransit: (routeSetToken, routeId) =>
       postJson<TransitRefinement>('/api/routes/refine-transit', {
