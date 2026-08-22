@@ -41,10 +41,10 @@ STAIR_ALTERNATIVE_RAMP_TURN_TYPE = 129
 STAIR_ALTERNATIVE_RAMP_FACILITY_TYPE = 20
 MAX_RAMP_EVIDENCE_POINTS = 100
 RAMP_PATH_MATCH_MAX_M = 20.0
-QUOTA_BACKOFF_SECONDS = 60.0
+QUOTA_BACKOFF_SECONDS = 2.0
 NETWORK_ATTEMPTS = 2
 RETRY_DELAY_SECONDS = 0.5
-RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 500, 502, 503, 504})
+RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 log = logging.getLogger("collectors.tmap")
 _cache_write_locks: dict[str, Lock] = {}
 _cache_write_locks_guard = Lock()
@@ -535,12 +535,6 @@ class TmapRouteCollector(BaseRouteCollector):
                     return [candidate]
                 except httpx.HTTPStatusError as exc:
                     status = exc.response.status_code
-                    if status == 429:
-                        _start_quota_backoff()
-                        raise CollectorError(
-                            "TMAP 호출 한도 초과",
-                            code="quota_exceeded",
-                        ) from exc
                     if (
                         status in RETRYABLE_HTTP_STATUSES
                         and attempt + 1 < NETWORK_ATTEMPTS
@@ -551,6 +545,12 @@ class TmapRouteCollector(BaseRouteCollector):
                         )
                         await asyncio.sleep(RETRY_DELAY_SECONDS)
                         continue
+                    if status == 429:
+                        _start_quota_backoff()
+                        raise CollectorError(
+                            "TMAP 호출 한도 초과",
+                            code="quota_exceeded",
+                        ) from exc
                     raise CollectorError(
                         f"TMAP 호출 실패: HTTP {status}"
                     ) from exc
