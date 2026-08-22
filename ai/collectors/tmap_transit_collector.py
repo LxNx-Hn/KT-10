@@ -288,23 +288,33 @@ def _transit_path(leg: dict) -> list[Coordinate]:
     return _line_string(shape.get("linestring")) if isinstance(shape, dict) else []
 
 
-def _first_station_id(leg: dict) -> str | None:
+def _pass_stations(leg: dict) -> list[dict]:
     stop_list = leg.get("passStopList")
-    stations = stop_list.get("stations") if isinstance(stop_list, dict) else None
-    if not isinstance(stations, list) or not stations:
+    if not isinstance(stop_list, dict):
+        return []
+    # TMAP 공식 응답 샘플은 stationList를 사용한다. 기존
+    # 캐시·fixture의 stations도 24시간 TTL 동안 호환한다.
+    raw = stop_list.get("stationList")
+    if raw is None:
+        raw = stop_list.get("stations")
+    return [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
+
+
+def _first_station_id(leg: dict) -> str | None:
+    stations = _pass_stations(leg)
+    if not stations:
         return None
     first = stations[0]
-    value = first.get("stationID") if isinstance(first, dict) else None
+    value = first.get("stationID")
     return str(value).strip() if value is not None and str(value).strip() else None
 
 
 def _last_station_id(leg: dict) -> str | None:
-    stop_list = leg.get("passStopList")
-    stations = stop_list.get("stations") if isinstance(stop_list, dict) else None
-    if not isinstance(stations, list) or not stations:
+    stations = _pass_stations(leg)
+    if not stations:
         return None
     last = stations[-1]
-    value = last.get("stationID") if isinstance(last, dict) else None
+    value = last.get("stationID")
     return str(value).strip() if value is not None and str(value).strip() else None
 
 
@@ -457,6 +467,11 @@ class TmapTransitRouteCollector(BaseRouteCollector):
             for index, (leg, mode, _) in enumerate(normalized)
             if mode == "walk"
             and _number(leg.get("distance"), "distance", positive=False) > 0
+            and (
+                self.avoid_stairs
+                or self.uses_wheelchair
+                or not _walk_path(leg)
+            )
         ]
         walk_results = await asyncio.gather(*(
             self.walk_resolver.resolve(start, end)
