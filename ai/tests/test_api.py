@@ -1779,6 +1779,73 @@ def test_wheelchair_collection_reports_odsay_failure_when_only_over_limit_walks_
     assert tmap_calls == 0
 
 
+def test_general_collection_returns_transit_when_optional_walk_stalls(
+    monkeypatch,
+):
+    from config import settings as ai_settings
+
+    transit_route = RouteCandidate(
+        source="odsay",
+        path=[Coordinate(35.10, 129.00), Coordinate(35.11, 129.01)],
+        duration_min=12,
+        distance_m=1800,
+    )
+    walk_cancelled = asyncio.Event()
+
+    async def odsay_collect(_self, *_args, **_kwargs):
+        return [transit_route]
+
+    async def blocking_walk(_self, *_args, **_kwargs):
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            walk_cancelled.set()
+            raise
+
+    async def elevation(_parts):
+        return {"slope_segments": []}
+
+    monkeypatch.setattr(ai_settings, "TRANSIT_PROVIDER_ORDER", "odsay,tmap")
+    monkeypatch.setattr(
+        ai_settings,
+        "ROUTE_COLLECTION_TOTAL_TIMEOUT_SECONDS",
+        0.02,
+    )
+    monkeypatch.setattr(OdsayRouteCollector, "collect", odsay_collect)
+    monkeypatch.setattr(TmapRouteCollector, "collect", blocking_walk)
+    monkeypatch.setattr(api_router, "_get_layers", lambda: {})
+    monkeypatch.setattr(
+        api_router,
+        "extract_elevation_features_for_parts",
+        elevation,
+    )
+    monkeypatch.setattr(
+        api_router,
+        "extract_route_features_for_parts",
+        lambda _parts, _layers: {},
+    )
+    request = RecommendRequest(
+        origin_lat=35.10,
+        origin_lng=129.00,
+        origin_name="출발",
+        dest_lat=35.11,
+        dest_lng=129.01,
+        dest_name="도착",
+        profile="general",
+    )
+
+    features, metadata = asyncio.run(
+        _collect_static_featured_routes(request)
+    )
+
+    assert walk_cancelled.is_set()
+    assert len(features) == 1
+    assert features[0]["_sources"] == ["odsay"]
+    assert metadata["sources_succeeded"] == ["odsay"]
+    assert metadata["sources_failed"] == ["tmap"]
+    assert metadata["source_errors"]["tmap"].startswith("TimeoutError:")
+
+
 def test_estimated_walk_geometry_is_not_used_as_observed_feature_path():
     path = [
         Coordinate(35.1000, 129.0000),
