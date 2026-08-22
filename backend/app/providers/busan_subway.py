@@ -14,12 +14,18 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from ..settings import settings
+from .busan_subway_stations import (
+    journey_direction,
+    public_station_name,
+    resolve_line,
+)
 
 log = logging.getLogger("providers.busan_subway")
 _BASE_URL = "https://apis.data.go.kr/B551542/trainTime/getTrainTime"
 _KST = ZoneInfo("Asia/Seoul")
 _PAGE_SIZE = 1000
 _CACHE_TTL_SECONDS = 6 * 3600
+_MAX_JOURNEY_DURATION = timedelta(hours=3)
 _TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$")
 _cache: dict[str, tuple[float, tuple[dict[str, str], ...]]] = {}
 _cache_guard = Lock()
@@ -36,6 +42,15 @@ class SubwayJourney:
     destination_arrival_time: str
     departure_at: datetime
     destination_arrival_at: datetime
+
+
+class SubwayTimetableError(RuntimeError):
+    """공개 응답에 안전하게 사용할 실패 분류와 문구."""
+
+    def __init__(self, code: str, public_message: str) -> None:
+        super().__init__(public_message)
+        self.code = code
+        self.public_message = public_message
 
 
 def service_day(value: date) -> int:
@@ -122,7 +137,10 @@ def _parse_page(payload: object) -> tuple[list[dict[str, str]], int]:
 async def _fetch_station_schedule(station_name: str, day_type: int) -> list[dict[str, str]]:
     station = _station_query(station_name)
     if not settings.live_subway_timetable or not station:
-        raise RuntimeError("도시철도 시간표 서비스 키 또는 역 이름이 없습니다.")
+        raise SubwayTimetableError(
+            "not_configured",
+            "도시철도 시간표 설정을 확인할 수 없습니다.",
+        )
     key = f"{station}:{day_type}"
     if cached := _cache_get(key):
         return cached
@@ -147,7 +165,10 @@ async def _fetch_station_schedule(station_name: str, day_type: int) -> list[dict
                     payload = response.json()
             except (httpx.HTTPError, ValueError) as exc:
                 log.warning("부산 도시철도 시간표 호출 실패 (%s)", type(exc).__name__)
-                raise RuntimeError("부산 도시철도 시간표 호출에 실패했습니다.") from exc
+                raise SubwayTimetableError(
+                    "provider_unavailable",
+                    "부산교통공사 시간표에 연결할 수 없습니다.",
+                ) from exc
             page_rows, total_count = _parse_page(payload)
             rows.extend(page_rows)
             if page * _PAGE_SIZE >= total_count or not page_rows:
@@ -159,7 +180,10 @@ async def _fetch_station_schedule(station_name: str, day_type: int) -> list[dict
             and row["dayType"] == str(day_type)
         ]
         if not exact:
-            raise RuntimeError("요청한 역의 도시철도 시간표가 없습니다.")
+            raise SubwayTimetableError(
+                "station_not_found",
+                f"{station} 역의 공공 운행시간표를 확인할 수 없습니다.",
+            )
         _cache_put(key, exact)
         return exact
 
@@ -175,15 +199,21 @@ def _find_journey(
     *,
     service_date: date,
     reference: datetime,
+    line: str,
+    direction: str,
 ) -> SubwayJourney | None:
     destinations: dict[tuple[str, str, str, str, str], list[dict[str, str]]] = {}
     for row in end_rows:
+        if row["line"] != line or row["updown"] != direction:
+            continue
         identity = (
             row["line"], row["trainno"], row["dayType"], row["updown"], row["endcode"]
         )
         destinations.setdefault(identity, []).append(row)
     candidates: list[SubwayJourney] = []
     for start in start_rows:
+        if start["line"] != line or start["updown"] != direction:
+            continue
         identity = (
             start["line"],
             start["trainno"],
@@ -198,7 +228,11 @@ def _find_journey(
             destination_at = _clock_at(service_date, destination["arrtime"])
             if destination_at < departure_at:
                 destination_at += timedelta(days=1)
-            if destination_at <= departure_at:
+            journey_duration = destination_at - departure_at
+            if (
+                journey_duration <= timedelta(0)
+                or journey_duration > _MAX_JOURNEY_DURATION
+            ):
                 continue
             candidates.append(SubwayJourney(
                 departure_time=start["arrtime"],
@@ -213,25 +247,57 @@ async def get_next_subway_journey(
     start_station_name: str,
     end_station_name: str,
     reference: datetime,
+    route_id: object = None,
 ) -> SubwayJourney:
     """같은 열차가 두 역을 순서대로 통과하는 가장 이른 시간표를 반환한다."""
     local_reference = reference.astimezone(_KST)
+    try:
+        line = resolve_line(
+            start_station_name,
+            end_station_name,
+            route_id,
+        )
+        start_public_name = public_station_name(start_station_name, line)
+        end_public_name = public_station_name(end_station_name, line)
+        direction = journey_direction(
+            start_station_name,
+            end_station_name,
+            line,
+        )
+    except ValueError as exc:
+        raise SubwayTimetableError(
+            "station_mapping_failed",
+            "도시철도 노선과 승·하차역을 정확히 확인할 수 없습니다.",
+        ) from exc
     for day_offset in (0, 1):
         service_date = local_reference.date() + timedelta(days=day_offset)
         day_type = service_day(service_date)
-        start_rows, end_rows = await asyncio.gather(
-            _fetch_station_schedule(start_station_name, day_type),
-            _fetch_station_schedule(end_station_name, day_type),
-        )
+        try:
+            start_rows, end_rows = await asyncio.gather(
+                _fetch_station_schedule(start_public_name, day_type),
+                _fetch_station_schedule(end_public_name, day_type),
+            )
+        except SubwayTimetableError:
+            raise
+        except RuntimeError as exc:
+            raise SubwayTimetableError(
+                "provider_response_invalid",
+                "부산교통공사 시간표 응답을 확인할 수 없습니다.",
+            ) from exc
         journey = _find_journey(
             start_rows,
             end_rows,
             service_date=service_date,
             reference=local_reference,
+            line=line,
+            direction=direction,
         )
         if journey is not None:
             return journey
-    raise RuntimeError("조회 가능한 다음 도시철도 운행시각이 없습니다.")
+    raise SubwayTimetableError(
+        "no_upcoming_journey",
+        "현재 시각 이후의 순방향 도시철도 시간표가 없습니다.",
+    )
 
 
 def clear_subway_timetable_cache() -> None:
