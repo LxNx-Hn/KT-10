@@ -1001,7 +1001,7 @@ async def _collect_featured_routes(
 
 def _analysis_route_parts(candidate) -> list[list[tuple[float, float]]]:
     """표시 geometry와 분리된, 공급자가 확인한 보행 분석 parts."""
-    if candidate.source == "odsay":
+    if candidate.source in {"odsay", "tmap_transit"}:
         walk_segments = [
             segment
             for segment in candidate.segments
@@ -1029,9 +1029,10 @@ def _analysis_route_parts(candidate) -> list[list[tuple[float, float]]]:
                 and isinstance(declared_distance, (int, float))
                 and declared_distance == 0
             ):
-                # ODsay가 환승 지점에서 0m 보행 구간과 동일 좌표 두 개를
-                # 함께 반환하는 경우는 실제 이동이 없으므로 경사 구간에서
-                # 제외한다. 0m인데 좌표가 다르면 공급자 불일치로 취급한다.
+                # 대중교통 공급자가 환승 지점에서 0m 보행 구간과
+                # 동일 좌표 두 개를 함께 반환하는 경우는 실제 이동이
+                # 없으므로 경사 구간에서 제외한다. 0m인데 좌표가
+                # 다르면 공급자 불일치로 취급한다.
                 if len(set(coordinates)) == 1:
                     continue
                 return []
