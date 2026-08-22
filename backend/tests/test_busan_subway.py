@@ -81,6 +81,61 @@ def test_next_journey_matches_same_train_and_direction(monkeypatch):
     assert all(call["dayType"] == 1 for call in calls)
 
 
+def test_next_journey_queries_verified_external_transfer_alias(monkeypatch):
+    common = {
+        "line": "1",
+        "dayType": "1",
+        "endcode": "95",
+        "trainno": "1101",
+        "updown": "1",
+    }
+    payloads = {
+        "시청": _payload("시청", [dict(common, arrtime="10:05:00")]),
+        "교대(1)": _payload(
+            "교대(1)",
+            [dict(common, arrtime="10:12:00")],
+        ),
+    }
+    queries: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, _url, *, params):
+            query = str(params["sname"])
+            queries.append(query)
+            return FakeResponse(payloads[query])
+
+    monkeypatch.setattr(provider.httpx, "AsyncClient", FakeClient)
+    journey = asyncio.run(provider.get_next_subway_journey(
+        "시청",
+        "교대",
+        datetime(2026, 8, 3, 1, 0, tzinfo=UTC),
+        route_id="71",
+    ))
+
+    assert journey.departure_time == "10:05:00"
+    assert journey.destination_arrival_time == "10:12:00"
+    assert set(queries) == {"시청", "교대(1)"}
+
+
 def test_station_schedule_is_cached_across_requests(monkeypatch):
     row = {
         "line": "1",
