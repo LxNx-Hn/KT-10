@@ -33,7 +33,7 @@ from config import settings
 CACHE_SCHEMA_VERSION = 1
 BASE_URL = "https://apis.openapi.sk.com/transit/routes"
 NETWORK_ATTEMPTS = 2
-RETRY_DELAY_SECONDS = 0.15
+RETRY_DELAY_SECONDS = 0.5
 RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 500, 502, 503, 504})
 _MODE_MAP = {
     "WALK": "walk",
