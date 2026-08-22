@@ -3,6 +3,7 @@ import pytest
 from app.providers.busan_subway_stations import (
     LINE_STATIONS,
     journey_direction,
+    journey_terminal,
     public_station_name,
     resolve_line,
 )
@@ -33,6 +34,11 @@ def test_verified_line_station_counts_and_endpoints():
         ("수영", "3", "수영(3)"),
         ("동래", "4", "동래(4)"),
         ("시청역", "1", "시청"),
+        ("교대역", "1", "교대(1)"),
+        ("벡스코", "2", "벡스코(시립미술관)"),
+        ("사상", "2", "사상(2)"),
+        ("거제", "3", "거제(3)"),
+        ("대저", "3", "대저(3)"),
     ],
 )
 def test_public_station_names_are_line_specific(station, line, expected):
@@ -71,3 +77,22 @@ def test_journey_direction_matches_verified_public_timetable(
     expected,
 ):
     assert journey_direction(start, end, line) == expected
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "route_id", "expected"),
+    [
+        ("시청", "교대", "71", "노포"),
+        ("교대", "시청", "1", "다대포해수욕장"),
+        ("서면", "전포", "72", "장산"),
+        ("연산", "물만골", "73", "수영"),
+        ("동래", "미남", "74", "미남"),
+    ],
+)
+def test_journey_terminal_uses_verified_line_topology(
+    start,
+    end,
+    route_id,
+    expected,
+):
+    assert journey_terminal(start, end, route_id) == expected
