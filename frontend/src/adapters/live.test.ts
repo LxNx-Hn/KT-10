@@ -166,6 +166,39 @@ describe('live 경로 요청 제한시간', () => {
     });
   });
 
+  it('VWorld 최초 회랑 준비 중인 그늘 갱신은 60초까지 기다린다', async () => {
+    vi.useFakeTimers();
+    let requestSignal: AbortSignal | undefined;
+    vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => {
+      requestSignal = init?.signal ?? undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        requestSignal?.addEventListener('abort', () => {
+          reject(new DOMException('aborted', 'AbortError'));
+        });
+      });
+    }));
+
+    const request = liveAdapters.routes.refreshShade(
+      [{ routeSetToken: 'route-set-token-1234567890' }] as ScoredRoute[],
+      'general',
+      'normal',
+      { departureAt: '2026-07-24T14:00:00+09:00' },
+    );
+    const rejection = expect(request).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(requestSignal?.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(39_999);
+    expect(requestSignal?.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(requestSignal?.aborted).toBe(true);
+    await rejection;
+  });
+
   it('추천 요청은 topN을 강제하지 않아 서버 운영 기본값을 따른다', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(
       JSON.stringify([]),
