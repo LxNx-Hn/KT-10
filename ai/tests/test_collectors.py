@@ -36,6 +36,8 @@ DEST = Coordinate(lat=35.1578, lng=129.0594)
 def _isolate_odsay_disk_cache(monkeypatch):
     """Mock transport tests must never consume a developer/Docker cache hit."""
     monkeypatch.setattr(settings, "ODSAY_CACHE_DIR", "")
+    from collectors.tmap_collector import _clear_quota_backoff
+    _clear_quota_backoff()
 
 
 def test_wheelchair_odsay_uses_nearest_official_accessible_subway_exits():
