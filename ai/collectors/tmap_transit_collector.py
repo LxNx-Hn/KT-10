@@ -32,6 +32,9 @@ from config import settings
 
 CACHE_SCHEMA_VERSION = 1
 BASE_URL = "https://apis.openapi.sk.com/transit/routes"
+NETWORK_ATTEMPTS = 2
+RETRY_DELAY_SECONDS = 0.15
+RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 500, 502, 503, 504})
 _MODE_MAP = {
     "WALK": "walk",
     "BUS": "bus",
@@ -644,54 +647,75 @@ class TmapTransitRouteCollector(BaseRouteCollector):
             cached = await asyncio.to_thread(_read_cache, identity)
             if cached is not None:
                 return await self._from_payload(cached, max_candidates=count)
-            try:
-                async with _request_semaphore():
-                    async with httpx.AsyncClient(
-                        timeout=settings.TMAP_TRANSIT_TIMEOUT_SECONDS,
-                    ) as client:
-                        response = await client.post(
-                            self.BASE_URL,
-                            headers={
-                                "appKey": api_key,
-                                "Accept": "application/json",
-                                "Content-Type": "application/json",
-                            },
-                            json={
-                                "startX": str(origin.lng),
-                                "startY": str(origin.lat),
-                                "endX": str(destination.lng),
-                                "endY": str(destination.lat),
-                                "count": count,
-                                "lang": 0,
-                                "format": "json",
-                            },
-                        )
-                response.raise_for_status()
-                data = response.json()
-                # 파싱 가능한 후보가 하나 이상일 때만 성공 응답을 캐시한다.
-                candidates = await self._from_payload(
-                    data,
-                    max_candidates=count,
-                )
+            for attempt in range(NETWORK_ATTEMPTS):
                 try:
-                    await asyncio.to_thread(_write_cache, identity, data)
-                except OSError as exc:
-                    log.warning(
-                        "TMAP 대중교통 캐시 저장 실패 (%s)",
-                        type(exc).__name__,
+                    async with _request_semaphore():
+                        async with httpx.AsyncClient(
+                            timeout=settings.TMAP_TRANSIT_TIMEOUT_SECONDS,
+                        ) as client:
+                            response = await client.post(
+                                self.BASE_URL,
+                                headers={
+                                    "appKey": api_key,
+                                    "Accept": "application/json",
+                                    "Content-Type": "application/json",
+                                },
+                                json={
+                                    "startX": str(origin.lng),
+                                    "startY": str(origin.lat),
+                                    "endX": str(destination.lng),
+                                    "endY": str(destination.lat),
+                                    "count": count,
+                                    "lang": 0,
+                                    "format": "json",
+                                },
+                            )
+                    response.raise_for_status()
+                    data = response.json()
+                    # 파싱 가능한 후보가 하나 이상일 때만 성공 응답을 캐시한다.
+                    candidates = await self._from_payload(
+                        data,
+                        max_candidates=count,
                     )
-                return candidates
-            except CollectorError:
-                raise
-            except httpx.HTTPStatusError as exc:
-                raise CollectorError(
-                    f"TMAP 대중교통 호출 실패: HTTP "
-                    f"{exc.response.status_code}",
-                    code=_error_code(exc),
-                ) from exc
-            except (httpx.HTTPError, ValueError, TypeError) as exc:
-                raise CollectorError(
-                    "TMAP 대중교통 호출 또는 응답 처리 실패: "
-                    f"{type(exc).__name__}",
-                    code=_error_code(exc),
-                ) from exc
+                    try:
+                        await asyncio.to_thread(_write_cache, identity, data)
+                    except OSError as exc:
+                        log.warning(
+                            "TMAP 대중교통 캐시 저장 실패 (%s)",
+                            type(exc).__name__,
+                        )
+                    return candidates
+                except CollectorError:
+                    raise
+                except httpx.HTTPStatusError as exc:
+                    status = exc.response.status_code
+                    if (
+                        status in RETRYABLE_HTTP_STATUSES
+                        and attempt + 1 < NETWORK_ATTEMPTS
+                    ):
+                        log.warning(
+                            "TMAP 대중교통 일시 응답 실패 HTTP %d, 1회 재시도",
+                            status,
+                        )
+                        await asyncio.sleep(RETRY_DELAY_SECONDS)
+                        continue
+                    raise CollectorError(
+                        f"TMAP 대중교통 호출 실패: HTTP {status}",
+                        code=_error_code(exc),
+                    ) from exc
+                except (httpx.HTTPError, ValueError, TypeError) as exc:
+                    if attempt + 1 < NETWORK_ATTEMPTS:
+                        log.warning(
+                            "TMAP 대중교통 일시 응답 처리 실패 (%s), 1회 재시도",
+                            type(exc).__name__,
+                        )
+                        await asyncio.sleep(RETRY_DELAY_SECONDS)
+                        continue
+                    raise CollectorError(
+                        "TMAP 대중교통 호출 또는 응답 처리 실패: "
+                        f"{type(exc).__name__}",
+                        code=_error_code(exc),
+                    ) from exc
+            raise AssertionError(
+                "TMAP 대중교통 재시도 루프가 결과 없이 종료되었습니다."
+            )
