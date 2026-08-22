@@ -131,6 +131,10 @@ services:
       - "5173:5173"
     env_file:
       - frontend/.env
+    environment:
+      # Vite 개발 프록시는 프런트 컨테이너 내부의 localhost가 아니라
+      # Compose backend 서비스로 전달해야 한다.
+      - VITE_DEV_PROXY_TARGET=http://backend:8000
     volumes:
       - ./frontend:/app/frontend
       - ./data:/app/data:ro
