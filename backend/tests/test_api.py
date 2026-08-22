@@ -331,13 +331,13 @@ def test_vworld_night_skips_building_lookup(monkeypatch):
         weather=_valid_live_weather(),
     ))
 
-    # 10~18시 밖 출발은 gate에서 차단되어 VWorld 0회이며, 계산 불가
-    # 상태와 사용자 설명은 응답용 모델에 보존한다.
+    # 태양 고도가 0도 이하이면 VWorld 건물 조회 없이 야간
+    # 상태를 정확히 반환한다.
     assert calls == []
     assert all(
         route.shade is not None
-        and route.shade.status == "unavailable"
-        and "오전 10시부터 오후 6시 전" in route.shade.calculation_note
+        and route.shade.status == "not_daylight"
+        and "태양 고도" in route.shade.calculation_note
         for route in routes
     )
 
