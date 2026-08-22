@@ -331,6 +331,107 @@ def test_transit_provider_falls_back_after_odsay_failure(monkeypatch):
     }
 
 
+def test_transit_provider_hedges_slow_odsay_with_tmap(monkeypatch):
+    route = RouteCandidate(
+        source="tmap_transit",
+        path=[ORIGIN, DESTINATION],
+        duration_min=12,
+        distance_m=3000,
+    )
+    odsay_started = asyncio.Event()
+    odsay_cancelled = asyncio.Event()
+
+    async def odsay_collect(_self, *_args, **_kwargs):
+        odsay_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            odsay_cancelled.set()
+            raise
+
+    async def tmap_collect(_self, *_args, **_kwargs):
+        assert odsay_started.is_set()
+        return [route]
+
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_ORDER", "odsay,tmap")
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_HEDGE_SECONDS", 0.01)
+    monkeypatch.setattr(
+        settings,
+        "TRANSIT_PROVIDER_TOTAL_TIMEOUT_SECONDS",
+        1.0,
+    )
+    monkeypatch.setattr(OdsayRouteCollector, "collect", odsay_collect)
+    monkeypatch.setattr(TmapTransitRouteCollector, "collect", tmap_collect)
+
+    collector = TransitProviderCollector()
+    result = asyncio.run(
+        collector.collect(ORIGIN, DESTINATION, max_candidates=5)
+    )
+
+    assert result == [route]
+    assert odsay_cancelled.is_set()
+    assert collector.attempted_sources == ["odsay", "tmap_transit"]
+    assert collector.selected_source == "tmap_transit"
+
+
+def test_transit_provider_keeps_odsay_when_it_finishes_inside_hedge(monkeypatch):
+    route = RouteCandidate(
+        source="odsay",
+        path=[ORIGIN, DESTINATION],
+        duration_min=11,
+        distance_m=2900,
+    )
+    tmap_calls = 0
+
+    async def odsay_collect(_self, *_args, **_kwargs):
+        return [route]
+
+    async def tmap_collect(_self, *_args, **_kwargs):
+        nonlocal tmap_calls
+        tmap_calls += 1
+        return []
+
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_ORDER", "odsay,tmap")
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_HEDGE_SECONDS", 0.1)
+    monkeypatch.setattr(OdsayRouteCollector, "collect", odsay_collect)
+    monkeypatch.setattr(TmapTransitRouteCollector, "collect", tmap_collect)
+
+    collector = TransitProviderCollector()
+    result = asyncio.run(
+        collector.collect(ORIGIN, DESTINATION, max_candidates=5)
+    )
+
+    assert result == [route]
+    assert tmap_calls == 0
+    assert collector.attempted_sources == ["odsay"]
+    assert collector.selected_source == "odsay"
+
+
+def test_transit_provider_bounds_both_slow_providers(monkeypatch):
+    async def never_returns(_self, *_args, **_kwargs):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_ORDER", "odsay,tmap")
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_HEDGE_SECONDS", 0.01)
+    monkeypatch.setattr(
+        settings,
+        "TRANSIT_PROVIDER_TOTAL_TIMEOUT_SECONDS",
+        0.05,
+    )
+    monkeypatch.setattr(OdsayRouteCollector, "collect", never_returns)
+    monkeypatch.setattr(TmapTransitRouteCollector, "collect", never_returns)
+
+    collector = TransitProviderCollector()
+    with pytest.raises(CollectorError) as captured:
+        asyncio.run(
+            collector.collect(ORIGIN, DESTINATION, max_candidates=5)
+        )
+
+    assert captured.value.code == "timeout"
+    assert collector.attempted_sources == ["odsay", "tmap_transit"]
+    assert "전체 수집 제한시간" in str(captured.value)
+
+
 @pytest.mark.parametrize("value", ["", "odsay,odsay", "unknown"])
 def test_transit_provider_order_rejects_invalid_configuration(value):
     with pytest.raises(ValueError):
