@@ -42,10 +42,10 @@ export default defineConfig(({ mode }) => {
         },
         manifest: {
           id: '/',
-          name: '부산 접근성 길찾기',
-          short_name: '부산 길찾기',
+          name: '동넷 - 부산 접근성 길찾기',
+          short_name: '동넷',
           description:
-            '부산 전역 보행자·대중교통 이용자를 위한 접근성 중심 경로 추천 PWA',
+            '동넷 — 부산 전역 보행자·대중교통 이용자를 위한 접근성 중심 경로 추천 PWA',
           theme_color: '#007a43',
           background_color: '#f3f7f4',
           display: 'standalone',

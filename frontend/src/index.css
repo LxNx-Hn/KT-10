@@ -589,8 +589,17 @@ summary:focus-visible,
   background: #fff; box-shadow: 0 14px 38px rgba(25, 65, 41, .18);
 }
 .install-prompt p { margin: 2px 0 0; color: var(--ink-soft); font-size: .86rem; }
+.install-prompt__copy { min-width: 0; }
+.install-prompt__steps {
+  margin: 8px 0 0;
+  padding-left: 1.25rem;
+  color: var(--ink-soft);
+  font-size: .86rem;
+}
+.install-prompt__steps li + li { margin-top: 4px; }
 .install-prompt__button { min-height: 44px; flex: none; }
 .install-prompt__close { width: 44px; height: 44px; border: 0; background: transparent; font-size: 1.45rem; color: var(--ink-soft); }
+.install-prompt--expanded { grid-template-columns: 1fr auto; }
 
 @media (min-width: 900px) {
   .map__canvas { height: 380px; }
