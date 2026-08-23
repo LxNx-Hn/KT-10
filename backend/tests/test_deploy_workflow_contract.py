@@ -24,7 +24,7 @@ def test_task_definitions_inject_tmap_public_data_bus_and_ors_keys():
     assert 'name: "ODSAY_DAILY_BUDGET"' in workflow
     assert 'value: "29"' in workflow
     assert 'name: "TRANSIT_PROVIDER_ORDER"' in workflow
-    assert 'value: "odsay,tmap"' in workflow
+    assert 'value: "tmap"' in workflow
     assert "TMAP_API_KEY secret is required for transit routing." in workflow
     assert "ODSAY_API_KEY secret is required" not in workflow
     assert "ORS_API_KEY secret is required for wheelchair routing." in workflow
