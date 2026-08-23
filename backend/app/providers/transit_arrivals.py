@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import re
 from datetime import UTC, datetime
-from math import ceil
+from math import floor
 from threading import Lock
 from time import monotonic
 from weakref import WeakKeyDictionary
@@ -27,6 +27,7 @@ from .busan_subway import (
     clear_subway_timetable_cache,
     get_next_subway_journey,
 )
+from .busan_subway_stations import boards_at_origin_terminal
 
 _KST = ZoneInfo("Asia/Seoul")
 _CACHE_TTL_SECONDS = 30.0
@@ -79,6 +80,34 @@ def _request_lock(key: str) -> asyncio.Lock:
 
 def _route_key(value: str | None) -> str:
     return re.sub(r"[^0-9A-Za-z가-힣]", "", value or "").casefold()
+
+
+def _minutes_until(remaining_seconds: float) -> int:
+    """남은 시간을 표시용 분으로 환산한다.
+
+    1분 미만은 반올림하지 않고 0으로 내린다. 표시 계층이 0을 "곧 도착/출발"로
+    쓰기 때문이며, 초 단위 잔여시간은 화면에 노출하지 않는다.
+    """
+    if remaining_seconds < 60:
+        return 0
+    return floor(remaining_seconds / 60 + 0.5)
+
+
+def _subway_boarding_kind(
+    start_name: str,
+    end_name: str,
+    route_id: str,
+) -> str | None:
+    """승차역이 시발역이면 origin, 중간역이면 intermediate를 반환한다."""
+    try:
+        boards_at_origin = boards_at_origin_terminal(
+            start_name,
+            end_name,
+            route_id or None,
+        )
+    except ValueError:
+        return None
+    return "origin" if boards_at_origin else "intermediate"
 
 
 def _unavailable(
@@ -218,9 +247,9 @@ async def _subway_arrival(
                 route_name=segment.description.split(" · ", 1)[0],
                 boarding_stop_name=segment.station_name,
                 direction=segment.transit_direction,
-                arrival_min=max(
-                    0,
-                    ceil((journey.departure_at - local_reference).total_seconds() / 60),
+                boarding_kind=_subway_boarding_kind(start_name, end_name, route_id),
+                arrival_min=_minutes_until(
+                    (journey.departure_at - local_reference).total_seconds()
                 ),
                 departure_time=journey.departure_time,
                 destination_arrival_time=journey.destination_arrival_time,

@@ -621,6 +621,9 @@ class TransitLegArrival(CamelModel):
     route_name: Optional[str] = None
     boarding_stop_name: Optional[str] = None
     direction: Optional[str] = None
+    # 승차역이 그 진행방향 열차의 시발역인지. None = 판별 불가(버스 등).
+    boarding_kind: Optional[Literal["origin", "intermediate"]] = None
+    # 0 = 1분 미만(곧 도착/출발). 그 이상은 반올림한 분이며 초는 노출하지 않는다.
     arrival_min: Optional[int] = Field(default=None, ge=0)
     arrival_message: Optional[str] = None
     departure_time: Optional[str] = Field(

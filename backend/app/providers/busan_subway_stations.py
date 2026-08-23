@@ -162,3 +162,32 @@ def journey_terminal(
     line = resolve_line(start_station_name, end_station_name, route_id)
     direction = journey_direction(start_station_name, end_station_name, line)
     return LINE_STATIONS[line][-1 if direction == "1" else 0]
+
+
+def journey_origin_terminal(
+    start_station_name: str,
+    end_station_name: str,
+    route_id: object = None,
+) -> str:
+    """노선 순서로 확정한 실제 진행방향의 시발역 이름을 반환한다."""
+    line = resolve_line(start_station_name, end_station_name, route_id)
+    direction = journey_direction(start_station_name, end_station_name, line)
+    return LINE_STATIONS[line][0 if direction == "1" else -1]
+
+
+def boards_at_origin_terminal(
+    start_station_name: str,
+    end_station_name: str,
+    route_id: object = None,
+) -> bool:
+    """승차역이 그 진행방향 열차의 시발역인지 반환한다.
+
+    시발역에서는 열차가 그 역에서 출발하고, 중간역에서는 그 역에 도착한다.
+    노선 종착역 외에 중간역에서 착발하는 열차는 정적 역 순서로 알 수 없으므로
+    구분하지 않는다.
+    """
+    return station_base(start_station_name) == journey_origin_terminal(
+        start_station_name,
+        end_station_name,
+        route_id,
+    )
