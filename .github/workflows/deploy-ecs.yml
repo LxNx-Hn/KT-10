@@ -530,7 +530,7 @@ jobs:
                             },
                             {
                               name: "TRANSIT_PROVIDER_ORDER",
-                              value: "odsay,tmap"
+                              value: "tmap"
                             }
                           ]
                       )
