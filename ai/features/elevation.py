@@ -32,12 +32,16 @@ DEM_BASE_URL = "https://copernicus-dem-90m.s3.eu-central-1.amazonaws.com"
 MAX_POINTS = 200
 PROVIDER_BATCH_SIZE = 100
 SAMPLE_SPACING_M = 90.0
+# 완전 결측 표본을 버리고도 경사를 제공할 최소 조건.
+MIN_SAMPLE_COVERAGE_RATIO = 0.8
+MAX_SAMPLE_GAP_M = 180.0
 SOURCE = "Copernicus DEM GLO-90 via Open-Meteo"
 LOCAL_DEM_SOURCE = "Copernicus DEM GLO-90 via AWS Open Data COG"
 REGIONAL_DEM_SOURCE = "Busan DEM 90m (QGIS precomputed)"
 # v4: 경사 구간에 원본 polyline 부분경로(path)를 추가했다. v3 캐시를 그대로
 # 쓰면 path 없는 결과가 되살아나 지도가 다시 직선으로 그려지므로 무효화한다.
-CACHE_SCHEMA_VERSION = 4
+# v5: 해안 부분 결측 표본을 유효 이웃으로 보간하고 완전 결측 표본은 버린다.
+CACHE_SCHEMA_VERSION = 5
 log = logging.getLogger("features.elevation")
 _dem_tile_locks: dict[str, Lock] = {}
 _dem_tile_locks_guard = Lock()
@@ -130,7 +134,14 @@ def regional_dem_ready() -> bool:
 
 def _regional_dem_elevations(
     sampled: list[tuple[float, float]],
-) -> list[float] | None:
+) -> list[float | None] | None:
+    """표본별 90m 고도를 반환한다. 값을 얻지 못한 표본은 ``None``이다.
+
+    격자가 90m라 해안에서 90m 안쪽이면 실제 보행로가 육지 위여도 bilinear
+    이웃 네 칸 중 일부가 바다다. 유효한 칸만 남겨 가중치를 재정규화하므로
+    실측 DEM 값만 쓰며, 결과는 항상 그 칸들의 최소~최대 범위 안에 있다.
+    유효한 칸이 하나도 없는 표본만 실패로 남긴다.
+    """
     if prepare_regional_dem() is None or _regional_dem is None:
         return None
     xs, ys = transform_coordinates(
@@ -140,8 +151,15 @@ def _regional_dem_elevations(
         [lat for lat, lng in sampled],
     )
     inverse = ~_regional_dem.transform
-    elevations: list[float] = []
+    nodata = _regional_dem.nodata
+    elevations: list[float | None] = []
     height, width = _regional_dem.values.shape
+
+    def measured(value: float) -> bool:
+        return isfinite(value) and (
+            nodata is None or abs(value - nodata) >= 1e-6
+        )
+
     for x, y in zip(xs, ys, strict=True):
         pixel_x, pixel_y = inverse * (x, y)
         pixel_x -= 0.5
@@ -149,29 +167,25 @@ def _regional_dem_elevations(
         x0 = floor(pixel_x)
         y0 = floor(pixel_y)
         if x0 < 0 or y0 < 0 or x0 + 1 >= width or y0 + 1 >= height:
-            return None
+            elevations.append(None)
+            continue
         dx = pixel_x - x0
         dy = pixel_y - y0
-        values = [
-            float(_regional_dem.values[y0, x0]),
-            float(_regional_dem.values[y0, x0 + 1]),
-            float(_regional_dem.values[y0 + 1, x0]),
-            float(_regional_dem.values[y0 + 1, x0 + 1]),
-        ]
-        if any(
-            not isfinite(value)
-            or (
-                _regional_dem.nodata is not None
-                and abs(value - _regional_dem.nodata) < 1e-6
-            )
-            for value in values
-        ):
-            return None
+        corners = (
+            (float(_regional_dem.values[y0, x0]), (1 - dx) * (1 - dy)),
+            (float(_regional_dem.values[y0, x0 + 1]), dx * (1 - dy)),
+            (float(_regional_dem.values[y0 + 1, x0]), (1 - dx) * dy),
+            (float(_regional_dem.values[y0 + 1, x0 + 1]), dx * dy),
+        )
+        total_weight = 0.0
+        accumulated = 0.0
+        for value, weight in corners:
+            if not measured(value):
+                continue
+            total_weight += weight
+            accumulated += value * weight
         elevations.append(
-            values[0] * (1 - dx) * (1 - dy)
-            + values[1] * dx * (1 - dy)
-            + values[2] * (1 - dx) * dy
-            + values[3] * dx * dy
+            accumulated / total_weight if total_weight > 0 else None
         )
     return elevations
 
@@ -315,10 +329,14 @@ def _ensure_dem_tile(tile_id: str) -> Path | None:
 
 def _local_dem_elevations(
     sampled: list[tuple[float, float]],
-) -> tuple[list[float], str] | None:
-    """표본 좌표를 같은 1도 타일끼리 묶어 로컬 COG에서 읽는다."""
+) -> tuple[list[float | None], str] | None:
+    """표본 좌표를 같은 1도 타일끼리 묶어 로컬 COG에서 읽는다.
+
+    지역 DEM은 표본별로 성공/실패가 갈릴 수 있어 ``None``이 섞인 목록을
+    반환한다. 한 표본도 얻지 못했을 때만 다음 공급원으로 넘어간다.
+    """
     regional = _regional_dem_elevations(sampled)
-    if regional is not None:
+    if regional is not None and any(value is not None for value in regional):
         return regional, REGIONAL_DEM_SOURCE
     if not settings.ELEVATION_DEM_DIR.strip():
         return None
@@ -471,6 +489,67 @@ def _anchor_subpath(
     return points
 
 
+def _measured_parts(
+    anchored_parts: list[tuple[list[tuple[float, float]], list[SampleAnchor]]],
+    elevations: list[float | None],
+) -> tuple[
+    list[list[tuple[float, float]]],
+    list[list[float]],
+    list[list[list[dict[str, float]]]],
+] | None:
+    """고도를 얻지 못한 표본을 버리고 좌표·고도·표시경로를 같이 맞춘다.
+
+    표시용 부분경로는 남은 표본으로 다시 만든다. 표본을 버린 뒤 인덱스를
+    맞추는 대신 처음부터 다시 생성하므로 경사 구간과 화면 선이 어긋나지
+    않는다. 다음 두 조건 중 하나라도 어기면 ``None``을 반환해 호출자가
+    경사를 미확인으로 두게 한다.
+
+    - 남은 표본이 전체의 ``MIN_SAMPLE_COVERAGE_RATIO`` 미만
+    - 남은 이웃 표본 사이 거리가 ``MAX_SAMPLE_GAP_M`` 초과. 결측이 길면
+      그 사이 언덕이 통째로 사라져 평지처럼 보이기 때문이다.
+    """
+    coord_parts: list[list[tuple[float, float]]] = []
+    elevation_parts: list[list[float]] = []
+    display_parts: list[list[list[dict[str, float]]]] = []
+    total = 0
+    kept = 0
+    offset = 0
+    for compact, anchors in anchored_parts:
+        part_elevations = elevations[offset:offset + len(anchors)]
+        offset += len(anchors)
+        total += len(anchors)
+        measured = [
+            (anchor, value)
+            for anchor, value in zip(anchors, part_elevations)
+            if value is not None
+        ]
+        if len(measured) < 2:
+            continue
+        kept_anchors = [anchor for anchor, _ in measured]
+        for start, end in pairwise(kept_anchors):
+            if _haversine_m(
+                (start.lat, start.lng),
+                (end.lat, end.lng),
+            ) > MAX_SAMPLE_GAP_M:
+                return None
+        kept += len(measured)
+        coord_parts.append([(a.lat, a.lng) for a in kept_anchors])
+        elevation_parts.append([value for _, value in measured])
+        display_parts.append([
+            _anchor_subpath(compact, start, end)
+            for start, end in pairwise(kept_anchors)
+        ])
+    if not coord_parts or kept < total * MIN_SAMPLE_COVERAGE_RATIO:
+        return None
+    if kept != total:
+        log.info(
+            "90m 경사: 실측 없는 표본 %d/%d개를 제외하고 계산",
+            total - kept,
+            total,
+        )
+    return coord_parts, elevation_parts, display_parts
+
+
 def _empty(status: str, source: str = SOURCE) -> dict:
     return {
         "avg_slope_percent": None,
@@ -614,14 +693,7 @@ async def extract_elevation_features_for_parts(
     ]
     if not sampled_parts or any(len(part) < 2 for part in sampled_parts):
         return _empty("unavailable")
-    # 표본 사이를 원본 정점으로 채운 표시용 부분경로. part 경계는 넘지 않는다.
-    display_path_parts = [
-        [
-            _anchor_subpath(compact, start, end)
-            for start, end in pairwise(anchors)
-        ]
-        for compact, anchors in anchored_parts
-    ]
+    # 표시용 부분경로는 실측 표본이 확정된 뒤 _measured_parts가 만든다.
     cached = await asyncio.to_thread(_read_cache, sampled_parts)
     if cached is not None:
         return cached
@@ -629,18 +701,15 @@ async def extract_elevation_features_for_parts(
     local_result = await asyncio.to_thread(_local_dem_elevations, sampled)
     if local_result is not None:
         local_elevations, local_source = local_result
-        elevation_parts: list[list[float]] = []
-        offset = 0
-        for part in sampled_parts:
-            elevation_parts.append(
-                local_elevations[offset:offset + len(part)]
-            )
-            offset += len(part)
+        measured = _measured_parts(anchored_parts, local_elevations)
+        if measured is None:
+            return _empty("unavailable", local_source)
+        measured_parts, elevation_parts, measured_display_parts = measured
         result = calculate_slope_features_for_parts(
-            sampled_parts,
+            measured_parts,
             elevation_parts,
             source=local_source,
-            display_path_parts=display_path_parts,
+            display_path_parts=measured_display_parts,
         )
         if result["elevation_status"] == "estimated_90m":
             try:
@@ -683,15 +752,14 @@ async def extract_elevation_features_for_parts(
                 return _empty("unavailable")
             elevations.extend(batch_elevations)
 
-        elevation_parts: list[list[float]] = []
-        offset = 0
-        for part in sampled_parts:
-            elevation_parts.append(elevations[offset:offset + len(part)])
-            offset += len(part)
+        measured = _measured_parts(anchored_parts, elevations)
+        if measured is None:
+            return _empty("unavailable")
+        measured_parts, elevation_parts, measured_display_parts = measured
         result = calculate_slope_features_for_parts(
-            sampled_parts,
+            measured_parts,
             elevation_parts,
-            display_path_parts=display_path_parts,
+            display_path_parts=measured_display_parts,
         )
         if result["elevation_status"] == "estimated_90m":
             try:
