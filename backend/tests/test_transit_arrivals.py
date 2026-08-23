@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 import app.main as app_main
 import app.providers.transit_arrivals as provider
-from app.providers.busan_subway import SubwayJourney
+from app.providers.busan_subway import SubwayJourney, SubwayTimetableError
 from app.providers.busan_bus import BusStopCandidate
 from app.data.weather import WEATHER_SCENARIOS
 from app.main import app
@@ -64,6 +64,7 @@ def _subway_segment() -> RouteSegment:
         end_station_name="서면역",
         transit_start_id="114",
         transit_end_id="119",
+        transit_route_id="71",
         transit_direction="노포",
     )
 
@@ -151,11 +152,12 @@ def test_subway_schedule_is_lazy_and_truthfully_labeled(monkeypatch):
     calls = 0
     reference = datetime(2026, 8, 3, 1, 0, tzinfo=UTC)  # KST 10:00
 
-    async def fake_journey(start_name, end_name, local_reference):
+    async def fake_journey(start_name, end_name, local_reference, route_id):
         nonlocal calls
         calls += 1
         assert start_name == "부산역"
         assert end_name == "서면역"
+        assert route_id == "71"
         assert local_reference.hour == 10
         return SubwayJourney(
             departure_time="10:05:00",
@@ -185,6 +187,26 @@ def test_subway_schedule_is_lazy_and_truthfully_labeled(monkeypatch):
     assert result.departure_time == "10:05:00"
     assert "실시간 열차 위치는 아닙니다" in (result.arrival_message or "")
     assert result.source == "부산교통공사 도시철도 시간표"
+
+
+def test_subway_schedule_exposes_classified_safe_failure(monkeypatch):
+    monkeypatch.setattr(settings, "data_go_kr_service_key", "configured")
+
+    async def fake_journey(*_args):
+        raise SubwayTimetableError(
+            "station_mapping_failed",
+            "도시철도 노선과 승·하차역을 정확히 확인할 수 없습니다.",
+        )
+
+    monkeypatch.setattr(provider, "get_next_subway_journey", fake_journey)
+    result = asyncio.run(provider.get_route_transit_arrivals([
+        _subway_segment(),
+    ]))[0]
+
+    assert result.status == "unavailable"
+    assert result.arrival_message == (
+        "도시철도 노선과 승·하차역을 정확히 확인할 수 없습니다."
+    )
 
 
 def test_route_arrival_endpoint_uses_existing_route_set_only(monkeypatch):

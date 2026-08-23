@@ -41,7 +41,10 @@ STAIR_ALTERNATIVE_RAMP_TURN_TYPE = 129
 STAIR_ALTERNATIVE_RAMP_FACILITY_TYPE = 20
 MAX_RAMP_EVIDENCE_POINTS = 100
 RAMP_PATH_MATCH_MAX_M = 20.0
-QUOTA_BACKOFF_SECONDS = 60.0
+QUOTA_BACKOFF_SECONDS = 2.0
+NETWORK_ATTEMPTS = 2
+RETRY_DELAY_SECONDS = 0.5
+RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 500, 502, 503, 504})
 log = logging.getLogger("collectors.tmap")
 _cache_write_locks: dict[str, Lock] = {}
 _cache_write_locks_guard = Lock()
@@ -50,6 +53,22 @@ _request_semaphores: WeakKeyDictionary = WeakKeyDictionary()
 _request_state_guard = Lock()
 _quota_backoff_until = 0.0
 _quota_backoff_guard = Lock()
+
+
+def _response_json(response: httpx.Response) -> object:
+    """TMAP이 POI 문자열에 넣는 비이스케이프 제어문자를 안전하게 읽는다.
+
+    실제 200 응답에서 상호명 사이 NUL 문자가 확인됐다. 문자열 내부 제어문자만
+    허용하고, 이후 후보 스키마·좌표·수치 검증은 기존과 동일하게 수행한다.
+    """
+    try:
+        return response.json()
+    except ValueError:
+        content = getattr(response, "content", None)
+        if not isinstance(content, (bytes, bytearray)):
+            raise
+        encoding = getattr(response, "encoding", None) or "utf-8"
+        return json.loads(bytes(content).decode(encoding), strict=False)
 
 
 def _point_to_path_distance_m(point: Coordinate, path: list[Coordinate]) -> float:
@@ -479,51 +498,76 @@ class TmapRouteCollector(BaseRouteCollector):
                 raise CollectorError(
                     "TMAP 호출 한도 대기 중"
                 )
-            try:
-                async with _request_semaphore():
-                    if _quota_backoff_active():
-                        raise CollectorError(
-                            "TMAP 호출 한도 대기 중"
-                        )
-                    async with httpx.AsyncClient() as client:
-                        resp = await client.post(self.BASE_URL, json={
-                            "startX": origin.lng, "startY": origin.lat,
-                            "endX": destination.lng, "endY": destination.lat,
-                            "startName": "출발지", "endName": "도착지",
-                            "reqCoordType": "WGS84GEO",
-                            "resCoordType": "WGS84GEO",
-                            "sort": "index",
-                            "searchOption": self.search_option,
-                        }, params={"version": "1"}, headers={
-                            "appKey": settings.TMAP_API_KEY,
-                            "Accept": "application/json",
-                            "Content-Type": "application/json",
-                        }, timeout=10.0)
-                resp.raise_for_status()
-                data = resp.json()
-                if not isinstance(data, dict):
-                    raise CollectorError("TMAP 응답 본문이 JSON 객체가 아닙니다.")
-                candidate = self._candidate_from_data(data)
+            for attempt in range(NETWORK_ATTEMPTS):
                 try:
-                    await asyncio.to_thread(_write_cache, identity, data)
-                except OSError as exc:
-                    log.warning("TMAP 캐시 저장 실패 (%s)", type(exc).__name__)
-                return [candidate]
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 429:
-                    _start_quota_backoff()
+                    async with _request_semaphore():
+                        if _quota_backoff_active():
+                            raise CollectorError(
+                                "TMAP 호출 한도 대기 중"
+                            )
+                        async with httpx.AsyncClient() as client:
+                            resp = await client.post(self.BASE_URL, json={
+                                "startX": origin.lng, "startY": origin.lat,
+                                "endX": destination.lng, "endY": destination.lat,
+                                "startName": "출발지", "endName": "도착지",
+                                "reqCoordType": "WGS84GEO",
+                                "resCoordType": "WGS84GEO",
+                                "sort": "index",
+                                "searchOption": self.search_option,
+                            }, params={"version": "1"}, headers={
+                                "appKey": settings.TMAP_API_KEY,
+                                "Accept": "application/json",
+                                "Content-Type": "application/json",
+                            }, timeout=10.0)
+                    resp.raise_for_status()
+                    data = _response_json(resp)
+                    if not isinstance(data, dict):
+                        raise CollectorError(
+                            "TMAP 응답 본문이 JSON 객체가 아닙니다.",
+                            code="invalid_response",
+                            retryable=False,
+                        )
+                    candidate = self._candidate_from_data(data)
+                    try:
+                        await asyncio.to_thread(_write_cache, identity, data)
+                    except OSError as exc:
+                        log.warning("TMAP 캐시 저장 실패 (%s)", type(exc).__name__)
+                    return [candidate]
+                except httpx.HTTPStatusError as exc:
+                    status = exc.response.status_code
+                    if (
+                        status in RETRYABLE_HTTP_STATUSES
+                        and attempt + 1 < NETWORK_ATTEMPTS
+                    ):
+                        log.warning(
+                            "TMAP 일시 응답 실패 HTTP %d, 1회 재시도",
+                            status,
+                        )
+                        await asyncio.sleep(RETRY_DELAY_SECONDS)
+                        continue
+                    if status == 429:
+                        _start_quota_backoff()
+                        raise CollectorError(
+                            "TMAP 호출 한도 초과",
+                            code="quota_exceeded",
+                        ) from exc
                     raise CollectorError(
-                        "TMAP 호출 한도 초과"
+                        f"TMAP 호출 실패: HTTP {status}"
                     ) from exc
-                raise CollectorError(
-                    f"TMAP 호출 실패: HTTP {exc.response.status_code}"
-                ) from exc
-            except CollectorError:
-                raise
-            except (httpx.HTTPError, ValueError, TypeError) as exc:
-                raise CollectorError(
-                    f"TMAP 호출 또는 응답 처리 실패: {type(exc).__name__}"
-                ) from exc
+                except CollectorError:
+                    raise
+                except (httpx.HTTPError, ValueError, TypeError) as exc:
+                    if attempt + 1 < NETWORK_ATTEMPTS:
+                        log.warning(
+                            "TMAP 일시 응답 처리 실패 (%s), 1회 재시도",
+                            type(exc).__name__,
+                        )
+                        await asyncio.sleep(RETRY_DELAY_SECONDS)
+                        continue
+                    raise CollectorError(
+                        f"TMAP 호출 또는 응답 처리 실패: {type(exc).__name__}"
+                    ) from exc
+            raise AssertionError("TMAP 재시도 루프가 결과 없이 종료되었습니다.")
 
     async def collect_cached(
         self,

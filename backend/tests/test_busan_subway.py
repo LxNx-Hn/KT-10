@@ -29,15 +29,15 @@ def test_next_journey_matches_same_train_and_direction(monkeypatch):
     common = {"line": "1", "dayType": "1", "endcode": "95"}
     payloads = {
         "부산": _payload("부산", [
-            dict(common, trainno="9001", updown="0", arrtime="10:01:00", dayType="2"),
-            dict(common, trainno="1000", updown="0", arrtime="09:58:00"),
-            dict(common, trainno="1001", updown="0", arrtime="10:05:00"),
-            dict(common, trainno="1001", updown="1", arrtime="10:06:00"),
+            dict(common, trainno="9001", updown="1", arrtime="10:01:00", dayType="2"),
+            dict(common, trainno="1000", updown="1", arrtime="09:58:00"),
+            dict(common, trainno="1001", updown="1", arrtime="10:05:00"),
+            dict(common, trainno="1002", updown="0", arrtime="10:06:00"),
         ]),
-        "서면": _payload("서면", [
-            dict(common, trainno="9001", updown="0", arrtime="10:14:00", dayType="2"),
-            dict(common, trainno="1001", updown="1", arrtime="09:54:00"),
-            dict(common, trainno="1001", updown="0", arrtime="10:18:00"),
+        "서면(1)": _payload("서면(1)", [
+            dict(common, trainno="9001", updown="1", arrtime="10:14:00", dayType="2"),
+            dict(common, trainno="1002", updown="0", arrtime="09:54:00"),
+            dict(common, trainno="1001", updown="1", arrtime="10:18:00"),
         ]),
     }
     calls: list[dict[str, object]] = []
@@ -77,8 +77,63 @@ def test_next_journey_matches_same_train_and_direction(monkeypatch):
 
     assert journey.departure_time == "10:05:00"
     assert journey.destination_arrival_time == "10:18:00"
-    assert {call["sname"] for call in calls} == {"부산", "서면"}
+    assert {call["sname"] for call in calls} == {"부산", "서면(1)"}
     assert all(call["dayType"] == 1 for call in calls)
+
+
+def test_next_journey_queries_verified_external_transfer_alias(monkeypatch):
+    common = {
+        "line": "1",
+        "dayType": "1",
+        "endcode": "95",
+        "trainno": "1101",
+        "updown": "1",
+    }
+    payloads = {
+        "시청": _payload("시청", [dict(common, arrtime="10:05:00")]),
+        "교대(1)": _payload(
+            "교대(1)",
+            [dict(common, arrtime="10:12:00")],
+        ),
+    }
+    queries: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, _url, *, params):
+            query = str(params["sname"])
+            queries.append(query)
+            return FakeResponse(payloads[query])
+
+    monkeypatch.setattr(provider.httpx, "AsyncClient", FakeClient)
+    journey = asyncio.run(provider.get_next_subway_journey(
+        "시청",
+        "교대",
+        datetime(2026, 8, 3, 1, 0, tzinfo=UTC),
+        route_id="71",
+    ))
+
+    assert journey.departure_time == "10:05:00"
+    assert journey.destination_arrival_time == "10:12:00"
+    assert set(queries) == {"시청", "교대(1)"}
 
 
 def test_station_schedule_is_cached_across_requests(monkeypatch):
@@ -86,12 +141,12 @@ def test_station_schedule_is_cached_across_requests(monkeypatch):
         "line": "1",
         "trainno": "1001",
         "dayType": "1",
-        "updown": "0",
+        "updown": "1",
         "endcode": "95",
     }
     payloads = {
         "부산": _payload("부산", [dict(row, arrtime="10:05:00")]),
-        "서면": _payload("서면", [dict(row, arrtime="10:18:00")]),
+        "서면(1)": _payload("서면(1)", [dict(row, arrtime="10:18:00")]),
     }
     calls = 0
 
@@ -133,3 +188,85 @@ def test_station_schedule_is_cached_across_requests(monkeypatch):
     results = asyncio.run(run())
     assert calls == 2
     assert all(result.departure_time == "10:05:00" for result in results)
+
+
+def test_reverse_direction_is_not_treated_as_next_day_arrival():
+    common = {"line": "1", "dayType": "1", "endcode": "95"}
+    start_rows = [
+        dict(common, trainno="1278", updown="1", arrtime="19:42:30"),
+        dict(common, trainno="1279", updown="0", arrtime="19:44:25"),
+    ]
+    end_rows = [
+        dict(common, trainno="1278", updown="1", arrtime="19:36:45"),
+        dict(common, trainno="1279", updown="0", arrtime="19:49:55"),
+    ]
+
+    journey = provider._find_journey(
+        start_rows,
+        end_rows,
+        service_date=datetime(2026, 8, 22).date(),
+        reference=datetime(2026, 8, 22, 19, 40, tzinfo=provider._KST),
+        line="1",
+        direction="0",
+    )
+
+    assert journey is not None
+    assert journey.departure_time == "19:44:25"
+    assert journey.destination_arrival_time == "19:49:55"
+    assert (
+        journey.destination_arrival_at - journey.departure_at
+    ).total_seconds() == 330
+
+
+def test_matching_direction_can_cross_midnight_within_duration_limit():
+    common = {
+        "line": "1",
+        "trainno": "1999",
+        "dayType": "1",
+        "updown": "1",
+        "endcode": "95",
+    }
+    journey = provider._find_journey(
+        [dict(common, arrtime="23:58:00")],
+        [dict(common, arrtime="00:12:00")],
+        service_date=datetime(2026, 8, 22).date(),
+        reference=datetime(2026, 8, 22, 23, 50, tzinfo=provider._KST),
+        line="1",
+        direction="1",
+    )
+
+    assert journey is not None
+    assert journey.destination_arrival_at.date().isoformat() == "2026-08-23"
+    assert (
+        journey.destination_arrival_at - journey.departure_at
+    ).total_seconds() == 14 * 60
+
+
+def test_station_base_and_line_from_route_id_variations():
+    from app.providers.busan_subway_stations import (
+        line_from_route_id,
+        resolve_line,
+        station_base,
+    )
+
+    assert station_base("국제금융센터·부산은행") == "국제금융센터.부산은행"
+    assert station_base("국제금융센터부산은행역") == "국제금융센터.부산은행"
+    assert station_base("경성대·부경대") == "경성대.부경대"
+    assert station_base("경성대부경대역") == "경성대.부경대"
+    assert station_base("부산1호선 시청역") == "시청"
+    assert station_base("시청역(1호선)") == "시청"
+    assert station_base("교대역(동해선)") == "교대"
+    assert station_base("서면역 1호선") == "서면"
+
+    assert line_from_route_id("71") == "1"
+    assert line_from_route_id("1") == "1"
+    assert line_from_route_id("부산 1호선") == "1"
+    assert line_from_route_id("부산1호선") == "1"
+    assert line_from_route_id("1호선") == "1"
+    assert line_from_route_id("부산도시철도 2호선") == "2"
+    assert line_from_route_id("260011001") == "1"
+    assert line_from_route_id("260011002") == "2"
+
+    assert resolve_line("국제금융센터·부산은행", "서면역", "부산2호선") == "2"
+    assert resolve_line("부산1호선 시청역", "교대역(1호선)") == "1"
+

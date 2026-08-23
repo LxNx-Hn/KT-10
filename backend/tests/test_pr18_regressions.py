@@ -101,15 +101,20 @@ def test_invalid_route_set_tokens_do_not_leak_locks():
     """임의 token 요청이 서버 메모리의 lock map을 증가시키면 안 된다."""
     before = len(route_set_cache._token_locks)
 
+    response = client.post(
+        "/api/routes/refine-transit",
+        json={
+            "routeSetToken": "nonexistent-token-" + "0" * 30,
+            "routeId": "route-a",
+        },
+    )
+    assert response.status_code == 409
+
+    # HTTP 요청 1만 회의 이벤트 루프 생성 비용과 무관하게, 공격 입력의
+    # cardinality 자체는 잠금 생성 경계에서 모두 검증한다.
     for index in range(10_000):
-        response = client.post(
-            "/api/routes/refine-transit",
-            json={
-                "routeSetToken": f"nonexistent-token-{index:040d}"[:64],
-                "routeId": "route-a",
-            },
-        )
-        assert response.status_code == 409
+        token = f"nonexistent-token-{index:040d}"[:64]
+        assert route_set_cache._claim_token_lock(token) is None
 
     after = len(route_set_cache._token_locks)
     assert after == before, (
@@ -227,8 +232,8 @@ def test_displayable_shade_survives_normalization():
     assert candidate.shade.shade_ratio == 0.42
 
 
-def test_recommend_response_exposes_unavailable_shade_reason(monkeypatch):
-    """추천 응답은 외부 호출을 생략한 이유를 unavailable로 알려야 한다."""
+def test_recommend_response_exposes_nighttime_shade_state(monkeypatch):
+    """추천 응답은 야간을 그늘 미확인과 구분해야 한다."""
     monkeypatch.setattr(settings, "building_source", "vworld")
     monkeypatch.setattr(settings, "vworld_api_key", "configured")
 
@@ -241,7 +246,7 @@ def test_recommend_response_exposes_unavailable_shade_reason(monkeypatch):
         "destination": destination.model_dump(by_alias=True),
         "profile": "general",
         "weatherScenario": "normal",
-        # 10~18시 gate 밖 → shade 미계산 상태
+        # 태양 고도 0도 이하 → VWorld 조회 없이 야간 상태
         "options": {"departureAt": "2026-07-27T02:00:00+09:00"},
         "topN": 3,
     }
@@ -250,8 +255,8 @@ def test_recommend_response_exposes_unavailable_shade_reason(monkeypatch):
 
     for item in response.json():
         shade = item["route"]["shade"]
-        assert shade["status"] == "unavailable"
-        assert "오전 10시부터 오후 6시 전" in shade["calculationNote"]
+        assert shade["status"] == "not_daylight"
+        assert "태양 고도" in shade["calculationNote"]
         assert "shadeRatio" not in shade, (
             f"미계산 그늘이 0% 또는 계산값으로 직렬화됨: {shade}"
         )

@@ -257,6 +257,26 @@ function withTransitFirst(
 }
 
 describe('검색 직후 1순위 자동 선택의 대중교통 정밀화', () => {
+  function withUnavailablePublicShade(
+    recommendations: ScoredRoute[],
+  ): ScoredRoute[] {
+    return recommendations.map((item) => ({
+      ...item,
+      route: {
+        ...item.route,
+        shade: {
+          status: 'unavailable' as const,
+          evaluatedAt: '2026-08-22T14:00:00+09:00',
+          source: 'VWorld LT_C_BLDGINFO WFS',
+          dataQuality: 'public' as const,
+          shadowPolygons: [],
+          pathSegments: [],
+          calculationNote: '건물 회랑을 준비 중입니다.',
+        },
+      },
+    }));
+  }
+
   async function searchWith(
     recommendations: ScoredRoute[],
   ) {
@@ -314,6 +334,129 @@ describe('검색 직후 1순위 자동 선택의 대중교통 정밀화', () => 
       useAppStore.getState().recommendations[0]?.route.path,
     ).toEqual(refined.path);
     expect(adapters.routes.recommend).toHaveBeenCalledTimes(1);
+  });
+
+  it('VWorld 회랑이 준비 중이면 경로를 먼저 표시하고 그늘을 자동 갱신한다', async () => {
+    const recommendations = withUnavailablePublicShade(
+      withTransitFirst(seedEstimatedTransitResults()),
+    ).map((item) => ({
+      ...item,
+      route: {
+        ...item.route,
+        geometryQuality: 'exact' as const,
+        segments: item.route.segments.map((segment) => ({
+          ...segment,
+          geometryQuality: 'exact' as const,
+        })),
+      },
+    }));
+    const refreshed = recommendations.map((item) => ({
+      ...item,
+      route: {
+        ...item.route,
+        shade: {
+          ...item.route.shade!,
+          status: 'estimated_public' as const,
+          shadeRatio: 0.42,
+          shadedWalkM: 420,
+          calculationNote: '확인된 건물 높이 기준 최소 그늘입니다.',
+        },
+      },
+    }));
+    const refreshShade = vi
+      .spyOn(adapters.routes, 'refreshShade')
+      .mockResolvedValue(refreshed);
+
+    await searchWith(recommendations);
+
+    expect(useAppStore.getState().recommendations).toHaveLength(
+      recommendations.length,
+    );
+    await vi.waitFor(() => {
+      expect(refreshShade).toHaveBeenCalledTimes(1);
+      expect(
+        useAppStore.getState().recommendations[0]?.route.shade?.status,
+      ).toBe('estimated_public');
+    });
+    expect(useAppStore.getState().error).toBeNull();
+  });
+
+  it('자동 그늘 갱신 실패는 이미 표시한 경로를 오류 화면으로 바꾸지 않는다', async () => {
+    const recommendations = withUnavailablePublicShade(
+      withTransitFirst(seedEstimatedTransitResults()),
+    ).map((item) => ({
+      ...item,
+      route: {
+        ...item.route,
+        geometryQuality: 'exact' as const,
+        segments: item.route.segments.map((segment) => ({
+          ...segment,
+          geometryQuality: 'exact' as const,
+        })),
+      },
+    }));
+    const refreshShade = vi
+      .spyOn(adapters.routes, 'refreshShade')
+      .mockRejectedValue(new Error('VWorld timeout'));
+
+    await searchWith(recommendations);
+    await vi.waitFor(() => {
+      expect(refreshShade).toHaveBeenCalledTimes(1);
+    });
+
+    expect(useAppStore.getState().recommendations).toHaveLength(
+      recommendations.length,
+    );
+    expect(useAppStore.getState().error).toBeNull();
+  });
+
+  it('늦은 자동 그늘 응답은 먼저 끝난 정밀 선형을 되돌리지 않는다', async () => {
+    const recommendations = withUnavailablePublicShade(
+      withTransitFirst(seedEstimatedTransitResults()),
+    );
+    const firstId = recommendations[0].route.id;
+    const shadeRefresh = deferred<ScoredRoute[]>();
+    vi.spyOn(adapters.routes, 'refreshShade').mockReturnValue(
+      shadeRefresh.promise,
+    );
+    vi.spyOn(adapters.routes, 'refineTransit').mockResolvedValue({
+      routeId: firstId,
+      path: [
+        { lat: 35.11, lng: 129.01 },
+        { lat: 35.21, lng: 129.11 },
+      ],
+      segments: recommendations[0].route.segments.map((segment) => ({
+        ...segment,
+        geometryQuality: 'exact' as const,
+      })),
+      geometryQuality: 'exact',
+    });
+
+    await searchWith(recommendations);
+    await vi.waitFor(() => {
+      expect(
+        useAppStore.getState().recommendations[0]?.route.geometryQuality,
+      ).toBe('exact');
+    });
+
+    shadeRefresh.resolve(recommendations.map((item) => ({
+      ...item,
+      route: {
+        ...item.route,
+        shade: {
+          ...item.route.shade!,
+          status: 'estimated_public' as const,
+          shadeRatio: 0.37,
+          shadedWalkM: 370,
+        },
+      },
+    })));
+
+    await vi.waitFor(() => {
+      const route = useAppStore.getState().recommendations[0]?.route;
+      expect(route?.shade?.status).toBe('estimated_public');
+      expect(route?.geometryQuality).toBe('exact');
+    });
   });
 
   it('exact transit 1순위는 refinement를 호출하지 않는다', async () => {

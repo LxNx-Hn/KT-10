@@ -601,10 +601,35 @@ async def _collect_static_featured_routes(
             tmap_collector.collect(origin, destination),
         ]
     source_names = [collector.source_name for collector in collectors]
-    results = await asyncio.gather(
-        *tasks,
-        return_exceptions=True,
+    collection_tasks = [asyncio.create_task(task) for task in tasks]
+    _, pending = await asyncio.wait(
+        collection_tasks,
+        timeout=settings.ROUTE_COLLECTION_TOTAL_TIMEOUT_SECONDS,
     )
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+        log.warning(
+            "경로 후보 전체 수집 제한시간 초과 sources=%s timeout=%.1f",
+            [
+                source
+                for source, task in zip(source_names, collection_tasks)
+                if task in pending
+            ],
+            settings.ROUTE_COLLECTION_TOTAL_TIMEOUT_SECONDS,
+        )
+    results: list[object] = []
+    for source, task in zip(source_names, collection_tasks):
+        if task in pending:
+            results.append(TimeoutError(
+                f"{source} 후보 수집 전체 제한시간을 초과했습니다."
+            ))
+            continue
+        try:
+            results.append(task.result())
+        except Exception as exc:  # 공급자별 실패를 아래 공통 계약으로 변환한다.
+            results.append(exc)
 
     candidates = []
     succeeded: list[str] = []
@@ -1001,7 +1026,7 @@ async def _collect_featured_routes(
 
 def _analysis_route_parts(candidate) -> list[list[tuple[float, float]]]:
     """표시 geometry와 분리된, 공급자가 확인한 보행 분석 parts."""
-    if candidate.source == "odsay":
+    if candidate.source in {"odsay", "tmap_transit"}:
         walk_segments = [
             segment
             for segment in candidate.segments
@@ -1029,9 +1054,10 @@ def _analysis_route_parts(candidate) -> list[list[tuple[float, float]]]:
                 and isinstance(declared_distance, (int, float))
                 and declared_distance == 0
             ):
-                # ODsay가 환승 지점에서 0m 보행 구간과 동일 좌표 두 개를
-                # 함께 반환하는 경우는 실제 이동이 없으므로 경사 구간에서
-                # 제외한다. 0m인데 좌표가 다르면 공급자 불일치로 취급한다.
+                # 대중교통 공급자가 환승 지점에서 0m 보행 구간과
+                # 동일 좌표 두 개를 함께 반환하는 경우는 실제 이동이
+                # 없으므로 경사 구간에서 제외한다. 0m인데 좌표가
+                # 다르면 공급자 불일치로 취급한다.
                 if len(set(coordinates)) == 1:
                     continue
                 return []

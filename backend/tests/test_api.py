@@ -331,13 +331,13 @@ def test_vworld_night_skips_building_lookup(monkeypatch):
         weather=_valid_live_weather(),
     ))
 
-    # 10~18시 밖 출발은 gate에서 차단되어 VWorld 0회이며, 계산 불가
-    # 상태와 사용자 설명은 응답용 모델에 보존한다.
+    # 태양 고도가 0도 이하이면 VWorld 건물 조회 없이 야간
+    # 상태를 정확히 반환한다.
     assert calls == []
     assert all(
         route.shade is not None
-        and route.shade.status == "unavailable"
-        and "오전 10시부터 오후 6시 전" in route.shade.calculation_note
+        and route.shade.status == "not_daylight"
+        and "태양 고도" in route.shade.calculation_note
         for route in routes
     )
 
@@ -560,6 +560,7 @@ def test_ai_recommend_always_calculates_shade_for_complete_route_data(
     monkeypatch.setattr(settings, "route_mode", "ai")
     monkeypatch.setattr(settings, "ai_server_url", "http://ai.test")
     shade_calls = 0
+    shade_wait_for_buildings = None
 
     async def fake_weather(_scenario):
         return WEATHER_SCENARIOS["normal"]
@@ -568,8 +569,9 @@ def test_ai_recommend_always_calculates_shade_for_complete_route_data(
         return demo_candidates()
 
     async def fake_shade(candidates, *_args, **_kwargs):
-        nonlocal shade_calls
+        nonlocal shade_calls, shade_wait_for_buildings
         shade_calls += 1
+        shade_wait_for_buildings = _kwargs.get("wait_for_buildings")
         return candidates
 
     async def fake_rank(candidates, profile, options, *, top_n, **_kwargs):
@@ -597,6 +599,54 @@ def test_ai_recommend_always_calculates_shade_for_complete_route_data(
 
     assert response.status_code == 200
     assert shade_calls == 1
+    assert shade_wait_for_buildings is False
+
+
+def test_live_recommend_defers_cold_vworld_corridor(monkeypatch):
+    """초기 live 추천은 VWorld 콜드 조회를 기다리지 않아야 한다."""
+    monkeypatch.setattr(settings, "route_mode", "live")
+    monkeypatch.setattr(settings, "ai_server_url", "http://ai.test")
+    shade_wait_for_buildings = None
+
+    async def fake_weather(_scenario):
+        return WEATHER_SCENARIOS["normal"]
+
+    async def fake_candidates(*_args, **_kwargs):
+        return demo_candidates()
+
+    async def fake_shade(candidates, *_args, **kwargs):
+        nonlocal shade_wait_for_buildings
+        shade_wait_for_buildings = kwargs.get("wait_for_buildings")
+        return candidates
+
+    async def fake_enrichment(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(app_main, "get_current_weather", fake_weather)
+    monkeypatch.setattr(app_main, "get_ai_pipeline_candidates", fake_candidates)
+    monkeypatch.setattr(app_main, "_add_configured_shade", fake_shade)
+    monkeypatch.setattr(
+        app_main,
+        "enrich_ai_pipeline_candidates",
+        fake_enrichment,
+    )
+    monkeypatch.setattr(
+        app_main,
+        "personalize_and_sign",
+        lambda selected, *_args, **_kwargs: selected,
+    )
+
+    response = client.post("/api/routes/recommend", json={
+        "origin": _place_payload("gu-office"),
+        "destination": _place_payload("seomyeon-stn"),
+        "profile": "general",
+        "weatherScenario": "normal",
+        "options": {},
+        "topN": 3,
+    })
+
+    assert response.status_code == 200, response.json()
+    assert shade_wait_for_buildings is False
 
 
 def test_ai_recommend_defers_transit_refinement_and_nim_explanation(

@@ -148,7 +148,10 @@ class TransitWalkGeometryResolver:
                         )
                     )
                 else:
-                    candidates = await collector.collect(start, end)
+                    candidates = await asyncio.wait_for(
+                        collector.collect(start, end),
+                        timeout=settings.TRANSIT_WALK_ENRICHMENT_TIMEOUT_SECONDS,
+                    )
             except (CollectorError, TimeoutError) as exc:
                 signature = (collector.source_name, str(exc))
                 with _failure_signatures_guard:

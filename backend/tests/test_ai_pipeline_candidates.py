@@ -49,6 +49,21 @@ def test_station_accessibility_inventory_survives_ai_adapter_without_route_claim
     assert segment.end_station_elevator_exit_match is True
 
 
+def test_subway_adapter_replaces_intermediate_stop_with_terminal_direction():
+    segment = _to_segment({
+        "id": "subway-direction",
+        "mode": "subway",
+        "description": "시청 → 교대",
+        "duration_min": 4,
+        "station_name": "시청",
+        "end_station_name": "교대",
+        "transit_route_id": "71",
+        "transit_direction": "교대",
+    }, 1, 0)
+
+    assert segment.transit_direction == "노포"
+
+
 def test_internal_ai_headers_preserve_request_correlation_id(monkeypatch):
     """Backend→AI 호출은 내부 토큰과 동일한 요청 correlation ID를 보낸다."""
     internal_token = "internal-service-token-for-tests-0123456789"

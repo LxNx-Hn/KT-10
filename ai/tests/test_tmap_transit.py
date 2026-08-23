@@ -1,5 +1,6 @@
 import asyncio
 
+import httpx
 import pytest
 
 from collectors.base import CollectorError, Coordinate, RouteCandidate
@@ -61,7 +62,7 @@ def _payload():
                                 "lon": 129.0594,
                                 "lat": 35.1582,
                             },
-                            "passStopList": {"stations": [
+                            "passStopList": {"stationList": [
                                 {
                                     "stationID": "SUB-1",
                                     "stationName": "시청",
@@ -101,6 +102,7 @@ def test_tmap_transit_normalizes_exact_route_and_caches(
     import collectors.tmap_transit_collector as module
 
     requests = 0
+    walk_resolver_calls = 0
 
     class Response:
         status_code = 200
@@ -127,6 +129,8 @@ def test_tmap_transit_normalizes_exact_route_and_caches(
             return Response()
 
     async def resolve(_self, start, end):
+        nonlocal walk_resolver_calls
+        walk_resolver_calls += 1
         return WalkGeometryResult([start, end], "exact", {})
 
     monkeypatch.setattr(settings, "TMAP_API_KEY", "test-key")
@@ -151,6 +155,7 @@ def test_tmap_transit_normalizes_exact_route_and_caches(
     )
 
     assert requests == 1
+    assert walk_resolver_calls == 0
     assert first[0].source == "tmap_transit"
     assert first[0].duration_min == 12
     assert first[0].geometry_quality == "exact"
@@ -166,6 +171,144 @@ def test_tmap_transit_normalizes_exact_route_and_caches(
     assert second[0].path == first[0].path
     cache_text = next(tmp_path.glob("*.json")).read_text(encoding="utf-8")
     assert "test-key" not in cache_text
+
+
+def test_tmap_transit_retries_one_transient_non_json_response(
+    monkeypatch,
+    tmp_path,
+):
+    import collectors.tmap_transit_collector as module
+
+    requests = 0
+    delays: list[float] = []
+
+    class Response:
+        status_code = 200
+
+        def __init__(self, valid: bool):
+            self.valid = valid
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            if not self.valid:
+                raise ValueError("temporary non-JSON response")
+            return _payload()
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            nonlocal requests
+            requests += 1
+            return Response(valid=requests == 2)
+
+    async def record_delay(seconds: float):
+        delays.append(seconds)
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "TMAP_TRANSIT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(module.httpx, "AsyncClient", Client)
+    monkeypatch.setattr(module.asyncio, "sleep", record_delay)
+
+    result = asyncio.run(
+        TmapTransitRouteCollector().collect(
+            ORIGIN,
+            DESTINATION,
+            max_candidates=1,
+        )
+    )
+
+    assert len(result) == 1
+    assert requests == 2
+    assert delays == [module.RETRY_DELAY_SECONDS]
+
+
+def test_tmap_transit_accepts_unescaped_control_character_in_text():
+    import collectors.tmap_transit_collector as module
+
+    response = httpx.Response(
+        200,
+        content=b'{"metaData":{"description":"first\x00second"}}',
+    )
+
+    assert module._response_json(response) == {
+        "metaData": {"description": "first\x00second"},
+    }
+
+
+def test_tmap_transit_resolves_only_missing_walk_geometry(monkeypatch):
+    import collectors.tmap_transit_collector as module
+
+    payload = _payload()
+    legs = payload["metaData"]["plan"]["itineraries"][0]["legs"]
+    legs[0].pop("steps")
+    legs[2].pop("steps")
+    resolved: list[tuple[Coordinate, Coordinate]] = []
+
+    async def resolve(_self, start, end):
+        resolved.append((start, end))
+        return WalkGeometryResult([start, end], "exact", {})
+
+    monkeypatch.setattr(module.TransitWalkGeometryResolver, "resolve", resolve)
+    candidates = asyncio.run(
+        TmapTransitRouteCollector()._from_payload(
+            payload,
+            max_candidates=1,
+        )
+    )
+
+    assert len(resolved) == 2
+    assert candidates[0].geometry_quality == "exact"
+
+
+def test_tmap_transit_bounds_missing_walk_enrichment(monkeypatch):
+    import collectors.tmap_collector as tmap_walk_module
+
+    payload = _payload()
+    legs = payload["metaData"]["plan"]["itineraries"][0]["legs"]
+    legs[0].pop("steps")
+    cancelled = asyncio.Event()
+
+    async def blocking_collect(_self, *_args, **_kwargs):
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    monkeypatch.setattr(settings, "TMAP_API_KEY", "configured")
+    monkeypatch.setattr(
+        settings,
+        "TRANSIT_WALK_ENRICHMENT_TIMEOUT_SECONDS",
+        0.01,
+    )
+    monkeypatch.setattr(
+        tmap_walk_module.TmapRouteCollector,
+        "collect",
+        blocking_collect,
+    )
+
+    candidates = asyncio.run(
+        TmapTransitRouteCollector()._from_payload(
+            payload,
+            max_candidates=1,
+        )
+    )
+
+    first_walk = candidates[0].segments[0]
+    assert cancelled.is_set()
+    assert first_walk["geometry_quality"] == "estimated"
+    assert first_walk["path"] == [ORIGIN, Coordinate(35.1793, 129.0760)]
+    assert candidates[0].segments[2]["geometry_quality"] == "exact"
 
 
 def test_transit_provider_uses_tmap_when_odsay_is_not_configured(monkeypatch):
@@ -229,7 +372,158 @@ def test_transit_provider_falls_back_after_odsay_failure(monkeypatch):
     }
 
 
+def test_transit_provider_hedges_slow_odsay_with_tmap(monkeypatch):
+    route = RouteCandidate(
+        source="tmap_transit",
+        path=[ORIGIN, DESTINATION],
+        duration_min=12,
+        distance_m=3000,
+    )
+    odsay_started = asyncio.Event()
+    odsay_cancelled = asyncio.Event()
+
+    async def odsay_collect(_self, *_args, **_kwargs):
+        odsay_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            odsay_cancelled.set()
+            raise
+
+    async def tmap_collect(_self, *_args, **_kwargs):
+        assert odsay_started.is_set()
+        return [route]
+
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_ORDER", "odsay,tmap")
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_HEDGE_SECONDS", 0.01)
+    monkeypatch.setattr(
+        settings,
+        "TRANSIT_PROVIDER_TOTAL_TIMEOUT_SECONDS",
+        1.0,
+    )
+    monkeypatch.setattr(OdsayRouteCollector, "collect", odsay_collect)
+    monkeypatch.setattr(TmapTransitRouteCollector, "collect", tmap_collect)
+
+    collector = TransitProviderCollector()
+    result = asyncio.run(
+        collector.collect(ORIGIN, DESTINATION, max_candidates=5)
+    )
+
+    assert result == [route]
+    assert odsay_cancelled.is_set()
+    assert collector.attempted_sources == ["odsay", "tmap_transit"]
+    assert collector.selected_source == "tmap_transit"
+
+
+def test_transit_provider_keeps_odsay_when_it_finishes_inside_hedge(monkeypatch):
+    route = RouteCandidate(
+        source="odsay",
+        path=[ORIGIN, DESTINATION],
+        duration_min=11,
+        distance_m=2900,
+    )
+    tmap_calls = 0
+
+    async def odsay_collect(_self, *_args, **_kwargs):
+        return [route]
+
+    async def tmap_collect(_self, *_args, **_kwargs):
+        nonlocal tmap_calls
+        tmap_calls += 1
+        return []
+
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_ORDER", "odsay,tmap")
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_HEDGE_SECONDS", 0.1)
+    monkeypatch.setattr(OdsayRouteCollector, "collect", odsay_collect)
+    monkeypatch.setattr(TmapTransitRouteCollector, "collect", tmap_collect)
+
+    collector = TransitProviderCollector()
+    result = asyncio.run(
+        collector.collect(ORIGIN, DESTINATION, max_candidates=5)
+    )
+
+    assert result == [route]
+    assert tmap_calls == 0
+    assert collector.attempted_sources == ["odsay"]
+    assert collector.selected_source == "odsay"
+
+
+def test_transit_provider_bounds_both_slow_providers(monkeypatch):
+    async def never_returns(_self, *_args, **_kwargs):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_ORDER", "odsay,tmap")
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_HEDGE_SECONDS", 0.01)
+    monkeypatch.setattr(
+        settings,
+        "TRANSIT_PROVIDER_TOTAL_TIMEOUT_SECONDS",
+        0.05,
+    )
+    monkeypatch.setattr(OdsayRouteCollector, "collect", never_returns)
+    monkeypatch.setattr(TmapTransitRouteCollector, "collect", never_returns)
+
+    collector = TransitProviderCollector()
+    with pytest.raises(CollectorError) as captured:
+        asyncio.run(
+            collector.collect(ORIGIN, DESTINATION, max_candidates=5)
+        )
+
+    assert captured.value.code == "timeout"
+    assert collector.attempted_sources == ["odsay", "tmap_transit"]
+    assert "전체 수집 제한시간" in str(captured.value)
+
+
 @pytest.mark.parametrize("value", ["", "odsay,odsay", "unknown"])
 def test_transit_provider_order_rejects_invalid_configuration(value):
     with pytest.raises(ValueError):
         provider_order(value)
+
+
+def test_tmap_transit_extracts_walk_from_pass_shape_and_linestring():
+    import collectors.tmap_transit_collector as module
+
+    leg_pass_shape = {
+        "passShape": {
+            "linestring": "129.0756,35.1796 129.0760,35.1793",
+        }
+    }
+    leg_linestring = {
+        "linestring": "129.0756,35.1796 129.0760,35.1793",
+    }
+    leg_empty = {}
+
+    assert len(module._walk_path(leg_pass_shape)) == 2
+    assert len(module._walk_path(leg_linestring)) == 2
+    assert module._walk_path(leg_empty) == []
+
+
+def test_tmap_transit_subway_code_and_station_names():
+    import collectors.tmap_transit_collector as module
+
+    assert module._subway_code("부산1호선") == 71
+    assert module._subway_code("부산 1호선") == 71
+    assert module._subway_code("부산 도시철도 2호선") == 72
+    assert module._subway_code("부산지하철 3호선") == 73
+    assert module._subway_code("4호선") == 74
+
+    leg = {
+        "mode": "SUBWAY",
+        "route": "부산 도시철도 1호선",
+        "service": 1,
+        "start": {"name": "시청역 1호선", "lon": 129.076, "lat": 35.1793},
+        "end": {"name": "서면역 1호선", "lon": 129.0594, "lat": 35.1582},
+        "passStopList": {
+            "stationList": [
+                {"stationID": "SUB-1", "stationName": "시청"},
+                {"stationID": "SUB-2", "stationName": "서면"},
+            ]
+        },
+        "sectionTime": 480,
+        "distance": 2740,
+    }
+
+    norm = module._normalized_leg(leg, "subway")
+    assert norm["startName"] == "시청"
+    assert norm["endName"] == "서면"
+    assert norm["lane"][0]["subwayCode"] == 71
+

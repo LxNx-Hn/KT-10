@@ -48,7 +48,6 @@ from .models import (
     RouteCandidate,
     RouteSetRescoreRequest,
     ScoredRoute,
-    ShadeSummary,
     ShadeRefreshRequest,
     TransitArrivalsRequest,
     TransitArrivalsResponse,
@@ -168,93 +167,14 @@ def _shade_gate_reason(
     weather: WeatherCondition | None,
     effective_at: datetime,
 ) -> str | None:
-    """VWorld 조회 전에 저비용으로 그늘 계산 필요성을 판정한다.
+    """건물 그늘 기하는 날씨·기온으로 차단하지 않는다.
 
-    None을 반환하면 계산을 진행하고, 사유 문자열을 반환하면 건물 조회와
-    그림자 계산 없이 그늘을 생략(None)한다. 태양 고도와 exact 보행
-    geometry는 이후 단계에서 검증한다.
+    태양 고도, exact 보행 선형, 건물 데이터 가용성은
+    ``calculate_shade``가 공개 상태와 함께 판정한다. 날씨는 열 스코어에만
+    사용하고 건물 그늘 표시 가용성을 막지 않는다.
     """
-    if not 10 <= effective_at.hour < 18:
-        return "departure-outside-10-18-kst"
-    if weather is None:
-        return "no-weather-context"
-    observed_at = weather.observed_at
-    air_observed_at = weather.air_quality_observed_at
-    if (
-        observed_at is None
-        or observed_at.tzinfo is None
-        or air_observed_at is None
-        or air_observed_at.tzinfo is None
-    ):
-        return "invalid-weather-observation"
-    # 관측 유효 범위는 응답 재사용 창(weather_cache_ttl_seconds)과 다른 값이다.
-    # observedAt은 공급자 관측 시각이라 캐시에 머문 시간과 공급자 산출 지연이
-    # 함께 쌓이므로, 캐시 수명을 신선도 기준으로 쓰면 정상 관측도 만료된다.
-    ttl_seconds = settings.shade_weather_observation_validity_seconds
-    if ttl_seconds <= 0:
-        # 관측 유효기간을 정의할 수 없으면 현재 관측을 임의로 유효하다고
-        # 가정하지 않는다.
-        return "weather-validity-window-disabled"
-    now = datetime.now(KST)
-    observation_age = (now - observed_at.astimezone(KST)).total_seconds()
-    if observation_age > ttl_seconds:
-        return "weather-observation-expired"
-    departure_offset = (
-        effective_at - observed_at.astimezone(KST)
-    ).total_seconds()
-    if departure_offset > ttl_seconds:
-        # 현재 관측값을 미래 예보처럼 사용하지 않는다.
-        return "departure-beyond-observation-validity"
-    if weather.feels_like_c is None or weather.feels_like_c < 25:
-        return "feels-like-below-25"
+    _ = weather, effective_at
     return None
-
-
-_SHADE_GATE_NOTES = {
-    "departure-outside-10-18-kst": (
-        "건물 그늘은 오전 10시부터 오후 6시 전까지 계산할 수 있습니다."
-    ),
-    "no-weather-context": (
-        "그늘 계산에 필요한 날씨 관측 정보를 확인할 수 없습니다."
-    ),
-    "invalid-weather-observation": (
-        "그늘 계산에 필요한 날씨 관측 시각을 확인할 수 없습니다."
-    ),
-    "weather-validity-window-disabled": (
-        "날씨 관측의 유효 범위가 설정되지 않아 건물 그늘을 계산하지 않았습니다."
-    ),
-    "weather-observation-expired": (
-        "현재 날씨 관측이 만료되어 건물 그늘을 계산하지 않았습니다."
-    ),
-    "departure-beyond-observation-validity": (
-        "선택한 시각이 현재 날씨 관측의 유효 범위를 벗어나 건물 그늘을 "
-        "계산하지 않았습니다."
-    ),
-    "feels-like-below-25": (
-        "현재 체감온도가 그늘 계산 기준인 25도 미만이라 건물 그늘을 "
-        "계산하지 않았습니다."
-    ),
-}
-
-
-def _set_gate_unavailable_shade(
-    candidates: list[RouteCandidate],
-    effective_at: datetime,
-    gate_reason: str,
-) -> None:
-    """외부 호출을 생략한 이유를 공개 응답에 안전하게 보존한다."""
-    note = _SHADE_GATE_NOTES.get(
-        gate_reason,
-        "현재 조건에서는 건물 그늘을 계산할 수 없습니다.",
-    )
-    for candidate in candidates:
-        candidate.shade = ShadeSummary(
-            status="unavailable",
-            evaluated_at=effective_at,
-            source=VWORLD_SHADE_SOURCE,
-            data_quality="public",
-            calculation_note=note,
-        )
 
 
 def _has_reusable_shade(
@@ -288,6 +208,9 @@ async def _add_configured_shade(
 ) -> list[RouteCandidate]:
     if not candidates:
         return candidates
+    # 날씨는 추천 스코어에 사용하지만 건물 그늘 기하의
+    # 가용성을 차단하지 않는다. 인자는 기존 API 계약으로 유지한다.
+    _ = weather
     # 한 후보군의 시간별 그늘은 정확히 같은 시각을 사용해야 학습·후기
     # 스냅샷이 경로마다 몇 마이크로초씩 달라지지 않는다.
     effective_at = _effective_departure(departure_at)
@@ -318,14 +241,6 @@ async def _add_configured_shade(
             status_code=503,
             detail="BUILDING_SOURCE=vworld requires VWORLD_API_KEY.",
         )
-    gate_reason = _shade_gate_reason(weather, effective_at)
-    if gate_reason is not None:
-        # 그늘 없음은 0%가 아니라 미계산 상태다. VWorld 조회·그림자 생성·
-        # 경로 교차 계산을 모두 생략하되, 사용자가 원인을 확인할 수 있도록
-        # unavailable 상태와 안전한 설명을 응답에 보존한다.
-        _set_gate_unavailable_shade(candidates, effective_at, gate_reason)
-        log.info("그늘 계산 생략 (%s): VWorld 호출 0회", gate_reason)
-        return assign_characteristics(candidates)
     cached_summaries = await asyncio.gather(*(
         asyncio.to_thread(
             read_shade_cache,
@@ -382,8 +297,11 @@ async def _add_configured_shade(
             effective_at,
             buildings,
         )
-    summaries = await asyncio.gather(*(
-        asyncio.to_thread(
+    # Shapely union은 후보당 대규모 임시 geometry를 만든다. 5개
+    # 후보를 동시 계산하면 ECS 메모리 피크가 후보 수만큼
+    # 중첩되므로, 공유 전처리 context는 재사용하되 union은 직렬화한다.
+    for candidate in pending:
+        candidate.shade = await asyncio.to_thread(
             get_or_compute_shade,
             candidate.id,
             effective_at,
@@ -395,14 +313,6 @@ async def _add_configured_shade(
                 prepared_context=prepared_context,
             ),
         )
-        for candidate in pending
-    ))
-    for candidate, summary in zip(
-        pending,
-        summaries,
-        strict=True,
-    ):
-        candidate.shade = summary
     return assign_characteristics(candidates)
 
 
@@ -1022,7 +932,11 @@ async def routes_recommend(
                 candidates,
                 effective_options.departure_at,
                 weather=current_weather,
-                wait_for_buildings=True,
+                # 새 회랑의 VWorld WFS 다운로드는 ALB 응답 제한보다 길 수
+                # 있다. 초기 추천은 검증된 캐시만 즉시 결합하고 누락 회랑을
+                # 비동기 예열한다. 프론트엔드는 route-set 생성 직후
+                # refresh-shade를 호출해 같은 후보에 완성된 그늘을 반영한다.
+                wait_for_buildings=False,
             )
             scored = await rank_ai_pipeline_candidates(
                 candidates,
@@ -1093,7 +1007,9 @@ async def routes_recommend(
         candidates,
         effective_options.departure_at,
         weather=weather,
-        wait_for_buildings=(settings.route_mode == "live"),
+        # 초기 추천의 사용자 응답은 건물 회랑 콜드 다운로드에 묶지 않는다.
+        # refresh-shade가 동일 route-set에서 누락 회랑만 동기 완성한다.
+        wait_for_buildings=False,
     )
     if settings.route_mode == "live":
         try:

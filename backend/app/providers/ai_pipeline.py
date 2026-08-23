@@ -31,6 +31,7 @@ from ..personalization import blended_rank_score, parse_state
 from ..scoring.utils import clamp, round1
 from ..settings import settings
 from ..wheelchair import effective_scoring_options
+from .busan_subway_stations import journey_terminal
 
 log = logging.getLogger("providers.ai_pipeline")
 
@@ -768,9 +769,22 @@ async def rank_ai_pipeline_candidates(
 def _to_segment(item: dict, rank: int, index: int) -> RouteSegment:
     duration = float(item["duration_min"])
     stairs = item.get("stairs_count")
+    mode = item.get("mode", "transfer")
+    transit_direction = item.get("transit_direction")
+    if mode == "subway":
+        try:
+            transit_direction = journey_terminal(
+                item.get("station_name"),
+                item.get("end_station_name"),
+                item.get("transit_route_id"),
+            )
+        except ValueError:
+            # 부산 1~4호선으로 확정되지 않는 철도 구간은 공급자 표기를
+            # 그대로 유지하고 임의 종착역을 만들지 않는다.
+            pass
     return RouteSegment(
         id=str(item.get("id") or f"ai-{rank}-{index}"),
-        mode=item.get("mode", "transfer"),
+        mode=mode,
         description=str(item.get("description") or "이동 구간"),
         duration_min=duration,
         distance_m=item.get("distance_m"),
@@ -808,7 +822,7 @@ def _to_segment(item: dict, rank: int, index: int) -> RouteSegment:
         transit_start_id=item.get("transit_start_id"),
         transit_end_id=item.get("transit_end_id"),
         transit_route_id=item.get("transit_route_id"),
-        transit_direction=item.get("transit_direction"),
+        transit_direction=transit_direction,
         transit_direction_code=item.get("transit_direction_code"),
         transit_interval_min=item.get("transit_interval_min"),
         fast_boarding_position=item.get("fast_boarding_position"),

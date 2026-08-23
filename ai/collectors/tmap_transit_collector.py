@@ -32,6 +32,9 @@ from config import settings
 
 CACHE_SCHEMA_VERSION = 1
 BASE_URL = "https://apis.openapi.sk.com/transit/routes"
+NETWORK_ATTEMPTS = 2
+RETRY_DELAY_SECONDS = 0.5
+RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 500, 502, 503, 504})
 _MODE_MAP = {
     "WALK": "walk",
     "BUS": "bus",
@@ -56,6 +59,18 @@ _write_locks_guard = Lock()
 _request_locks: WeakKeyDictionary = WeakKeyDictionary()
 _request_semaphores: WeakKeyDictionary = WeakKeyDictionary()
 _request_state_guard = Lock()
+
+
+def _response_json(response: httpx.Response) -> object:
+    """TMAP 문자열의 비이스케이프 제어문자만 허용해 응답을 복구한다."""
+    try:
+        return response.json()
+    except ValueError:
+        content = getattr(response, "content", None)
+        if not isinstance(content, (bytes, bytearray)):
+            raise
+        encoding = getattr(response, "encoding", None) or "utf-8"
+        return json.loads(bytes(content).decode(encoding), strict=False)
 
 
 def _cache_dir() -> Path | None:
@@ -274,13 +289,23 @@ def _merge_paths(paths: list[list[Coordinate]]) -> list[Coordinate]:
 
 def _walk_path(leg: dict) -> list[Coordinate]:
     steps = leg.get("steps")
-    if not isinstance(steps, list):
-        return []
-    return _merge_paths([
-        _line_string(step.get("linestring"))
-        for step in steps
-        if isinstance(step, dict)
-    ])
+    if isinstance(steps, list) and steps:
+        merged = _merge_paths([
+            _line_string(step.get("linestring"))
+            for step in steps
+            if isinstance(step, dict)
+        ])
+        if len(merged) >= 2:
+            return merged
+    shape = leg.get("passShape")
+    if isinstance(shape, dict):
+        line = _line_string(shape.get("linestring"))
+        if len(line) >= 2:
+            return line
+    line = _line_string(leg.get("linestring"))
+    if len(line) >= 2:
+        return line
+    return []
 
 
 def _transit_path(leg: dict) -> list[Coordinate]:
@@ -288,23 +313,33 @@ def _transit_path(leg: dict) -> list[Coordinate]:
     return _line_string(shape.get("linestring")) if isinstance(shape, dict) else []
 
 
-def _first_station_id(leg: dict) -> str | None:
+def _pass_stations(leg: dict) -> list[dict]:
     stop_list = leg.get("passStopList")
-    stations = stop_list.get("stations") if isinstance(stop_list, dict) else None
-    if not isinstance(stations, list) or not stations:
+    if not isinstance(stop_list, dict):
+        return []
+    # TMAP 공식 응답 샘플은 stationList를 사용한다. 기존
+    # 캐시·fixture의 stations도 24시간 TTL 동안 호환한다.
+    raw = stop_list.get("stationList")
+    if raw is None:
+        raw = stop_list.get("stations")
+    return [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
+
+
+def _first_station_id(leg: dict) -> str | None:
+    stations = _pass_stations(leg)
+    if not stations:
         return None
     first = stations[0]
-    value = first.get("stationID") if isinstance(first, dict) else None
+    value = first.get("stationID")
     return str(value).strip() if value is not None and str(value).strip() else None
 
 
 def _last_station_id(leg: dict) -> str | None:
-    stop_list = leg.get("passStopList")
-    stations = stop_list.get("stations") if isinstance(stop_list, dict) else None
-    if not isinstance(stations, list) or not stations:
+    stations = _pass_stations(leg)
+    if not stations:
         return None
     last = stations[-1]
-    value = last.get("stationID") if isinstance(last, dict) else None
+    value = last.get("stationID")
     return str(value).strip() if value is not None and str(value).strip() else None
 
 
@@ -321,8 +356,15 @@ def _route_name(value: object, mode: str) -> str | None:
 
 
 def _subway_code(name: str | None) -> int | None:
-    matched = re.search(r"(?:부산)?\s*([1-4])\s*호선", name or "")
-    return 70 + int(matched.group(1)) if matched else None
+    if not name:
+        return None
+    matched = re.search(r"(?:부산)?\s*(?:도시철도|지하철)?\s*([1-4])\s*호선", name)
+    if matched:
+        return 70 + int(matched.group(1))
+    matched = re.search(r"\b([1-4])\b", name)
+    if matched:
+        return 70 + int(matched.group(1))
+    return None
 
 
 def _lane_payload(leg: dict, mode: str) -> list[dict]:
@@ -338,7 +380,12 @@ def _lane_payload(leg: dict, mode: str) -> list[dict]:
         if mode in {"bus", "express_bus"}:
             normalized.update({"busNo": name, "busID": route_id})
         elif mode == "subway":
-            normalized["subwayCode"] = _subway_code(name)
+            code = _subway_code(name)
+            if code is None:
+                service = leg.get("service", lane.get("service"))
+                if service in (1, 2, 3, 4, "1", "2", "3", "4"):
+                    code = 70 + int(service)
+            normalized["subwayCode"] = code
         elif route_id is not None:
             normalized["routeID"] = route_id
         result.append({key: value for key, value in normalized.items() if value is not None})
@@ -350,14 +397,35 @@ def _normalized_leg(leg: dict, mode: str) -> dict:
     end = leg.get("end")
     start_coord = _coordinate(start, "start")
     end_coord = _coordinate(end, "end")
+    stations = _pass_stations(leg)
+    start_station_name = (
+        str(stations[0].get("stationName") or "").strip()
+        if stations and isinstance(stations[0], dict)
+        else ""
+    )
+    end_station_name = (
+        str(stations[-1].get("stationName") or "").strip()
+        if stations and isinstance(stations[-1], dict)
+        else ""
+    )
+    start_name = (
+        start_station_name
+        or str(start.get("name") or "").strip()
+        or None
+    )
+    end_name = (
+        end_station_name
+        or str(end.get("name") or "").strip()
+        or None
+    )
     return {
         "trafficType": _TRAFFIC_TYPE[mode],
         "sectionTime": _number(
             leg.get("sectionTime"), "sectionTime", positive=False
         ) / 60,
         "distance": _number(leg.get("distance"), "distance", positive=False),
-        "startName": str(start.get("name") or "").strip() or None,
-        "endName": str(end.get("name") or "").strip() or None,
+        "startName": start_name,
+        "endName": end_name,
         "startX": start_coord.lng,
         "startY": start_coord.lat,
         "endX": end_coord.lng,
@@ -457,6 +525,11 @@ class TmapTransitRouteCollector(BaseRouteCollector):
             for index, (leg, mode, _) in enumerate(normalized)
             if mode == "walk"
             and _number(leg.get("distance"), "distance", positive=False) > 0
+            and (
+                self.avoid_stairs
+                or self.uses_wheelchair
+                or not _walk_path(leg)
+            )
         ]
         walk_results = await asyncio.gather(*(
             self.walk_resolver.resolve(start, end)
@@ -629,54 +702,75 @@ class TmapTransitRouteCollector(BaseRouteCollector):
             cached = await asyncio.to_thread(_read_cache, identity)
             if cached is not None:
                 return await self._from_payload(cached, max_candidates=count)
-            try:
-                async with _request_semaphore():
-                    async with httpx.AsyncClient(
-                        timeout=settings.TMAP_TRANSIT_TIMEOUT_SECONDS,
-                    ) as client:
-                        response = await client.post(
-                            self.BASE_URL,
-                            headers={
-                                "appKey": api_key,
-                                "Accept": "application/json",
-                                "Content-Type": "application/json",
-                            },
-                            json={
-                                "startX": str(origin.lng),
-                                "startY": str(origin.lat),
-                                "endX": str(destination.lng),
-                                "endY": str(destination.lat),
-                                "count": count,
-                                "lang": 0,
-                                "format": "json",
-                            },
-                        )
-                response.raise_for_status()
-                data = response.json()
-                # 파싱 가능한 후보가 하나 이상일 때만 성공 응답을 캐시한다.
-                candidates = await self._from_payload(
-                    data,
-                    max_candidates=count,
-                )
+            for attempt in range(NETWORK_ATTEMPTS):
                 try:
-                    await asyncio.to_thread(_write_cache, identity, data)
-                except OSError as exc:
-                    log.warning(
-                        "TMAP 대중교통 캐시 저장 실패 (%s)",
-                        type(exc).__name__,
+                    async with _request_semaphore():
+                        async with httpx.AsyncClient(
+                            timeout=settings.TMAP_TRANSIT_TIMEOUT_SECONDS,
+                        ) as client:
+                            response = await client.post(
+                                self.BASE_URL,
+                                headers={
+                                    "appKey": api_key,
+                                    "Accept": "application/json",
+                                    "Content-Type": "application/json",
+                                },
+                                json={
+                                    "startX": str(origin.lng),
+                                    "startY": str(origin.lat),
+                                    "endX": str(destination.lng),
+                                    "endY": str(destination.lat),
+                                    "count": count,
+                                    "lang": 0,
+                                    "format": "json",
+                                },
+                            )
+                    response.raise_for_status()
+                    data = _response_json(response)
+                    # 파싱 가능한 후보가 하나 이상일 때만 성공 응답을 캐시한다.
+                    candidates = await self._from_payload(
+                        data,
+                        max_candidates=count,
                     )
-                return candidates
-            except CollectorError:
-                raise
-            except httpx.HTTPStatusError as exc:
-                raise CollectorError(
-                    f"TMAP 대중교통 호출 실패: HTTP "
-                    f"{exc.response.status_code}",
-                    code=_error_code(exc),
-                ) from exc
-            except (httpx.HTTPError, ValueError, TypeError) as exc:
-                raise CollectorError(
-                    "TMAP 대중교통 호출 또는 응답 처리 실패: "
-                    f"{type(exc).__name__}",
-                    code=_error_code(exc),
-                ) from exc
+                    try:
+                        await asyncio.to_thread(_write_cache, identity, data)
+                    except OSError as exc:
+                        log.warning(
+                            "TMAP 대중교통 캐시 저장 실패 (%s)",
+                            type(exc).__name__,
+                        )
+                    return candidates
+                except CollectorError:
+                    raise
+                except httpx.HTTPStatusError as exc:
+                    status = exc.response.status_code
+                    if (
+                        status in RETRYABLE_HTTP_STATUSES
+                        and attempt + 1 < NETWORK_ATTEMPTS
+                    ):
+                        log.warning(
+                            "TMAP 대중교통 일시 응답 실패 HTTP %d, 1회 재시도",
+                            status,
+                        )
+                        await asyncio.sleep(RETRY_DELAY_SECONDS)
+                        continue
+                    raise CollectorError(
+                        f"TMAP 대중교통 호출 실패: HTTP {status}",
+                        code=_error_code(exc),
+                    ) from exc
+                except (httpx.HTTPError, ValueError, TypeError) as exc:
+                    if attempt + 1 < NETWORK_ATTEMPTS:
+                        log.warning(
+                            "TMAP 대중교통 일시 응답 처리 실패 (%s), 1회 재시도",
+                            type(exc).__name__,
+                        )
+                        await asyncio.sleep(RETRY_DELAY_SECONDS)
+                        continue
+                    raise CollectorError(
+                        "TMAP 대중교통 호출 또는 응답 처리 실패: "
+                        f"{type(exc).__name__}",
+                        code=_error_code(exc),
+                    ) from exc
+            raise AssertionError(
+                "TMAP 대중교통 재시도 루프가 결과 없이 종료되었습니다."
+            )
