@@ -1,5 +1,5 @@
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -187,6 +187,126 @@ def test_subway_schedule_is_lazy_and_truthfully_labeled(monkeypatch):
     assert result.departure_time == "10:05:00"
     assert "실시간 열차 위치는 아닙니다" in (result.arrival_message or "")
     assert result.source == "부산교통공사 도시철도 시간표"
+
+
+def _subway_segment_between(start_name: str, end_name: str, route_id: str) -> RouteSegment:
+    segment = _subway_segment()
+    segment.station_name = start_name
+    segment.end_station_name = end_name
+    segment.transit_route_id = route_id
+    return segment
+
+
+def _scheduled_arrival(
+    monkeypatch,
+    *,
+    seconds_until_departure: float,
+    segment: RouteSegment | None = None,
+) -> TransitLegArrival:
+    """출발까지 남은 초를 지정해 시간표 도착값을 계산한다."""
+    monkeypatch.setattr(settings, "data_go_kr_service_key", "configured")
+    reference = datetime(2026, 8, 3, 1, 0, tzinfo=UTC)  # KST 10:00
+    target = segment or _subway_segment()
+
+    async def fake_journey(_start, _end, local_reference, _route_id):
+        departure_at = local_reference + timedelta(seconds=seconds_until_departure)
+        return SubwayJourney(
+            departure_time=departure_at.strftime("%H:%M:%S"),
+            destination_arrival_time="10:18:00",
+            departure_at=departure_at,
+            destination_arrival_at=departure_at + timedelta(minutes=13),
+        )
+
+    monkeypatch.setattr(provider, "get_next_subway_journey", fake_journey)
+    provider.clear_transit_arrival_cache()
+    return asyncio.run(
+        provider.get_route_transit_arrivals([target], reference=reference)
+    )[0]
+
+
+@pytest.mark.parametrize(
+    ("seconds_until_departure", "expected_min"),
+    [
+        (150, 3),   # 2분 30초는 3분으로 반올림
+        (119, 2),   # 1분 59초는 2분
+        (90, 2),    # 1분 30초는 2분
+        (61, 1),    # 1분 01초는 1분
+        (60, 1),    # 정확히 1분은 1분
+        (59, 0),    # 1분 미만은 반올림하지 않고 0
+        (1, 0),
+        (0, 0),
+        (-30, 0),   # 출발시각이 지나도 음수 분을 만들지 않는다
+    ],
+)
+def test_subway_minutes_round_to_nearest_and_floor_under_one_minute(
+    monkeypatch,
+    seconds_until_departure,
+    expected_min,
+):
+    result = _scheduled_arrival(
+        monkeypatch,
+        seconds_until_departure=seconds_until_departure,
+    )
+    assert result.arrival_min == expected_min
+
+
+def test_subway_boarding_kind_separates_origin_terminal_from_intermediate(monkeypatch):
+    intermediate = _scheduled_arrival(
+        monkeypatch,
+        seconds_until_departure=300,
+        segment=_subway_segment_between("부산역", "서면역", "71"),
+    )
+    assert intermediate.boarding_kind == "intermediate"
+
+    origin = _scheduled_arrival(
+        monkeypatch,
+        seconds_until_departure=300,
+        segment=_subway_segment_between("다대포해수욕장역", "서면역", "71"),
+    )
+    assert origin.boarding_kind == "origin"
+
+    reverse_origin = _scheduled_arrival(
+        monkeypatch,
+        seconds_until_departure=300,
+        segment=_subway_segment_between("노포역", "서면역", "71"),
+    )
+    assert reverse_origin.boarding_kind == "origin"
+
+
+def test_scheduled_arrival_keeps_timetable_disclaimer_regardless_of_boarding_kind(
+    monkeypatch,
+):
+    """중간역이 '도착'으로 표시되더라도 시간표 기준 고지는 사라지지 않는다."""
+    for start, end in (("부산역", "서면역"), ("노포역", "서면역")):
+        result = _scheduled_arrival(
+            monkeypatch,
+            seconds_until_departure=30,
+            segment=_subway_segment_between(start, end, "71"),
+        )
+        assert result.status == "scheduled"
+        assert "실시간 열차 위치는 아닙니다" in (result.arrival_message or "")
+
+
+def test_bus_arrival_has_no_boarding_kind_because_bims_omits_terminals(monkeypatch):
+    monkeypatch.setattr(settings, "bus_service_key", "configured")
+
+    async def fake_candidates(*_args, **_kwargs):
+        return [BusStopCandidate(stop_id="505780000", stop_name="부산역", distance_m=10.0)]
+
+    async def fake_arrivals(_stop_id):
+        return BusStopArrivals(
+            stop_id="505780000",
+            stop_name="부산역",
+            arrivals=[BusArrival(route_name="100", vehicle_no="1234", arrival_min=0)],
+        )
+
+    monkeypatch.setattr(provider, "find_bus_stop_candidates", fake_candidates)
+    monkeypatch.setattr(provider, "get_bus_arrivals", fake_arrivals)
+
+    result = asyncio.run(provider.get_route_transit_arrivals([_bus_segment()]))[0]
+    assert result.status == "live"
+    assert result.arrival_min == 0
+    assert result.boarding_kind is None
 
 
 def test_subway_schedule_exposes_classified_safe_failure(monkeypatch):
