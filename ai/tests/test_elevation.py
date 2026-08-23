@@ -22,6 +22,7 @@ from features.elevation import (
     prepare_regional_dem,
 )
 from rasterio.transform import from_origin
+from rasterio.warp import transform as transform_coordinates
 
 
 @pytest.fixture(autouse=True)
@@ -533,3 +534,191 @@ def test_live_default_makes_no_elevation_network_fallback(monkeypatch, tmp_path)
     assert result["elevation_status"] == "unavailable"
     assert result["avg_slope_percent"] is None
     assert result["slope_segments"] == []
+
+
+# --- 해안 인접 구간 경사 미확인 문제 (docs/reports/2026-08-14-coastal-elevation-gap) ---
+
+def _write_synthetic_regional_dem(path, values, nodata=-9999.0):
+    """EPSG:5179 90m 격자 합성 DEM을 쓰고 transform을 반환한다."""
+    transform = from_origin(1_140_000.0, 1_690_000.0, 90, 90)
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=values.shape[0],
+        width=values.shape[1],
+        count=1,
+        dtype="float32",
+        crs="EPSG:5179",
+        transform=transform,
+        nodata=nodata,
+    ) as dataset:
+        dataset.write(values.astype("float32"), 1)
+    return transform
+
+
+def _use_synthetic_dem(monkeypatch, path):
+    monkeypatch.setattr(settings, "ELEVATION_REGIONAL_DEM_PATH", str(path))
+    monkeypatch.setattr(elevation_module, "_regional_dem_path", lambda: path)
+    monkeypatch.setattr(elevation_module, "_regional_dem", None)
+
+
+def _grid_corner(transform, row, col):
+    """픽셀 (row,col)·(row,col+1)·(row+1,col)·(row+1,col+1)이 만나는 점의 WGS84 좌표.
+
+    이 점은 bilinear 가중치가 네 칸 모두 0.25가 되므로 부분 결측 보간을
+    결정적으로 검증할 수 있다.
+    """
+    x, y = transform * (col + 1, row + 1)
+    lngs, lats = transform_coordinates("EPSG:5179", "EPSG:4326", [x], [y])
+    return lats[0], lngs[0]
+
+
+def _coastal_dem_values(width, land_columns, height=3):
+    """값 = col*3 + row 인 육지와 nodata 바다로 이루어진 격자."""
+    values = np.full((height, width), -9999.0)
+    for row in range(height):
+        for col in land_columns:
+            values[row, col] = col * 3 + row
+    return values
+
+
+def test_partially_masked_bilinear_uses_valid_neighbours(monkeypatch, tmp_path):
+    """해안 픽셀 이웃이 바다여도 실측 육지 칸만으로 고도를 만든다."""
+    values = _coastal_dem_values(6, land_columns=range(4))
+    dem = tmp_path / "coastal.tif"
+    transform = _write_synthetic_regional_dem(dem, values)
+    _use_synthetic_dem(monkeypatch, dem)
+
+    full = _grid_corner(transform, 0, 1)      # cols 1,2 · rows 0,1 → 4칸 유효
+    partial = _grid_corner(transform, 0, 3)   # cols 3,4 → col 4가 바다
+    empty = _grid_corner(transform, 0, 4)     # cols 4,5 → 전부 바다
+
+    result = elevation_module._regional_dem_elevations([full, partial, empty])
+
+    assert result is not None
+    assert result[0] == pytest.approx((3 + 6 + 4 + 7) / 4)
+    # 유효한 두 칸(9, 10)만 가중치 재정규화한 값이며 그 범위를 벗어나지 않는다.
+    assert result[1] == pytest.approx(9.5)
+    assert 9.0 <= result[1] <= 10.0
+    # 유효 칸이 하나도 없으면 값을 만들지 않는다.
+    assert result[2] is None
+
+
+def _coastal_route(transform, sample_count):
+    """격자 교차점 위를 90m 간격으로 지나는 보행 경로 한 벌."""
+    start = _grid_corner(transform, 0, 0)
+    end = _grid_corner(transform, 0, sample_count - 1)
+    return [start, end]
+
+
+def _run_parts(route):
+    return asyncio.run(extract_elevation_features_for_parts([route]))
+
+
+def test_coastal_route_survives_when_only_sea_samples_are_missing(
+    monkeypatch, tmp_path,
+):
+    """바다 위 표본만 버리고 육지 표본으로 경사를 계산한다."""
+    values = _coastal_dem_values(12, land_columns=range(9))
+    dem = tmp_path / "coast-pass.tif"
+    transform = _write_synthetic_regional_dem(dem, values)
+    _use_synthetic_dem(monkeypatch, dem)
+
+    result = _run_parts(_coastal_route(transform, 10))
+
+    assert result["elevation_status"] == "estimated_90m"
+    assert result["elevation_source"] == REGIONAL_DEM_SOURCE
+    # 표본 10개 중 마지막 1개만 완전 결측이므로 구간은 8개 남는다.
+    assert len(result["slope_segments"]) == 8
+
+
+def test_coastal_route_below_coverage_threshold_stays_unavailable(
+    monkeypatch, tmp_path,
+):
+    """유효 표본이 기준에 못 미치면 남은 표본으로 경사를 지어내지 않는다."""
+    values = _coastal_dem_values(12, land_columns=range(7))
+    dem = tmp_path / "coast-sparse.tif"
+    transform = _write_synthetic_regional_dem(dem, values)
+    _use_synthetic_dem(monkeypatch, dem)
+
+    result = _run_parts(_coastal_route(transform, 10))
+
+    assert result["elevation_status"] == "unavailable"
+    assert result["avg_slope_percent"] is None
+
+
+def test_long_missing_gap_stays_unavailable(monkeypatch, tmp_path):
+    """연속 결측이 길면 그 사이 언덕을 숨기므로 미확인으로 둔다."""
+    land = list(range(5)) + list(range(8, 14))
+    values = _coastal_dem_values(14, land_columns=land)
+    dem = tmp_path / "coast-gap.tif"
+    transform = _write_synthetic_regional_dem(dem, values)
+    _use_synthetic_dem(monkeypatch, dem)
+
+    result = _run_parts(_coastal_route(transform, 12))
+
+    assert result["elevation_status"] == "unavailable"
+
+
+def test_single_missing_sample_is_within_allowed_gap(monkeypatch, tmp_path):
+    """표본 한 개(180m)까지는 버리고 계산한다."""
+    land = list(range(6)) + list(range(8, 14))
+    values = _coastal_dem_values(14, land_columns=land)
+    dem = tmp_path / "coast-one-gap.tif"
+    transform = _write_synthetic_regional_dem(dem, values)
+    _use_synthetic_dem(monkeypatch, dem)
+
+    result = _run_parts(_coastal_route(transform, 12))
+
+    assert result["elevation_status"] == "estimated_90m"
+    # 표본 12개 중 1개를 버려 11개가 남고 구간은 10개다.
+    assert len(result["slope_segments"]) == 10
+
+
+def test_route_entirely_over_water_is_unavailable(monkeypatch, tmp_path):
+    """DEM에 실측이 전혀 없는 구간은 계속 미확인이다."""
+    values = _coastal_dem_values(12, land_columns=[])
+    dem = tmp_path / "all-sea.tif"
+    transform = _write_synthetic_regional_dem(dem, values)
+    _use_synthetic_dem(monkeypatch, dem)
+    monkeypatch.setattr(settings, "ELEVATION_NETWORK_FALLBACK_ENABLED", False)
+
+    result = _run_parts(_coastal_route(transform, 10))
+
+    assert result["elevation_status"] == "unavailable"
+
+
+def test_dropped_samples_keep_display_path_aligned(monkeypatch, tmp_path):
+    """표본을 버리면 표시용 경로도 같은 기준으로 다시 만든다."""
+    land = list(range(6)) + list(range(8, 14))
+    values = _coastal_dem_values(14, land_columns=land)
+    dem = tmp_path / "coast-align.tif"
+    transform = _write_synthetic_regional_dem(dem, values)
+    _use_synthetic_dem(monkeypatch, dem)
+
+    result = _run_parts(_coastal_route(transform, 12))
+
+    assert result["elevation_status"] == "estimated_90m"
+    for segment in result["slope_segments"]:
+        path = segment["path"]
+        assert path[0]["lat"] == pytest.approx(segment["start"]["lat"])
+        assert path[0]["lng"] == pytest.approx(segment["start"]["lng"])
+        assert path[-1]["lat"] == pytest.approx(segment["end"]["lat"])
+        assert path[-1]["lng"] == pytest.approx(segment["end"]["lng"])
+
+
+def test_fully_valid_route_result_is_unchanged(monkeypatch, tmp_path):
+    """4칸이 모두 유효한 경로는 수정 전과 같은 값을 낸다."""
+    values = _coastal_dem_values(14, land_columns=range(14))
+    dem = tmp_path / "inland.tif"
+    transform = _write_synthetic_regional_dem(dem, values)
+    _use_synthetic_dem(monkeypatch, dem)
+
+    result = _run_parts(_coastal_route(transform, 10))
+
+    assert result["elevation_status"] == "estimated_90m"
+    assert len(result["slope_segments"]) == 9
+    # 열 방향으로 90m마다 3m씩 오르므로 약 3.33% 오르막이 이어진다.
+    assert result["avg_slope_percent"] == pytest.approx(3.333, abs=0.05)
+    assert result["elevation_loss_m"] == pytest.approx(0.0)
