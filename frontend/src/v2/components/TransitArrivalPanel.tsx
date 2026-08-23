@@ -2,17 +2,30 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { adapters } from '@/adapters';
 import type { ScoredRoute, TransitArrivals } from '@/types';
 
+/** 시간표가 주는 HH:MM:SS에서 초를 떼어 분까지만 남긴다. */
+function clockSuffix(value: string | undefined): string {
+  return value ? ` (${value.slice(0, 5)})` : '';
+}
+
 function arrivalLabel(
   arrival: TransitArrivals['arrivals'][number],
 ): string {
+  // 시발역에서 타는 열차는 그 역에서 출발하고, 중간역이면 그 역에 도착한다.
+  const boardsAtOrigin = arrival.boardingKind === 'origin';
   if (arrival.status === 'live') {
-    if (arrival.arrivalMin !== undefined) return `${arrival.arrivalMin}분 후 도착`;
+    if (arrival.arrivalMin === 0) return boardsAtOrigin ? '곧 출발' : '곧 도착';
+    if (arrival.arrivalMin !== undefined) {
+      return `${arrival.arrivalMin}분 후 ${boardsAtOrigin ? '출발' : '도착'}`;
+    }
     return arrival.arrivalMessage ?? '현재 도착정보 없음';
   }
   if (arrival.status === 'scheduled') {
-    const clock = arrival.departureTime ? ` (${arrival.departureTime})` : '';
+    const clock = clockSuffix(arrival.departureTime);
+    if (arrival.arrivalMin === 0) return boardsAtOrigin ? '곧 출발' : '곧 도착';
     if (arrival.arrivalMin !== undefined) {
-      return `${arrival.arrivalMin}분 후 출발 예정${clock}`;
+      return boardsAtOrigin
+        ? `${arrival.arrivalMin}분 후 출발 예정${clock}`
+        : `${arrival.arrivalMin}분 후 도착${clock}`;
     }
     return `시간표 출발 예정${clock}`;
   }

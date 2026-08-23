@@ -116,6 +116,9 @@ export interface TransitLegArrival {
   routeName?: string;
   boardingStopName?: string;
   direction?: string;
+  /** 승차역이 그 진행방향 열차의 시발역인지. 미지정 = 판별 불가(버스 등). */
+  boardingKind?: 'origin' | 'intermediate';
+  /** 0 = 1분 미만(곧 도착/출발). 그 이상은 반올림한 분. */
   arrivalMin?: number;
   arrivalMessage?: string;
   departureTime?: string;

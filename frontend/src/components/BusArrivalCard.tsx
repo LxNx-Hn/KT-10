@@ -105,7 +105,11 @@ export default function BusArrivalCard() {
     const lowFloorText = arrival.isLowFloor === true
       ? '저상버스입니다'
       : '일반버스입니다';
-    const etaPrefix = arrival.arrivalMin !== undefined ? `${arrival.arrivalMin}분 뒤 도착하는 ` : '';
+    const etaPrefix = arrival.arrivalMin === 0
+      ? '곧 도착하는 '
+      : arrival.arrivalMin !== undefined
+        ? `${arrival.arrivalMin}분 뒤 도착하는 `
+        : '';
     speak(`${etaPrefix}${arrival.routeName}번 버스는 ${lowFloorText}.`);
   };
 
@@ -177,7 +181,9 @@ export default function BusArrivalCard() {
           >
             <span className="bus__route">{arrival.routeName}번</span>
             {arrival.arrivalMin !== undefined && (
-              <span className="bus__eta">{arrival.arrivalMin}분 후</span>
+              <span className="bus__eta">
+                {arrival.arrivalMin === 0 ? '곧 도착' : `${arrival.arrivalMin}분 후`}
+              </span>
             )}
             {lowFloorBadge(arrival.isLowFloor)}
             <button

@@ -60,4 +60,30 @@ describe('저상버스 도착 상태', () => {
     });
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeTruthy();
   });
+
+  it('도착까지 1분 미만이면 0분 대신 곧 도착으로 표시한다', async () => {
+    vi.spyOn(adapters.bus, 'listStops').mockResolvedValue([
+      { stopId: 'stop-1', stopName: '서면역', arrivals: [] },
+    ]);
+    vi.spyOn(adapters.bus, 'getArrivals').mockResolvedValue({
+      stopId: 'stop-1',
+      stopName: '서면역',
+      arrivals: [
+        { routeName: '100', vehicleNo: '1234', arrivalMin: 0, isLowFloor: true },
+        { routeName: '200', vehicleNo: '5678', arrivalMin: 4, isLowFloor: false },
+      ],
+    });
+
+    render(<BusArrivalCard />);
+    fireEvent.change(screen.getByLabelText('버스 정류장 검색'), {
+      target: { value: '서면' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '검색' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('곧 도착')).toBeTruthy();
+    });
+    expect(screen.getByText('4분 후')).toBeTruthy();
+    expect(screen.queryByText('0분 후')).toBeNull();
+  });
 });
