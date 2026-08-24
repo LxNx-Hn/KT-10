@@ -3,7 +3,7 @@ export function ProblemPrologueScene() {
     <main className="prologue-scene">
       <img
         className="prologue-photo"
-        src="/problem/problem-city.png"
+        src={`${import.meta.env.BASE_URL}problem/problem-city.png`}
         alt="같은 도시 거리와 대중교통 환경에서 서로 다른 이동 부담이 생기는 장면"
         style={{ objectPosition: '42% 62%' }}
       />
