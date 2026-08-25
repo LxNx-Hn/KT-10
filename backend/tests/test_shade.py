@@ -223,3 +223,48 @@ def test_lowest_slope_uses_peak_not_diluted_whole_walk_average():
 
     assert "lowest_slope" not in routes[0].characteristics
     assert "lowest_slope" in routes[1].characteristics
+
+
+def test_same_stop_transfer_walk_does_not_block_shade():
+    """실제 이동이 없는 0m 환승 구간이 그늘 계산을 막지 않는다."""
+    from app.models import LatLng, RouteCandidate, RouteSegment
+    from app.shade import _walking_paths
+
+    def segment(sid, mode, distance_m, quality, points):
+        return RouteSegment(
+            id=sid,
+            mode=mode,
+            description=sid,
+            duration_min=1,
+            distance_m=distance_m,
+            geometry_quality=quality,
+            path=[LatLng(lat=lat, lng=lng) for lat, lng in points],
+            outdoor=True if mode == "walk" else None,
+        )
+
+    walk = [(35.1151, 129.0414), (35.1160, 129.0420)]
+    same_stop = [(35.154447, 129.035939), (35.154447, 129.035939)]
+    route = RouteCandidate(
+        id="route-1",
+        summary="버스 환승",
+        origin="개금벚꽃길",
+        destination="롯데월드",
+        total_duration_min=70,
+        total_walk_m=200,
+        transfer_count=1,
+        path=[LatLng(lat=lat, lng=lng) for lat, lng in walk],
+        segments=[
+            segment("w0", "walk", 166, "exact", walk),
+            segment("b1", "bus", 2412, "exact", walk),
+            segment("w2", "walk", 0, "exact", same_stop),
+            segment("b3", "bus", 5154, "exact", walk),
+            segment("w4", "walk", 279, "exact", walk),
+        ],
+    )
+
+    paths, analyzed_walk_m, quality = _walking_paths(route, demo=False)
+
+    # 0m 구간은 분석 대상에서 빠지고 실제 도보 두 구간만 남는다.
+    assert len(paths) == 2
+    assert analyzed_walk_m == 445
+    assert quality == "exact"
