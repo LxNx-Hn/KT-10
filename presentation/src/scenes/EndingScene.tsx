@@ -214,7 +214,13 @@ export function EndingScene({
             }}
           >
             <div className="ending-logo">
-              <span />
+              <img
+                className="brand-mark brand-mark-ending"
+                src={`${import.meta.env.BASE_URL}brand/dongnet-app-icon.svg`}
+                alt=""
+                width={48}
+                height={48}
+              />
               <strong>DONGNET</strong>
             </div>
 

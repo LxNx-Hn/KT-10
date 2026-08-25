@@ -5,44 +5,21 @@ interface BuiltSceneProps {
   step: number;
 }
 
-const metrics = [
-  {
-    value: '6',
-    label: '사용자 프로필',
-    en: 'USER PROFILES',
-  },
-  {
-    value: '9',
-    label: '공간 데이터 레이어',
-    en: 'SPATIAL LAYERS',
-  },
-  {
-    value: 'E2E',
-    label: '검색 → 추천 → 설명',
-    en: 'END-TO-END SERVICE',
-  },
-  {
-    value: 'PWA',
-    label: '서비스 배포',
-    en: 'LIVE WEB SERVICE',
-  },
-];
-
 const productScreens = [
   {
-    src: `${import.meta.env.BASE_URL}app/mobile-search.webp`,
+    src: `${import.meta.env.BASE_URL}app/kt-search.png`,
     no: '01',
     title: '검색',
     en: 'SEARCH',
   },
   {
-    src: `${import.meta.env.BASE_URL}app/mobile-routes.webp`,
+    src: `${import.meta.env.BASE_URL}app/kt-route-compare.png`,
     no: '02',
-    title: '맞춤 경로 비교',
+    title: '프로필별 추천 비교',
     en: 'COMPARE',
   },
   {
-    src: `${import.meta.env.BASE_URL}app/mobile-detail.webp`,
+    src: `${import.meta.env.BASE_URL}app/kt-route-detail.png`,
     no: '03',
     title: '추천 이유 확인',
     en: 'UNDERSTAND',
@@ -90,94 +67,6 @@ export function BuiltScene({
 
       <AnimatePresence mode="wait">
         {step === 0 && (
-          <motion.section
-            key="proof-intro"
-            className="proof-intro"
-            {...stepSwap}
-          >
-            <motion.p
-              className="copy-kicker"
-              variants={motionVars.fadeIn}
-              initial="hidden"
-              animate="show"
-            >
-              LIVE SERVICE
-            </motion.p>
-
-            <h2>
-              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
-                실제 서비스로
-              </motion.span>
-              <br />
-              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
-                <em>구현하고 검증했습니다.</em>
-              </motion.span>
-            </h2>
-
-            <motion.p
-              variants={motionVars.fadeIn}
-              initial="hidden"
-              animate="show"
-            >
-              경로 데이터부터 사용자 경험,
-              <br />
-              검증과 운영 환경까지.
-            </motion.p>
-          </motion.section>
-        )}
-
-        {step === 1 && (
-          <motion.section
-            key="proof-metrics"
-            className="proof-metrics-stage"
-            {...stepSwap}
-          >
-            <motion.div
-              className="proof-section-heading"
-              variants={motionVars.softRise}
-              initial="hidden"
-              animate="show"
-            >
-              <small>BUILT AS A SERVICE</small>
-              <h2>
-                검색부터 추천 설명까지,
-                {' '}
-                <em>서비스 전체를 구현했습니다.</em>
-              </h2>
-            </motion.div>
-
-            <motion.div
-              className="proof-metrics-grid"
-              variants={motionVars.staggerContainer}
-              initial="hidden"
-              animate="show"
-            >
-              {metrics.map((metric) => (
-                <motion.article
-                  key={metric.label}
-                  variants={motionVars.numberReveal}
-                >
-                  <small>{metric.en}</small>
-                  <strong>{metric.value}</strong>
-                  <span>{metric.label}</span>
-                  <div className="metric-rule" />
-                </motion.article>
-              ))}
-            </motion.div>
-
-            <motion.p
-              className="proof-metric-note"
-              variants={motionVars.fadeIn}
-              initial="hidden"
-              animate="show"
-            >
-              6개 사용자 프로필과 9개 공간 데이터 레이어를 연결하고,
-              검색부터 추천·설명까지 E2E 흐름을 실제 서비스로 구현했습니다.
-            </motion.p>
-          </motion.section>
-        )}
-
-        {step === 2 && (
           <motion.section
             key="proof-product"
             className="proof-product-stage"
@@ -252,7 +141,7 @@ export function BuiltScene({
           </motion.section>
         )}
 
-        {step === 3 && (
+        {step === 1 && (
           <motion.section
             key="proof-collab"
             className="proof-collab-stage"
@@ -314,7 +203,7 @@ export function BuiltScene({
           </motion.section>
         )}
 
-        {step === 4 && (
+        {step === 2 && (
           <motion.section
             key="proof-ci"
             className="proof-ci-stage"
@@ -401,43 +290,6 @@ export function BuiltScene({
                 </motion.article>
               ))}
             </motion.div>
-          </motion.section>
-        )}
-
-        {step >= 5 && (
-          <motion.section
-            key="proof-live"
-            className="proof-live-result"
-            {...stepSwap}
-          >
-            <motion.div
-              className="proof-live-label"
-              variants={motionVars.fadeIn}
-              initial="hidden"
-              animate="show"
-            >
-              <span />
-              LIVE PWA SERVICE
-            </motion.div>
-
-            <h2>
-              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
-                그리고 지금,
-              </motion.span>
-              <br />
-              <motion.span variants={motionVars.softScale} initial="hidden" animate="show">
-                <em>dongnet.kr에서 동작하고 있습니다.</em>
-              </motion.span>
-            </h2>
-
-            <motion.p
-              variants={motionVars.fadeIn}
-              initial="hidden"
-              animate="show"
-            >
-              PWA로 실제 서비스 흐름을 검증했고,
-              프로필별 경로 추천을 운영하고 있습니다.
-            </motion.p>
           </motion.section>
         )}
       </AnimatePresence>

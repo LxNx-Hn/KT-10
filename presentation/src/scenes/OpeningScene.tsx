@@ -149,7 +149,13 @@ export function OpeningScene({ step }: OpeningSceneProps) {
             <p className="eyebrow">KT AI 기반 사회문제해결 프로젝트 · TEAM 10</p>
 
             <h1 className="opening-logo">
-              <span className="logo-dot" />
+              <img
+                className="brand-mark brand-mark-opening"
+                src={`${import.meta.env.BASE_URL}brand/dongnet-app-icon.svg`}
+                alt=""
+                width={56}
+                height={56}
+              />
               DONGNET
             </h1>
 

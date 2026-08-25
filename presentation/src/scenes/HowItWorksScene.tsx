@@ -8,7 +8,6 @@ interface HowItWorksSceneProps {
 const analysisSteps = [
   '후보 경로 수집',
   '데이터 결합',
-  '평가 · 추천',
 ];
 
 const candidateSources = [
@@ -42,13 +41,6 @@ const joinLayers = [
     title: '실시간',
     items: ['날씨', '버스 도착'],
   },
-];
-
-const evaluateFlow = [
-  ['경로 피처', '이동 · 접근성 · 환경'],
-  ['프로필별 0–100점', 'DongNet 계산'],
-  ['AI Ranker 재정렬', '후보 우선순위'],
-  ['추천 이유', '사용자 설명'],
 ];
 
 export function HowItWorksScene({
@@ -220,59 +212,6 @@ export function HowItWorksScene({
                   >
                     경로 구간별 공간 결합
                   </motion.div>
-                </motion.div>
-              )}
-
-              {step === 3 && (
-                <motion.div
-                  key="evaluate"
-                  className="how-panel"
-                  {...stepSwap}
-                >
-                  <motion.div
-                    className="how-panel-heading"
-                    variants={motionVars.softRise}
-                    initial="hidden"
-                    animate="show"
-                  >
-                    <small>STEP 03 · SCORE & RANK</small>
-                    <h2>
-                      DongNet이 사용자별 경로 점수를 계산합니다.
-                    </h2>
-                  </motion.div>
-
-                  <motion.div
-                    className="how-evaluate-flow"
-                    variants={motionVars.staggerContainer}
-                    initial="hidden"
-                    animate="show"
-                  >
-                    {evaluateFlow.map(([title, detail], index) => (
-                      <motion.article
-                        key={title}
-                        variants={
-                          index === 3
-                            ? motionVars.softScale
-                            : motionVars.staggerItem
-                        }
-                      >
-                        <small>0{index + 1}</small>
-                        <strong>{title}</strong>
-                        <span>{detail}</span>
-                      </motion.article>
-                    ))}
-                  </motion.div>
-
-                  <motion.p
-                    className="how-evaluate-copy"
-                    variants={motionVars.fadeIn}
-                    initial="hidden"
-                    animate="show"
-                  >
-                    API의 후보 경로와 공공·실시간 데이터를 결합해
-                    <br />
-                    DongNet이 사용자별 경로 점수를 계산합니다.
-                  </motion.p>
                 </motion.div>
               )}
             </AnimatePresence>

@@ -29,13 +29,6 @@ const roadmap = [
   },
 ];
 
-const loop = [
-  ['01', 'PWA 실제 이용', '경로 추천'],
-  ['02', '사용자 피드백', '후기 · 오류 신고'],
-  ['03', '품질 지표 확인', '추천 품질'],
-  ['04', '추천 개선', '프로필별 경로 평가'],
-];
-
 const nextMetrics = [
   ['01', 'PWA 이용 지속률', '설치 가능한 웹앱을 얼마나 이어 쓰는가'],
   ['02', '프로필별 만족도', '사용자 조건에 맞는 이동 경험'],
@@ -62,42 +55,6 @@ export function ExpansionScene({
 
       <AnimatePresence mode="wait">
         {step === 0 && (
-          <motion.section
-            key="expansion-intro"
-            className="expansion-intro"
-            {...stepSwap}
-          >
-            <motion.p
-              className="copy-kicker"
-              variants={motionVars.fadeIn}
-              initial="hidden"
-              animate="show"
-            >
-              SERVICE EXPANSION
-            </motion.p>
-
-            <h2>
-              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
-                하나의 PWA로,
-              </motion.span>
-              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
-                <em>모바일 이동 경험을 확장합니다.</em>
-              </motion.span>
-            </h2>
-
-            <motion.p
-              variants={motionVars.fadeIn}
-              initial="hidden"
-              animate="show"
-            >
-              프로필별 경로 평가와 추천을
-              <br />
-              설치 가능한 웹앱으로 운영합니다.
-            </motion.p>
-          </motion.section>
-        )}
-
-        {step === 1 && (
           <motion.section
             key="expansion-roadmap"
             className="expansion-roadmap"
@@ -162,70 +119,7 @@ export function ExpansionScene({
           </motion.section>
         )}
 
-        {step === 2 && (
-          <motion.section
-            key="expansion-loop"
-            className="expansion-loop"
-            {...stepSwap}
-          >
-            <motion.div
-              className="expansion-loop-copy"
-              variants={motionVars.softRise}
-              initial="hidden"
-              animate="show"
-            >
-              <small>PWA QUALITY LOOP</small>
-
-              <h2>
-                이용이 쌓이면,
-                <br />
-                <em>검증도 쌓입니다.</em>
-              </h2>
-
-              <p>
-                PWA 실제 이용 → 사용자 피드백 → 품질 지표 확인 → 추천 개선
-              </p>
-            </motion.div>
-
-            <motion.div
-              className="feedback-loop-diagram"
-              variants={motionVars.staggerContainer}
-              initial="hidden"
-              animate="show"
-            >
-              {loop.flatMap(([no, title, detail], index) => {
-                const article = (
-                  <motion.article
-                    key={title}
-                    className={index === 3 ? 'loop-accent' : undefined}
-                    variants={motionVars.softScale}
-                  >
-                    <small>{no}</small>
-                    <strong>{title}</strong>
-                    <span>{detail}</span>
-                  </motion.article>
-                );
-
-                if (index === 0) {
-                  return [article];
-                }
-
-                return [
-                  <motion.i
-                    key={`loop-arrow-${title}`}
-                    className="motion-arrow"
-                    variants={motionVars.drawLine}
-                  >
-                    →
-                  </motion.i>,
-                  article,
-                ];
-              })}
-            </motion.div>
-          </motion.section>
-        )}
-
-        {step === 3 && (
+        {step === 1 && (
           <motion.section
             key="expansion-impact"
             className="expansion-impact"

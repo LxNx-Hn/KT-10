@@ -1,7 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 
 import { OpeningScene } from './scenes/OpeningScene';
-import { ProblemPrologueScene } from './scenes/ProblemPrologueScene';
 import { ProblemScene } from './scenes/ProblemScene';
 import { ProblemDefinitionScene } from './scenes/ProblemDefinitionScene';
 import { DongNetRevealScene } from './scenes/DongNetRevealScene';
@@ -28,11 +27,7 @@ function App() {
         return <OpeningScene step={presentation.step} />;
 
       case 1:
-        return presentation.step === 0 ? (
-          <ProblemPrologueScene />
-        ) : (
-          <ProblemScene step={presentation.step - 1} />
-        );
+        return <ProblemScene step={presentation.step} />;
 
       case 2:
         return (
