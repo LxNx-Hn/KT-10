@@ -19,7 +19,13 @@ from shapely.ops import unary_union
 
 from .building_heights import validated_building_height
 from .data._loader import load
-from .models import LatLng, RouteCandidate, ShadePathSegment, ShadeSummary
+from .models import (
+    LatLng,
+    RouteCandidate,
+    RouteSegment,
+    ShadePathSegment,
+    ShadeSummary,
+)
 
 KST = ZoneInfo("Asia/Seoul")
 SAMPLE_INTERVAL_M = 10.0
@@ -135,6 +141,18 @@ def _distance(left: tuple[float, float], right: tuple[float, float]) -> float:
     return math.hypot(right[0] - left[0], right[1] - left[1])
 
 
+def _has_no_movement(segment: RouteSegment) -> bool:
+    """공급자가 0m와 동일 좌표로 표시한, 실제 이동이 없는 구간인지.
+
+    같은 정류장에서 버스를 갈아타는 환승이 대표적이다. 길이 0인 선은
+    그늘 비율에 기여하지 않으므로 분석 대상에서 제외한다.
+    """
+    if segment.distance_m != 0:
+        return False
+    points = segment.path or []
+    return len({(point.lat, point.lng) for point in points}) <= 1
+
+
 def _walking_paths(
     route: RouteCandidate,
     *,
@@ -155,6 +173,7 @@ def _walking_paths(
             (segment.mode == "walk" and segment.outdoor is not False)
             or (segment.mode == "transfer" and segment.outdoor is True)
         )
+        and not _has_no_movement(segment)
     ]
     if not relevant:
         return [], None, None

@@ -29,6 +29,99 @@ def _walk_leg(start, end, line):
     }
 
 
+def _transit_leg(mode, start, end, name, route_id, line):
+    return {
+        "mode": mode,
+        "sectionTime": 600,
+        "distance": 2400,
+        "route": name,
+        "routeId": route_id,
+        "service": 1,
+        "start": {"name": start[0], "lon": start[1], "lat": start[2]},
+        "end": {"name": end[0], "lon": end[1], "lat": end[2]},
+        "passStopList": {"stationList": [
+            {
+                "stationID": f"{route_id}-1",
+                "stationName": start[0],
+                "lon": str(start[1]),
+                "lat": str(start[2]),
+            },
+            {
+                "stationID": f"{route_id}-2",
+                "stationName": end[0],
+                "lon": str(end[1]),
+                "lat": str(end[2]),
+            },
+        ]},
+        "passShape": {"linestring": line},
+    }
+
+
+def _same_stop_transfer_payload():
+    """같은 정류장에서 버스를 갈아탈 때 TMAP이 실제로 주는 0m 도보 leg.
+
+    2026-08-23 개금벚꽃길 → 롯데월드 어드벤처 부산 실응답에서 확인한 형태다.
+    걷는 거리가 0m이고 시작·끝 좌표가 같으며, linestring도 같은 점을 두 번
+    준다. 실제 이동이 없으므로 추정할 것도 없다.
+    """
+    stop = ("부산진우체국", 129.035939, 35.154447)
+    return {
+        "metaData": {
+            "plan": {
+                "itineraries": [{
+                    "totalTime": 4200,
+                    "transferCount": 1,
+                    "totalWalkDistance": 445,
+                    "totalDistance": 8000,
+                    "fare": {"regular": {"totalFare": 1600}},
+                    "legs": [
+                        _walk_leg(
+                            ("출발지", 129.01640, 35.14615),
+                            ("개금현대아파트", 129.01642, 35.14765),
+                            "129.01640,35.14615 129.01642,35.14765",
+                        ),
+                        _transit_leg(
+                            "BUS",
+                            ("개금현대아파트", 129.01642, 35.14765),
+                            stop,
+                            "일반:67",
+                            "67",
+                            "129.01642,35.14765 129.035939,35.154447",
+                        ),
+                        {
+                            "mode": "WALK",
+                            "sectionTime": 0,
+                            "distance": 0,
+                            "start": {
+                                "name": stop[0], "lon": stop[1], "lat": stop[2],
+                            },
+                            "end": {
+                                "name": stop[0], "lon": stop[1], "lat": stop[2],
+                            },
+                            "passShape": {"linestring": (
+                                f"{stop[1]},{stop[2]} {stop[1]},{stop[2]}"
+                            )},
+                        },
+                        _transit_leg(
+                            "BUS",
+                            stop,
+                            ("동해선거제해맞이역", 129.07018, 35.18245),
+                            "일반:31",
+                            "31",
+                            "129.035939,35.154447 129.07018,35.18245",
+                        ),
+                        _walk_leg(
+                            ("동해선거제해맞이역", 129.07018, 35.18245),
+                            ("도착지", 129.06906, 35.18137),
+                            "129.07018,35.18245 129.06906,35.18137",
+                        ),
+                    ],
+                }]
+            }
+        }
+    }
+
+
 def _payload():
     return {
         "metaData": {
@@ -527,3 +620,63 @@ def test_tmap_transit_subway_code_and_station_names():
     assert norm["endName"] == "서면"
     assert norm["lane"][0]["subwayCode"] == 71
 
+
+
+def test_same_stop_transfer_walk_is_confirmed_not_estimated(monkeypatch):
+    """0m 환승 도보는 추정이 아니라 '이동 없음'이 확정된 구간이다."""
+    import collectors.tmap_transit_collector as module
+
+    resolved: list[tuple[Coordinate, Coordinate]] = []
+
+    async def resolve(_self, start, end):
+        resolved.append((start, end))
+        return WalkGeometryResult([start, end], "exact", {})
+
+    monkeypatch.setattr(module.TransitWalkGeometryResolver, "resolve", resolve)
+    candidate = asyncio.run(
+        TmapTransitRouteCollector()._from_payload(
+            _same_stop_transfer_payload(),
+            max_candidates=1,
+        )
+    )[0]
+
+    walks = [
+        segment for segment in candidate.segments
+        if segment["mode"] == "walk"
+    ]
+    zero = [segment for segment in walks if segment["distance_m"] == 0]
+    assert len(zero) == 1
+    # 걷지 않는 구간을 보행망 조회로 보완하려 하지 않는다.
+    assert resolved == []
+    assert zero[0]["geometry_quality"] == "exact"
+    assert all(
+        segment["geometry_quality"] == "exact" for segment in walks
+    )
+    # 0m 구간 하나 때문에 경로 전체가 추정으로 내려앉지 않는다.
+    assert candidate.geometry_quality == "exact"
+
+
+def test_zero_distance_walk_between_different_stops_stays_estimated(monkeypatch):
+    """0m인데 좌표가 다르면 공급자 불일치이므로 확정으로 올리지 않는다."""
+    import collectors.tmap_transit_collector as module
+
+    async def resolve(_self, start, end):
+        return WalkGeometryResult([start, end], "estimated", {})
+
+    monkeypatch.setattr(module.TransitWalkGeometryResolver, "resolve", resolve)
+    payload = _same_stop_transfer_payload()
+    zero_leg = payload["metaData"]["plan"]["itineraries"][0]["legs"][2]
+    # 0m라고 하면서 승하차 지점이 다르고 선형도 없는 공급자 불일치 상황.
+    zero_leg["end"] = {"name": "다른정류장", "lon": 129.0400, "lat": 35.1560}
+    zero_leg.pop("passShape")
+
+    candidate = asyncio.run(
+        TmapTransitRouteCollector()._from_payload(payload, max_candidates=1)
+    )[0]
+
+    zero = [
+        segment for segment in candidate.segments
+        if segment["mode"] == "walk" and segment["distance_m"] == 0
+    ]
+    assert len(zero) == 1
+    assert zero[0]["geometry_quality"] != "exact"

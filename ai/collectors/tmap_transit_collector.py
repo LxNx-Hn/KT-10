@@ -570,7 +570,15 @@ class TmapTransitRouteCollector(BaseRouteCollector):
                     start = _coordinate(leg.get("start"), "start")
                     end = _coordinate(leg.get("end"), "end")
                     path = [start, end]
-                    quality = "estimated"
+                    # 같은 정류장에서 갈아타면 실제로 걷지 않는다. 공급자가
+                    # 0m와 동일 좌표를 함께 준 경우 추정한 값이 하나도 없으므로
+                    # 확정된 사실로 둔다. 이를 estimated로 두면 걷지 않는
+                    # 구간 하나가 경로 전체의 경사·그늘을 미확인으로 만든다.
+                    quality = (
+                        "exact"
+                        if section_distance == 0 and start == end
+                        else "estimated"
+                    )
             else:
                 path = _transit_path(leg)
                 quality = "exact" if path else "estimated"
