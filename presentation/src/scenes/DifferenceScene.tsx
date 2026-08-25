@@ -95,9 +95,6 @@ export function DifferenceScene({
                 </div>
               ))}
             </div>
-            <p className="difference-ors-note">
-              이동지원 후보는 ORS로 보완합니다.
-            </p>
           </motion.article>
         </motion.section>
       </AnimatePresence>

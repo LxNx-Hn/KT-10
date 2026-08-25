@@ -30,7 +30,7 @@ export const presentationData = {
       label: '이동지원',
       description: '접근 가능한 이동 환경이 중요해요.',
       criteria: ['승강기', '저상버스', '접근성'],
-      note: '휠체어 이동 조건 포함',
+      note: '휠체어 편의 시설 포함',
     },
   },
 

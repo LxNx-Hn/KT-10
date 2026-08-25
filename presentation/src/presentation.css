@@ -2727,6 +2727,14 @@
   color: rgba(240, 248, 245, 0.8);
 }
 
+.why-accessibility-summary {
+  margin: 10px 0 0;
+  color: #3182f6;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
 /* SCENE 06 — spacing refinement */
 
 .why-candidates {
@@ -4686,6 +4694,50 @@
 
 .product-light .why-intro > p:last-child {
   color: #6b7684;
+}
+
+.why-accessibility-callout {
+  position: absolute;
+  z-index: 30;
+  right: 8%;
+  top: 50%;
+  width: min(32vw, 640px);
+  padding: 30px 34px;
+  translate: 0 -50%;
+  border: 1px solid rgba(49, 130, 246, 0.16);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 22px 60px rgba(49, 130, 246, 0.08);
+  backdrop-filter: blur(16px);
+}
+
+.why-accessibility-callout small {
+  display: block;
+  margin-bottom: 16px;
+  color: #3182f6;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+}
+
+.why-accessibility-callout strong {
+  display: block;
+  color: #191f28;
+  font-size: clamp(1.55rem, 2vw, 2.25rem);
+  font-weight: 680;
+  letter-spacing: -0.045em;
+  line-height: 1.22;
+  word-break: keep-all;
+}
+
+.why-accessibility-callout span {
+  display: block;
+  margin-top: 12px;
+  color: #4e5968;
+  font-size: clamp(1rem, 1.15vw, 1.25rem);
+  font-weight: 560;
+  line-height: 1.5;
+  word-break: keep-all;
 }
 
 .product-light .candidate-card {
@@ -9367,8 +9419,8 @@
 }
 
 .expansion-roadmap {
-  grid-template-columns: minmax(360px, 0.38fr) minmax(0, 0.62fr);
-  gap: 56px;
+  grid-template-columns: minmax(340px, 0.31fr) minmax(0, 0.69fr);
+  gap: 48px;
 }
 
 .expansion-roadmap .expansion-heading h2 {
@@ -9396,6 +9448,11 @@
 .expansion-cards h3,
 .feedback-loop-diagram strong {
   white-space: nowrap;
+}
+
+.expansion-roadmap .expansion-cards h3 {
+  white-space: normal;
+  word-break: keep-all;
 }
 
 .feedback-loop-diagram {
@@ -9563,7 +9620,7 @@
 }
 
 .expansion-roadmap {
-  width: min(82vw, 1640px);
+  width: min(90vw, 1760px);
 }
 
 .expansion-impact {
@@ -9611,7 +9668,8 @@
 }
 
 .expansion-roadmap .expansion-cards h3 {
-  font-size: 2.1rem;
+  font-size: clamp(1.62rem, 1.78vw, 2rem);
+  line-height: 1.18;
 }
 
 .expansion-roadmap .expansion-cards p {
@@ -9817,4 +9875,418 @@
     flex-direction: column;
     justify-content: center;
   }
+}
+
+/* =========================================================
+   PASS 3 — PROJECTOR READABILITY
+   1–13장 공통 글자 위계 확대 + 지정 장면 안쪽 정렬
+   ========================================================= */
+
+:root {
+  --type-display: clamp(4.75rem, 5.45vw, 5.85rem);
+  --type-scene-title: clamp(3.55rem, 4.2vw, 4.55rem);
+  --type-section-title: clamp(2.2rem, 2.45vw, 2.75rem);
+  --type-body: clamp(1.5rem, 1.58vw, 1.8rem);
+  --type-card-title: clamp(1.42rem, 1.52vw, 1.72rem);
+  --type-card-body: clamp(1.2rem, 1.28vw, 1.42rem);
+  --type-caption: clamp(1.02rem, 1.08vw, 1.15rem);
+}
+
+.eyebrow,
+.copy-kicker {
+  font-size: clamp(0.78rem, 0.86vw, 0.94rem);
+}
+
+/* Scene 02 — 프로필 카드 */
+.profile-index {
+  font-size: 0.9rem;
+}
+
+.profile-story-main h3 {
+  font-size: clamp(1.45rem, 1.65vw, 1.8rem);
+}
+
+.profile-story-main p {
+  font-size: 1rem !important;
+}
+
+.profile-story-main span,
+.criteria-list span {
+  font-size: 1.05rem !important;
+}
+
+/* Scene 03 — 문제 정의 표 */
+.definition-basic > small,
+.definition-context > small {
+  font-size: 0.74rem;
+}
+
+.definition-basic h3,
+.definition-context h3 {
+  font-size: 2.15rem;
+}
+
+.definition-basic > p,
+.definition-context > p {
+  font-size: 0.92rem;
+}
+
+.definition-basic-list > div > span {
+  font-size: 0.7rem;
+}
+
+.definition-basic-list small,
+.definition-context-grid small {
+  font-size: 0.64rem;
+}
+
+.definition-basic-list strong,
+.definition-context-grid strong {
+  font-size: 1.08rem;
+}
+
+/* Scene 04 — 데이터/모델 카드 */
+.reveal-data-node small {
+  font-size: 0.82rem !important;
+}
+
+.reveal-data-node strong {
+  font-size: 1.46rem !important;
+}
+
+.reveal-final-model .model-block strong {
+  font-size: clamp(0.94rem, 1.04vw, 1.16rem);
+}
+
+.model-block-sub {
+  font-size: 1.02rem;
+}
+
+/* Scene 05 — 분석 카드 */
+.how-panel-heading small,
+.how-source-card small,
+.how-evaluate-flow small {
+  font-size: 0.82rem;
+}
+
+.how-analysis .how-source-card p,
+.how-analysis .how-join-card li,
+.how-evaluate-flow span,
+.how-evaluate-copy {
+  font-size: clamp(1.3rem, 1.42vw, 1.5rem);
+}
+
+/* Scene 06 — LIVE PRODUCT: 좌우를 중앙으로 모으고 글자 확대 */
+.real-demo-layout {
+  left: 0;
+  right: 0;
+  width: min(84vw, 1720px);
+  margin-inline: auto;
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(360px, 420px)
+    minmax(0, 1fr);
+  gap: 48px;
+}
+
+.real-demo-layout .real-demo-context {
+  width: min(100%, 360px);
+  max-width: 360px;
+  justify-self: end;
+}
+
+.real-demo-layout .real-demo-result {
+  width: min(100%, 390px);
+  max-width: 390px;
+  justify-self: start;
+}
+
+.real-demo-layout .real-demo-kicker,
+.real-demo-layout .real-demo-result > small {
+  font-size: 0.72rem;
+}
+
+.real-demo-layout .real-demo-od strong {
+  font-size: 1.35rem;
+}
+
+.real-demo-layout .real-demo-od span {
+  font-size: 1.02rem;
+}
+
+.real-demo-layout .real-demo-condition small {
+  font-size: 0.68rem;
+}
+
+.real-demo-layout .real-demo-condition strong {
+  font-size: 1.02rem;
+}
+
+.real-demo-layout .real-demo-result h3 {
+  font-size: clamp(1.62rem, 1.92vw, 2.12rem) !important;
+}
+
+.real-demo-layout .real-result-metrics strong {
+  font-size: clamp(1.86rem, 2.12vw, 2.38rem) !important;
+}
+
+.real-demo-layout .real-result-metrics span {
+  font-size: clamp(0.9rem, 0.98vw, 1.06rem) !important;
+}
+
+.real-demo-layout .real-demo-result p {
+  font-size: clamp(1.08rem, 1.16vw, 1.24rem) !important;
+}
+
+.real-demo-layout .real-rank-shift small {
+  font-size: 0.64rem;
+}
+
+.real-demo-layout .real-rank-shift strong {
+  font-size: 1rem;
+}
+
+/* Scene 07 — 후보/비교 표 */
+.candidate-top small,
+.factor-title small {
+  font-size: 0.7rem;
+}
+
+.candidate-top span {
+  font-size: 0.66rem;
+}
+
+.product-light .candidate-card h3 {
+  font-size: 1.5rem;
+}
+
+.candidate-metrics small {
+  font-size: 0.64rem;
+}
+
+.candidate-metrics strong {
+  font-size: 1.02rem;
+}
+
+.candidate-score span {
+  font-size: 0.7rem;
+}
+
+.candidate-score strong {
+  font-size: 1.42rem;
+}
+
+.product-light .factor-card small {
+  font-size: 0.66rem;
+}
+
+.product-light .factor-card strong {
+  font-size: 1.14rem;
+}
+
+.why-reason p,
+.why-accessibility-summary,
+.golden-score-note {
+  font-size: 1.02rem;
+}
+
+/* Scene 08 — 점수 구성 표 */
+.score-group-title small,
+.score-component small,
+.component-index {
+  font-size: 0.72rem !important;
+}
+
+.score-groups-large .score-component strong {
+  font-size: 1.52rem;
+}
+
+.score-profile-grid strong {
+  font-size: clamp(1.7rem, 1.82vw, 2rem);
+}
+
+.score-profile-grid span {
+  font-size: clamp(1.28rem, 1.35vw, 1.46rem);
+}
+
+/* Scene 09 — AI 학습/평가 카드 */
+.ai-flow-extended small,
+.ai-flow-heading small,
+.ai-baseline-copy small,
+.ai-gate-heading small {
+  font-size: 0.78rem;
+}
+
+.ai-flow-extended span,
+.ai-flow-note {
+  font-size: clamp(1.28rem, 1.4vw, 1.45rem);
+}
+
+.ai-metric-grid span,
+.ai-evaluation-card span,
+.ai-evaluation-card p,
+.ai-baseline-copy p {
+  font-size: 1.28rem !important;
+}
+
+/* Scene 10 — 비교 표 */
+.difference-column-heading small {
+  font-size: 0.76rem;
+}
+
+.difference-board-simple .difference-fact-list strong,
+.difference-board-simple .dongnet-context-simple strong {
+  font-size: 1.62rem !important;
+}
+
+.difference-fact-list span {
+  font-size: 0.82rem !important;
+}
+
+/* Scene 11 — 제품/협업/검증 */
+.proof-product-stage {
+  left: 0;
+  right: 0;
+  width: min(88vw, 1760px);
+  margin-inline: auto;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 3.5vw;
+}
+
+.proof-product-copy {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.proof-product-copy h2 {
+  font-size: clamp(3.2rem, 4vw, 4.55rem) !important;
+}
+
+.proof-product-copy p {
+  font-size: clamp(1.08rem, 1.16vw, 1.25rem) !important;
+}
+
+.proof-product-flow span {
+  font-size: 0.7rem;
+}
+
+.proof-devices figcaption small {
+  font-size: 0.66rem;
+}
+
+.proof-devices figcaption strong {
+  font-size: 1rem;
+}
+
+.proof-collab-flow small {
+  font-size: 0.82rem;
+}
+
+.proof-collab-flow strong {
+  font-size: 1.7rem;
+}
+
+.proof-collab-flow span {
+  font-size: 1.3rem;
+}
+
+.proof-ci-heading p {
+  font-size: 1.02rem;
+}
+
+.proof-ci-stage .ci-lane-main small {
+  font-size: 0.78rem;
+}
+
+.proof-ci-stage .ci-lane-main strong {
+  font-size: 1.22rem;
+}
+
+.proof-ci-stage .ci-pass {
+  font-size: 0.76rem;
+}
+
+.proof-ci-stage .ci-items span,
+.product-light .proof-ci-stage .ci-items span {
+  font-size: 0.82rem;
+}
+
+.proof-ci-footer small {
+  font-size: 0.58rem;
+}
+
+.proof-ci-footer strong {
+  font-size: 0.82rem;
+}
+
+/* Scene 12 — 확장 카드/지표 */
+.expansion-number,
+.expansion-cards small,
+.feedback-loop-diagram small,
+.impact-metric-grid small {
+  font-size: 0.72rem;
+}
+
+.expansion-roadmap .expansion-cards h3 {
+  font-size: clamp(1.75rem, 1.92vw, 2.08rem);
+}
+
+.expansion-roadmap .expansion-cards p {
+  font-size: 1.05rem;
+}
+
+.expansion-roadmap .expansion-cards article > div:last-child span {
+  font-size: 0.74rem;
+}
+
+.feedback-loop-diagram strong {
+  font-size: 1.08rem;
+}
+
+.feedback-loop-diagram span {
+  font-size: 0.72rem;
+}
+
+.impact-metric-grid strong {
+  font-size: 1.58rem;
+}
+
+.impact-metric-grid span {
+  font-size: 0.84rem;
+}
+
+@media (max-height: 1000px) {
+  .real-demo-layout {
+    left: 0;
+    right: 0;
+    width: min(86vw, 1640px);
+    margin-inline: auto;
+    grid-template-columns:
+      minmax(0, 1fr)
+      minmax(330px, 390px)
+      minmax(0, 1fr);
+    gap: 34px;
+  }
+
+  .proof-product-copy p {
+    font-size: 1.05rem !important;
+  }
+}
+
+
+/* =========================================================
+   FINAL MICRO QA — requested placement / line breaks only
+   ========================================================= */
+
+/* Scene 02 — keep START clear of the enlarged profile cards */
+.problem-start {
+  left: 40% !important;
+}
+
+/* Scene 07 — keep each supporting statement on a single line */
+.golden-why-result .why-reason p,
+.golden-why-result .why-accessibility-summary,
+.golden-why-result .golden-score-note {
+  max-width: none;
+  white-space: nowrap;
 }

@@ -76,21 +76,21 @@ export function BuiltScene({
               <small>FROM MODEL TO EXPERIENCE</small>
 
               <h2>
-                추천 결과를
+                검색하고 비교하고,
                 <br />
                 <em>
                   <span className="presentation-nowrap">
-                    사용자가 이해할 수 있는
+                    추천 이유까지 확인합니다.
                   </span>
-                  <br />
-                  경험으로.
                 </em>
               </h2>
 
               <p>
-                검색하고, 조건을 설정하고,
+                출발지와 목적지를 입력하면,
                 <br />
-                경로를 비교하고, 추천 이유까지 확인합니다.
+                <span className="single-line-copy">
+                  프로필에 맞는 경로를 지도와 카드로 비교할 수 있습니다.
+                </span>
               </p>
 
               <div className="proof-product-flow">
@@ -156,9 +156,9 @@ export function BuiltScene({
               <small>TEAM INTEGRATION</small>
 
               <h2>
-                데이터 계약과 API 스키마를 기준으로
+                DA · Backend · Frontend를 연결해,
                 <br />
-                <em>각 영역을 연결하고 통합 검증했습니다.</em>
+                <em>프로필별 서비스 흐름을 함께 점검했습니다.</em>
               </h2>
             </motion.div>
 
@@ -170,10 +170,10 @@ export function BuiltScene({
             >
                 {(
                   [
-                    ['01', 'DA', '피처 · 평가 · Ranker'],
-                    ['02', 'Backend', 'API 계약 · 데이터 통합'],
-                    ['03', 'Frontend', '접근성 UI · 경로 시각화'],
-                    ['04', 'QA', '프로필 · E2E 검증'],
+                    ['01', 'DA', '경로 피처 · 평가 · Ranker'],
+                    ['02', 'Backend', '후보 경로 · 공공데이터 API'],
+                    ['03', 'Frontend', '프로필 UI · 지도 시각화'],
+                    ['04', 'QA', '프로필별 흐름 · E2E'],
                   ] as const
                 ).flatMap(([no, title, detail], index) => {
                   const card = (

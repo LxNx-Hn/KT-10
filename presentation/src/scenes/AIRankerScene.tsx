@@ -1,5 +1,4 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { presentationData } from '../data/presentationData';
 import { stepSwap, useMotionVariants } from '../motion/stepSwap';
 
 interface AIRankerSceneProps {
@@ -50,24 +49,23 @@ const learnFlow = [
   {
     no: '01',
     title: 'KT 믿음 K 2.0',
-    detail: '프로필별 평가 기준',
+    detail: '프로필별 평가 항목 정리',
   },
   {
     no: '02',
-    title: '판단 근거 · 평가 라벨',
-    detail: '프로필별 라벨 구성',
+    title: '평가 라벨 생성',
+    detail: '실제 후보 경로 6,822건',
   },
   {
     no: '03',
     title: 'XGBoost Ranker',
-    detail: '경로 순위 학습',
+    detail: '프로필별 경로 순위 학습',
   },
 ];
 
 export function AIRankerScene({
   step,
 }: AIRankerSceneProps) {
-  const { evaluationStandard } = presentationData;
   const motionVars = useMotionVariants();
 
   return (
@@ -100,11 +98,11 @@ export function AIRankerScene({
 
             <h2>
               <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
-                실제 후보 경로를
+                실제 후보 경로로
               </motion.span>
               <br />
               <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
-                <em>순위 모델 학습으로 검증했습니다.</em>
+                <em>프로필별 순위 모델을 학습했습니다.</em>
               </motion.span>
             </h2>
 
@@ -113,9 +111,9 @@ export function AIRankerScene({
               initial="hidden"
               animate="show"
             >
-              {`${evaluationStandard}이 프로필별 판단 근거를 정의하고,`}
+              380개 OD에서 1,137개 후보 경로를 만들고,
               <br />
-              XGBoost Ranker가 경로의 순서를 학습합니다.
+              6,822개 평가 라벨로 XGBoost Ranker를 학습했습니다.
             </motion.p>
           </motion.section>
         )}
@@ -134,9 +132,9 @@ export function AIRankerScene({
             >
               <small>PROFILE-SPECIFIC RANKING</small>
               <h2>
-                평가 기준은 판단 근거를 정의하고,
-                {' '}
-                <em>Ranker는 순서를 학습합니다.</em>
+                프로필별 평가 라벨을 만들고,
+                <br />
+                <em>XGBoost로 후보 순위를 학습했습니다.</em>
               </h2>
             </motion.div>
 
@@ -171,7 +169,7 @@ export function AIRankerScene({
               initial="hidden"
               animate="show"
             >
-                평가 기준은 프로필별 판단 근거를 정의하고, Ranker는 경로의 순서를 학습합니다.
+                같은 후보 경로를 여섯 프로필에 맞춰 각각 평가했습니다.
                 <span>
                   {profiles.join(' · ')}
                 </span>
@@ -194,15 +192,15 @@ export function AIRankerScene({
               <small>KT 믿음 K 2.0</small>
 
               <h2>
-                KT 믿음 K 2.0
+                380개 OD에서
                 <br />
-                <em>기반 프로필 평가 기준</em>
+                <em>1,137개 후보 경로를 학습했습니다.</em>
               </h2>
 
               <p>
-                평가 기준은 프로필별 판단 근거를 정의하고,
-                Ranker는 경로의 순서를 학습합니다.
-                동일 방향 OD는 Train 304 / Valid 76으로 분리합니다.
+                304개 OD는 학습에, 76개 OD는 검증에 사용했습니다.
+                프로필별 순위가 얼마나 맞는지 NDCG@3와
+                pairwise accuracy로 확인했습니다.
               </p>
             </motion.div>
 
@@ -241,8 +239,9 @@ export function AIRankerScene({
                 </div>
 
                 <p>
-                  ※ KT 믿음 K 2.0은 프로필별 평가 기준이며,
-                  위 수치는 XGBoost Ranker 검증 결과입니다.
+                  ※ KT 믿음 K 2.0으로 프로필별 평가 라벨을 만들었으며,
+                  <br />
+                  위 수치는 XGBoost Ranker의 검증 결과입니다.
                 </p>
               </motion.div>
             </motion.div>
