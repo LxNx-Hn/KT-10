@@ -98,6 +98,22 @@ export function WhyRouteScene({
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {step === 0 && (
+          <motion.aside
+            className="why-accessibility-callout"
+            initial={{ opacity: 0, x: 22 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 16 }}
+            transition={{ duration: 0.5, delay: 0.18 }}
+          >
+            <small>MOBILITY SUPPORT CHECK</small>
+            <strong>계단 없는 이동 · 휠체어 경사</strong>
+            <span>승강기 · 건물 진입 턱까지 함께 확인합니다.</span>
+          </motion.aside>
+        )}
+      </AnimatePresence>
+
       <motion.div
         className="why-candidates"
         initial={{ opacity: 0 }}
@@ -307,6 +323,10 @@ export function WhyRouteScene({
                 <strong> 이동지원 프로필에서는 1위로 상승했습니다.</strong>
               </p>
             </div>
+
+            <p className="why-accessibility-summary">
+              계단 회피 · 휠체어 경사 · 승강기 · 건물 진입 턱 조건도 함께 확인합니다.
+            </p>
 
             <p className="golden-score-note">
               프로필마다 평가 기준이 달라지므로

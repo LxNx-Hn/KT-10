@@ -209,7 +209,10 @@ export function DongNetRevealScene({
               <h2>
                 <span>길을 찾는 것에서,</span>
                 <span>
-                  <em>나에게 맞는 길을 고르는 것으로.</em>
+                  <em>나에게 맞는 길을</em>
+                </span>
+                <span>
+                  <em>고르는 것으로.</em>
                 </span>
               </h2>
             </section>
