@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-const SCENE_MAX_STEPS = [6, 3, 2, 3, 3, 2, 4, 3, 3, 2, 5, 3, 4];
+const SCENE_MAX_STEPS = [6, 2, 2, 3, 2, 2, 2, 2, 2, 0, 2, 1, 4];
 
 export function usePresentation() {
   const [scene, setScene] = useState(0);

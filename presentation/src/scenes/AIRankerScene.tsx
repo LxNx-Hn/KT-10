@@ -22,6 +22,30 @@ const metrics = [
   ['304 / 76', 'Train / Valid OD'],
 ];
 
+const validationEase = [0.22, 1, 0.36, 1] as const;
+
+const validationStagger = {
+  hidden: {},
+  show: {
+    transition: {
+      delayChildren: 0.02,
+      staggerChildren: 0.05,
+    },
+  },
+};
+
+const validationItem = {
+  hidden: { opacity: 0, y: 10 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.28,
+      ease: validationEase,
+    },
+  },
+};
+
 const learnFlow = [
   {
     no: '01',
@@ -37,31 +61,6 @@ const learnFlow = [
     no: '03',
     title: 'XGBoost Ranker',
     detail: '경로 순위 학습',
-  },
-  {
-    no: '04',
-    title: 'NDCG@3 · Pairwise',
-    detail: '순위 품질 검증',
-  },
-  {
-    no: '05',
-    title: 'PWA 추천 연결',
-    detail: '실제 추천 경험',
-  },
-];
-
-const pwaOutputs = [
-  {
-    title: '프로필별 경로 점수',
-    detail: '0–100점',
-  },
-  {
-    title: 'AI Ranker 재정렬',
-    detail: '후보 우선순위',
-  },
-  {
-    title: '추천 이유 제공',
-    detail: '사용자 설명',
   },
 ];
 
@@ -188,13 +187,11 @@ export function AIRankerScene({
           >
             <motion.div
               className="ai-baseline-copy"
-              variants={motionVars.staggerContainer}
+              variants={validationItem}
               initial="hidden"
               animate="show"
             >
-              <motion.small variants={motionVars.fadeIn}>
-                KT 믿음 K 2.0
-              </motion.small>
+              <small>KT 믿음 K 2.0</small>
 
               <h2>
                 KT 믿음 K 2.0
@@ -211,28 +208,25 @@ export function AIRankerScene({
 
             <motion.div
               className="ai-baseline-content"
-              variants={motionVars.staggerContainer}
+              variants={validationStagger}
               initial="hidden"
               animate="show"
             >
               <motion.div
                 className="ai-metric-grid"
-                variants={motionVars.staggerContainer}
+                variants={validationItem}
               >
                 {metrics.map(([value, label]) => (
-                  <motion.article
-                    key={label}
-                    variants={motionVars.numberReveal}
-                  >
+                  <article key={label}>
                     <strong>{value}</strong>
                     <span>{label}</span>
-                  </motion.article>
+                  </article>
                 ))}
               </motion.div>
 
               <motion.div
                 className="ai-evaluation-card"
-                variants={motionVars.softScale}
+                variants={validationItem}
               >
                 <small>RANKING QUALITY · XGBoost Ranker</small>
 
@@ -251,47 +245,6 @@ export function AIRankerScene({
                   위 수치는 XGBoost Ranker 검증 결과입니다.
                 </p>
               </motion.div>
-            </motion.div>
-          </motion.section>
-        )}
-
-        {step === 3 && (
-          <motion.section
-            key="ai-pwa"
-            className="ai-gate-stage"
-            {...stepSwap}
-          >
-            <motion.div
-              className="ai-gate-heading"
-              variants={motionVars.softRise}
-              initial="hidden"
-              animate="show"
-            >
-              <small>FROM MODEL TO PWA</small>
-
-              <h2>
-                <span>검증된 모델 출력을</span>
-                <span>
-                  <em>PWA 추천 경험에 연결했습니다.</em>
-                </span>
-              </h2>
-            </motion.div>
-
-            <motion.div
-              className="ai-gate-flow"
-              variants={motionVars.staggerContainer}
-              initial="hidden"
-              animate="show"
-            >
-              {pwaOutputs.map((item) => (
-                <motion.article
-                  key={item.title}
-                  variants={motionVars.softScale}
-                >
-                  <strong>{item.title}</strong>
-                  <span>{item.detail}</span>
-                </motion.article>
-              ))}
             </motion.div>
           </motion.section>
         )}

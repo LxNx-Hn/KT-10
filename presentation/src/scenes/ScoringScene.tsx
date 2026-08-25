@@ -164,32 +164,6 @@ export function ScoringScene({
             </motion.div>
           </motion.section>
         )}
-
-        {step >= 3 && (
-          <motion.section
-            key="score-final"
-            className="score-final-message"
-            {...stepSwap}
-          >
-            <motion.p
-              variants={motionVars.fadeIn}
-              initial="hidden"
-              animate="show"
-            >
-              DONGNET SCORE
-            </motion.p>
-
-            <h2>
-              <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
-                DongNet이 계산한
-              </motion.span>
-              <br />
-              <motion.span variants={motionVars.softScale} initial="hidden" animate="show">
-                <em>프로필별 경로 적합 지수입니다.</em>
-              </motion.span>
-            </h2>
-          </motion.section>
-        )}
       </AnimatePresence>
 
       <div className="presentation-help">

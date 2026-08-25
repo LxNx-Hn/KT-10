@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { stepSwap, useMotionVariants } from '../motion/stepSwap';
+import { stepSwap } from '../motion/stepSwap';
 
 interface DifferenceSceneProps {
   step: number;
@@ -19,10 +19,8 @@ const dongnetPoints = [
 ];
 
 export function DifferenceScene({
-  step,
+  step: _step,
 }: DifferenceSceneProps) {
-  const motionVars = useMotionVariants();
-
   return (
     <main className="difference-scene">
       <div className="difference-glow" />
@@ -34,133 +32,74 @@ export function DifferenceScene({
       </div>
 
       <AnimatePresence mode="wait">
-        {step === 0 && (
-          <motion.section
-            key="diff-question"
-            className="difference-question"
-            {...stepSwap}
+        <motion.section
+          key="diff-board"
+          className="difference-board difference-board-simple"
+          {...stepSwap}
+        >
+          <motion.article
+            className="difference-column difference-base visible"
+            initial={{ opacity: 0, x: -16 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.36, ease: [0.22, 1, 0.36, 1] }}
           >
-            <motion.div
-              className="layout-fill"
-              variants={motionVars.staggerContainer}
-              initial="hidden"
-              animate="show"
-            >
-              <motion.p
-                className="copy-kicker"
-                variants={motionVars.fadeIn}
-              >
-                THE DIFFERENCE
-              </motion.p>
+            <div className="difference-column-heading">
+              <small>COMMERCIAL ROUTING</small>
+              <h3>상용 길찾기</h3>
+            </div>
 
-              <h2>
-                <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
-                  동넷은 길찾기의 기준을
-                </motion.span>
-                <br />
-                <motion.span variants={motionVars.softRise} initial="hidden" animate="show">
-                  <em>어떻게 바꿨을까요?</em>
-                </motion.span>
-              </h2>
-            </motion.div>
-          </motion.section>
-        )}
+            <div className="difference-fact-list">
+              {commercialPoints.map((fact, index) => (
+                <div key={fact}>
+                  <span>0{index + 1}</span>
+                  <strong>{fact}</strong>
+                </div>
+              ))}
+            </div>
+          </motion.article>
 
-        {step === 1 && (
-          <motion.section
-            key="diff-board"
-            className="difference-board difference-board-simple"
-            {...stepSwap}
+          <motion.div
+            className="difference-bridge"
+            initial={{ opacity: 0, scaleX: 0 }}
+            animate={{ opacity: 1, scaleX: 1 }}
+            transition={{
+              delay: 0.28,
+              duration: 0.32,
+              ease: [0.22, 1, 0.36, 1],
+            }}
           >
-            <motion.article
-              className="difference-column difference-base visible"
-              initial={{ opacity: 0, x: -16 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.36, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <div className="difference-column-heading">
-                <small>COMMERCIAL ROUTING</small>
-                <h3>상용 길찾기</h3>
-              </div>
+            <span />
+            <strong>vs</strong>
+          </motion.div>
 
-              <div className="difference-fact-list">
-                {commercialPoints.map((fact, index) => (
-                  <div key={fact}>
-                    <span>0{index + 1}</span>
-                    <strong>{fact}</strong>
-                  </div>
-                ))}
-              </div>
-            </motion.article>
-
-            <motion.div
-              className="difference-bridge"
-              initial={{ opacity: 0, scaleX: 0 }}
-              animate={{ opacity: 1, scaleX: 1 }}
-              transition={{
-                delay: 0.28,
-                duration: 0.32,
-                ease: [0.22, 1, 0.36, 1],
-              }}
-            >
-              <span />
-              <strong>vs</strong>
-            </motion.div>
-
-            <motion.article
-              className="difference-column difference-dongnet visible"
-              initial={{ opacity: 0, x: 16 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{
-                duration: 0.36,
-                delay: 0.08,
-                ease: [0.22, 1, 0.36, 1],
-              }}
-            >
-              <div className="difference-column-heading">
-                <small>DONGNET ROUTING</small>
-                <h3>DongNet</h3>
-              </div>
-
-              <div className="dongnet-context-grid dongnet-context-simple">
-                {dongnetPoints.map((item) => (
-                  <div key={item}>
-                    <span className="context-pulse" />
-                    <strong>{item}</strong>
-                  </div>
-                ))}
-              </div>
-              <p className="difference-ors-note">
-                이동지원 후보는 ORS로 보완합니다.
-              </p>
-            </motion.article>
-          </motion.section>
-        )}
-
-        {step >= 2 && (
-          <motion.section
-            key="diff-ending"
-            className="difference-ending"
-            {...stepSwap}
+          <motion.article
+            className="difference-column difference-dongnet visible"
+            initial={{ opacity: 0, x: 16 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{
+              duration: 0.36,
+              delay: 0.08,
+              ease: [0.22, 1, 0.36, 1],
+            }}
           >
-            <motion.div
-              className="layout-fill"
-              variants={motionVars.staggerContainer}
-              initial="hidden"
-              animate="show"
-            >
-              <motion.small variants={motionVars.fadeIn}>
-                THE DIFFERENCE
-              </motion.small>
+            <div className="difference-column-heading">
+              <small>DONGNET ROUTING</small>
+              <h3>DongNet</h3>
+            </div>
 
-              <h2>
-                상용 길찾기: <span>시간·거리 중심의 최적 경로</span>
-                <br />
-                DongNet: <em>이동 조건·접근성·환경 중심의 적합 경로</em>
-              </h2>
-            </motion.div>
-          </motion.section>
-        )}
+            <div className="dongnet-context-grid dongnet-context-simple">
+              {dongnetPoints.map((item) => (
+                <div key={item}>
+                  <span className="context-pulse" />
+                  <strong>{item}</strong>
+                </div>
+              ))}
+            </div>
+            <p className="difference-ors-note">
+              이동지원 후보는 ORS로 보완합니다.
+            </p>
+          </motion.article>
+        </motion.section>
       </AnimatePresence>
 
       <div className="presentation-help">

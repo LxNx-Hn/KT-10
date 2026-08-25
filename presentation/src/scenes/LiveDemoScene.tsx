@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { goldenDemo } from '../data/goldenDemo';
 import { stepSwap, useMotionVariants } from '../motion/stepSwap';
 
@@ -7,15 +7,24 @@ interface LiveDemoSceneProps {
 }
 
 const GENERAL_CAPTURE =
-  `${import.meta.env.BASE_URL}demo/golden-general-first.png`;
+  `${import.meta.env.BASE_URL}demo/kt-general-first.png`;
 
-const ELDERLY_CAPTURE =
-  `${import.meta.env.BASE_URL}demo/golden-elderly-first.png`;
+const MOBILITY_CAPTURE =
+  `${import.meta.env.BASE_URL}demo/kt-mobility-first.png`;
+
+const SWAP_EASE = [0.22, 1, 0.36, 1] as const;
 
 export function LiveDemoScene({
   step,
 }: LiveDemoSceneProps) {
   const motionVars = useMotionVariants();
+  const reduceMotion = useReducedMotion();
+  const showMobility = step >= 2;
+  const swapDuration = reduceMotion ? 0.01 : 0.28;
+  const swapTransition = {
+    duration: swapDuration,
+    ease: SWAP_EASE,
+  };
 
   return (
     <main className="live-scene product-light real-demo-scene">
@@ -100,7 +109,7 @@ export function LiveDemoScene({
               <strong>
                 일반 프로필
                 <span>→</span>
-                고령자 프로필
+                이동지원 프로필
               </strong>
             </div>
           </motion.section>
@@ -121,12 +130,13 @@ export function LiveDemoScene({
 
                   <AnimatePresence mode="wait">
                     <motion.strong
-                      key={step >= 2 ? 'ELDERLY' : 'GENERAL'}
-                      variants={motionVars.numberReveal}
-                      initial="hidden"
-                      animate="show"
+                      key={showMobility ? 'MOBILITY' : 'GENERAL'}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={swapTransition}
                     >
-                      {step >= 2 ? 'ELDERLY' : 'GENERAL'}
+                      {showMobility ? 'MOBILITY' : 'GENERAL'}
                     </motion.strong>
                   </AnimatePresence>
 
@@ -134,29 +144,20 @@ export function LiveDemoScene({
                 </div>
 
                 <div className="real-device-screen">
-                  <AnimatePresence mode="sync">
-                    <motion.img
-                      key={
-                        step >= 2
-                          ? 'elderly'
-                          : 'general'
-                      }
-                      src={
-                        step >= 2
-                          ? ELDERLY_CAPTURE
-                          : GENERAL_CAPTURE
-                      }
-                      alt={
-                        step >= 2
-                          ? '고령자 프로필 동넷 실제 추천 결과'
-                          : '일반 프로필 동넷 실제 추천 결과'
-                      }
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.32 }}
-                    />
-                  </AnimatePresence>
+                  <motion.img
+                    src={GENERAL_CAPTURE}
+                    alt="일반 프로필 동넷 실제 추천 결과"
+                    initial={false}
+                    animate={{ opacity: showMobility ? 0 : 1 }}
+                    transition={swapTransition}
+                  />
+                  <motion.img
+                    src={MOBILITY_CAPTURE}
+                    alt="이동지원 프로필 동넷 실제 추천 결과"
+                    initial={false}
+                    animate={{ opacity: showMobility ? 1 : 0 }}
+                    transition={swapTransition}
+                  />
                 </div>
               </div>
 
@@ -173,14 +174,14 @@ export function LiveDemoScene({
           </div>
 
           <AnimatePresence mode="wait">
-            {step === 1 && (
+            {!showMobility && (
               <motion.section
                 key="general-proof"
                 className="real-demo-result"
                 initial={{ opacity: 0, x: 16 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+                transition={swapTransition}
               >
                 <motion.div
                   className="layout-fill"
@@ -193,22 +194,22 @@ export function LiveDemoScene({
                   </motion.small>
 
                   <motion.h3 variants={motionVars.softRise}>
-                    도보 + 168 + 도시철도
+                    버스 49번 · 지하철 1호선
                   </motion.h3>
 
                   <div className="real-result-metrics">
                     <motion.div variants={motionVars.numberReveal}>
-                      <strong>69</strong>
+                      <strong>33</strong>
                       <span>분</span>
                     </motion.div>
 
                     <motion.div variants={motionVars.numberReveal}>
-                      <strong>1,252</strong>
+                      <strong>832</strong>
                       <span>m 도보</span>
                     </motion.div>
 
                     <motion.div variants={motionVars.numberReveal}>
-                      <strong>55</strong>
+                      <strong>68</strong>
                       <span>적합도</span>
                     </motion.div>
                   </div>
@@ -222,13 +223,14 @@ export function LiveDemoScene({
               </motion.section>
             )}
 
-            {step >= 2 && (
+            {showMobility && (
               <motion.section
-                key="elderly-proof"
+                key="mobility-proof"
                 className="real-demo-result real-demo-result-elderly"
                 initial={{ opacity: 0, x: 16 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+                exit={{ opacity: 0 }}
+                transition={swapTransition}
               >
                 <motion.div
                   className="layout-fill"
@@ -237,26 +239,26 @@ export function LiveDemoScene({
                   animate="show"
                 >
                   <motion.small variants={motionVars.fadeIn}>
-                    ELDERLY · 1ST
+                    MOBILITY · 1ST
                   </motion.small>
 
                   <motion.h3 variants={motionVars.softRise}>
-                    도보 + 도시철도 + 1001
+                    버스 77번
                   </motion.h3>
 
                   <div className="real-result-metrics">
                     <motion.div variants={motionVars.numberReveal}>
-                      <strong>77</strong>
+                      <strong>47</strong>
                       <span>분</span>
                     </motion.div>
 
                     <motion.div variants={motionVars.numberReveal}>
-                      <strong>1,068</strong>
+                      <strong>697</strong>
                       <span>m 도보</span>
                     </motion.div>
 
                     <motion.div variants={motionVars.numberReveal}>
-                      <strong>36</strong>
+                      <strong>59</strong>
                       <span>적합도</span>
                     </motion.div>
                   </div>
@@ -273,15 +275,15 @@ export function LiveDemoScene({
                     <span>→</span>
 
                     <div>
-                      <small>ELDERLY</small>
+                      <small>MOBILITY</small>
                       <strong>1위</strong>
                     </div>
                   </motion.div>
 
                   <motion.p variants={motionVars.fadeIn}>
-                    같은 후보 C가
+                    일반 3위였던 버스 77번이
                     <br />
-                    <b>일반 3위 → 고령자 1위</b>로
+                    이동지원 프로필에서는 1위로
                     올라왔습니다.
                   </motion.p>
                 </motion.div>

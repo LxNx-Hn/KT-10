@@ -1,7 +1,7 @@
 export const presentationData = {
   demo: {
-    origin: '개금벚꽃길',
-    destination: '롯데월드 어드벤처 부산',
+    origin: '부산대학교 부산캠퍼스',
+    destination: '서면역 부산1호선',
   },
 
   brand: {

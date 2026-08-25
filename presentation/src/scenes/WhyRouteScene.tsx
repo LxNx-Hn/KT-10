@@ -16,40 +16,43 @@ const evidence = [
   {
     en: 'TIME',
     ko: '소요 시간',
-    value: '69분 → 77분',
+    value: '33분 → 47분',
   },
   {
     en: 'WALK',
     ko: '도보 거리',
-    value: '1,252m → 1,068m',
-    delta: '-184m',
+    value: '832m → 697m',
+    delta: '-135m',
   },
   {
     en: 'SLOPE',
     ko: '평균 경사',
-    value: '6.82% → 6.55%',
-    delta: '-0.27%p',
+    value: '3.14% → 2.88%',
+    delta: '-0.26%p',
   },
   {
     en: 'SHADE',
     ko: '확인된 그늘',
-    value: '5% → 12%',
-    delta: '+7%p',
+    value: '20% → 10%',
   },
   {
     en: 'TRANSFER',
     ko: '환승',
-    value: '1회 → 1회',
+    value: '1회 → 0회',
   },
 ];
 
 export function WhyRouteScene({
   step,
 }: WhyRouteSceneProps) {
+  // Remap: new 1 = old comparison (was >= 2), new 2 = old final (was >= 4)
+  const showComparison = step >= 1;
+  const showFinal = step >= 2;
+
   return (
     <main
       className={`why-scene product-light ${
-        step >= 4 ? 'why-final-step' : ''
+        showFinal ? 'why-final-step' : ''
       }`}
     >
       <div className="why-grid" />
@@ -66,9 +69,15 @@ export function WhyRouteScene({
             key="why-intro"
             className="why-intro"
             initial={{ opacity: 0, y: 25 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.7 }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              transition: { duration: 0.55 },
+            }}
+            exit={{
+              opacity: 0,
+              transition: { duration: 0.16 },
+            }}
           >
             <p className="copy-kicker">
               AFTER THE LIVE DEMO
@@ -93,9 +102,12 @@ export function WhyRouteScene({
         className="why-candidates"
         initial={{ opacity: 0 }}
         animate={{
-          opacity: step >= 1 ? 1 : 0,
+          opacity: showComparison ? 1 : 0,
         }}
-        transition={{ duration: 0.6 }}
+        transition={{
+          duration: 0.45,
+          delay: showComparison ? 0.12 : 0,
+        }}
       >
         {candidates.map((candidate, index) => {
           const promoted =
@@ -106,11 +118,7 @@ export function WhyRouteScene({
             <motion.article
               key={candidate.id}
               className={`candidate-card ${
-                index === 0 && step < 2
-                  ? 'candidate-selected'
-                  : ''
-              } ${
-                promoted && step >= 2
+                promoted && showComparison
                   ? 'candidate-promoted'
                   : ''
               }`}
@@ -119,30 +127,28 @@ export function WhyRouteScene({
                 y: 25,
               }}
               animate={{
-                opacity: step >= 1 ? 1 : 0,
-                y: step >= 1 ? 0 : 25,
+                opacity: showComparison ? 1 : 0,
+                y: showComparison ? 0 : 25,
 
                 scale:
-                  step >= 2 && promoted
+                  showComparison && promoted
                     ? 1.025
-                    : step >= 2
+                    : showComparison
                       ? 0.94
                       : 1,
               }}
               transition={{
-                duration: 0.6,
-                delay: index * 0.1,
+                duration: 0.45,
+                delay: showComparison
+                  ? 0.12 + index * 0.08
+                  : 0,
               }}
             >
               <div className="candidate-top">
                 <small>ROUTE {candidate.id}</small>
 
-                {step < 2 && index === 0 && (
-                  <span>GENERAL 1위</span>
-                )}
-
-                {step >= 2 && promoted && (
-                  <span>ELDERLY 1위</span>
+                {showComparison && promoted && (
+                  <span>MOBILITY 1위</span>
                 )}
               </div>
 
@@ -172,9 +178,9 @@ export function WhyRouteScene({
               </div>
 
               <div className="candidate-score">
-                {promoted && step >= 2 ? (
+                {promoted && showComparison ? (
                   <>
-                    <span>GENERAL 51 · ELDERLY 36</span>
+                    <span>GENERAL 61 · MOBILITY 59</span>
                     <strong>3위 → 1위</strong>
                   </>
                 ) : (
@@ -185,7 +191,7 @@ export function WhyRouteScene({
                 )}
               </div>
 
-              {promoted && step >= 2 && (
+              {promoted && showComparison && (
                 <motion.div
                   className="candidate-rank-shift"
                   initial={{
@@ -199,7 +205,7 @@ export function WhyRouteScene({
                 >
                   GENERAL 3위
                   <span>→</span>
-                  ELDERLY 1위
+                  MOBILITY 1위
                 </motion.div>
               )}
             </motion.article>
@@ -208,7 +214,7 @@ export function WhyRouteScene({
       </motion.div>
 
       <AnimatePresence>
-        {step >= 2 && (
+        {showComparison && (
           <motion.section
             className="why-factor-stage"
             initial={{
@@ -220,7 +226,8 @@ export function WhyRouteScene({
               x: 0,
             }}
             transition={{
-              duration: 0.65,
+              duration: 0.45,
+              delay: 0.12,
             }}
           >
             <div className="factor-title">
@@ -229,7 +236,7 @@ export function WhyRouteScene({
               <h3>
                 일반 1위와
                 <br />
-                고령자 1위를 비교하면.
+                이동지원 1위를 비교하면.
               </h3>
             </div>
 
@@ -247,7 +254,7 @@ export function WhyRouteScene({
                     scale: 1,
                   }}
                   transition={{
-                    delay: index * 0.07,
+                    delay: 0.14 + index * 0.05,
                   }}
                 >
                   <small>{item.en}</small>
@@ -268,43 +275,7 @@ export function WhyRouteScene({
       </AnimatePresence>
 
       <AnimatePresence>
-        {step >= 3 && (
-          <motion.div
-            className="why-weighting"
-            initial={{
-              opacity: 0,
-              y: 22,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            transition={{ duration: 0.65 }}
-          >
-            <div>
-              <small>ROUTE FEATURES</small>
-              <strong>경로 특성</strong>
-            </div>
-
-            <span>×</span>
-
-            <div className="weight-highlight">
-              <small>USER CONTEXT</small>
-              <strong>프로필 · 이동 조건</strong>
-            </div>
-
-            <span>→</span>
-
-            <div>
-              <small>RANKING</small>
-              <strong>후보 순위 변화</strong>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {step >= 4 && (
+        {showFinal && (
           <motion.section
             className="why-result golden-why-result"
             initial={{
@@ -332,8 +303,8 @@ export function WhyRouteScene({
               <span className="reason-dot" />
 
               <p>
-                일반 3위였던 후보 C가
-                <strong> 고령자 프로필에서는 1위로 상승했습니다.</strong>
+                일반 3위였던 버스 77번이
+                <strong> 이동지원 프로필에서는 1위로 상승했습니다.</strong>
               </p>
             </div>
 
