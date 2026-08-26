@@ -54,7 +54,7 @@ concurrency:
 
 env:
   AWS_REGION: ap-northeast-2
-  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID || '819044292803' }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID || '274520456464' }}
   ECS_CLUSTER: kt10-prod
   PROD_BASE_URL: ${{ vars.PROD_BASE_URL || 'https://dongnet.kr' }}
 
@@ -369,7 +369,7 @@ jobs:
           ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY || secrets.DECO }}
           BUS_SERVICE_KEY: ${{ secrets.BUS_SERVICE_KEY }}
-          NVIDIA_API_KEY_SECRET_ARN: ${{ vars.NVIDIA_API_KEY_SECRET_ARN || 'arn:aws:secretsmanager:ap-northeast-2:819044292803:secret:kt10/prod/nvidia-api-key-0h39Xl' }}
+          NVIDIA_API_KEY_SECRET_ARN: ${{ vars.NVIDIA_API_KEY_SECRET_ARN || 'arn:aws:secretsmanager:ap-northeast-2:274520456464:secret:kt10/prod/nvidia-api-key-1YKiyp' }}
           NIM_BASE_URL: ${{ vars.NIM_BASE_URL || 'https://integrate.api.nvidia.com/v1' }}
           NIM_MODEL: ${{ vars.NIM_MODEL || 'nvidia/nvidia-nemotron-nano-9b-v2' }}
           DEPLOY_FRONTEND: ${{ steps.plan.outputs.deploy_frontend }}
