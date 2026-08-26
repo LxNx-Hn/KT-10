@@ -80,13 +80,18 @@ def _same_stop_transfer_payload():
                             ("개금현대아파트", 129.01642, 35.14765),
                             "129.01640,35.14615 129.01642,35.14765",
                         ),
+                        # 버스 선형은 실제 응답처럼 경유 정점을 포함한다.
+                        # 2점으로 줄이면 표시용 직선으로 판정되어 이 테스트가
+                        # 검증하려는 0m 환승 도보 판정과 무관하게 품질이
+                        # estimated로 내려간다.
                         _transit_leg(
                             "BUS",
                             ("개금현대아파트", 129.01642, 35.14765),
                             stop,
                             "일반:67",
                             "67",
-                            "129.01642,35.14765 129.035939,35.154447",
+                            "129.01642,35.14765 129.02600,35.15110 "
+                            "129.035939,35.154447",
                         ),
                         {
                             "mode": "WALK",
@@ -108,7 +113,8 @@ def _same_stop_transfer_payload():
                             ("동해선거제해맞이역", 129.07018, 35.18245),
                             "일반:31",
                             "31",
-                            "129.035939,35.154447 129.07018,35.18245",
+                            "129.035939,35.154447 129.05300,35.16850 "
+                            "129.07018,35.18245",
                         ),
                         _walk_leg(
                             ("동해선거제해맞이역", 129.07018, 35.18245),
@@ -680,3 +686,100 @@ def test_zero_distance_walk_between_different_stops_stays_estimated(monkeypatch)
     ]
     assert len(zero) == 1
     assert zero[0]["geometry_quality"] != "exact"
+
+
+def _long_leg_payload(distance_m: int, linestring: str):
+    """대중교통 한 구간만 있는 최소 payload. 선형 품질 판정 검증용."""
+    return {
+        "metaData": {"plan": {"itineraries": [{
+            "totalTime": 1740,
+            "transferCount": 0,
+            "totalWalkDistance": 0,
+            "totalDistance": distance_m,
+            "fare": {"regular": {"totalFare": 7300}},
+            "legs": [{
+                "mode": "EXPRESSBUS",
+                "sectionTime": 1740,
+                "distance": distance_m,
+                "route": "김해공항-동암후문",
+                "routeId": "210007-211333-ITC-G001",
+                "service": 1,
+                "start": {
+                    "name": "김해공항",
+                    "lon": 128.945797,
+                    "lat": 35.172875,
+                },
+                "end": {
+                    "name": "동암후문",
+                    "lon": 129.222694,
+                    "lat": 35.197497,
+                },
+                "passStopList": {"stationList": [
+                    {
+                        "stationID": "210007",
+                        "stationName": "김해공항",
+                        "lon": "128.945797",
+                        "lat": "35.172875",
+                    },
+                    {
+                        "stationID": "211333",
+                        "stationName": "동암후문",
+                        "lon": "129.222694",
+                        "lat": "35.197497",
+                    },
+                ]},
+                "passShape": {"linestring": linestring},
+            }],
+        }]}},
+    }
+
+
+_TWO_POINT_LINE = "128.945797,35.172875 129.222694,35.197497"
+
+
+def test_long_transit_leg_with_two_point_shape_is_estimated():
+    """25km 구간을 양 끝점 2개로만 준 선형은 실측으로 신뢰하지 않는다."""
+    candidate = asyncio.run(
+        TmapTransitRouteCollector()._from_payload(
+            _long_leg_payload(25358, _TWO_POINT_LINE),
+            max_candidates=1,
+        )
+    )[0]
+
+    leg = candidate.segments[0]
+    assert leg["mode"] == "express_bus"
+    # 지형을 가로지르는 직선이 실측 선형처럼 표시되지 않아야 한다.
+    assert leg["geometry_quality"] == "estimated"
+    assert candidate.geometry_quality != "exact"
+
+
+def test_short_transit_leg_with_two_point_shape_stays_exact():
+    """한 정거장 거리의 2점 선형은 실제로 직선이므로 확정을 유지한다."""
+    candidate = asyncio.run(
+        TmapTransitRouteCollector()._from_payload(
+            _long_leg_payload(400, _TWO_POINT_LINE),
+            max_candidates=1,
+        )
+    )[0]
+
+    assert candidate.segments[0]["geometry_quality"] == "exact"
+    assert candidate.geometry_quality == "exact"
+
+
+def test_long_transit_leg_with_detailed_shape_stays_exact():
+    """정점이 여럿인 장거리 선형은 그대로 확정으로 둔다(오탐 방지)."""
+    detailed = " ".join([
+        "128.945797,35.172875",
+        "129.000000,35.180000",
+        "129.100000,35.190000",
+        "129.222694,35.197497",
+    ])
+    candidate = asyncio.run(
+        TmapTransitRouteCollector()._from_payload(
+            _long_leg_payload(25358, detailed),
+            max_candidates=1,
+        )
+    )[0]
+
+    assert candidate.segments[0]["geometry_quality"] == "exact"
+    assert candidate.geometry_quality == "exact"
