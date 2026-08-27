@@ -79,6 +79,16 @@ def cache_identity(
                 "cached_only" if uses_wheelchair else None
             ),
             "tmapRampDataVersion": 1 if uses_wheelchair else None,
+            # BIMS 직행 보완 후보가 추가·변경되면 이전 TMAP-only 후보
+            # 캐시를 재사용하지 않고 해당 OD를 다시 수집한다.
+            "bimsConfigured": bool(
+                settings.BUS_SERVICE_KEY
+                and not settings.BUS_SERVICE_KEY.startswith("YOUR_")
+            ),
+            "bimsCredentialFingerprint": _credential_fingerprint(
+                settings.BUS_SERVICE_KEY
+            ),
+            "bimsRouteDataVersion": 1,
             "osmnxFallback": settings.OSMNX_WALK_GEOMETRY_ENABLED,
             "regionalDemPath": settings.ELEVATION_REGIONAL_DEM_PATH,
         },

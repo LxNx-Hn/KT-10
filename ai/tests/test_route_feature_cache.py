@@ -105,3 +105,17 @@ def test_tmap_only_cache_identity_ignores_unused_odsay_key(monkeypatch):
     assert after_odsay != after_tmap
     assert before["geometryProfile"]["transitProviderOrder"] == ["tmap"]
     assert "odsay" not in before["geometryProfile"]["transitCredentialFingerprints"]
+
+
+def test_cache_identity_changes_when_bims_augmentation_is_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_ORDER", "tmap")
+    monkeypatch.setattr(settings, "BUS_SERVICE_KEY", "")
+    without_bims = cache_identity(35.1, 129.0, 35.2, 129.1)
+
+    monkeypatch.setattr(settings, "BUS_SERVICE_KEY", "bims-key")
+    with_bims = cache_identity(35.1, 129.0, 35.2, 129.1)
+
+    assert without_bims != with_bims
+    assert without_bims["geometryProfile"]["bimsConfigured"] is False
+    assert with_bims["geometryProfile"]["bimsConfigured"] is True
+    assert "bims-key" not in str(with_bims)
