@@ -7,4 +7,9 @@ describe('formatDistanceM', () => {
     expect(formatDistanceM(12.35)).toBe('12.4');
     expect(formatDistanceM(0)).toBe('0.0');
   });
+
+  it('유효하지 않은 거리를 0으로 위장하지 않는다', () => {
+    expect(() => formatDistanceM(Number.NaN)).toThrow(RangeError);
+    expect(() => formatDistanceM(-1)).toThrow(RangeError);
+  });
 });
