@@ -28,6 +28,7 @@ from config import settings
 
 _BASE_URL = "https://apis.data.go.kr/6260000/BusanBIMS"
 _MAX_STOP_DISTANCE_M = 500.0
+_DISCOVERY_STOP_DISTANCE_M = 1_500.0
 _STOP_SNAPSHOT = Path(__file__).resolve().parents[2] / "data" / "ai" / "busan_bus_stops.json"
 log = logging.getLogger("collectors.bims_transit")
 _route_cache: dict[str, list[dict[str, str]]] = {}
@@ -79,7 +80,11 @@ class BimsTransitRouteCollector(BaseRouteCollector):
         return _xml_items(response.content)
 
     @staticmethod
-    def _nearby_ars(point: Coordinate) -> list[str]:
+    def _nearby_ars(
+        point: Coordinate,
+        *,
+        max_distance_m: float = _MAX_STOP_DISTANCE_M,
+    ) -> list[str]:
         try:
             rows = json.loads(_STOP_SNAPSHOT.read_text(encoding="utf-8"))["stops"]
         except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
@@ -94,7 +99,7 @@ class BimsTransitRouteCollector(BaseRouteCollector):
             except (KeyError, TypeError, ValueError):
                 continue
             distance = _distance_m(point, stop)
-            if distance <= _MAX_STOP_DISTANCE_M:
+            if distance <= max_distance_m:
                 candidates.append((distance, ars))
         return list(dict.fromkeys(ars for _, ars in sorted(candidates)[:4]))
 
@@ -152,7 +157,13 @@ class BimsTransitRouteCollector(BaseRouteCollector):
     async def _discover_routes(self, origin: Coordinate, destination: Coordinate) -> list[dict]:
         timeout = httpx.Timeout(settings.BIMS_TIMEOUT_SECONDS)
         origin_ars = self._nearby_ars(origin)
-        destination_ars = self._nearby_ars(destination)
+        # 캠퍼스·대학 내부 목적지는 가장 가까운 정류소에 ARS가 없을 수
+        # 있어 노선 발견 범위만 넓힌다. 실제 하차 후보 허용 거리는
+        # _candidate의 500m 검사를 그대로 유지한다.
+        destination_ars = self._nearby_ars(
+            destination,
+            max_distance_m=_DISCOVERY_STOP_DISTANCE_M,
+        )
         if not origin_ars or not destination_ars:
             return []
         async with httpx.AsyncClient(timeout=timeout) as client:
