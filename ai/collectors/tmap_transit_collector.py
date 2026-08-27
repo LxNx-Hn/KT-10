@@ -38,6 +38,8 @@ RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 500, 502, 503, 504})
 # 이 거리를 넘는 대중교통 구간의 정점 2개짜리 선형은 실측이 아니라
 # 양 끝점을 이은 표시용 직선으로 본다.
 _MIN_SHAPED_TRANSIT_DISTANCE_M = 1000.0
+# 도로·선로를 따라가야 하는 모드. 항공·해상은 직선이 실제 경로이므로 제외한다.
+_NETWORK_BOUND_MODES = frozenset({"bus", "subway", "train", "express_bus"})
 _MODE_MAP = {
     "WALK": "walk",
     "BUS": "bus",
@@ -317,19 +319,25 @@ def _transit_path(leg: dict) -> list[Coordinate]:
 
 
 def _has_usable_transit_shape(
+    mode: str,
     path: list[Coordinate],
     distance_m: float | None,
 ) -> bool:
     """공급자 선형이 실제 노선을 표현하는지 판정한다.
 
     정류장 사이가 1km를 넘는 구간은 노선이 굽어 있고 경유 정류장도 여럿이라
-    passShape 정점이 2개일 수 없다. 시외·고속버스처럼 공급자가 양 끝점만
+    passShape 정점이 2개일 수 없다. 시외버스·광역철도처럼 공급자가 양 끝점만
     주는 구간을 exact로 두면 지형을 가로지르는 직선이 실측 선형처럼
     표시되므로 확정으로 신뢰하지 않는다.
+
+    항공·해상 구간은 도로나 선로를 따르지 않아 두 점을 잇는 직선이 실제
+    경로다. 이런 모드는 정점이 2개여도 의심하지 않는다.
     """
     if len(path) < 2:
         return False
     if len(path) > 2:
+        return True
+    if mode not in _NETWORK_BOUND_MODES:
         return True
     return (distance_m or 0.0) <= _MIN_SHAPED_TRANSIT_DISTANCE_M
 
@@ -604,7 +612,7 @@ class TmapTransitRouteCollector(BaseRouteCollector):
                 path = _transit_path(leg)
                 quality = (
                     "exact"
-                    if _has_usable_transit_shape(path, section_distance)
+                    if _has_usable_transit_shape(mode, path, section_distance)
                     else "estimated"
                 )
                 if not path:

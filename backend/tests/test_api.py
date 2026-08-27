@@ -85,6 +85,18 @@ def test_short_two_point_transit_segment_is_kept():
     assert _filter_placeholder_transit_candidates(candidates) == candidates
 
 
+def test_air_and_sea_segments_keep_two_point_shapes():
+    """항공·해상 구간은 도로를 따르지 않아 직선이 실제 경로다."""
+    for mode in ("airplane", "ferry"):
+        candidates = demo_candidates()[:1]
+        candidate = _with_transit_segment(
+            candidates[0], distance_m=49_202, points=2
+        )
+        candidate.segments[0].mode = mode
+
+        assert _filter_placeholder_transit_candidates(candidates) == candidates
+
+
 def test_placeholder_filter_keeps_originals_when_everything_matches():
     """공급자 품질 문제로 후보를 전부 잃지는 않는다."""
     candidates = demo_candidates()[:2]

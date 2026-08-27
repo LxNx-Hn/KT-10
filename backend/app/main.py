@@ -837,12 +837,17 @@ def _filter_viable_candidates(candidates: list[RouteCandidate]) -> list[RouteCan
 # 정류장 사이가 이 거리를 넘는 대중교통 구간은 노선이 굽어 있고 경유
 # 정류장도 여럿이라 좌표 2개로 표현될 수 없다.
 _PLACEHOLDER_TRANSIT_MIN_DISTANCE_M = 1000.0
+# 도로·선로를 따라가야 하는 모드만 검사한다. 항공·해상 구간은 두 점을 잇는
+# 직선이 실제 경로이므로 정점이 2개인 것이 정상이다.
+_NETWORK_BOUND_TRANSIT_MODES = frozenset(
+    {"bus", "subway", "train", "express_bus"}
+)
 
 
 def _has_placeholder_transit_geometry(candidate: RouteCandidate) -> bool:
     """공급자가 양 끝점만으로 만들어낸 대중교통 구간이 있는지 본다."""
     for segment in candidate.segments:
-        if segment.mode in {"walk", "transfer"}:
+        if segment.mode not in _NETWORK_BOUND_TRANSIT_MODES:
             continue
         if segment.path is not None and len(segment.path) > 2:
             continue
