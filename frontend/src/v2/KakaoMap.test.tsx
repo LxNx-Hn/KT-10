@@ -10,8 +10,6 @@ import type {
 } from '@/types';
 import KakaoMap, {
   KT_CLIMATE_SHELTER_MAX_VISIBLE_LEVEL,
-  SHADOW_FILL,
-  SHADOW_STROKE,
 } from './KakaoMap';
 import { ALTERNATIVE_ROUTE_COLOR } from './transportModeVisual';
 
@@ -392,7 +390,7 @@ describe('KakaoMap production overlays', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('실제 출·도착점과 선택 경로의 전체선·구간선을 그리고 대안 경로 클릭을 전달한다', async () => {
+  it('실제 출·도착점과 선택 경로만 그리고 후보 미리보기 선은 그리지 않는다', async () => {
     const onSelectRoute = vi.fn();
     const selected = scoredRoute('selected', {
       path: [ORIGIN, MIDPOINT, DESTINATION],
@@ -459,23 +457,18 @@ describe('KakaoMap production overlays', () => {
       activePolylines().some((line) => line.options.strokeColor === '#16a34a'),
     ).toBe(false);
 
-    const alternativeLine = activePolylines().find(
-      (line) => line.options.clickable === true,
-    );
-    expect(alternativeLine?.options.strokeColor).toBe(ALTERNATIVE_ROUTE_COLOR);
-    expect(alternativeLine?.options.strokeColor).not.toBe(SHADOW_STROKE);
-    expect(alternativeLine?.options.strokeColor).not.toBe(SHADOW_FILL);
-    expect(alternativeLine?.options.strokeOpacity).toBe(0.38);
-    expect(alternativeLine?.options.strokeStyle).toBe('shortdash');
-    expect(alternativeLine?.options.zIndex).toBe(2);
+    // 후보 미리보기 선은 그리지 않는다. 선택 경로 하나만 남는다.
+    expect(
+      activePolylines().some(
+        (line) => line.options.strokeColor === ALTERNATIVE_ROUTE_COLOR,
+      ),
+    ).toBe(false);
+    expect(
+      activePolylines().some((line) => line.options.clickable === true),
+    ).toBe(false);
 
-    const clickAlternative = alternativeLine
-      ? eventHandlers.get(alternativeLine)
-      : undefined;
-    expect(clickAlternative).toBeTypeOf('function');
-    clickAlternative?.();
-    expect(onSelectRoute).toHaveBeenCalledOnce();
-    expect(onSelectRoute).toHaveBeenCalledWith('alternative');
+    // 지도에서 후보를 클릭해 고르는 경로는 없앴다. 선택은 목록에서만 한다.
+    expect(onSelectRoute).not.toHaveBeenCalled();
   });
 
   it('경사 토글이 꺼져 있으면 slopeSegments가 있어도 경사색을 쓰지 않는다', async () => {
@@ -972,16 +965,15 @@ describe('KakaoMap production overlays', () => {
     const walk = activePolylines().find((line) => line.options.strokeColor === '#475569');
     const bus = activePolylines().find((line) => line.options.strokeColor === '#3182f6');
     const subway = activePolylines().find((line) => line.options.strokeColor === '#81bf48');
-    const alternativeLine = activePolylines().find(
-      (line) => line.options.clickable === true,
-    );
     expect(walk?.options.strokeStyle).toBe('shortdash');
     expect(bus?.options.strokeStyle).toBe('solid');
     expect(subway?.options.strokeStyle).toBe('solid');
-    expect(alternativeLine?.options.strokeColor).toBe(ALTERNATIVE_ROUTE_COLOR);
-    expect(alternativeLine?.options.strokeColor).not.toBe(SHADOW_STROKE);
-    expect(alternativeLine?.options.zIndex).toBe(2);
-    expect(bus?.options.zIndex).toBeGreaterThan(alternativeLine?.options.zIndex ?? 0);
+    // 후보 미리보기 선이 없으므로 선택 경로 본선만 지도에 남는다.
+    expect(
+      activePolylines().some(
+        (line) => line.options.strokeColor === ALTERNATIVE_ROUTE_COLOR,
+      ),
+    ).toBe(false);
   });
 
   it('선택 경로 변경 시 이전 Polyline을 제거하고 새 경사선만 남긴다', async () => {

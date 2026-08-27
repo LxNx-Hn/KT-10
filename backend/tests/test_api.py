@@ -11,7 +11,13 @@ import app.main as app_main
 from app.data.places import find_place
 from app.data.routes import demo_candidates
 from app.data.weather import WEATHER_SCENARIOS
-from app.main import _add_configured_shade, _filter_viable_candidates, app
+from app.main import (
+    _add_configured_shade,
+    _filter_placeholder_transit_candidates,
+    _filter_viable_candidates,
+    app,
+)
+from app.models import LatLng
 from app.providers.ai_pipeline import EnrichedCandidateBundle
 from app.route_set_cache import route_set_cache
 from app.settings import settings
@@ -49,6 +55,55 @@ def test_total_walk_limit_applies_to_every_route_type(monkeypatch):
     filtered = _filter_viable_candidates(candidates)
 
     assert [candidate.total_walk_m for candidate in filtered] == [14_999]
+
+
+def _with_transit_segment(candidate, *, distance_m, points):
+    """대중교통 한 구간의 거리와 선형 정점 수만 바꾼 후보를 만든다."""
+    segment = candidate.segments[0]
+    segment.mode = "express_bus"
+    segment.distance_m = distance_m
+    segment.path = [LatLng(lat=35.0 + i * 0.01, lng=129.0 + i * 0.01) for i in range(points)]
+    return candidate
+
+
+def test_placeholder_transit_candidate_is_excluded():
+    """25km 구간을 좌표 2개로만 준 후보는 실제 노선 정보가 아니다."""
+    candidates = demo_candidates()[:2]
+    _with_transit_segment(candidates[0], distance_m=25_358, points=2)
+    _with_transit_segment(candidates[1], distance_m=25_358, points=120)
+
+    filtered = _filter_placeholder_transit_candidates(candidates)
+
+    assert [candidate.id for candidate in filtered] == [candidates[1].id]
+
+
+def test_short_two_point_transit_segment_is_kept():
+    """한 정거장 거리의 2점 구간은 실제로 직선이므로 남긴다."""
+    candidates = demo_candidates()[:1]
+    _with_transit_segment(candidates[0], distance_m=400, points=2)
+
+    assert _filter_placeholder_transit_candidates(candidates) == candidates
+
+
+def test_air_and_sea_segments_keep_two_point_shapes():
+    """항공·해상 구간은 도로를 따르지 않아 직선이 실제 경로다."""
+    for mode in ("airplane", "ferry"):
+        candidates = demo_candidates()[:1]
+        candidate = _with_transit_segment(
+            candidates[0], distance_m=49_202, points=2
+        )
+        candidate.segments[0].mode = mode
+
+        assert _filter_placeholder_transit_candidates(candidates) == candidates
+
+
+def test_placeholder_filter_keeps_originals_when_everything_matches():
+    """공급자 품질 문제로 후보를 전부 잃지는 않는다."""
+    candidates = demo_candidates()[:2]
+    for candidate in candidates:
+        _with_transit_segment(candidate, distance_m=25_358, points=2)
+
+    assert _filter_placeholder_transit_candidates(candidates) == candidates
 
 
 def test_total_walk_limit_does_not_restore_unsupported_routes(monkeypatch):

@@ -834,6 +834,56 @@ def _filter_viable_candidates(candidates: list[RouteCandidate]) -> list[RouteCan
     return filtered
 
 
+# 정류장 사이가 이 거리를 넘는 대중교통 구간은 노선이 굽어 있고 경유
+# 정류장도 여럿이라 좌표 2개로 표현될 수 없다.
+_PLACEHOLDER_TRANSIT_MIN_DISTANCE_M = 1000.0
+# 도로·선로를 따라가야 하는 모드만 검사한다. 항공·해상 구간은 두 점을 잇는
+# 직선이 실제 경로이므로 정점이 2개인 것이 정상이다.
+_NETWORK_BOUND_TRANSIT_MODES = frozenset(
+    {"bus", "subway", "train", "express_bus"}
+)
+
+
+def _has_placeholder_transit_geometry(candidate: RouteCandidate) -> bool:
+    """공급자가 양 끝점만으로 만들어낸 대중교통 구간이 있는지 본다."""
+    for segment in candidate.segments:
+        if segment.mode not in _NETWORK_BOUND_TRANSIT_MODES:
+            continue
+        if segment.path is not None and len(segment.path) > 2:
+            continue
+        distance = segment.distance_m or 0.0
+        if distance > _PLACEHOLDER_TRANSIT_MIN_DISTANCE_M:
+            return True
+    return False
+
+
+def _filter_placeholder_transit_candidates(
+    candidates: list[RouteCandidate],
+) -> list[RouteCandidate]:
+    """자리표시자 대중교통 구간을 포함한 후보를 제외한다.
+
+    공급자는 노선을 모르는 구간에도 출발·도착 좌표만으로 후보를 만든다.
+    그 구간은 선형이 지형을 가로지르는 직선이고 거리·소요시간도 직선 기준
+    이라 실제보다 짧게 보고된다. 같은 노선이 정상 선형으로 들어온 후보가
+    따로 있으므로 이런 후보를 빼도 실제 이동 수단을 잃지 않는다.
+
+    도보 상한·계단 필터와 달리 전부 걸러져도 오류로 만들지 않는다. 이건
+    이용자 조건을 못 맞춘 것이 아니라 공급자 데이터 품질 문제이므로,
+    남는 후보가 없으면 표시 품질 표기에 맡기고 원본을 그대로 둔다.
+    """
+    filtered = [
+        candidate
+        for candidate in candidates
+        if not _has_placeholder_transit_geometry(candidate)
+    ]
+    if candidates and not filtered:
+        log.warning(
+            "모든 후보에 자리표시자 대중교통 선형이 있어 제외를 건너뜁니다."
+        )
+        return candidates
+    return filtered
+
+
 def _filter_wheelchair_candidates(
     candidates: list[RouteCandidate],
     user: User | None,
@@ -876,7 +926,9 @@ async def routes_candidates(req: CandidatesRequest) -> list[RouteCandidate]:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
         return _normalize_shade_for_response(
             await _add_configured_shade(
-                _filter_viable_candidates(candidates),
+                _filter_viable_candidates(
+                    _filter_placeholder_transit_candidates(candidates)
+                ),
                 wait_for_buildings=True,
             )
         )
@@ -887,7 +939,11 @@ async def routes_candidates(req: CandidatesRequest) -> list[RouteCandidate]:
         )
     candidates = get_route_candidates(req.origin, req.destination)
     return _normalize_shade_for_response(
-        await _add_configured_shade(_filter_viable_candidates(candidates))
+        await _add_configured_shade(
+            _filter_viable_candidates(
+                _filter_placeholder_transit_candidates(candidates)
+            )
+        )
     )
 
 
@@ -924,7 +980,9 @@ async def routes_recommend(
                 candidate_limit=effective_top_n,
             )
             candidates = _filter_wheelchair_candidates(
-                _filter_viable_candidates(candidates),
+                _filter_viable_candidates(
+                    _filter_placeholder_transit_candidates(candidates)
+                ),
                 user,
                 effective_options.uses_wheelchair,
             )
@@ -989,7 +1047,9 @@ async def routes_recommend(
                 candidate_limit=effective_top_n,
             )
             candidates = _filter_wheelchair_candidates(
-                _filter_viable_candidates(candidates),
+                _filter_viable_candidates(
+                    _filter_placeholder_transit_candidates(candidates)
+                ),
                 user,
                 effective_options.uses_wheelchair,
             )
