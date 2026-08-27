@@ -5,7 +5,7 @@ from defusedxml import ElementTree
 import pytest
 
 import app.providers.busan_bus as provider
-from app.providers.busan_bus import _arrival, _parse_root
+from app.providers.busan_bus import _arrival, _parse_root, search_bus_stops
 
 
 def test_parses_official_low_floor_arrival_contract():
@@ -81,3 +81,16 @@ def test_matches_tmap_stop_to_local_bims_index_without_external_lookup(monkeypat
     ))
 
     assert [item.stop_id for item in result] == ["505790000"]
+
+
+def test_exact_stop_search_excludes_partial_name_noise_and_keeps_ars_labels(monkeypatch):
+    monkeypatch.setattr(provider, "_BUS_STOPS", (
+        provider._LocalBusStop("one", "어린이대공원", "01001", 35.1, 129.1, "어린이대공원"),
+        provider._LocalBusStop("two", "어린이대공원", "01002", 35.1, 129.2, "어린이대공원"),
+        provider._LocalBusStop("entrance", "어린이대공원입구", "01003", 35.2, 129.2, "어린이대공원입구"),
+    ))
+
+    result = asyncio.run(search_bus_stops("어린이대공원"))
+
+    assert [item.stop_id for item in result] == ["one", "two"]
+    assert [item.ars_no for item in result] == ["01001", "01002"]

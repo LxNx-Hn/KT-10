@@ -147,6 +147,65 @@ def test_tmap_bus_stop_id_is_resolved_once_by_name_and_coordinate(monkeypatch):
     assert resolved == [("부산시청", 35.1797, 129.0750)]
 
 
+def test_bus_arrival_uses_nearby_same_name_stop_that_has_expected_route(monkeypatch):
+    """가장 가까운 반대편 정류소에 103번이 없어도 다음 후보를 확인한다."""
+    monkeypatch.setattr(settings, "bus_service_key", "configured")
+    segment = _bus_segment()
+    segment.bus_route_name = "103"
+    segment.station_name = "연지일동아파트"
+    segment.path = [LatLng(lat=35.169814, lng=129.052069)]
+
+    async def fake_candidates(*_args, **_kwargs):
+        return [
+            BusStopCandidate("near-opposite", "연지일동아파트", 16.9),
+            BusStopCandidate("route-103", "연지일동아파트", 37.2),
+        ]
+
+    async def fake_arrivals(stop_id):
+        if stop_id == "near-opposite":
+            return BusStopArrivals(
+                stop_id=stop_id,
+                stop_name="연지일동아파트",
+                arrivals=[BusArrival(route_name="83-1", arrival_min=3)],
+            )
+        return BusStopArrivals(
+            stop_id=stop_id,
+            stop_name="연지일동아파트",
+            arrivals=[BusArrival(route_name="103", arrival_min=11, is_low_floor=True)],
+        )
+
+    monkeypatch.setattr(provider, "find_bus_stop_candidates", fake_candidates)
+    monkeypatch.setattr(provider, "get_bus_arrivals", fake_arrivals)
+    result = asyncio.run(provider.get_route_transit_arrivals([segment]))[0]
+
+    assert result.status == "live"
+    assert result.route_name == "103"
+    assert result.boarding_stop_id == "route-103"
+    assert result.arrival_min == 11
+    assert result.is_low_floor is True
+
+
+def test_bus_arrival_does_not_call_missing_eta_no_dispatch(monkeypatch):
+    monkeypatch.setattr(settings, "bus_service_key", "configured")
+
+    async def fake_candidates(*_args, **_kwargs):
+        return [BusStopCandidate("stop-1", "부산역", 10.0)]
+
+    async def fake_arrivals(stop_id):
+        return BusStopArrivals(
+            stop_id=stop_id,
+            stop_name="부산역",
+            arrivals=[BusArrival(route_name="101", arrival_min=3)],
+        )
+
+    monkeypatch.setattr(provider, "find_bus_stop_candidates", fake_candidates)
+    monkeypatch.setattr(provider, "get_bus_arrivals", fake_arrivals)
+    result = asyncio.run(provider.get_route_transit_arrivals([_bus_segment()]))[0]
+
+    assert result.status == "unavailable"
+    assert result.arrival_message == "도착 예정 정보 없음"
+
+
 def test_subway_schedule_is_lazy_and_truthfully_labeled(monkeypatch):
     monkeypatch.setattr(settings, "data_go_kr_service_key", "configured")
     calls = 0

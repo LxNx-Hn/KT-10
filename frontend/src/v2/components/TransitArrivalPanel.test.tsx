@@ -62,6 +62,7 @@ describe('선택 경로 대중교통 도착 안내', () => {
           mode: 'bus',
           status: 'live',
           arrivalMin: 3,
+          isLowFloor: true,
           observedAt: '2026-08-03T01:00:00Z',
           source: '부산 BIMS',
         }, {
@@ -83,6 +84,7 @@ describe('선택 경로 대중교통 도착 안내', () => {
     );
     await waitFor(() => {
       expect(screen.getByText('3분 후 도착')).toBeTruthy();
+      expect(screen.getByText('저상버스')).toBeTruthy();
       expect(screen.getByText('5분 후 도착 (10:05)')).toBeTruthy();
     });
     expect(screen.getByText('빠른 환승 승차 위치 3-2')).toBeTruthy();
@@ -136,6 +138,22 @@ describe('선택 경로 대중교통 도착 안내', () => {
     await waitFor(() => {
       expect(screen.getByText('곧 출발')).toBeTruthy();
     });
+  });
+
+  it('BIMS에 기대 노선의 ETA가 없으면 배차 없음으로 단정하지 않는다', async () => {
+    renderArrivals([{
+      segmentId: 'bus-1',
+      mode: 'bus',
+      status: 'unavailable',
+      arrivalMessage: '도착 예정 정보 없음',
+      observedAt: '2026-08-03T01:00:00Z',
+      source: '부산광역시 부산버스정보시스템',
+    }]);
+
+    await waitFor(() => {
+      expect(screen.getByText('도착 예정 정보 없음')).toBeTruthy();
+    });
+    expect(screen.queryByText(/배차 없음/)).toBeNull();
   });
 
   it('시발역은 출발 예정, 중간역은 도착으로 표시하고 초는 떼어낸다', async () => {

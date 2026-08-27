@@ -493,6 +493,10 @@ class BusArrival(CamelModel):
 class BusStopArrivals(CamelModel):
     stop_id: str
     stop_name: str
+    # 동명 정류소를 화면에서 구분할 수 있는 BIMS 정류소 정보.
+    ars_no: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
     arrivals: list[BusArrival]
 
 
@@ -620,7 +624,10 @@ class TransitLegArrival(CamelModel):
     status: Literal["live", "scheduled", "unavailable"]
     route_name: Optional[str] = None
     boarding_stop_name: Optional[str] = None
+    boarding_stop_id: Optional[str] = None
     direction: Optional[str] = None
+    # 버스 BIMS가 차량 저상 여부를 준 경우에만 노출한다.
+    is_low_floor: Optional[bool] = None
     # 승차역이 그 진행방향 열차의 시발역인지. None = 판별 불가(버스 등).
     boarding_kind: Optional[Literal["origin", "intermediate"]] = None
     # 0 = 1분 미만(곧 도착/출발). 그 이상은 반올림한 분이며 초는 노출하지 않는다.

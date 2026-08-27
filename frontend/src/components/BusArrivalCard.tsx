@@ -65,7 +65,9 @@ export default function BusArrivalCard() {
       const results = await adapters.bus.listStops(query);
       if (request !== stopSearchRequest.current) return;
       setStops(results);
-      setStopId(results[0]?.stopId ?? '');
+      // 동명 정류소는 상·하행/반대편이 모두 검색된다. 첫 항목을 자동 선택하면
+      // 다른 정류장의 도착판을 보여 줄 수 있으므로 사용자가 ARS 정류소를 고른다.
+      setStopId('');
       if (!results.length) {
         setError('검색된 정류장이 없습니다.');
         setLoading(false);
@@ -119,6 +121,7 @@ export default function BusArrivalCard() {
     hasSearched
     && !showLoading
     && !error
+    && Boolean(stopId)
     && arrivals.length === 0;
 
   return (
@@ -152,9 +155,11 @@ export default function BusArrivalCard() {
           aria-label="정류장 선택"
           disabled={!stops.length}
         >
-          {!stops.length && <option value="">정류장을 검색해 주세요</option>}
+          <option value="">정류장을 선택해 주세요</option>
           {stops.map((stop) => (
-            <option key={stop.stopId} value={stop.stopId}>{stop.stopName}</option>
+            <option key={stop.stopId} value={stop.stopId}>
+              {stop.stopName}{stop.arsNo ? ` · ARS ${stop.arsNo}` : ` · ${stop.stopId}`}
+            </option>
           ))}
         </select>
         <button
@@ -172,7 +177,7 @@ export default function BusArrivalCard() {
           <li className="bus__empty">정류장을 검색하면 도착 정보가 표시돼요.</li>
         )}
         {showEmptyResult && (
-          <li className="bus__empty">현재 확인되는 도착 정보가 없어요.</li>
+          <li className="bus__empty">도착 예정 정보 없음</li>
         )}
         {arrivals.map((arrival) => (
           <li

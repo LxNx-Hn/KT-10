@@ -24,7 +24,9 @@ log = logging.getLogger("providers.busan_subway")
 _BASE_URL = "https://apis.data.go.kr/B551542/trainTime/getTrainTime"
 _KST = ZoneInfo("Asia/Seoul")
 _PAGE_SIZE = 1000
-_CACHE_TTL_SECONDS = 6 * 3600
+# 역별 운행시각은 운영 상황에 따라 바뀔 수 있다. 선택 경로에서만 호출하므로
+# 15분 뒤에는 공식 원본을 다시 확인해 변경된 시간표를 오래 보존하지 않는다.
+_CACHE_TTL_SECONDS = 15 * 60
 _MAX_JOURNEY_DURATION = timedelta(hours=3)
 _TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$")
 _cache: dict[str, tuple[float, tuple[dict[str, str], ...]]] = {}

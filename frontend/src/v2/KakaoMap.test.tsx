@@ -976,6 +976,37 @@ describe('KakaoMap production overlays', () => {
     ).toBe(false);
   });
 
+  it('BIMS 정류장 순서만 있는 추정 대중교통은 건물 관통 직선을 그리지 않는다', async () => {
+    const selected = scoredRoute('bims-stop-order-only', {
+      path: [ORIGIN, MIDPOINT, DESTINATION],
+      geometryQuality: 'estimated',
+      segments: [{
+        id: 'bims-bus',
+        mode: 'bus',
+        description: '88 · 부암교차로 → 양운초등학교',
+        durationMin: 42,
+        path: [ORIGIN, MIDPOINT, DESTINATION],
+        geometryQuality: 'estimated',
+        busRouteName: '88',
+      }],
+    });
+
+    render(
+      <KakaoMap
+        origin={ORIGIN}
+        destination={DESTINATION}
+        recommendations={[selected]}
+        selectedRouteId="bims-stop-order-only"
+        onSelectRoute={vi.fn()}
+        showShade={false}
+        showSlope={false}
+      />,
+    );
+    await waitUntilReady();
+
+    expect(activePolylines()).toHaveLength(0);
+  });
+
   it('선택 경로 변경 시 이전 Polyline을 제거하고 새 경사선만 남긴다', async () => {
     const first = scoredRoute('first', {
       path: [ORIGIN, MIDPOINT],

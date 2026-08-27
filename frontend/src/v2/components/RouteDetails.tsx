@@ -34,7 +34,7 @@ function geometryQualityMessage(
     return '주요 구간과 보행 연결 구간을 함께 안내해요.';
   }
   if (quality === 'estimated') {
-    return '보행 연결 구간을 기준으로 안내해요.';
+    return 'BIMS는 정류장 순서만 제공하므로 지도에 추정 이동선을 그리지 않아요.';
   }
   return null;
 }

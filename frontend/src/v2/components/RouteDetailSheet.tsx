@@ -2,7 +2,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react';
-import BusArrivalCard from '@/components/BusArrivalCard';
 import WeatherWarning from '@/components/WeatherWarning';
 import type { ProfileId, ScoredRoute } from '@/types';
 import BottomDrawer from './BottomDrawer';
@@ -58,7 +57,13 @@ function renderDetailContent(
     return (
       <>
         <WeatherWarning />
-        <BusArrivalCard />
+        {selectedItem ? (
+          <p className="map-first__environment-note">
+            선택 경로의 버스 도착·저상버스 정보는 경로 탭의 탑승·도착 안내에서 확인할 수 있어요.
+          </p>
+        ) : (
+          <p>먼저 경로를 검색해 주세요.</p>
+        )}
       </>
     );
   }

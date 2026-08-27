@@ -257,6 +257,19 @@ function validPath(path: LatLng[] | undefined, minimumLength = 2): LatLng[] | nu
 }
 
 /**
+ * BIMS 후보는 정류장 순서만 보유하고 도로·선로 geometry를 제공하지 않는다.
+ * 이 직선들을 지도에 그리면 건물을 가로지르는 가짜 경로가 되므로 지도 선을
+ * 생략한다. TMAP 등에서 exact/mixed geometry를 준 후보에는 적용하지 않는다.
+ */
+function hidesEstimatedTransitGeometry(route: RouteCandidate): boolean {
+  return route.geometryQuality === 'estimated'
+    && route.segments.some((segment) => (
+      (segment.mode === 'bus' || segment.mode === 'subway' || segment.mode === 'train')
+      && (segment.geometryQuality ?? route.geometryQuality) === 'estimated'
+    ));
+}
+
+/**
  * 선택 경로의 구간별 선.
  *
  * `slopeVisible`이 false면 경사 구간을 만들지 않고 공급자 도보 geometry를
@@ -268,6 +281,7 @@ function segmentPathParts(
   route: RouteCandidate,
   slopeVisible: boolean,
 ): RoutePathPart[] {
+  if (hidesEstimatedTransitGeometry(route)) return [];
   const terrainParts = slopeVisible && route.terrain?.status === 'estimated_90m'
     ? (route.terrain.slopeSegments ?? []).flatMap<RoutePathPart>((segment) => {
       // 서버가 준 원본 polyline 부분경로를 우선 쓴다. 표본 사이를 직선으로
@@ -301,6 +315,7 @@ function segmentPathParts(
 
 function collectSelectedRoutePoints(route: RouteCandidate | undefined): LatLng[] {
   if (!route) return [];
+  if (hidesEstimatedTransitGeometry(route)) return [];
   const main = validPath(route.path);
   if (main) return [...main];
   // bounds는 토글과 무관하게 공급자 원본 geometry 기준으로 잡는다.
@@ -780,6 +795,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     slopeVisible: boolean,
   ) => {
     if (!route) return;
+    if (hidesEstimatedTransitGeometry(route)) return;
     const routePath = validPath(route.path);
     // 토글이 꺼져 있으면 경사 구간 자체를 만들지 않으므로 도보선은 기본 도보
     // 색·점선으로 남는다.

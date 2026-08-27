@@ -15,7 +15,7 @@ from time import monotonic
 from weakref import WeakKeyDictionary
 from zoneinfo import ZoneInfo
 
-from ..models import RouteSegment, TransitLegArrival
+from ..models import BusStopArrivals, RouteSegment, TransitLegArrival
 from ..settings import settings
 from .busan_bus import (
     clear_bus_stop_match_cache,
@@ -133,6 +133,14 @@ def _unavailable(
     )
 
 
+async def _bus_stop_arrival(stop_id: str) -> BusStopArrivals | None:
+    """한 BIMS 정류소의 도착판을 조회한다. 개별 실패는 후보 비교에서 제외한다."""
+    try:
+        return await get_bus_arrivals(stop_id)
+    except RuntimeError:
+        return None
+
+
 async def _bus_arrival(segment: RouteSegment) -> TransitLegArrival:
     stop_id = (segment.transit_start_id or "").strip()
     path_start = segment.path[0] if segment.path else None
@@ -162,52 +170,63 @@ async def _bus_arrival(segment: RouteSegment) -> TransitLegArrival:
             lat=path_start.lat,
             lng=path_start.lng,
         )
-        try:
-            stop = (
-                await get_bus_arrivals(matched_stops[0].stop_id)
-                if matched_stops
-                else None
+        if not matched_stops:
+            result = _unavailable(
+                segment,
+                "탑승 정류장을 확인할 수 없습니다.",
+                source="부산광역시 부산버스정보시스템",
             )
-        except RuntimeError:
-            stop = None
-        if stop is None:
+            _cache_put(key, result)
+            return result
+        stop_results = await asyncio.gather(*(
+            _bus_stop_arrival(candidate.stop_id)
+            for candidate in matched_stops
+        ))
+        resolved = list(zip(matched_stops, stop_results, strict=True))
+        available = [(candidate, stop) for candidate, stop in resolved if stop is not None]
+        matches = [
+            (candidate, stop, arrival)
+            for candidate, stop in available
+            for arrival in stop.arrivals
+            if expected_route and _route_key(arrival.route_name) == expected_route
+        ]
+        matches.sort(key=lambda item: (
+            item[0].distance_m if item[0].distance_m is not None else float("inf"),
+            item[2].arrival_min is None,
+            item[2].arrival_min if item[2].arrival_min is not None else 10**9,
+        ))
+        if not available:
             result = _unavailable(
                 segment,
                 "실시간 버스 도착정보를 불러오지 못했습니다.",
                 source="부산광역시 부산버스정보시스템",
             )
-        else:
-            matching = [
-                item
-                for item in stop.arrivals
-                if expected_route and _route_key(item.route_name) == expected_route
-            ]
-            matching.sort(
-                key=lambda item: (
-                    item.arrival_min is None,
-                    item.arrival_min if item.arrival_min is not None else 10**9,
-                )
+        elif not matches:
+            # BIMS가 정상이지만 이 노선의 차량 ETA가 없다는 뜻이다. 배차 없음으로
+            # 단정하지 않으며, 평균 배차시간도 만들지 않는다.
+            nearest_candidate, nearest_stop = available[0]
+            result = _unavailable(
+                segment,
+                "도착 예정 정보 없음",
+                source="부산광역시 부산버스정보시스템",
             )
-            if not matching:
-                result = _unavailable(
-                    segment,
-                    "현재 이 노선의 실시간 도착정보가 없습니다.",
-                    source="부산광역시 부산버스정보시스템",
-                )
-                result.boarding_stop_name = stop.stop_name
-            else:
-                first = matching[0]
-                result = TransitLegArrival(
-                    segment_id=segment.id,
-                    mode="bus",
-                    status="live",
-                    route_name=first.route_name,
-                    boarding_stop_name=stop.stop_name,
-                    arrival_min=first.arrival_min,
-                    arrival_message=first.arrival_message,
-                    observed_at=datetime.now(UTC),
-                    source="부산광역시 부산버스정보시스템",
-                )
+            result.boarding_stop_name = nearest_stop.stop_name
+            result.boarding_stop_id = nearest_candidate.stop_id
+        else:
+            candidate, stop, first = matches[0]
+            result = TransitLegArrival(
+                segment_id=segment.id,
+                mode="bus",
+                status="live",
+                route_name=first.route_name,
+                boarding_stop_name=stop.stop_name,
+                boarding_stop_id=candidate.stop_id,
+                arrival_min=first.arrival_min,
+                arrival_message=first.arrival_message,
+                is_low_floor=first.is_low_floor,
+                observed_at=datetime.now(UTC),
+                source="부산광역시 부산버스정보시스템",
+            )
         _cache_put(key, result)
         return result
 

@@ -38,12 +38,37 @@ describe('저상버스 도착 상태', () => {
       target: { value: '서면' },
     });
     fireEvent.click(screen.getByRole('button', { name: '검색' }));
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /서면역 · stop-1/ })).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText('정류장 선택'), {
+      target: { value: 'stop-1' },
+    });
 
     await waitFor(() => {
-      expect(screen.getByText('현재 확인되는 도착 정보가 없어요.')).toBeTruthy();
+      expect(screen.getByText('도착 예정 정보 없음')).toBeTruthy();
     });
     expect(screen.queryByText('정류장을 검색하면 도착 정보가 표시돼요.')).toBeNull();
     expect(screen.queryByText('도착 정보가 없습니다.')).toBeNull();
+  });
+
+  it('동명 정류소를 자동으로 고르지 않고 ARS 번호로 구분한다', async () => {
+    vi.spyOn(adapters.bus, 'listStops').mockResolvedValue([
+      { stopId: 'up', stopName: '부암교차로', arsNo: '01001', arrivals: [] },
+      { stopId: 'down', stopName: '부암교차로', arsNo: '01002', arrivals: [] },
+    ]);
+
+    render(<BusArrivalCard />);
+    fireEvent.change(screen.getByLabelText('버스 정류장 검색'), {
+      target: { value: '부암교차로' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '검색' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: '부암교차로 · ARS 01001' })).toBeTruthy();
+    });
+    expect(screen.getByRole('option', { name: '부암교차로 · ARS 01002' })).toBeTruthy();
+    expect(adapters.bus.getArrivals).not.toHaveBeenCalled();
   });
 
   it('오류 시 원인 안내와 재시도를 제공한다', async () => {
@@ -79,6 +104,12 @@ describe('저상버스 도착 상태', () => {
       target: { value: '서면' },
     });
     fireEvent.click(screen.getByRole('button', { name: '검색' }));
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /서면역 · stop-1/ })).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText('정류장 선택'), {
+      target: { value: 'stop-1' },
+    });
 
     await waitFor(() => {
       expect(screen.getByText('곧 도착')).toBeTruthy();

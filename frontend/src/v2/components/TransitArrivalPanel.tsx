@@ -32,6 +32,12 @@ function arrivalLabel(
   return arrival.arrivalMessage ?? '도착정보 확인 불가';
 }
 
+function lowFloorLabel(value: boolean | undefined): string | null {
+  if (value === true) return '저상버스';
+  if (value === false) return '일반버스';
+  return null;
+}
+
 export default function TransitArrivalPanel({ item }: { item: ScoredRoute }) {
   const transitSegments = useMemo(
     () => item.route.segments.filter(
@@ -93,6 +99,9 @@ export default function TransitArrivalPanel({ item }: { item: ScoredRoute }) {
               <strong>{segment.description}</strong>
               {segment.transitDirection && <span>{segment.transitDirection} 방면</span>}
               {arrival && <span>{arrivalLabel(arrival)}</span>}
+              {arrival?.mode === 'bus' && lowFloorLabel(arrival.isLowFloor) && (
+                <span>{lowFloorLabel(arrival.isLowFloor)}</span>
+              )}
               {arrival?.status === 'scheduled' && (
                 <small>시간표 기준이며 실시간 열차 위치 정보는 아닙니다.</small>
               )}

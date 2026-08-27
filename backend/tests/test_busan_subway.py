@@ -190,6 +190,11 @@ def test_station_schedule_is_cached_across_requests(monkeypatch):
     assert all(result.departure_time == "10:05:00" for result in results)
 
 
+def test_timetable_cache_is_short_enough_to_refresh_changed_official_schedule():
+    """정적 시간표 파일을 쓰지 않으며, 변경분을 장시간 캐시하지 않는다."""
+    assert provider._CACHE_TTL_SECONDS == 15 * 60
+
+
 def test_reverse_direction_is_not_treated_as_next_day_arrival():
     common = {"line": "1", "dayType": "1", "endcode": "95"}
     start_rows = [
@@ -269,4 +274,3 @@ def test_station_base_and_line_from_route_id_variations():
 
     assert resolve_line("국제금융센터·부산은행", "서면역", "부산2호선") == "2"
     assert resolve_line("부산1호선 시청역", "교대역(1호선)") == "1"
-

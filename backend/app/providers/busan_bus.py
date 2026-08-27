@@ -30,6 +30,7 @@ class BusStopCandidate:
     stop_id: str
     stop_name: str
     distance_m: float | None
+    ars_no: str | None = None
 
 
 @dataclass(frozen=True)
@@ -105,10 +106,20 @@ async def search_bus_stops(query: str) -> list[BusStopArrivals]:
         matches = [stop for stop in _BUS_STOPS if stop.ars_no == query]
     else:
         key = _stop_name_key(query)
-        matches = [stop for stop in _BUS_STOPS if key and key in stop.name_key]
+        exact = [stop for stop in _BUS_STOPS if key and key == stop.name_key]
+        # 정확한 정류소명이 있으면 "입구"·인근 시설 같은 부분 일치 결과를
+        # 섞지 않는다. 상·하행 동명 정류소는 ARS 번호로 구분해 모두 남긴다.
+        matches = exact or [stop for stop in _BUS_STOPS if key and key in stop.name_key]
         matches.sort(key=lambda stop: (stop.name_key != key, stop.stop_name, stop.stop_id))
     return [
-        BusStopArrivals(stop_id=stop.stop_id, stop_name=stop.stop_name, arrivals=[])
+        BusStopArrivals(
+            stop_id=stop.stop_id,
+            stop_name=stop.stop_name,
+            ars_no=stop.ars_no,
+            lat=stop.lat,
+            lng=stop.lng,
+            arrivals=[],
+        )
         for stop in matches[:30]
     ]
 
@@ -159,7 +170,12 @@ async def find_bus_stop_candidates(
     lat: float | None = None,
     lng: float | None = None,
 ) -> list[BusStopCandidate]:
-    """공식 로컬 인덱스에서 이름과 좌표가 일치하는 BIMS 정류소 하나를 찾는다."""
+    """공식 로컬 인덱스에서 이름·좌표가 맞는 BIMS 정류소 후보를 찾는다.
+
+    같은 이름의 상·하행 정류소가 흔하므로, 가까운 하나를 임의 확정하지 않는다.
+    이후 기대 버스 노선이 실제로 잡히는 후보를 선택할 수 있도록 가까운 후보를
+    제한된 개수만 반환한다.
+    """
     expected = _stop_name_key(stop_name)
     if not expected or lat is None or lng is None:
         return []
@@ -175,6 +191,7 @@ async def find_bus_stop_candidates(
             stop.stop_id,
             stop.stop_name,
             _distance_m(lat, lng, stop.lat, stop.lng),
+            stop.ars_no,
         ))
     exact = [item for item in candidates if _stop_name_key(item.stop_name) == expected]
     selected = exact or candidates
@@ -182,17 +199,14 @@ async def find_bus_stop_candidates(
         item.distance_m if item.distance_m is not None else float("inf"),
         item.stop_id,
     ))
-    nearest = selected[0] if selected else None
-    return (
-        [nearest]
-        if nearest is not None
-        and nearest.distance_m is not None
-        and nearest.distance_m <= 500
-        else []
-    )
+    return [
+        item for item in selected
+        if item.distance_m is not None and item.distance_m <= 500
+    ][:6]
 
 
 _BUS_STOPS = _load_bus_stops()
+_BUS_STOPS_BY_ID = {stop.stop_id: stop for stop in _BUS_STOPS}
 
 
 def clear_bus_stop_match_cache() -> None:
@@ -222,4 +236,12 @@ async def get_bus_arrivals(stop_id: str) -> BusStopArrivals:
     items = root.findall(".//item")
     arrivals = [arrival for item in items for suffix in ("1", "2") if (arrival := _arrival(item, suffix))]
     stop_name = next((_text(item, "nodenm") for item in items if _text(item, "nodenm")), None)
-    return BusStopArrivals(stop_id=stop_id, stop_name=stop_name or stop_id, arrivals=arrivals)
+    local_stop = _BUS_STOPS_BY_ID.get(stop_id)
+    return BusStopArrivals(
+        stop_id=stop_id,
+        stop_name=stop_name or (local_stop.stop_name if local_stop else stop_id),
+        ars_no=local_stop.ars_no if local_stop else None,
+        lat=local_stop.lat if local_stop else None,
+        lng=local_stop.lng if local_stop else None,
+        arrivals=arrivals,
+    )
