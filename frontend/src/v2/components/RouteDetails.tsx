@@ -7,6 +7,7 @@ import {
   type V2RouteFact,
   type V2RouteFactKind,
 } from '../routeViewModel';
+import { formatRouteTransitTitle } from '../formatRouteTransitTitle';
 import {
   formatSlopePercent,
   resolvePeakSlopePercent,
@@ -105,6 +106,7 @@ export default function RouteDetails({
     item.route.shade?.source,
   ].filter((value): value is string => Boolean(value && value.trim()));
   const geometryMessage = geometryQualityMessage(item.route.geometryQuality);
+  const transitTitle = formatRouteTransitTitle(view.transitSteps, view.summary);
 
   return (
     <section className="map-first__route-detail" aria-label="선택 경로 상세">
@@ -126,7 +128,7 @@ export default function RouteDetails({
             {view.score.summaryLabel}
           </p>
         )}
-        <h3 className="map-first__route-detail-name">{view.summary}</h3>
+        <h3 className="map-first__route-detail-name">{transitTitle}</h3>
         <p className="map-first__route-detail-meta">{view.meta}</p>
         <p className="map-first__score-note">{scoreNote}</p>
       </div>
