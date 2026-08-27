@@ -1,4 +1,4 @@
-"""선택 경로의 버스 실시간·지하철 시간표 도착정보 지연 조회.
+"""선택 경로의 버스 실시간·철도 시간표 도착정보 지연 조회.
 
 초기 추천에는 어떤 호출도 추가하지 않는다. 상세 화면에서 선택한 후보만
 조회하며, 동일 정류장/역·분 단위 요청은 짧은 TTL 캐시와 single-flight로
@@ -30,6 +30,10 @@ from .busan_subway import (
 from .busan_subway_stations import boards_at_origin_terminal
 
 _KST = ZoneInfo("Asia/Seoul")
+_EXTERNAL_SUBWAY_PATTERN = re.compile(
+    r"동해선|(?:부산\s*[-·]?\s*김해|김해)\s*경전철",
+    re.IGNORECASE,
+)
 _CACHE_TTL_SECONDS = 30.0
 _cache: dict[str, tuple[float, TransitLegArrival]] = {}
 _cache_guard = Lock()
@@ -215,6 +219,28 @@ async def _subway_arrival(
     start_name = (segment.station_name or "").strip()
     end_name = (segment.end_station_name or "").strip()
     source = "부산교통공사 도시철도 시간표"
+    if segment.mode == "train":
+        return _unavailable(
+            segment,
+            "TMAP 열차 구간의 실시간·시간표 공급원이 아직 연결되지 않았습니다.",
+            source="철도 도착정보 공급원 미연계",
+        )
+    route_context = " ".join(
+        value
+        for value in (
+            segment.transit_route_id,
+            segment.description,
+            segment.station_name,
+            segment.end_station_name,
+        )
+        if value
+    )
+    if _EXTERNAL_SUBWAY_PATTERN.search(route_context):
+        return _unavailable(
+            segment,
+            "동해선·부산김해경전철 실시간·시간표 공급원이 아직 연결되지 않았습니다.",
+            source="철도 도착정보 공급원 미연계",
+        )
     if not settings.live_subway_timetable or not start_name or not end_name:
         return _unavailable(
             segment,
@@ -242,7 +268,7 @@ async def _subway_arrival(
             )
             result = TransitLegArrival(
                 segment_id=segment.id,
-                mode="subway",
+                mode=segment.mode,  # type: ignore[arg-type]
                 status="scheduled",
                 route_name=segment.description.split(" · ", 1)[0],
                 boarding_stop_name=segment.station_name,
@@ -279,7 +305,7 @@ async def get_route_transit_arrivals(
         if segment.mode == "bus"
         else _subway_arrival(segment, observed_reference)
         for segment in segments
-        if segment.mode in {"bus", "subway"}
+        if segment.mode in {"bus", "subway", "train"}
     ]
     return list(await asyncio.gather(*calls)) if calls else []
 

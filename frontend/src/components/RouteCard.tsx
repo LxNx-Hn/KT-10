@@ -1,6 +1,7 @@
 import type { RouteCandidate, RouteScore, ScoredRoute } from '@/types';
 import { useAppStore } from '@/store/appStore';
 import { formatDurationMin } from '@/utils/formatDurationMin';
+import { formatDistanceM } from '@/utils/formatDistanceM';
 import { speak } from '@/voice/synthesis';
 import { Badge, lowFloorBadge } from './ui';
 
@@ -129,7 +130,7 @@ export default function RouteCard({
 
       <ul className="route-card__stats" aria-label="경로 요약">
         <li><b>{formatDurationMin(route.totalDurationMin)}</b></li>
-        <li><b>{route.totalWalkM}</b><span>m 도보</span></li>
+        <li><b>{formatDistanceM(route.totalWalkM)}</b><span>m 도보</span></li>
         <li><b>{route.transferCount}</b><span>회 환승</span></li>
         {knownShade && (
           <li><b>{Math.round(route.shade!.shadeRatio! * 100)}</b><span>% 건물 그늘</span></li>

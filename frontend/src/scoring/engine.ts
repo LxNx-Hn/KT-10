@@ -128,6 +128,9 @@ export function recommendRoutes(
   }));
 
   scored.sort((a, b) => {
+    if (opts.minimizeTransfers && a.route.transferCount !== b.route.transferCount) {
+      return a.route.transferCount - b.route.transferCount;
+    }
     const diff = b.score.finalScore - a.score.finalScore;
     if (Math.abs(diff) > 0.05) return diff;
     // 동점 처리: 저상버스 우선 옵션 시 확정 저상버스 우대

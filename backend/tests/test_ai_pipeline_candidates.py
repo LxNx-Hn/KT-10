@@ -508,6 +508,69 @@ def test_ai_signed_rank_uses_display_score_and_duration_tie_break(
     ] == [1, 2]
 
 
+def test_ai_minimize_transfers_is_lexicographic_before_model_score(monkeypatch):
+    fewer_payload = _candidate_payload()
+    fewer_payload["route_id"] = "fewer"
+    fewer_payload["feature_snapshot"]["route_id"] = "fewer"
+    fewer_payload["trait_labels"]["route_id"] = "fewer"
+    more_payload = _candidate_payload()
+    more_payload["route_id"] = "more"
+    more_payload["feature_snapshot"]["route_id"] = "more"
+    more_payload["trait_labels"]["route_id"] = "more"
+    candidates = [
+        _to_route_candidate(more_payload, ORIGIN, DESTINATION, 1),
+        _to_route_candidate(fewer_payload, ORIGIN, DESTINATION, 2),
+    ]
+    candidates[0].transfer_count = 3
+    candidates[1].transfer_count = 0
+
+    async def fake_enrich(routes, _options):
+        for route in routes:
+            route.model_features = {"walk_distance_m": route.total_walk_m}
+            route.model_group_id = "enriched-group-1"
+            route.model_holdout_group_id = "od-group-1"
+            route.model_snapshot_hash = f"{route.id}-hash"
+            route.model_snapshot = {
+                "snapshot_schema_version": "route-feature-snapshot-v2",
+                "snapshot_kind": "live_route_candidate",
+                "captured_at": "2026-07-24T03:00:00+00:00",
+                "shade_evaluated_at": "2026-07-24T05:00:00+00:00",
+                "sources": ["tmap_transit"],
+            }
+
+    async def fake_post(path, _payload):
+        assert path == "/rank/candidates"
+        return {
+            "ranked": [
+                {"route_id": "more", "relative_fit_score": 1.0},
+                {"route_id": "fewer", "relative_fit_score": 0.1},
+            ],
+            "metadata": {
+                "model_tier": "human_validated",
+                "model_version": "human-test",
+            },
+        }
+
+    monkeypatch.setattr(ai_pipeline, "enrich_ai_pipeline_candidates", fake_enrich)
+    monkeypatch.setattr(ai_pipeline, "_post_pipeline", fake_post)
+    monkeypatch.setattr(
+        settings,
+        "session_secret",
+        "test-session-secret-with-at-least-32-chars",
+    )
+
+    results = asyncio.run(
+        rank_ai_pipeline_candidates(
+            candidates,
+            "general",
+            ScoringOptions(minimize_transfers=True),
+            top_n=2,
+        )
+    )
+
+    assert [item.route.id for item in results] == ["fewer", "more"]
+
+
 def test_backend_shade_is_enriched_before_ai_ranking(monkeypatch):
     route = _to_route_candidate(_candidate_payload(), ORIGIN, DESTINATION, 1)
     route.path = [

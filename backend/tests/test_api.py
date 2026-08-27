@@ -657,6 +657,51 @@ def test_ai_recommend_always_calculates_shade_for_complete_route_data(
     assert shade_wait_for_buildings is False
 
 
+def test_ai_recommend_collects_full_profile_independent_candidate_pool(
+    monkeypatch,
+):
+    """표시 topN보다 작은 후보 수집으로 직행 노선을 잃지 않는다."""
+    monkeypatch.setattr(settings, "route_mode", "ai")
+    monkeypatch.setattr(settings, "ai_server_url", "http://ai.test")
+    candidate_limits = []
+
+    async def fake_weather(_scenario):
+        return WEATHER_SCENARIOS["normal"]
+
+    async def fake_candidates(*_args, **kwargs):
+        candidate_limits.append(kwargs["candidate_limit"])
+        return demo_candidates()
+
+    async def fake_shade(candidates, *_args, **_kwargs):
+        return candidates
+
+    async def fake_rank(candidates, profile, options, *, top_n, **_kwargs):
+        return app_main.recommend_routes(
+            candidates,
+            WEATHER_SCENARIOS["normal"],
+            profile,
+            options,
+            top_n=top_n,
+        )
+
+    monkeypatch.setattr(app_main, "get_current_weather", fake_weather)
+    monkeypatch.setattr(app_main, "get_ai_pipeline_candidates", fake_candidates)
+    monkeypatch.setattr(app_main, "_add_configured_shade", fake_shade)
+    monkeypatch.setattr(app_main, "rank_ai_pipeline_candidates", fake_rank)
+
+    response = client.post("/api/routes/recommend", json={
+        "origin": _place_payload("gu-office"),
+        "destination": _place_payload("seomyeon-stn"),
+        "profile": "elderly",
+        "weatherScenario": "normal",
+        "options": {},
+        "topN": 3,
+    })
+
+    assert response.status_code == 200
+    assert candidate_limits == [10]
+
+
 def test_live_recommend_defers_cold_vworld_corridor(monkeypatch):
     """초기 live 추천은 VWorld 콜드 조회를 기다리지 않아야 한다."""
     monkeypatch.setattr(settings, "route_mode", "live")

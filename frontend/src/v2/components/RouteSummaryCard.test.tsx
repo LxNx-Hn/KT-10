@@ -218,7 +218,7 @@ describe('RouteSummaryCard 정보 위계', () => {
     ).toContain('맞춤 적합도 88점');
     expect(
       card?.querySelector('.map-first__route-stats')?.textContent,
-    ).toMatch(/380\s*m 도보/);
+    ).toMatch(/380\.0\s*m 도보/);
     expect(
       card?.querySelector('.map-first__route-stats')?.textContent,
     ).toMatch(/1\s*회 환승/);
@@ -672,7 +672,7 @@ describe('MOB-08 경로 카드 본문 우선 노출', () => {
     const card = container.querySelector('.map-first__route-card')!;
     const body = card.querySelector('.map-first__route-card-body')!;
 
-    expect(body.textContent).toMatch(/380\s*m 도보/);
+    expect(body.textContent).toMatch(/380\.0\s*m 도보/);
     expect(body.textContent).toMatch(/1\s*회 환승/);
     expect(
       body.querySelector('.map-first__route-card-reasons, .map-first__badges'),

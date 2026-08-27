@@ -599,7 +599,7 @@ def _score_existing_ai_candidate(
     )
     voice_summary = (
         f"{rank}번째 경로입니다. 총 {round(route.total_duration_min)}분, "
-        f"도보 {round(route.total_walk_m)}미터, 환승 {route.transfer_count}회입니다."
+        f"도보 {round1(route.total_walk_m):.1f}미터, 환승 {route.transfer_count}회입니다."
         + (f" {reasons[0]}" if reasons else "")
         + (f" 주의: {cautions[0]}" if cautions else "")
     )
@@ -744,6 +744,7 @@ async def rank_ai_pipeline_candidates(
     # 달라질 수 있으므로 공개 점수 계약으로 최종 순위를 확정한다.
     scored_rows.sort(
         key=lambda row: (
+            row[0].transfer_count if options.minimize_transfers else 0,
             -round1(clamp(row[1] * 100)),
             row[0].total_duration_min,
         )

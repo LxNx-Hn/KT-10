@@ -608,7 +608,7 @@ class TransitRefinementResponse(CamelModel):
 
 
 class TransitArrivalsRequest(CamelModel):
-    """선택한 기존 후보의 버스 실시간·지하철 시간표 도착 조회."""
+    """선택한 기존 후보의 버스 실시간·철도 시간표 도착 조회."""
 
     route_set_token: str = Field(min_length=20, max_length=64)
     route_id: str = Field(min_length=1, max_length=200)
@@ -616,7 +616,7 @@ class TransitArrivalsRequest(CamelModel):
 
 class TransitLegArrival(CamelModel):
     segment_id: str
-    mode: Literal["bus", "subway"]
+    mode: Literal["bus", "subway", "train"]
     status: Literal["live", "scheduled", "unavailable"]
     route_name: Optional[str] = None
     boarding_stop_name: Optional[str] = None

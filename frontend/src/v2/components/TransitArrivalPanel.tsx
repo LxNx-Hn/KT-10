@@ -35,7 +35,9 @@ function arrivalLabel(
 export default function TransitArrivalPanel({ item }: { item: ScoredRoute }) {
   const transitSegments = useMemo(
     () => item.route.segments.filter(
-      (segment) => segment.mode === 'bus' || segment.mode === 'subway',
+      (segment) => segment.mode === 'bus'
+        || segment.mode === 'subway'
+        || segment.mode === 'train',
     ),
     [item.route.segments],
   );

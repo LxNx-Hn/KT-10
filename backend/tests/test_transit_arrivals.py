@@ -329,6 +329,39 @@ def test_subway_schedule_exposes_classified_safe_failure(monkeypatch):
     )
 
 
+def test_external_subway_is_listed_as_unavailable_without_false_busan_timetable(
+    monkeypatch,
+):
+    segment = _subway_segment()
+    segment.description = "동해선 · 교대역 → 거제역"
+    segment.transit_route_id = "동해선"
+    monkeypatch.setattr(settings, "data_go_kr_service_key", "configured")
+
+    async def fail_if_called(*_args):
+        raise AssertionError("외부 철도에 부산교통공사 시간표를 호출하면 안 됩니다.")
+
+    monkeypatch.setattr(provider, "get_next_subway_journey", fail_if_called)
+    result = asyncio.run(provider.get_route_transit_arrivals([segment]))[0]
+
+    assert result.status == "unavailable"
+    assert result.source == "철도 도착정보 공급원 미연계"
+    assert "동해선·부산김해경전철" in (result.arrival_message or "")
+
+
+def test_train_segment_is_included_and_truthfully_unavailable():
+    segment = _subway_segment()
+    segment.id = "train-1"
+    segment.mode = "train"
+    segment.description = "동해선 열차 · 교대역 → 거제역"
+
+    result = asyncio.run(provider.get_route_transit_arrivals([segment]))[0]
+
+    assert result.segment_id == "train-1"
+    assert result.mode == "train"
+    assert result.status == "unavailable"
+    assert "공급원이 아직 연결되지 않았습니다" in (result.arrival_message or "")
+
+
 def test_route_arrival_endpoint_uses_existing_route_set_only(monkeypatch):
     candidate = RouteCandidate(
         id="route-1",

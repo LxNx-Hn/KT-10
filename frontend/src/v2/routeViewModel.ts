@@ -7,6 +7,7 @@ import type {
   SegmentMode,
 } from '@/types';
 import { formatDurationMin } from '@/utils/formatDurationMin';
+import { formatDistanceM } from '@/utils/formatDistanceM';
 import {
   formatSlopePercent,
   formatSlopeReasonChip,
@@ -305,7 +306,7 @@ export interface V2RouteViewModel {
   meta: string;
   stats: {
     durationMin: number;
-    walkM: number;
+    walkM: string;
     transferCount: number;
   };
   transitSteps: V2TransitStep[];
@@ -653,10 +654,10 @@ export function buildRouteViewModel(
     profileLabel,
     title: `${profileLabel} 맞춤 ${rank}순위`,
     summary: route.summary,
-    meta: `${formatDurationMin(route.totalDurationMin)} · 도보 ${route.totalWalkM}m · 환승 ${route.transferCount}회`,
+    meta: `${formatDurationMin(route.totalDurationMin)} · 도보 ${formatDistanceM(route.totalWalkM)}m · 환승 ${route.transferCount}회`,
     stats: {
       durationMin: Math.round(route.totalDurationMin),
-      walkM: route.totalWalkM,
+      walkM: formatDistanceM(route.totalWalkM),
       transferCount: route.transferCount,
     },
     transitSteps: buildTransitSteps(route),
@@ -705,7 +706,7 @@ export function buildDisplayReasonItems(
   };
 
   const durationMin = Math.round(route.totalDurationMin);
-  const walkM = route.totalWalkM;
+  const walkM = formatDistanceM(route.totalWalkM);
 
   if (route.transferCount === 0) {
     add('transfer', '환승 없음', '환승 없이 이동해요.');

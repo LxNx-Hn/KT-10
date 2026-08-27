@@ -709,7 +709,7 @@ describe('v2 경로 표시 모델', () => {
     expect(view.profileLabel).toBe('청소년');
     expect(view.stats).toEqual({
       durationMin: 18,
-      walkM: 420,
+      walkM: '420.0',
       transferCount: 1,
     });
     expect(routeScoreDisclaimer(2)).toBe(ROUTE_SCORE_DISCLAIMER);
@@ -800,7 +800,7 @@ describe('v2 경로 표시 모델', () => {
       // score.reasons는 "보행 부담을 비교했습니다."지만 구조화 비교 근거는 없음
     }), 1, 'general');
     expect(bare.reasons).toEqual([
-      '도보 거리 420m예요.',
+      '도보 거리 420.0m예요.',
       '소요시간 18분이에요.',
       '환승 1회예요.',
     ]);
@@ -899,7 +899,7 @@ describe('v2 경로 표시 모델', () => {
     expect(alone.reasons).toEqual(
       expect.arrayContaining([
         '환승 없이 이동해요.',
-        '도보 거리 100m예요.',
+        '도보 거리 100.0m예요.',
         '소요시간 10분이에요.',
       ]),
     );
@@ -909,7 +909,7 @@ describe('v2 경로 표시 모델', () => {
       expect.arrayContaining([
         '환승 없이 이동해요.',
         '후보 중 소요시간이 가장 짧아요 (10분).',
-        '후보 중 도보가 가장 짧아요 (100m).',
+        '후보 중 도보가 가장 짧아요 (100.0m).',
       ]),
     );
     expect(compared.reasons.join(' ')).not.toContain('환승이 가장 적어요');

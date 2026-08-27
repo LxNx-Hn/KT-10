@@ -3087,7 +3087,7 @@ describe('프로덕션 v2 지도 중심 UI', () => {
       getByRole('heading', { name: '이 경로의 특징' }),
     ).toBeTruthy();
     expect(details?.textContent).toContain('환승 없이 이동해요');
-    expect(details?.textContent).toContain('도보 거리 309m예요');
+    expect(details?.textContent).toContain('도보 거리 309.0m예요');
     expect(details?.textContent).not.toMatch(/가장 /);
     expect(details?.textContent).not.toContain('비교적 안전해요');
     expect(details?.textContent).not.toContain('특성 +');

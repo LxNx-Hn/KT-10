@@ -8,6 +8,7 @@ import type {
   WeatherCondition,
 } from '@/types';
 import { formatDurationMin } from '@/utils/formatDurationMin';
+import { formatDistanceM } from '@/utils/formatDistanceM';
 
 /** 경로의 저상버스 종합 상태 판정 */
 export function deriveLowFloorStatus(r: RouteCandidate): LowFloorStatus {
@@ -27,7 +28,7 @@ export function buildReasons(
   const hasVertical = r.segments.some((s) => s.needsVerticalMove);
 
   if (c.timeEfficiency !== undefined && c.timeEfficiency >= 90) out.push('후보 중 소요시간이 가장 짧은 편이에요.');
-  if (c.walkComfort !== undefined && c.walkComfort >= 80) out.push(`도보가 ${r.totalWalkM}m로 보행 부담이 적어요.`);
+  if (c.walkComfort !== undefined && c.walkComfort >= 80) out.push(`도보가 ${formatDistanceM(r.totalWalkM)}m로 보행 부담이 적어요.`);
   if (hasVertical && c.elevator !== undefined && c.elevator >= 90)
     out.push('승강기로 이동할 수 있어 계단을 피할 수 있어요.');
   if (lowFloor === 'confirmed') out.push('경로의 버스가 저상버스로 확인됐어요.');
@@ -95,7 +96,7 @@ export function buildVoiceSummary(
         : lowFloor === 'unknown'
           ? '대중교통 이용'
           : '버스 미이용';
-  let s = `${rank}번 경로, ${r.summary}. 예상 ${formatDurationMin(r.totalDurationMin)}, 도보 ${r.totalWalkM}미터, 환승 ${r.transferCount}회. ${lf}.`;
+  let s = `${rank}번 경로, ${r.summary}. 예상 ${formatDurationMin(r.totalDurationMin)}, 도보 ${formatDistanceM(r.totalWalkM)}미터, 환승 ${r.transferCount}회. ${lf}.`;
   if (topCaution) s += ` 주의: ${topCaution}`;
   return s;
 }

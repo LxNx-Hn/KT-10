@@ -111,7 +111,7 @@ export interface TransitRefinement {
 
 export interface TransitLegArrival {
   segmentId: string;
-  mode: 'bus' | 'subway';
+  mode: 'bus' | 'subway' | 'train';
   status: 'live' | 'scheduled' | 'unavailable';
   routeName?: string;
   boardingStopName?: string;

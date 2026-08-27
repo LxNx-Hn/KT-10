@@ -96,6 +96,30 @@ describe('④ 저상버스 우선 옵션', () => {
   });
 });
 
+describe('⑤ 환승 최소 옵션', () => {
+  it('점수 차이가 있어도 환승 적은 경로가 먼저 온다', () => {
+    const fewerTransfers = structuredClone(ROUTES[0]);
+    const moreTransfers = structuredClone(ROUTES[1]);
+    fewerTransfers.id = 'fewer-transfers';
+    moreTransfers.id = 'more-transfers';
+    fewerTransfers.transferCount = 0;
+    moreTransfers.transferCount = 3;
+
+    const ranked = recommendRoutes(
+      [moreTransfers, fewerTransfers],
+      NORMAL,
+      'general',
+      { minimizeTransfers: true },
+      2,
+    );
+
+    expect(ranked.map((item) => item.route.id)).toEqual([
+      'fewer-transfers',
+      'more-transfers',
+    ]);
+  });
+});
+
 describe('⑤ 날씨 반영', () => {
   it('폭염 시 실외 보행이 긴 R1의 날씨 안전 점수가 낮아진다', () => {
     const normal = scoreAll('general', 'normal');

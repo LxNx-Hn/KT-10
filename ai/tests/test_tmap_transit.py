@@ -694,6 +694,32 @@ def test_tmap_transit_subway_code_and_station_names():
     assert norm["lane"][0]["subwayCode"] == 71
 
 
+def test_tmap_transit_external_rail_does_not_inherit_busan_line_from_service():
+    import collectors.tmap_transit_collector as module
+
+    leg = {
+        "mode": "SUBWAY",
+        "route": "동해선",
+        # TMAP service=1 is a broad rail classification, not 부산 1호선.
+        "service": 1,
+        "routeId": "donghae-1",
+        "start": {"name": "교대", "lon": 129.0795, "lat": 35.1937},
+        "end": {"name": "거제", "lon": 129.0743, "lat": 35.1896},
+        "passStopList": {"stationList": [
+            {"stationID": "DH-1", "stationName": "교대"},
+            {"stationID": "DH-2", "stationName": "거제"},
+        ]},
+        "sectionTime": 120,
+        "distance": 900,
+    }
+
+    norm = module._normalized_leg(leg, "subway")
+
+    assert norm["lane"][0]["name"] == "동해선"
+    assert "subwayCode" not in norm["lane"][0]
+    assert norm["lane"][0]["routeID"] == "donghae-1"
+
+
 
 def test_same_stop_transfer_walk_is_confirmed_not_estimated(monkeypatch):
     """0m 환승 도보는 추정이 아니라 '이동 없음'이 확정된 구간이다."""

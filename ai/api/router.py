@@ -1554,9 +1554,17 @@ def _subway_line_key(value: object) -> int | None:
     if isinstance(value, int) and 1 <= value <= 4:
         return value
     if isinstance(value, str):
-        matched = re.search(r"[1-4]", value)
+        text = value.strip()
+        if text in {"71", "72", "73", "74"}:
+            return int(text) - 70
+        if text in {"1", "2", "3", "4"}:
+            return int(text)
+        matched = re.fullmatch(
+            r"(?:부산\s*)?(?:도시철도\s*)?([1-4])\s*호선",
+            text,
+        )
         if matched:
-            return int(matched.group())
+            return int(matched.group(1))
     return None
 
 
@@ -1972,7 +1980,7 @@ def _public_segments(candidate, layers: dict | None = None) -> list[dict]:
             "transit_route_id": (
                 _first_known(lane, "busLocalBlID", "busID")
                 if mode in {"bus", "express_bus"}
-                else _first_known(lane, "subwayCode")
+                else _first_known(lane, "subwayCode", "routeID", "name")
                 if mode == "subway"
                 else _first_known(lane, "routeID")
                 if mode in transit_modes

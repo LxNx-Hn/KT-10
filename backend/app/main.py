@@ -94,6 +94,11 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 log = logging.getLogger("app")
 
+# TMAP/AI 후보 endpoint가 한 번에 보장하는 최대 후보 수다. 화면에 표시하는
+# topN과 후보 수집 한도를 분리해야 프로필을 바꿔도 같은 직행 후보군을
+# 비교하며, 특정 프로필에서 직행 노선이 수집 단계에서 사라지지 않는다.
+ROUTE_CANDIDATE_POOL_LIMIT = 10
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -161,6 +166,11 @@ def _effective_departure(departure_at=None):
 def _effective_top_n(requested: int | None) -> int:
     """요청 topN이 없을 때만 서버 운영 기본값을 적용한다."""
     return requested if requested is not None else settings.route_default_top_n
+
+
+def _candidate_pool_limit(top_n: int) -> int:
+    """프로필 재순위화에 사용할 공통 후보 풀 크기를 반환한다."""
+    return max(top_n, ROUTE_CANDIDATE_POOL_LIMIT)
 
 
 def _shade_gate_reason(
@@ -977,7 +987,7 @@ async def routes_recommend(
                 effective_options,
                 user_preference=user_preference,
                 weather_condition=current_weather,
-                candidate_limit=effective_top_n,
+                candidate_limit=_candidate_pool_limit(effective_top_n),
             )
             candidates = _filter_wheelchair_candidates(
                 _filter_viable_candidates(
@@ -1044,7 +1054,7 @@ async def routes_recommend(
                 effective_options,
                 user_preference=user_preference,
                 weather_condition=current_weather,
-                candidate_limit=effective_top_n,
+                candidate_limit=_candidate_pool_limit(effective_top_n),
             )
             candidates = _filter_wheelchair_candidates(
                 _filter_viable_candidates(

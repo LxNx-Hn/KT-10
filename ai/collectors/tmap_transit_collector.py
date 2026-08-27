@@ -387,6 +387,11 @@ def _route_name(value: object, mode: str) -> str | None:
 def _subway_code(name: str | None) -> int | None:
     if not name:
         return None
+    # TMAP의 service 값은 모든 철도 운영기관에서 공유하는 일반 분류값이다.
+    # 동해선·부산김해경전철에 service=1을 적용하면 부산 1호선(71)으로
+    # 오인식하므로, 부산교통공사 호선명이 확인된 경우에만 코드화한다.
+    if re.search(r"동해선|(?:부산\s*[-·]?\s*김해|김해)\s*경전철", name):
+        return None
     matched = re.search(r"(?:부산)?\s*(?:도시철도|지하철)?\s*([1-4])\s*호선", name)
     if matched:
         return 70 + int(matched.group(1))
@@ -410,11 +415,16 @@ def _lane_payload(leg: dict, mode: str) -> list[dict]:
             normalized.update({"busNo": name, "busID": route_id})
         elif mode == "subway":
             code = _subway_code(name)
-            if code is None:
+            if code is None and name and not re.search(
+                r"동해선|(?:부산\s*[-·]?\s*김해|김해)\s*경전철",
+                name,
+            ):
                 service = leg.get("service", lane.get("service"))
                 if service in (1, 2, 3, 4, "1", "2", "3", "4"):
                     code = 70 + int(service)
             normalized["subwayCode"] = code
+            if code is None and route_id is not None:
+                normalized["routeID"] = route_id
         elif route_id is not None:
             normalized["routeID"] = route_id
         result.append({key: value for key, value in normalized.items() if value is not None})
