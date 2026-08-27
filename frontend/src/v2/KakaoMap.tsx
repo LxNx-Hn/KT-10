@@ -270,6 +270,14 @@ function hidesEstimatedTransitGeometry(route: RouteCandidate): boolean {
 }
 
 /**
+ * BIMS 정류장 순서만 남은 후보는 실제 도로 선형을 표시할 수 없다. 이 상태를
+ * 조용한 빈 지도로 남기면 경로 렌더링 실패처럼 보이므로, 지도 위에서 명시한다.
+ */
+function hasSuppressedTransitGeometry(route: RouteCandidate | undefined): boolean {
+  return Boolean(route && hidesEstimatedTransitGeometry(route));
+}
+
+/**
  * 선택 경로의 구간별 선.
  *
  * `slopeVisible`이 false면 경사 구간을 만들지 않고 공급자 도보 geometry를
@@ -1278,6 +1286,20 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       aria-label="지도"
     >
       <div ref={containerRef} className="map-first__map-canvas map-first__kakao-canvas" />
+      {status === 'ready' && hasSuppressedTransitGeometry(
+        recommendations.find(({ route }) => route.id === selectedRouteId)?.route,
+      ) && (
+        <div
+          className="map-first__map-status map-first__map-status--geometry-pending"
+          role="status"
+          aria-live="polite"
+        >
+          <strong>버스 경로 선형을 확인하고 있어요</strong>
+          <span>
+            BIMS 정류장 정보만으로는 도로를 따르는 선을 만들 수 없어 표시하지 않습니다.
+          </span>
+        </div>
+      )}
       {status === 'loading' && (
         <div
           className="map-first__map-status"

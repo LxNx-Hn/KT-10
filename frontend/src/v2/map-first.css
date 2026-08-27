@@ -249,6 +249,24 @@
   pointer-events: auto;
 }
 
+/* BIMS의 정류장 순서만 있는 경우 가짜 직선 대신 현재 상태를 분명히 알린다. */
+.map-first__map-status--geometry-pending {
+  z-index: 3;
+  top: auto;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  gap: 3px;
+  width: min(300px, calc(100% - 48px));
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--mf-shadow);
+}
+
+.map-first__map-status--geometry-pending strong {
+  margin-top: 0;
+  color: #075d9c;
+  font-size: 13px;
+}
+
 .map-first__map-status--error strong {
   color: #c92a3b;
 }

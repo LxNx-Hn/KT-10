@@ -1005,6 +1005,9 @@ describe('KakaoMap production overlays', () => {
     await waitUntilReady();
 
     expect(activePolylines()).toHaveLength(0);
+    expect(screen.getByRole('status').textContent).toContain(
+      'BIMS 정류장 정보만으로는 도로를 따르는 선을 만들 수 없어 표시하지 않습니다.',
+    );
   });
 
   it('선택 경로 변경 시 이전 Polyline을 제거하고 새 경사선만 남긴다', async () => {
