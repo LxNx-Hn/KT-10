@@ -96,8 +96,11 @@ function TransitModeIcon({ mode }: { mode: V2TransitStep['mode'] }) {
 }
 
 function TransitSequence({ steps }: { steps: V2TransitStep[] }) {
-  if (steps.length === 0) return null;
-  const compact = steps.length >= 5;
+  const visibleSteps = steps.filter(
+    (step) => !(step.mode === 'walk' && step.durationMin === 0),
+  );
+  if (visibleSteps.length === 0) return null;
+  const compact = visibleSteps.length >= 5;
 
   return (
     <ol
@@ -105,7 +108,7 @@ function TransitSequence({ steps }: { steps: V2TransitStep[] }) {
       aria-label="이동 수단 순서"
       data-compact={compact ? 'true' : undefined}
     >
-      {steps.map((step) => (
+      {visibleSteps.map((step) => (
         <li
           key={step.id}
           data-mode={step.mode}

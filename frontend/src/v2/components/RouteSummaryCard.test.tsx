@@ -574,6 +574,53 @@ describe('MOB-15 대중교통 경로 시각 언어', () => {
       expect(sequence.textContent).not.toMatch(/81번/);
     },
   );
+
+  it('0분 도보 구간은 이동 수단 막대에서 숨긴다', () => {
+    const { container } = renderCard('general', {
+      segments: [
+        { id: 'w1', mode: 'walk', description: '도보', durationMin: 2 },
+        {
+          id: 'b1',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 4,
+          busRouteName: '49',
+        },
+        { id: 'w0', mode: 'walk', description: '도보', durationMin: 0 },
+        {
+          id: 'b2',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 19,
+          busRouteName: '77',
+        },
+        { id: 'w2', mode: 'walk', description: '도보', durationMin: 4 },
+      ],
+    });
+
+    const items = container.querySelectorAll(
+      '.map-first__route-card-transit li',
+    );
+    expect(items).toHaveLength(4);
+    expect(
+      Array.from(items).map((el) => ({
+        mode: el.getAttribute('data-mode'),
+        duration: el.querySelector('.map-first__transit-copy')?.textContent,
+      })),
+    ).toEqual([
+      { mode: 'walk', duration: '2분' },
+      { mode: 'bus', duration: '4분' },
+      { mode: 'bus', duration: '19분' },
+      { mode: 'walk', duration: '4분' },
+    ]);
+    expect(
+      Array.from(items).some(
+        (el) =>
+          el.getAttribute('data-mode') === 'walk' &&
+          el.querySelector('.map-first__transit-copy')?.textContent === '0분',
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('MOB-08 경로 카드 본문 우선 노출', () => {
