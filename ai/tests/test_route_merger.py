@@ -149,6 +149,51 @@ def test_unknown_transit_identity_is_not_treated_as_equal():
     assert len(merged) == 2
 
 
+def test_bims_and_tmap_same_bus_segment_merge_even_with_different_geometry():
+    def transit(source: str, path: list[Coordinate], quality: str) -> RouteCandidate:
+        return RouteCandidate(
+            source=source,
+            path=path,
+            duration_min=60.0,
+            distance_m=20_000.0,
+            geometry_quality=quality,
+            segments=[
+                {"mode": "walk", "path": path[:2]},
+                {
+                    "mode": "bus",
+                    "path": path[1:-1],
+                    "raw": {
+                        "lane": [{"busNo": "88", "busID": "5200088000"}],
+                        "startName": "부암교차로",
+                        "endName": "해양대승선생활관",
+                        "startX": 129.05,
+                        "startY": 35.16,
+                        "endX": 129.08,
+                        "endY": 35.07,
+                    },
+                },
+                {"mode": "walk", "path": path[-2:]},
+            ],
+        )
+
+    tmap = transit(
+        "tmap_transit",
+        [Coordinate(35.16, 129.05), Coordinate(35.12, 129.06), Coordinate(35.07, 129.08)],
+        "exact",
+    )
+    bims = transit(
+        "bims_transit",
+        [Coordinate(35.16, 129.05), Coordinate(35.10, 129.07), Coordinate(35.07, 129.08)],
+        "estimated",
+    )
+
+    merged = merge_route_candidates([tmap, bims])
+
+    assert len(merged) == 1
+    assert merged[0].source == "tmap_transit"
+    assert merged[0].sources == ["tmap_transit", "bims_transit"]
+
+
 def test_similar_tmap_and_ors_walk_routes_combine_distinct_evidence():
     path = [
         Coordinate(lat=35.0, lng=129.0),

@@ -240,6 +240,10 @@ class BimsTransitRouteCollector(BaseRouteCollector):
             "endName": alighting["row"].get("bstopnm"),
             "startID": boarding["row"].get("nodeid"),
             "endID": alighting["row"].get("nodeid"),
+            "startX": boarding["point"].lng,
+            "startY": boarding["point"].lat,
+            "endX": alighting["point"].lng,
+            "endY": alighting["point"].lat,
             "lane": [{"name": route_name, "busNo": route_name, "busID": route["lineid"]}],
             "provider": "bims_transit",
         }

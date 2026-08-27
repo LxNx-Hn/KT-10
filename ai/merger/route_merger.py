@@ -273,8 +273,54 @@ def _merge_compatible(left: Any, right: Any) -> bool:
             left_transit is not None
             and right_transit is not None
             and left_transit == right_transit
-        )
+        ) or _bims_tmap_semantically_same(left, right)
     return all(mode == "walk" for mode in left_modes)
+
+
+def _bims_tmap_semantically_same(left: Any, right: Any) -> bool:
+    """BIMS 보완 후보와 TMAP 후보가 같은 버스 구간이면 중복으로 본다.
+
+    공급자별 정류소 ID 체계와 표시 geometry가 달라 일반 병합 기준만으로는
+    같은 88번 직행이 두 카드로 남을 수 있다. 노선명·승하차 정류소명 또는
+    좌표를 함께 확인하며, 다른 노선·방향은 병합하지 않는다.
+    """
+    sources = {getattr(left, "source", ""), getattr(right, "source", "")}
+    if sources != {"bims_transit", "tmap_transit"}:
+        return False
+    left_segments = [segment for segment in left.segments or [] if segment.get("mode") == "bus"]
+    right_segments = [segment for segment in right.segments or [] if segment.get("mode") == "bus"]
+    if len(left_segments) != len(right_segments) or not left_segments:
+        return False
+
+    def normalize(value: object) -> str:
+        return "".join(ch for ch in str(value or "").casefold() if ch.isalnum() or "가" <= ch <= "힣")
+
+    for left_segment, right_segment in zip(left_segments, right_segments):
+        left_raw = left_segment.get("raw") or {}
+        right_raw = right_segment.get("raw") or {}
+        left_lanes = left_raw.get("lane") or []
+        right_lanes = right_raw.get("lane") or []
+        left_names = {normalize(lane.get("busNo") or lane.get("name")) for lane in left_lanes if isinstance(lane, dict)}
+        right_names = {normalize(lane.get("busNo") or lane.get("name")) for lane in right_lanes if isinstance(lane, dict)}
+        if not left_names or not left_names & right_names:
+            return False
+        names_match = (
+            normalize(left_raw.get("startName")) == normalize(right_raw.get("startName"))
+            and normalize(left_raw.get("endName")) == normalize(right_raw.get("endName"))
+        )
+        def endpoint_close(x_key: str, y_key: str) -> bool:
+            values = (left_raw.get(x_key), left_raw.get(y_key), right_raw.get(x_key), right_raw.get(y_key))
+            if not all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in values):
+                return False
+            return _haversine(
+                Coordinate(float(left_raw[x_key]), float(left_raw[y_key])),
+                Coordinate(float(right_raw[x_key]), float(right_raw[y_key])),
+            ) <= 250.0
+
+        coordinates_match = endpoint_close("startX", "startY") and endpoint_close("endX", "endY")
+        if not names_match and not coordinates_match:
+            return False
+    return True
 
 
 def merge_route_candidates(candidates: list) -> list:
@@ -289,7 +335,10 @@ def merge_route_candidates(candidates: list) -> list:
         for m in merged:
             if (
                 _merge_compatible(cand, m)
-                and _paths_similar(cand.path, m.path)
+                and (
+                    _paths_similar(cand.path, m.path)
+                    or _bims_tmap_semantically_same(cand, m)
+                )
                 and (
                     not (
                         _has_accessibility_evidence(cand)
