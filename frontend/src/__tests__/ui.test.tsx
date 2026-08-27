@@ -1332,7 +1332,9 @@ describe('프로덕션 v2 지도 중심 UI', () => {
     expect(text).toMatch(/맞춤\s+\d+순위/);
     expect(text).toMatch(/맞춤 적합도\s+\d+점/);
     expect(text).not.toMatch(/맞춤 적합도\d+점/);
-    expect(text).toContain('테스트 상세 경로');
+    // 상세 제목도 카드와 동일하게 실제 대중교통 수단을 우선 표시한다.
+    expect(text).toContain('지하철 1호선');
+    expect(text).not.toContain('테스트 상세 경로');
     expect(getByRole('heading', { name: '경사 정보' })).toBeTruthy();
     expect(text).toContain('평균 경사');
     expect(text).toContain('최대 경사');
