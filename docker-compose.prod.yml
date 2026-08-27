@@ -29,7 +29,7 @@ services:
       AI_INTERNAL_SERVICE_TOKEN: ${AI_INTERNAL_SERVICE_TOKEN:?AI_INTERNAL_SERVICE_TOKEN is required}
       APP_ENV: production
       ODSAY_API_KEY: ${ODSAY_API_KEY:-}
-      TRANSIT_PROVIDER_ORDER: ${TRANSIT_PROVIDER_ORDER:-odsay,tmap}
+      TRANSIT_PROVIDER_ORDER: ${TRANSIT_PROVIDER_ORDER:-tmap}
       # 공공데이터포털의 URL Decoding 키(DECO)를 우선 사용한다. 예전
       # DATA_GO_KR_SERVICE_KEY는 호환용 fallback이며 프론트엔드에는 전달하지 않는다.
       DATA_GO_KR_SERVICE_KEY: ${DECO:-${DATA_GO_KR_SERVICE_KEY:-}}

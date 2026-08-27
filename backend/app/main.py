@@ -1008,9 +1008,9 @@ async def routes_recommend(
                 ),
                 user_preference=user_preference,
             )
-            # 초기 추천은 ODsay 후보 조회 한 번으로 끝낸다. 선택 후보의 표시
-            # 선형(loadLane)과 NIM 자연어 설명은 각각 기존 지연 endpoint에서
-            # 요청하며, 여기서는 사실 기반 규칙 요약을 즉시 반환한다.
+            # 초기 추천은 선택된 대중교통 공급자의 후보 조회 한 번으로 끝낸다.
+            # 선택 후보의 표시 선형과 NIM 자연어 설명은 각각 기존 지연
+            # endpoint에서 요청하며, 여기서는 사실 기반 규칙 요약을 즉시 반환한다.
             return _create_cached_route_set(
                 scored,
                 candidates,
@@ -1151,8 +1151,8 @@ async def routes_rescore(
     """프로필·이동 조건 변경을 기존 route-set 재순위화로 처리한다.
 
     후보 재수집 없이 저장된 후보 metadata·exact 보행 geometry·terrain·
-    이미 정밀화된 대중교통 선형을 그대로 재사용한다. ODsay search,
-    ODsay loadLane, TMAP, 고도 공급자 호출은 발생하지 않으며 route-set
+    이미 정밀화된 대중교통 선형을 그대로 재사용한다. 대중교통 검색·정밀화
+    공급자(TMAP 포함)와 고도 공급자 호출은 발생하지 않으며 route-set
     token도 바뀌지 않는다.
 
     새 추천 판단이므로 score·rank·model snapshot·feedback token·카드

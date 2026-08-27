@@ -217,6 +217,11 @@ def test_readiness_fails_without_raw_spatial_layers(monkeypatch):
 def test_readiness_rejects_candidate_pipeline_without_exact_walk_geometry(
     monkeypatch,
 ):
+    monkeypatch.setattr(
+        ai_main.settings,
+        "TRANSIT_PROVIDER_ORDER",
+        "odsay,tmap",
+    )
     monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "configured-key")
     monkeypatch.setattr(ai_main.settings, "TMAP_API_KEY", "")
     monkeypatch.setattr(ai_main.settings, "ORS_API_KEY", "ors-key")
@@ -240,6 +245,11 @@ def test_readiness_rejects_candidate_pipeline_without_exact_walk_geometry(
 
 
 def test_readiness_reports_exact_walk_geometry_capability(monkeypatch):
+    monkeypatch.setattr(
+        ai_main.settings,
+        "TRANSIT_PROVIDER_ORDER",
+        "odsay,tmap",
+    )
     monkeypatch.setattr(ai_main.settings, "ODSAY_API_KEY", "configured-key")
     monkeypatch.setattr(ai_main.settings, "TMAP_API_KEY", "tmap-key")
     monkeypatch.setattr(ai_main.settings, "ORS_API_KEY", "ors-key")
@@ -1721,6 +1731,11 @@ def test_wheelchair_collection_fails_instead_of_using_tmap_without_ors(
 def test_wheelchair_collection_reports_odsay_failure_when_only_over_limit_walks_remain(
     monkeypatch,
 ):
+    monkeypatch.setattr(
+        api_router.settings,
+        "TRANSIT_PROVIDER_ORDER",
+        "odsay,tmap",
+    )
     tmap_route = RouteCandidate(
         source="tmap",
         path=[Coordinate(35.10, 129.00), Coordinate(35.20, 129.10)],
@@ -1846,6 +1861,76 @@ def test_general_collection_returns_transit_when_optional_walk_stalls(
     assert metadata["source_errors"]["tmap"].startswith("TimeoutError:")
 
 
+def test_tmap_only_collection_uses_full_provider_candidate_pool(
+    monkeypatch,
+):
+    """TMAP 최대 10개를 수집해 뒤쪽 직행 후보도 모델에 전달한다."""
+    from config import settings as ai_settings
+
+    seen_limits = []
+    transit_route = RouteCandidate(
+        source="tmap_transit",
+        path=[Coordinate(35.10, 129.00), Coordinate(35.11, 129.01)],
+        duration_min=12,
+        distance_m=1800,
+        raw_response={"info": {"transferCount": 0}},
+    )
+
+    async def transit_collect(self, _origin, _destination, *, max_candidates):
+        seen_limits.append(max_candidates)
+        self.attempted_sources[:] = ["tmap_transit"]
+        self.selected_source = "tmap_transit"
+        return [transit_route]
+
+    async def optional_walk(_self, *_args, **_kwargs):
+        return []
+
+    async def elevation(_parts):
+        return {"slope_segments": []}
+
+    monkeypatch.setattr(ai_settings, "TRANSIT_PROVIDER_ORDER", "tmap")
+    monkeypatch.setattr(
+        ai_settings,
+        "TMAP_TRANSIT_MAX_CANDIDATES",
+        10,
+    )
+    monkeypatch.setattr(
+        api_router.TransitProviderCollector,
+        "collect",
+        transit_collect,
+    )
+    monkeypatch.setattr(TmapRouteCollector, "collect", optional_walk)
+    monkeypatch.setattr(api_router, "_get_layers", lambda: {})
+    monkeypatch.setattr(
+        api_router,
+        "extract_elevation_features_for_parts",
+        elevation,
+    )
+    monkeypatch.setattr(
+        api_router,
+        "extract_route_features_for_parts",
+        lambda _parts, _layers: {},
+    )
+    request = RecommendRequest(
+        origin_lat=35.10,
+        origin_lng=129.00,
+        origin_name="출발",
+        dest_lat=35.11,
+        dest_lng=129.01,
+        dest_name="도착",
+        profile="general",
+        candidate_limit=5,
+    )
+
+    features, metadata = asyncio.run(
+        _collect_static_featured_routes(request)
+    )
+
+    assert seen_limits == [10]
+    assert features[0]["transfer_count"] == 0
+    assert metadata["sources_succeeded"] == ["tmap_transit"]
+
+
 def test_estimated_walk_geometry_is_not_used_as_observed_feature_path():
     path = [
         Coordinate(35.1000, 129.0000),
@@ -1902,6 +1987,11 @@ def test_walk_segment_outdoor_state_remains_unknown_without_provider_evidence():
 def test_feature_pipeline_keeps_display_path_but_analyzes_walk_parts(
     monkeypatch,
 ):
+    monkeypatch.setattr(
+        api_router.settings,
+        "TRANSIT_PROVIDER_ORDER",
+        "odsay,tmap",
+    )
     display_path = [
         Coordinate(35.1000, 129.0000),
         Coordinate(35.1100, 129.0000),

@@ -22,6 +22,26 @@ from .schema import FEATURE_COLS, MIN_REVIEWERS
 from .snapshots import validate_live_feature_snapshot
 
 PROFILES = ["general", "elderly", "child", "youth", "disabled", "pregnant"]
+MONOTONIC_CONSTRAINTS = {
+    # 환승 횟수와 사용자가 명시한 환승 최소 부담은 값이 커질수록 같은
+    # 경로의 적합도를 높일 수 없다. 트리 모델의 상관관계 학습만으로는 이
+    # 방향이 보장되지 않으므로 학습기 자체의 단조 제약으로 고정한다.
+    "transfer_count": -1,
+    "minimize_transfers_burden": -1,
+}
+RANKER_PARAMETERS = {
+    "objective": "rank:pairwise",
+    "eval_metric": "ndcg@3",
+    "max_depth": 4,
+    "learning_rate": 0.04,
+    "n_estimators": 500,
+    "subsample": 0.9,
+    "colsample_bytree": 0.9,
+    "min_child_weight": 2,
+    "tree_method": "hist",
+    "n_jobs": 1,
+    "random_state": 42,
+}
 MODEL_DIR = Path("ai/data")
 TRAINING_DIR = MODEL_DIR / "training"
 DEFAULT_LABELS = TRAINING_DIR / "route_labels.csv"
@@ -282,17 +302,8 @@ def _validate_profile_frame(profile: str, frame: pd.DataFrame) -> None:
 
 def _new_ranker() -> XGBRanker:
     return XGBRanker(
-        objective="rank:pairwise",
-        eval_metric="ndcg@3",
-        max_depth=5,
-        learning_rate=0.04,
-        n_estimators=250,
-        subsample=0.85,
-        colsample_bytree=0.85,
-        min_child_weight=2,
-        tree_method="hist",
-        n_jobs=1,
-        random_state=42,
+        **RANKER_PARAMETERS,
+        monotone_constraints=MONOTONIC_CONSTRAINTS,
     )
 
 
@@ -439,6 +450,8 @@ def train_rankers(
         ),
         "trained_at": datetime.now(UTC).isoformat(),
         "feature_columns": FEATURE_COLS,
+        "monotonic_constraints": MONOTONIC_CONSTRAINTS,
+        "ranker_parameters": RANKER_PARAMETERS,
         "metrics": metrics,
         "minimum_reviewers": MIN_REVIEWERS,
         "candidate_status": candidate_status,
@@ -471,6 +484,11 @@ def load_rankers(path: Path = MODEL_PATH) -> dict:
         raise ModelNotReady(f"검증된 실제 라벨 모델 artifact가 올바르지 않습니다: {exc}") from exc
     if payload.get("feature_columns") != FEATURE_COLS:
         raise ModelNotReady("모델 피처 스키마가 현재 코드와 일치하지 않습니다. 재학습이 필요합니다.")
+    if payload.get("monotonic_constraints") != MONOTONIC_CONSTRAINTS:
+        raise ModelNotReady(
+            "모델의 환승 단조 제약이 현재 코드와 일치하지 않습니다. "
+            "재학습과 관리자 재승인이 필요합니다."
+        )
     if payload.get("model_tier") != "human_validated" or payload.get("label_origin") != "human_reviewers":
         raise ModelNotReady("운영 경로에는 실제 사용자 라벨로 검증된 모델만 사용할 수 있습니다.")
     if set(profiles) != set(PROFILES):
@@ -488,6 +506,10 @@ def load_model_metadata(path: Path = MODEL_PATH) -> dict:
         raise ModelNotReady(f"검증된 실제 라벨 모델 artifact가 올바르지 않습니다: {exc}") from exc
     if payload.get("model_tier") != "human_validated":
         raise ModelNotReady("운영 모델은 관리자 승인된 human_validated tier여야 합니다.")
+    if payload.get("monotonic_constraints") != MONOTONIC_CONSTRAINTS:
+        raise ModelNotReady(
+            "운영 모델의 환승 단조 제약이 현재 코드와 일치하지 않습니다."
+        )
     return {
         "model_tier": payload.get("model_tier"),
         "label_origin": payload.get("label_origin"),

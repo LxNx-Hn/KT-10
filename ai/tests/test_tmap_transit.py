@@ -514,6 +514,73 @@ def test_transit_provider_hedges_slow_odsay_with_tmap(monkeypatch):
     assert collector.selected_source == "tmap_transit"
 
 
+def test_transit_provider_tmap_only_never_calls_odsay(monkeypatch):
+    route = RouteCandidate(
+        source="tmap_transit",
+        path=[ORIGIN, DESTINATION],
+        duration_min=12,
+        distance_m=3000,
+    )
+    odsay_calls = 0
+
+    async def odsay_collect(_self, *_args, **_kwargs):
+        nonlocal odsay_calls
+        odsay_calls += 1
+        raise AssertionError("TMAP 단독 운영 설정에서 ODsay를 호출하면 안 됩니다.")
+
+    async def tmap_collect(_self, *_args, **_kwargs):
+        return [route]
+
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_ORDER", "tmap")
+    monkeypatch.setattr(OdsayRouteCollector, "collect", odsay_collect)
+    monkeypatch.setattr(TmapTransitRouteCollector, "collect", tmap_collect)
+
+    collector = TransitProviderCollector()
+    result = asyncio.run(
+        collector.collect(ORIGIN, DESTINATION, max_candidates=10)
+    )
+
+    assert result == [route]
+    assert odsay_calls == 0
+    assert collector.attempted_sources == ["tmap_transit"]
+    assert collector.selected_source == "tmap_transit"
+
+
+def test_transit_provider_uses_completed_tmap_when_odsay_times_out(monkeypatch):
+    route = RouteCandidate(
+        source="tmap_transit",
+        path=[ORIGIN, DESTINATION],
+        duration_min=12,
+        distance_m=3000,
+    )
+    odsay_cancelled = asyncio.Event()
+
+    async def odsay_collect(_self, *_args, **_kwargs):
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            odsay_cancelled.set()
+            raise
+
+    async def tmap_collect(_self, *_args, **_kwargs):
+        return [route]
+
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_ORDER", "odsay,tmap")
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_HEDGE_SECONDS", 0.01)
+    monkeypatch.setattr(settings, "TRANSIT_PROVIDER_TOTAL_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(OdsayRouteCollector, "collect", odsay_collect)
+    monkeypatch.setattr(TmapTransitRouteCollector, "collect", tmap_collect)
+
+    collector = TransitProviderCollector()
+    result = asyncio.run(
+        collector.collect(ORIGIN, DESTINATION, max_candidates=5)
+    )
+
+    assert result == [route]
+    assert odsay_cancelled.is_set()
+    assert collector.selected_source == "tmap_transit"
+
+
 def test_transit_provider_keeps_odsay_when_it_finishes_inside_hedge(monkeypatch):
     route = RouteCandidate(
         source="odsay",

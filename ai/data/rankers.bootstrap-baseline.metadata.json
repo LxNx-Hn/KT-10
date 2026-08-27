@@ -1,8 +1,8 @@
 {
   "model_tier": "bootstrap_baseline",
   "label_origin": "bootstrap_evaluation",
-  "model_version": "xgboost-bootstrap-baseline-20260725T004310Z",
-  "trained_at": "2026-07-25T00:43:10.427524+00:00",
+  "model_version": "xgboost-bootstrap-baseline-20260827T090406Z",
+  "trained_at": "2026-08-27T09:04:06.872969+00:00",
   "feature_columns": [
     "avg_slope_percent",
     "max_slope_percent",
@@ -51,6 +51,23 @@
     "shade_priority_unshaded_walk_m",
     "minimize_transfers_burden"
   ],
+  "monotonic_constraints": {
+    "transfer_count": -1,
+    "minimize_transfers_burden": -1
+  },
+  "ranker_parameters": {
+    "objective": "rank:pairwise",
+    "eval_metric": "ndcg@3",
+    "max_depth": 4,
+    "learning_rate": 0.04,
+    "n_estimators": 500,
+    "subsample": 0.9,
+    "colsample_bytree": 0.9,
+    "min_child_weight": 2,
+    "tree_method": "hist",
+    "n_jobs": 1,
+    "random_state": 42
+  },
   "metrics": {
     "general": {
       "route_count": 1137,
@@ -63,8 +80,8 @@
         "validation_od_count": 76,
         "train_query_group_count": 304,
         "validation_query_group_count": 76,
-        "ndcg_at_3": 0.916574,
-        "pairwise_accuracy": 0.680628,
+        "ndcg_at_3": 0.921994,
+        "pairwise_accuracy": 0.706806,
         "compared_pairs": 191
       }
     },
@@ -79,8 +96,8 @@
         "validation_od_count": 76,
         "train_query_group_count": 304,
         "validation_query_group_count": 76,
-        "ndcg_at_3": 0.94992,
-        "pairwise_accuracy": 0.787565,
+        "ndcg_at_3": 0.965876,
+        "pairwise_accuracy": 0.834197,
         "compared_pairs": 193
       }
     },
@@ -95,8 +112,8 @@
         "validation_od_count": 76,
         "train_query_group_count": 304,
         "validation_query_group_count": 76,
-        "ndcg_at_3": 0.954151,
-        "pairwise_accuracy": 0.812183,
+        "ndcg_at_3": 0.954612,
+        "pairwise_accuracy": 0.807107,
         "compared_pairs": 197
       }
     },
@@ -111,8 +128,8 @@
         "validation_od_count": 76,
         "train_query_group_count": 304,
         "validation_query_group_count": 76,
-        "ndcg_at_3": 0.929262,
-        "pairwise_accuracy": 0.724868,
+        "ndcg_at_3": 0.944106,
+        "pairwise_accuracy": 0.772487,
         "compared_pairs": 189
       }
     },
@@ -127,8 +144,8 @@
         "validation_od_count": 76,
         "train_query_group_count": 304,
         "validation_query_group_count": 76,
-        "ndcg_at_3": 0.957485,
-        "pairwise_accuracy": 0.831522,
+        "ndcg_at_3": 0.953974,
+        "pairwise_accuracy": 0.804348,
         "compared_pairs": 184
       }
     },
@@ -143,7 +160,7 @@
         "validation_od_count": 76,
         "train_query_group_count": 304,
         "validation_query_group_count": 76,
-        "ndcg_at_3": 0.959635,
+        "ndcg_at_3": 0.95866,
         "pairwise_accuracy": 0.810256,
         "compared_pairs": 195
       }
@@ -189,33 +206,33 @@
   "models": {
     "child": {
       "path": "models/child.json",
-      "sha256": "dfe9de5db3831da7c3a81b707786fb0d46de49b2c643269f5706bd7d2cbacda1",
-      "bytes": 831515
+      "sha256": "563d4bfe11fdc1ea6b435ed16eeb084ff1eaee0dcb52bea1bd2bc8b835f74f46",
+      "bytes": 999576
     },
     "disabled": {
       "path": "models/disabled.json",
-      "sha256": "5ba0a44105fa853c979d0c80256444cdab5473c9008bcff707122859b9f84411",
-      "bytes": 833002
+      "sha256": "d2ac486a59623fe72345073c9d2349406d5fcdd4a982c5b0ca1d9aa428fb9390",
+      "bytes": 990778
     },
     "elderly": {
       "path": "models/elderly.json",
-      "sha256": "4df96cd64411dfb4c2df3bf8631b1377a18140b8915951d02142e8d6d0b80879",
-      "bytes": 827818
+      "sha256": "dc71248d02ee945beb9e63c440dbb917e97721159c4e91727a363de3151f50a4",
+      "bytes": 991337
     },
     "general": {
       "path": "models/general.json",
-      "sha256": "2a3f7944e69c431c00815bc065ffc44101d92ab11bcf4a287b9e54b359687ae7",
-      "bytes": 793588
+      "sha256": "9406d22162ae6db022a84049a12a1092ad10dedf3ecb80177c0067d4e29806ff",
+      "bytes": 975579
     },
     "pregnant": {
       "path": "models/pregnant.json",
-      "sha256": "6184f420aa705dfc9322c0f2ceb42307eca811ef9261785a5d02bf4724b99d52",
-      "bytes": 827007
+      "sha256": "2b1353c413d65ddd72f8c9812fd04b8c99294ee6bd4ff3f55422682bd3c0f45f",
+      "bytes": 985513
     },
     "youth": {
       "path": "models/youth.json",
-      "sha256": "3a31215f5e5b2500e8a5f903295928e1f182dc2b041367a4dbb85f45830c92a6",
-      "bytes": 786789
+      "sha256": "aedd3b802e2949e5d1fecd09089fbd14ac2f8d06312dbdc87aaceda47acc6344",
+      "bytes": 974328
     }
   }
 }

@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from labeling.prepare_bootstrap_baseline import prepare
@@ -17,7 +20,14 @@ from scoring.bootstrap_baseline import (
     train_bootstrap_baseline,
 )
 from scoring.snapshots import build_live_feature_snapshot
-from scoring.train import FEATURE_COLS, PROFILES, ModelNotReady, load_rankers
+from scoring.train import (
+    FEATURE_COLS,
+    MONOTONIC_CONSTRAINTS,
+    PROFILES,
+    RANKER_PARAMETERS,
+    ModelNotReady,
+    load_rankers,
+)
 
 
 def _snapshot_rows() -> list[dict]:
@@ -205,7 +215,123 @@ def test_bootstrap_model_is_separate_and_cannot_load_as_human(tmp_path):
     assert set(load_bootstrap_baseline_rankers(output_path)) == set(PROFILES)
     assert metadata["model_tier"] == BOOTSTRAP_MODEL_TIER
     assert metadata["label_origin"] == EVALUATION_LABEL_ORIGIN
+    assert metadata["monotonic_constraints"] == MONOTONIC_CONSTRAINTS
+    assert metadata["ranker_parameters"] == RANKER_PARAMETERS
     assert metadata["promotion"]["auto_promoted"] is False
     assert output_path.with_suffix(".metadata.json").exists()
     with pytest.raises(ModelNotReady, match="실제 사용자 라벨"):
         load_rankers(output_path)
+
+
+def _model_frame(rows: list[dict]) -> pd.DataFrame:
+    return pd.DataFrame([
+        {
+            column: np.nan if row.get(column) is None else row.get(column)
+            for column in FEATURE_COLS
+        }
+        for row in rows
+    ])
+
+
+def test_committed_baseline_never_rewards_additional_transfers():
+    feature_path = (
+        Path(__file__).resolve().parents[1]
+        / "data"
+        / "training"
+        / "bootstrap_baseline"
+        / "route_features.jsonl"
+    )
+    rows = [
+        json.loads(line)["features"]
+        for line in feature_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    rankers = load_bootstrap_baseline_rankers()
+
+    for profile, ranker in rankers.items():
+        option_off = []
+        option_on = []
+        for transfer_count in (0, 1, 2):
+            option_off.append(ranker.predict(_model_frame([
+                {
+                    **row,
+                    "transfer_count": transfer_count,
+                    "minimize_transfers_burden": 0,
+                }
+                for row in rows
+            ])))
+            option_on.append(ranker.predict(_model_frame([
+                {
+                    **row,
+                    "transfer_count": transfer_count,
+                    "minimize_transfers_burden": transfer_count,
+                }
+                for row in rows
+            ])))
+
+        for scores in (option_off, option_on):
+            assert np.all(scores[0] + 1e-7 >= scores[1]), profile
+            assert np.all(scores[1] + 1e-7 >= scores[2]), profile
+
+
+def test_general_baseline_prefers_namgu_jagalchi_direct_route():
+    """2026-08-27 운영 재현: 27번 직행과 27→26 환승은 1초 차이뿐이다."""
+    common = {column: None for column in FEATURE_COLS}
+    common.update({
+        "avg_slope_percent": 0.892,
+        "max_slope_percent": -0.07,
+        "min_slope_percent": -3.962,
+        "slope_iqr": 2.499,
+        "walk_distance_m": 373.0,
+        "shade_ratio": 0.1175,
+        "shaded_walk_m": 43.8,
+        "shade_building_height_coverage": 0.2806,
+        "cctv_density_50m": 34.0384,
+        "crosswalk_count": 3,
+        "crosswalk_signal_ratio": 1.0,
+        "shelter_nearby": 1,
+        "aed_nearby": 1,
+        "wheelchair_charger_nearby": 0,
+        "smart_shelter_nearby": 0,
+        "smart_shelter_has_ac": 0,
+        "bus_stop_count_200m": 14,
+        "temp_c": 30.9,
+        "feels_like_c": 37.9,
+        "precipitation_mm": 0.0,
+        "wind_ms": 5.7,
+        "pm10": 14.6,
+        "weather_heatwave": 0.0,
+        "weather_coldwave": 0.0,
+        "weather_rain": 0.0,
+        "weather_bad_air": 0.0,
+        "stair_avoidance_burden": 0.0,
+        "luggage_walk_burden": 0.0,
+        "luggage_stair_burden": 0.0,
+        "low_floor_priority_mismatch": 0.0,
+        "wheelchair_stair_burden": 0.0,
+        "wheelchair_elevator_gap": 0.0,
+        "walking_aid_walk_burden": 0.0,
+        "max_walk_excess_m": 0.0,
+        "weather_priority_walk_burden": 0.0,
+        "stroller_walk_burden": 0.0,
+        "stroller_stair_burden": 0.0,
+        "stroller_elevator_gap": 0.0,
+        "shade_priority_unshaded_walk_m": 0.0,
+        "minimize_transfers_burden": 0.0,
+    })
+    direct = {
+        **common,
+        "transfer_count": 0,
+        "total_duration_min": 35.86666666666667,
+    }
+    transfer = {
+        **common,
+        "transfer_count": 1,
+        "total_duration_min": 35.85,
+    }
+
+    scores = load_bootstrap_baseline_rankers()["general"].predict(
+        _model_frame([direct, transfer])
+    )
+
+    assert scores[0] > scores[1]

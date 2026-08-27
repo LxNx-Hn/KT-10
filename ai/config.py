@@ -44,8 +44,8 @@ class Settings(BaseSettings):
     # ODsay의 30회 일일 한도를 넘지 않도록 신규 network 호출은 29회까지만
     # 원자적으로 예약한다. 캐시 hit는 이 상한을 소비하지 않는다.
     ODSAY_DAILY_BUDGET: int = Field(default=29, ge=1, le=1_000_000)
-    # 일반 서비스는 ODsay loadLane 정밀 선형을 유지한다. 오프라인 보행망을
-    # 쓰는 배치 수집은 정류장 연결선을 estimated로 기록하는 모드를 선택할 수 있다.
+    # ODsay 호환 플러그인을 선택한 환경에서는 loadLane 정밀 선형을 유지한다.
+    # 운영 기본 TMAP 경로에는 이 설정이 개입하지 않는다.
     ODSAY_LOAD_LANE_ENABLED: bool = True
     ELEVATION_CACHE_DIR: str = ""
     ELEVATION_CACHE_TTL_SECONDS: int = Field(
@@ -91,11 +91,12 @@ class Settings(BaseSettings):
         ge=1,
         le=10,
     )
-    # 앞의 공급자가 미설정/한도/장애/계약 오류이면 다음 공급자를 사용한다.
+    # 운영 기본은 TMAP 단일 공급자다. ODsay는 한도가 작아
+    # 명시적인 오프라인·호환 설정에서만 순서에 포함한다.
     # 지원 값은 odsay,tmap이며 중복·미지원 값은 readiness와 요청에서 거부한다.
-    TRANSIT_PROVIDER_ORDER: str = "odsay,tmap"
-    # ODsay에 먼저 단독 응답 기회를 주되, 이 시간을 넘기면 TMAP을 병렬로
-    # 시작한다. 두 공급자를 순차 timeout까지 기다려 ALB 제한을 넘기지 않는다.
+    TRANSIT_PROVIDER_ORDER: str = "tmap"
+    # 명시적으로 odsay,tmap 호환 순서를 선택한 환경에서만
+    # ODsay에 선행 응답 기회를 주고, 지연 시 TMAP을 병렬 시작한다.
     TRANSIT_PROVIDER_HEDGE_SECONDS: float = Field(default=2.0, ge=0, le=5)
     TRANSIT_PROVIDER_TOTAL_TIMEOUT_SECONDS: float = Field(
         default=10.0,

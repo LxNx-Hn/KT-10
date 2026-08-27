@@ -151,7 +151,11 @@ class TransitProviderCollector(BaseRouteCollector):
         max_candidates: int | None,
         failures: list[CollectorError],
     ) -> list[RouteCandidate]:
-        """ODsay가 느릴 때만 TMAP을 겹쳐 ALB 응답 제한 안에 끝낸다."""
+        """ODsay가 느릴 때만 TMAP을 겹쳐 전체 대기를 제한한다.
+
+        운영 기본은 TMAP 단일 공급자이며, 이 경로는 명시적으로
+        ``odsay,tmap``을 선택한 호환 설정에서만 사용한다.
+        """
         loop = asyncio.get_running_loop()
         deadline = loop.time() + settings.TRANSIT_PROVIDER_TOTAL_TIMEOUT_SECONDS
         odsay_task = asyncio.create_task(

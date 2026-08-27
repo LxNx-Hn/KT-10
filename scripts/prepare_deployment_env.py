@@ -286,7 +286,7 @@ def check() -> None:
     provider_order = tuple(
         item.strip().casefold()
         for item in values.get(
-            "TRANSIT_PROVIDER_ORDER", "odsay,tmap"
+            "TRANSIT_PROVIDER_ORDER", "tmap"
         ).split(",")
         if item.strip()
     )
@@ -295,7 +295,7 @@ def check() -> None:
         or len(set(provider_order)) != len(provider_order)
         or any(item not in {"odsay", "tmap"} for item in provider_order)
     ):
-        missing.append("TRANSIT_PROVIDER_ORDER(odsay,tmap or tmap)")
+        missing.append("TRANSIT_PROVIDER_ORDER(tmap; optional odsay,tmap compatibility)")
     if "tmap" in provider_order and not values.get("TMAP_API_KEY"):
         missing.append("TMAP_API_KEY(tmap transit provider)")
     if "odsay" in provider_order and not values.get("ODSAY_API_KEY"):

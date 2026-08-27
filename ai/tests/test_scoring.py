@@ -9,7 +9,12 @@ import pandas as pd
 import pytest
 
 from labeling.promote_human_candidate import promote
-from scoring.artifacts import ArtifactError, file_sha256, read_ranker_artifact
+from scoring.artifacts import (
+    ArtifactError,
+    file_sha256,
+    read_ranker_artifact,
+    write_ranker_artifact,
+)
 from scoring.predict import predict_and_rank
 from scoring.snapshots import (
     build_live_feature_snapshot,
@@ -412,6 +417,37 @@ def test_human_candidate_requires_manual_checksum_promotion(tmp_path):
     assert set(load_rankers(production)) == {
         "general", "elderly", "child", "youth", "disabled", "pregnant",
     }
+
+
+def test_human_loader_rejects_artifact_without_transfer_constraints(tmp_path):
+    candidate = tmp_path / "rankers.human-candidate.zip"
+    production = tmp_path / "rankers.human-validated.zip"
+    unconstrained = tmp_path / "rankers.unconstrained.zip"
+    train_rankers(_training_frame(), candidate)
+    promote(
+        source=candidate,
+        output=production,
+        expected_source_sha256=file_sha256(candidate),
+        approved_by="test-admin",
+        approval_note="holdout and data lineage reviewed",
+    )
+    manifest, rankers = read_ranker_artifact(production, load_models=True)
+    metadata = {
+        key: value
+        for key, value in manifest.items()
+        if key not in {
+            "artifact_schema_version",
+            "profiles",
+            "models",
+            "monotonic_constraints",
+        }
+    }
+    write_ranker_artifact(unconstrained, metadata=metadata, rankers=rankers)
+
+    from scoring.train import load_rankers
+
+    with pytest.raises(ModelNotReady, match="환승 단조 제약"):
+        load_rankers(unconstrained)
 
 
 def test_review_mixed_artifact_self_identifies_as_unapproved(tmp_path):

@@ -24,7 +24,7 @@ from collectors.base import (
     Coordinate,
 )
 from collectors.ors_collector import OrsWheelchairRouteCollector
-from collectors.transit_provider import TransitProviderCollector
+from collectors.transit_provider import TransitProviderCollector, provider_order
 from collectors.odsay_instrumentation import (
     adopt_correlation_id,
     log_rank,
@@ -580,6 +580,14 @@ async def _collect_static_featured_routes(
         avoid_stairs=avoid_stairs,
         uses_wheelchair=req.uses_wheelchair,
     )
+    # TMAP은 한 요청에서 최대 10개 여정을 반환한다. 운영 기본 공급자가
+    # TMAP일 때는 화면에 표시할 topN(기본 5)과 후보 수집 한도를 분리해
+    # 직행 노선이 뒤쪽에 있어도 모델 비교에서 누락되지 않게 한다.
+    transit_candidate_limit = (
+        settings.TMAP_TRANSIT_MAX_CANDIDATES
+        if provider_order() == ("tmap",)
+        else req.candidate_limit
+    )
     if req.uses_wheelchair:
         # 휠체어 후보의 단일 보행 기준은 ORS wheelchair다. TMAP은
         # ODsay 내부에서 사전 수집된 동일 선형 경사로 근거만 결합하므로
@@ -587,7 +595,7 @@ async def _collect_static_featured_routes(
         collectors = [transit_collector, OrsWheelchairRouteCollector()]
         tasks = [
             transit_collector.collect(
-                origin, destination, max_candidates=req.candidate_limit
+                origin, destination, max_candidates=transit_candidate_limit
             ),
             collectors[1].collect(origin, destination),
         ]
@@ -596,7 +604,7 @@ async def _collect_static_featured_routes(
         collectors = [transit_collector, tmap_collector]
         tasks = [
             transit_collector.collect(
-                origin, destination, max_candidates=req.candidate_limit
+                origin, destination, max_candidates=transit_candidate_limit
             ),
             tmap_collector.collect(origin, destination),
         ]

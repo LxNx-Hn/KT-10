@@ -20,7 +20,9 @@ from scoring.snapshots import validate_live_feature_snapshot
 from scoring.train import (
     FEATURE_COLS,
     MODEL_PATH,
+    MONOTONIC_CONSTRAINTS,
     PROFILES,
+    RANKER_PARAMETERS,
     ModelNotReady,
     _group_holdout_metrics,
     _new_ranker,
@@ -365,6 +367,8 @@ def train_bootstrap_baseline(
         ),
         "trained_at": trained_at,
         "feature_columns": FEATURE_COLS,
+        "monotonic_constraints": MONOTONIC_CONSTRAINTS,
+        "ranker_parameters": RANKER_PARAMETERS,
         "metrics": metrics,
         "training_provenance": data.provenance,
         "promotion": {
@@ -400,6 +404,10 @@ def _load_payload(path: Path) -> dict[str, Any]:
     if payload.get("feature_columns") != FEATURE_COLS:
         raise ModelNotReady(
             "초기 평가 baseline 피처 스키마가 현재 코드와 일치하지 않습니다."
+        )
+    if payload.get("monotonic_constraints") != MONOTONIC_CONSTRAINTS:
+        raise ModelNotReady(
+            "초기 평가 baseline의 환승 단조 제약이 현재 코드와 일치하지 않습니다."
         )
     if set(profiles) != set(PROFILES):
         raise ModelNotReady(

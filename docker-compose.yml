@@ -89,7 +89,7 @@ services:
       # Decoding 키 선택 규칙을 적용한다.
       - DATA_GO_KR_SERVICE_KEY=${DECO:-${DATA_GO_KR_SERVICE_KEY:-}}
       - ODSAY_API_KEY=${ODSAY_API_KEY:-}
-      - TRANSIT_PROVIDER_ORDER=${TRANSIT_PROVIDER_ORDER:-odsay,tmap}
+      - TRANSIT_PROVIDER_ORDER=${TRANSIT_PROVIDER_ORDER:-tmap}
       - ELEVATION_CACHE_DIR=/app/ai/data/cache/elevation
       - ELEVATION_DEM_DIR=/app/ai/data/cache/elevation/dem
       - ELEVATION_REGIONAL_DEM_PATH=/app/ai/data/precomputed/busan_dem_clipped_90m.tif
