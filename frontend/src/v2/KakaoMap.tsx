@@ -299,14 +299,6 @@ function segmentPathParts(
   return [...routeParts, ...terrainParts];
 }
 
-function alternativeRoutePathParts(route: RouteCandidate): RoutePathPart[] {
-  const routePath = validPath(route.path);
-  // 다른 후보는 선택 경로보다 약한 단일 색이라 경사 구간이 필요 없다.
-  return routePath
-    ? [{ path: routePath, quality: route.geometryQuality }]
-    : segmentPathParts(route, false);
-}
-
 function collectSelectedRoutePoints(route: RouteCandidate | undefined): LatLng[] {
   if (!route) return [];
   const main = validPath(route.path);
@@ -782,35 +774,6 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     }));
   };
 
-  const addAlternativeRoutes = (
-    maps: KakaoMapsApi,
-    routes: ScoredRoute[],
-    selectedId: string | null,
-    selectRoute: (routeId: string) => void,
-    boundsPoints: LatLng[],
-  ) => {
-    routes.forEach(({ route }) => {
-      const parts = alternativeRoutePathParts(route);
-      parts.forEach(({ path, quality }) => {
-        boundsPoints.push(...path);
-        if (route.id === selectedId) return;
-
-        const line = addGraphic(new maps.Polyline({
-          path: path.map((point) => toKakaoLatLng(maps, point)),
-          strokeWeight: 6,
-          strokeColor: ALTERNATIVE_ROUTE_COLOR,
-          strokeOpacity: 0.38,
-          strokeStyle: strokeStyle(quality),
-          clickable: true,
-          zIndex: 2,
-        }));
-        const handler = () => selectRoute(route.id);
-        maps.event.addListener(line, 'click', handler);
-        listenersRef.current.push({ target: line, handler });
-      });
-    });
-  };
-
   const addSelectedRoute = (
     maps: KakaoMapsApi,
     route: RouteCandidate | undefined,
@@ -1049,7 +1012,6 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     nextDestination: Place | null,
     routes: ScoredRoute[],
     selectedId: string | null,
-    selectRoute: (routeId: string) => void,
     facilitiesVisible: boolean,
     shadeVisible: boolean,
     slopeVisible: boolean,
@@ -1065,7 +1027,8 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
     const boundsPoints: LatLng[] = [];
     const selectedRoute = routes.find(({ route }) => route.id === selectedId)?.route;
     addShadeOverlay(maps, selectedRoute, boundsPoints, shadeVisible);
-    addAlternativeRoutes(maps, routes, selectedId, selectRoute, boundsPoints);
+    // 후보 경로 미리보기는 그리지 않는다. 선택한 경로 하나만 지도에 남겨
+    // 추정 선형이 겹쳐 보이는 혼란을 없앤다. 경로 선택은 목록에서 한다.
     addSelectedRoute(maps, selectedRoute, slopeVisible);
     addFacilityOverlays(maps, selectedRoute, facilitiesVisible, shelterGroups);
     addEndpoint(maps, nextOrigin, 'origin');
@@ -1196,7 +1159,6 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
           current.destination,
           current.recommendations,
           current.selectedRouteId,
-          current.onSelectRoute,
           current.showFacilities,
           current.showShade,
           current.showSlope,
@@ -1271,7 +1233,6 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function KakaoMap(
       destination,
       recommendations,
       selectedRouteId,
-      onSelectRoute,
       showFacilities,
       showShade,
       showSlope,
