@@ -43,6 +43,7 @@ function pickAttentionFacts(
  * 기본 상태를 기준으로 안내한다.
  */
 function transitAccessibleLabel(step: V2TransitStep): string {
+  if (step.mode === 'transfer') return '환승';
   return [
     step.modeLabel,
     step.mode === 'walk' ? '지도에서 회색 선' : null,
@@ -61,6 +62,57 @@ function segmentFlexGrow(step: V2TransitStep, compact: boolean): number {
   const base = Math.max(step.durationMin, 1);
   // compact에서도 짧은 walk가 찌그러지지 않도록 floor 유지
   return compact ? Math.max(base, 4) : base;
+}
+
+const TRANSIT_BAR_MODES = new Set<V2TransitStep['mode']>([
+  'bus',
+  'subway',
+  'train',
+  'express_bus',
+  'ferry',
+  'airplane',
+]);
+
+function isTransitBarMode(mode: V2TransitStep['mode']): boolean {
+  return TRANSIT_BAR_MODES.has(mode);
+}
+
+/**
+ * 카드 이동수단 막대 presentation:
+ * - 앞뒤가 모두 대중교통인 walk 0분 → 환승으로 표시
+ * - 그 외 walk 0분(시작/끝 등) → 숨김
+ */
+function toPresentationTransitSteps(steps: V2TransitStep[]): V2TransitStep[] {
+  const presented: V2TransitStep[] = [];
+
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
+    if (!(step.mode === 'walk' && step.durationMin === 0)) {
+      presented.push(step);
+      continue;
+    }
+
+    const prev = steps[index - 1];
+    const next = steps[index + 1];
+    const betweenTransit =
+      prev != null &&
+      next != null &&
+      isTransitBarMode(prev.mode) &&
+      isTransitBarMode(next.mode);
+
+    if (betweenTransit) {
+      presented.push({
+        ...step,
+        mode: 'transfer',
+        modeLabel: '환승',
+        durationMin: 0,
+        routeLabel: undefined,
+        subwayLineId: undefined,
+      });
+    }
+  }
+
+  return presented;
 }
 
 function TransitModeIcon({ mode }: { mode: V2TransitStep['mode'] }) {
@@ -88,6 +140,7 @@ function TransitModeIcon({ mode }: { mode: V2TransitStep['mode'] }) {
       </svg>
     );
   }
+  // transfer 및 기타 수단: 기존 환승 화살표 아이콘
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M5 8h12l-3-3M19 16H7l3 3" />
@@ -96,9 +149,7 @@ function TransitModeIcon({ mode }: { mode: V2TransitStep['mode'] }) {
 }
 
 function TransitSequence({ steps }: { steps: V2TransitStep[] }) {
-  const visibleSteps = steps.filter(
-    (step) => !(step.mode === 'walk' && step.durationMin === 0),
-  );
+  const visibleSteps = toPresentationTransitSteps(steps);
   if (visibleSteps.length === 0) return null;
   const compact = visibleSteps.length >= 5;
 
@@ -124,8 +175,7 @@ function TransitSequence({ steps }: { steps: V2TransitStep[] }) {
             <TransitModeIcon mode={step.mode} />
           </span>
           <span className="map-first__transit-copy">
-            {step.durationMin}
-            분
+            {step.mode === 'transfer' ? '환승' : `${step.durationMin}분`}
           </span>
         </li>
       ))}

@@ -575,7 +575,7 @@ describe('MOB-15 대중교통 경로 시각 언어', () => {
     },
   );
 
-  it('0분 도보 구간은 이동 수단 막대에서 숨긴다', () => {
+  it('대중교통 사이 0분 도보는 환승으로 표시한다', () => {
     const { container } = renderCard('general', {
       segments: [
         { id: 'w1', mode: 'walk', description: '도보', durationMin: 2 },
@@ -601,25 +601,59 @@ describe('MOB-15 대중교통 경로 시각 언어', () => {
     const items = container.querySelectorAll(
       '.map-first__route-card-transit li',
     );
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(5);
     expect(
       Array.from(items).map((el) => ({
         mode: el.getAttribute('data-mode'),
-        duration: el.querySelector('.map-first__transit-copy')?.textContent,
+        label: el.querySelector('.map-first__transit-copy')?.textContent,
       })),
     ).toEqual([
-      { mode: 'walk', duration: '2분' },
-      { mode: 'bus', duration: '4분' },
-      { mode: 'bus', duration: '19분' },
-      { mode: 'walk', duration: '4분' },
+      { mode: 'walk', label: '2분' },
+      { mode: 'bus', label: '4분' },
+      { mode: 'transfer', label: '환승' },
+      { mode: 'bus', label: '19분' },
+      { mode: 'walk', label: '4분' },
     ]);
+    expect(items[2].getAttribute('aria-label')).toBe('환승');
+    expect(
+      container.querySelector('.map-first__route-card-transit')?.textContent,
+    ).not.toContain('0분');
+  });
+
+  it('시작·끝 0분 도보는 이동 수단 막대에서 숨긴다', () => {
+    const { container } = renderCard('general', {
+      segments: [
+        { id: 'w-start', mode: 'walk', description: '도보', durationMin: 0 },
+        {
+          id: 'b1',
+          mode: 'bus',
+          description: '버스',
+          durationMin: 12,
+          busRouteName: '49',
+        },
+        { id: 'w-end', mode: 'walk', description: '도보', durationMin: 0 },
+      ],
+    });
+
+    const items = container.querySelectorAll(
+      '.map-first__route-card-transit li',
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0].getAttribute('data-mode')).toBe('bus');
+    expect(items[0].querySelector('.map-first__transit-copy')?.textContent).toBe(
+      '12분',
+    );
+    expect(
+      Array.from(items).some((el) => el.getAttribute('data-mode') === 'walk'),
+    ).toBe(false);
     expect(
       Array.from(items).some(
-        (el) =>
-          el.getAttribute('data-mode') === 'walk' &&
-          el.querySelector('.map-first__transit-copy')?.textContent === '0분',
+        (el) => el.getAttribute('data-mode') === 'transfer',
       ),
     ).toBe(false);
+    expect(
+      container.querySelector('.map-first__route-card-transit')?.textContent,
+    ).not.toContain('0분');
   });
 });
 
