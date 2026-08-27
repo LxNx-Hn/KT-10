@@ -41,7 +41,7 @@ python scripts\prepare_deployment_env.py --import-existing
 - `ODSAY_API_KEY`: 실제 대중교통 경로 후보와 노선 geometry
 - `VWORLD_API_KEY`: 건물 도형·높이와 그늘
 - `OPENWEATHER_API_KEY`: 실시간 날씨·대기
-- `BUS_SERVICE_KEY`: 부산 버스 도착 정보
+- `BUS_SERVICE_KEY`: 부산 BIMS 버스 도착 정보와 TMAP 누락 직행 노선 보완
 - `TMAP_API_KEY` 또는 `OSMNX_WALK_GEOMETRY_ENABLED=true`: 일반 요청의
   실제 보행 geometry 기반 경사·주변 시설 분석. TMAP 키는 물리 경사로
   근거를 배포·데이터 갱신 단계에서 사전 수집할 때도 사용합니다. 운영

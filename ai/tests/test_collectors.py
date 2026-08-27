@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 from collectors.base import CollectorError, CollectorNotConfigured, Coordinate
+from collectors.bims_transit_collector import BimsTransitRouteCollector
 from collectors.odsay_collector import (
     AccessibleSubwayExit,
     OdsayRouteCollector,
@@ -30,6 +31,29 @@ from config import settings
 
 ORIGIN = Coordinate(lat=35.1626, lng=129.0530)
 DEST = Coordinate(lat=35.1578, lng=129.0594)
+
+
+def test_bims_direct_candidate_preserves_route_sequence_and_estimated_geometry():
+    route = {
+        "lineid": "5200088000",
+        "metadata": {"buslinenum": "88"},
+        "stops": [
+            {"bstopidx": "1", "bstopnm": "출발", "nodeid": "a", "lat": "35.162", "lin": "129.053", "avgym": "60"},
+            {"bstopidx": "2", "bstopnm": "중간", "nodeid": "b", "lat": "35.150", "lin": "129.060", "avgym": "90"},
+            {"bstopidx": "3", "bstopnm": "도착", "nodeid": "c", "lat": "35.140", "lin": "129.070", "avgym": "75"},
+        ],
+    }
+    candidate = BimsTransitRouteCollector._candidate(
+        route,
+        Coordinate(35.1621, 129.0531),
+        Coordinate(35.1401, 129.0701),
+    )
+    assert candidate is not None
+    assert candidate.source == "bims_transit"
+    assert candidate.geometry_quality == "estimated"
+    assert candidate.segments[1]["raw"]["lane"][0]["busNo"] == "88"
+    assert candidate.raw_response["info"]["transferCount"] == 0
+    assert candidate.duration_min > 0
 
 
 @pytest.fixture(autouse=True)

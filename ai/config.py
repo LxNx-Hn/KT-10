@@ -91,6 +91,15 @@ class Settings(BaseSettings):
         ge=1,
         le=10,
     )
+    # 부산 BIMS는 TMAP에 누락된 부산 시내버스 직행만 보완하는 선택 공급원이다.
+    # 공식 노선 순서 캐시는 짧게 유지하며, 평균 정류장 시간이나 보행시간이
+    # 없으면 후보를 만들지 않는다.
+    BUS_SERVICE_KEY: str = ""
+    BIMS_CACHE_TTL_SECONDS: int = Field(default=1800, ge=60, le=86_399)
+    BIMS_TIMEOUT_SECONDS: int = Field(default=12, ge=5, le=60)
+    BIMS_MAX_CONCURRENT_REQUESTS: int = Field(default=2, ge=1, le=10)
+    BIMS_MAX_CANDIDATES: int = Field(default=10, ge=1, le=20)
+    BIMS_WALK_SPEED_M_PER_MIN: float = Field(default=80.0, gt=0, le=200)
     # 운영 기본은 TMAP 단일 공급자다. ODsay는 한도가 작아
     # 명시적인 오프라인·호환 설정에서만 순서에 포함한다.
     # 지원 값은 odsay,tmap이며 중복·미지원 값은 readiness와 요청에서 거부한다.

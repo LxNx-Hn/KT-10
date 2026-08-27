@@ -397,8 +397,9 @@ jobs:
             echo "DATA_GO_KR_SERVICE_KEY or DECO secret is required for public transit data." >&2
             exit 1
           fi
-          if [ "$DEPLOY_BACKEND" = "true" ] && [ -z "$BUS_SERVICE_KEY" ]; then
-            echo "BUS_SERVICE_KEY secret is required for live bus arrivals." >&2
+          if { [ "$DEPLOY_BACKEND" = "true" ] || [ "$DEPLOY_AI" = "true" ]; } \
+            && [ -z "$BUS_SERVICE_KEY" ]; then
+            echo "BUS_SERVICE_KEY secret is required for BIMS transit data." >&2
             exit 1
           fi
           if [ "$DEPLOY_BACKEND" = "true" ]; then
@@ -623,7 +624,7 @@ jobs:
               true \
               true \
               true \
-              false \
+              true \
               false
           fi
           if [ "$DEPLOY_BACKEND" = "true" ]; then

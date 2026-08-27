@@ -23,6 +23,7 @@ from collectors.base import (
     CollectorNotConfigured,
     Coordinate,
 )
+from collectors.bims_transit_collector import BimsTransitRouteCollector
 from collectors.ors_collector import OrsWheelchairRouteCollector
 from collectors.transit_provider import TransitProviderCollector, provider_order
 from collectors.odsay_instrumentation import (
@@ -601,13 +602,26 @@ async def _collect_static_featured_routes(
         ]
     else:
         tmap_collector = TmapRouteCollector(avoid_stairs=avoid_stairs)
-        collectors = [transit_collector, tmap_collector]
+        # BIMS는 TMAP 후보에 누락된 부산 시내버스 직행을 보완할 때만
+        # 사용한다. 휠체어 요청에는 저상·보행 제약을 확인할 수 없어 넣지
+        # 않으며, ODsay 호환 순서를 선택한 경우에도 TMAP 기준을 유지한다.
+        bims_collector = (
+            BimsTransitRouteCollector()
+            if provider_order() == ("tmap",) and settings.BUS_SERVICE_KEY.strip()
+            else None
+        )
+        collectors = [transit_collector]
+        if bims_collector is not None:
+            collectors.append(bims_collector)
+        collectors.append(tmap_collector)
         tasks = [
             transit_collector.collect(
                 origin, destination, max_candidates=transit_candidate_limit
             ),
-            tmap_collector.collect(origin, destination),
         ]
+        if bims_collector is not None:
+            tasks.append(bims_collector.collect(origin, destination))
+        tasks.append(tmap_collector.collect(origin, destination))
     source_names = [collector.source_name for collector in collectors]
     collection_tasks = [asyncio.create_task(task) for task in tasks]
     _, pending = await asyncio.wait(
