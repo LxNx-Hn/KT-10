@@ -144,22 +144,10 @@
 
 ### 05. 시간대별 건물 그늘
 
-<table>
-  <tr>
-    <td width="42%" align="center" valign="middle">
-      <img src="./docs/app/shade-overlay.webp" alt="건물 그늘 오버레이 화면" style="max-width:220px; width:100%; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.12);" />
-    </td>
-    <td width="58%" valign="middle">
-      <h4>☀️ Shade View</h4>
-      <ul>
-        <li>출발시각 맞춤 선택</li>
-        <li>VWorld 정밀 건물 정보 연동</li>
-        <li>태양 고도·방위각 실시간 계산</li>
-        <li>보행로 쾌적 그늘 구간 오버레이</li>
-      </ul>
-    </td>
-  </tr>
-</table>
+- 출발시각을 기준으로 태양 고도·방위각을 계산합니다.
+- VWorld 건물 도형과 높이를 이용해 시간대별 건물 그늘 구간을 계산합니다.
+- 계산한 그늘 비율과 그늘 도보거리를 경로 특성과 추천 조건에 연결합니다.
+- 지도에서는 경로와 함께 시간대별 그늘 정보를 확인할 수 있습니다.
 
 ### 06. 경로 상세 정보
 
